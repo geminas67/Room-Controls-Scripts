@@ -172,6 +172,51 @@ function ShureMXAController:initMXAModule()
     }
 end
 
+--------** Room Controls Component **--------
+function ShureMXAController:setRoomControlsComponent()
+    self.components.roomControls = self:setComponent(self.controls.compRoomControls, "Room Controls")
+    if self.components.roomControls ~= nil then
+        -- Add event handlers for system power and fire alarm
+        local this = self  -- Capture self for use in handlers
+
+        -- System Power Handler
+        self.components.roomControls["ledSystemPower"].EventHandler = function(ctl)
+            if ctl.Boolean then
+                this:debugPrint("System Power On")
+            else
+                this:debugPrint("System Power Off")
+                this.mxaModule.setMute(true)
+            end
+        end
+
+        -- Fire Alarm Handler
+        self.components.roomControls["ledFireAlarm"].EventHandler = function(ctl)
+            if ctl.Boolean then
+                this:debugPrint("Fire Alarm Active")
+                this.mxaModule.setMute(true)
+            else
+                this:debugPrint("Fire Alarm Cleared")
+                this.mxaModule.setMute(false)
+            end
+        end
+
+        -- Audio Privacy Handler
+        self.components.roomControls["btnAudioPrivacy"].EventHandler = function(ctl)
+            this.state.audioPrivacy = ctl.Boolean
+            this:debugPrint("Audio Privacy: " .. tostring(ctl.Boolean))
+            -- Update MXA mute state based on privacy
+            this.mxaModule.setMute(ctl.Boolean)
+        end
+
+        -- Video Privacy Handler
+        self.components.roomControls["btnVideoPrivacy"].EventHandler = function(ctl)
+            this.state.videoPrivacy = ctl.Boolean
+            this:debugPrint("Video Privacy: " .. tostring(ctl.Boolean))
+            -- Update MXA mute state based on privacy
+            this.mxaModule.setMute(ctl.Boolean)
+        end
+    end
+end
 --------** Component Management **--------
 function ShureMXAController:setComponent(ctrl, componentType)
     self:debugPrint("Setting Component: " .. componentType)
