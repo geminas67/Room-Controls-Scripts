@@ -1,18 +1,33 @@
-CMIC_MUTE          button       Ceiling Mic Mute
-ROOM_PWR           snapshot     Room Power On/Off
+-- button       Ceiling Mic Mute --
+CMIC_MUTE
 
-CAM_EAST_UP        button      Camera East Wall Up, Down, Left, Right, ZoomIn, ZoomOut 
+-- snapshot     Room Power On/Off --
+ROOM_PWR_OFF
+ROOM_PWR_ON
+
+
+-- button      Program Volume Down, Mute, Up --
+PGM_VOL_DOWN
+PGM_VOL_MUTE
+PGM_VOL_UP
+
+-- button      Camera East Wall Up, Down, Left, Right, ZoomIn, ZoomOut --
 CAM_EAST_DOWN
 CAM_EAST_LEFT
 CAM_EAST_RIGHT
+CAM_EAST_UP
 CAM_EAST_ZOOMIN
 CAM_EAST_ZOOMOUT
-CAM_EAST_PRESET     snapshot   Save, Recall 1-3
 
-CAM_WEST_UP         button      Camera West Wall Up, Down, Left, Right, ZoomIn, ZoomOut
+-- button      Camera West Wall Up, Down, Left, Right, ZoomIn, ZoomOut --
 CAM_WEST_DOWN
 CAM_WEST_LEFT
 CAM_WEST_RIGHT
+CAM_WEST_UP
 CAM_WEST_ZOOMIN
 CAM_WEST_ZOOMOUT
-CAM_WEST_PRESET      snapshot   Save, Recall 1-3
+
+-- button       Camera Selector (Trigger)
+CAM_EAST_SEL
+CAM_WEST_SEL
+

@@ -1,9 +1,9 @@
 --[[ 
   Audio Router Controller - Class-based Implementation
-  Author: Hope Roth, Q-SYS
-  February, 2025
-  Firmware Req: 9.12
-  Version: 2.0
+  Author: Nikolas Smith, Q-SYS
+  2025-06-18
+  Firmware Req: 10.0.0
+  Version: 1.0
   
   Class-based implementation maintaining simplicity of functional approach
 ]]--

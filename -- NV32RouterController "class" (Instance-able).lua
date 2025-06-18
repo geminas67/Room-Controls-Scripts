@@ -1,9 +1,9 @@
 --[[
   NV32 Router Controller - Unique Control Names Per Instance Template
-  Author: Hope Roth, Q-SYS (Refactored)
-  February, 2025
-  Firmware Req: 9.12
-  Version: 4.0 (Unique Control Names)
+  Author: Nikolas Smith, Q-SYS (Refactored)
+  2025-06-18
+  Firmware Req: 10.0.0
+  Version: 1.0
 
   Class-based implementation maintaining simplicity of functional approach
 ]]--

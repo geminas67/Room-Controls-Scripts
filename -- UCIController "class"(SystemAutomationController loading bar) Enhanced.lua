@@ -1,6 +1,6 @@
 --[[ 
     UCIController class - Enhanced Version
-    Date: 2025-06-13
+    Date: 2025-06-18
     Version: 1.0
     Author: Nikolas Smith, Q-SYS
     Firmware Req: 10.0

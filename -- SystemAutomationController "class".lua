@@ -1,13 +1,11 @@
 --[[ 
   System Automation Helper Script - Modular Version with Gain Table
-  Author: Hope Roth, Q-SYS
-  February, 2025
-  Firmware Req: 9.12
-  Version: 2.2
-  
-  Refactored to follow UCI script pattern for modularity and reusability
-  Modified to use unified compGains array for all gain controls
-  Added individual volume up/down controls for each gain
+  Author: Nikolas Smith, Q-SYS
+  2025-06-18
+  Firmware Req: 10.0.0
+  Version: 1.0
+
+  Class-based implementation maintaining simplicity of functional approach
 ]] --
 
 -- SystemAutomationController class
@@ -328,6 +326,7 @@ function SystemAutomationController:initPowerModule()
             self.powerModule.setSystemPowerFB(true)
             
             self.audioModule.setVolume(self.config.defaultVolume) -- Sets all gains
+            self.audioModule.setMute(false)
             self.audioModule.setPrivacy(true)
             -- self.videoModule.setPrivacy(false)
             self.displayModule.powerAll(true)
@@ -344,6 +343,7 @@ function SystemAutomationController:initPowerModule()
             self.powerModule.setSystemPowerFB(false)
             
             self.audioModule.setPrivacy(true)
+            self.audioModule.setMute(true)
             self.videoModule.setPrivacy(true)
             self.displayModule.powerAll(false)
             self:endCalls()
@@ -480,6 +480,9 @@ function SystemAutomationController:callSyncCheckConnection()
     if self.components.callSync ~= nil then
         local state = self:safeComponentAccess(self.components.callSync, "off.hook", "get")
         self:debugPrint("Call Connection State: " .. tostring(state))
+        
+        -- Update video privacy based on call state
+        self.videoModule.setPrivacy(not state)
         
         -- Update ACPR tracking bypass based on call state
         if self.components.camACPR then

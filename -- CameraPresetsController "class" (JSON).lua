@@ -1,14 +1,30 @@
 --[[ 
   Camera Preset Controller - Class-based Implementation
-  Author: JHPerkins, Q-SYS (Refactored to Class Structure)
-  February, 2025
-  Firmware Req: 9.12
-  Version: 2.0
+  Author: Nikolas Smith, Q-SYS (Refactored)
+  2025-06-18
+  Firmware Req: 10.0.0
+  Version: 1.0
   
   Refactored to follow class-based pattern for modularity and reusability
   Maintains all existing camera preset functionality including JSON handling
   Preserves camera position change detection and LED update logic
 ]]--
+
+-- Define control references
+local controls = {
+    seldevCams = Controls.seldevCams,
+    btnCamPreset = Controls.btnCamPreset,
+    ledPresetMatch = Controls.ledPresetMatch,
+    ledPresetSaved = Controls.ledPresetSaved,
+    knbledOnTime = Controls.knbledOnTime,
+    txtJSONStorage = Controls.txtJSONStorage,
+    knbHoldTime = Controls.knbHoldTime,
+    compcamRouter = Controls.compcamRouter,
+    compRoomControls = Controls.compRoomControls,
+    compCallSync = Controls.compCallSync,
+    compVideoBridge = Controls.compVideoBridge,
+    txtStatus = Controls.txtStatus,
+}
 
 -- Required libraries
 rapidjson = require("rapidjson")
@@ -29,9 +45,11 @@ function CameraPresetController.new(config)
     self.components = {
         cameras = {},
         presets = {},
+        roomControls = nil,
+        callSync = nil,
+        videoBridge = nil,
         invalid = {},
         routers = {},  -- New storage for video routers
-        roomControls = nil  -- Add room controls component
     }
     
     -- State tracking
@@ -167,6 +185,24 @@ function CameraPresetController:initCameraModule()
                 self:debugPrint(string.format("Recalled %s Preset[%d]: %s", 
                     camName, presetIndex, preset))
             end
+        end
+    }
+end
+
+--------** Call Sync Component **--------
+function CameraPresetController:initCallSyncModule()
+    self.callSyncModule = {
+        setCallSyncComponent = function()
+            self.components.callSync = self:setComponent(controls.compCallSync, "Call Sync")
+        end
+    }
+end
+
+--------** Video Bridge Component **--------
+function CameraPresetController:initVideoBridgeModule()
+    self.videoBridgeModule = {
+        setVideoBridgeComponent = function()
+            self.components.videoBridge = self:setComponent(controls.compVideoBridge, "Video Bridge")
         end
     }
 end

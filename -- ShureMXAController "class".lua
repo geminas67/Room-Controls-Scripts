@@ -1,9 +1,9 @@
 --[[ 
   Shure MXA Controls - Class-based Implementation
-  Author: JHPerkins, Q-SYS (Refactored to Class Structure)
-  February, 2025
-  Firmware Req: 9.12
-  Version: 2.0
+  Author: Nikolas Smith, Q-SYS (Refactored)
+  2025-06-18
+  Firmware Req: 10.0.0
+  Version: 1.0
   
   Refactored to follow class-based pattern for modularity and reusability
   Maintains all existing MXA functionality including LED and mute control
@@ -106,8 +106,28 @@ function ShureMXAController:initMXAModule()
                     device["muteall"].Boolean = state
                 end
             end
+        end,
+
+        -- LED toggle functionality
+        ledToggleTimer = Timer.New(),
+        ledState = false,
+
+        startLEDToggle = function()
+            self.mxaModule.ledToggleTimer:Start(1.5) -- 1.5 second interval
+            self:debugPrint("Started LED toggle timer")
+        end,
+
+        stopLEDToggle = function()
+            self.mxaModule.ledToggleTimer:Stop()
+            self:debugPrint("Stopped LED toggle timer")
         end
     }
+
+    -- Set up LED toggle timer handler
+    self.mxaModule.ledToggleTimer.EventHandler = function()
+        self.mxaModule.ledState = not self.mxaModule.ledState
+        self.mxaModule.setLED(self.mxaModule.ledState)
+    end
 end
 
 --------** Room Controls Component **--------
@@ -124,6 +144,7 @@ function ShureMXAController:setRoomControlsComponent()
             else
                 this:debugPrint("System Power Off")
                 this.mxaModule.setMute(true)
+                this.mxaModule.setLED(false)
             end
         end
 
@@ -131,10 +152,20 @@ function ShureMXAController:setRoomControlsComponent()
         self.components.roomControls["ledFireAlarm"].EventHandler = function(ctl)
             if ctl.Boolean then
                 this:debugPrint("Fire Alarm Active")
+                this.mxaModule.startLEDToggle()
                 this.mxaModule.setMute(true)
+                this.mxaModule.setLED(false)
             else
-                this:debugPrint("Fire Alarm Cleared")
-                this.mxaModule.setMute(false)
+                this.mxaModule.stopLEDToggle()
+                if this.components.callSync["off.hook"].Boolean then
+                    this:debugPrint("Fire Alarm Cleared and Call is Off-Hook")
+                    this.mxaModule.setMute(false)
+                    this.mxaModule.setLED(true)
+                else
+                    this:debugPrint("Fire Alarm Cleared and Call is On-Hook")
+                    this.mxaModule.setMute(true)
+                    this.mxaModule.setLED(false)
+                end
             end
         end
     end
