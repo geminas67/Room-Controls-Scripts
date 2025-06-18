@@ -460,7 +460,7 @@ local function createCameraPresetController(config)
         debugging = true,
         holdTime = Controls.knbHoldTime.Value,
         ledOnTime = Controls.knbledOnTime.Value,
-        routerOutputs = {"select.1", "select.2", "select.3"}  -- Default to first three outputs
+        routerOutputs = {"select.1", "select.2", "select.3"}  -- Default to first three outputs, add more if needed
     }
     
     local controllerConfig = config or defaultConfig
@@ -501,25 +501,3 @@ myCameraPresetController.jsonModule.save()
 -- Load JSON data
 myCameraPresetController.jsonModule.load()
 ]]--
-
-function CameraPresetController:updateRouterOutputs(selectedIndex)
-    if self.state.combinedMode then
-        -- Set all outputs to the selected index
-        for _, output in ipairs(self.config.routerOutputs) do
-            for routerName, router in pairs(self.components.routers) do
-                router[output].Value = selectedIndex
-            end
-        end
-    else
-        -- Only set the currently selected output (e.g., select.2)
-        -- You may need to track which output is currently active in the UI
-        local currentOutput = self.state.activeOutput or "select.1"
-        for routerName, router in pairs(self.components.routers) do
-            router[currentOutput].Value = selectedIndex
-        end
-    end
-end
-
-function CameraPresetController:setCombinedMode(isCombined)
-    self.state.combinedMode = isCombined
-end
