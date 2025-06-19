@@ -617,8 +617,13 @@ function SingleRoomCameraController:funcInit()
     
     -- Error check: Verify Controls exist before proceeding
     local requiredControls = {
-        "compCallSync", "compdevSkaarhojPTZ", "compcamRouter", 
-        "compdevCams", "compcamACPR", "compRoomControls", "roomName"
+        "compCallSync", 
+        "compdevSkaarhojPTZ", 
+        "compcamRouter", 
+        "compdevCams", 
+        "compcamACPR", 
+        "compRoomControls", 
+        "roomName"
     }
     
     for _, controlName in ipairs(requiredControls) do
@@ -697,9 +702,9 @@ local function createSingleRoomController(roomName, config)
             red = 'Red'
         },
         defaultCameraRouterSettings = {
-            monitor = '5',
-            usbA = '5',
-            usbB = '5'
+            monitor = '6',
+            usbA = '6',
+            usbB = '6'
         },
         initializationDelay = 0.1,
         recalibrationDelay = 1.0
