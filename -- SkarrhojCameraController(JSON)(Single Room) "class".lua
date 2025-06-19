@@ -17,6 +17,9 @@
 SingleRoomCameraController = {}
 SingleRoomCameraController.__index = SingleRoomCameraController
 
+-- At the top of your script
+rapidjson = require("rapidjson")
+
 --------** Class Constructor **--------
 function SingleRoomCameraController.new(roomName, config)
     local self = setmetatable({}, SingleRoomCameraController)
@@ -67,6 +70,12 @@ function SingleRoomCameraController.new(roomName, config)
         initializationDelay = 0.1,
         recalibrationDelay = 1.0
     }
+    
+    -- Preset storage: [cameraNumber][presetIndex] = { value = ... }
+    self.presets = {}
+
+    -- Last recalled preset per camera
+    self.lastRecalledPreset = {}
     
     -- Initialize modules
     self:initCameraModule()
@@ -278,36 +287,20 @@ function SingleRoomCameraController:initHookStateModule()
                 -- Off Hook - Privacy Off
                 self.ptzModule.enablePC()
                 self.privacyModule.setPrivacy(false)
-                if self.components.camACPR then
-                    self:safeComponentAccess(self.components.camACPR, "TrackingBypass", "set", false)
-                end
-                if self.components.compRoomControls then
-                    self:safeComponentAccess(self.components.compRoomControls, "TrackingBypass", "set", true)
-                end
             else
                 -- On Hook - Privacy On
                 self.ptzModule.disablePC()
                 self.privacyModule.setPrivacy(true)
-                if self.components.camACPR then
-                    Timer.CallAfter(function()
-                        self:safeComponentAccess(self.components.camACPR, "TrackingBypass", "set", true)
-                    end, self.config.initializationDelay * 2)
-                end
             end
         end,
         
         handleHookState = function(isOffHook)
             self.hookStateModule.setHookState(isOffHook)
             if isOffHook then
-                if self.components.camACPR then
-                    self:safeComponentAccess(self.components.camACPR, "CameraRouterOutput", "setString", "01")
-                end
-                if self.components.compRoomControls then
-                    self:safeComponentAccess(self.components.compRoomControls, "CameraRouterOutput", "setString", "01")
-                end
-            else
-                if self.components.camACPR then
-                    self:safeComponentAccess(self.components.camACPR, "TrackingBypass", "set", true)
+                if self.components.camRouter then
+                    self:safeComponentAccess(self.components.camRouter, "select.1", "setString", "01")
+                    self:safeComponentAccess(self.components.camRouter, "select.2", "setString", "01")
+                    self:safeComponentAccess(self.components.camRouter, "select.3", "setString", "01")
                 end
             end
         end
@@ -429,8 +422,8 @@ function SingleRoomCameraController:setupComponents()
     end
     
     -- Setup legacy components (optional)
-    if Controls.productionMode then
-        self.components.productionMode = self:setComponent(Controls.productionMode, "Production Mode")
+    if Controls.btnProductionMode then
+        self.components.productionMode = self:setComponent(Controls.btnProductionMode, "Production Mode")
     else
         self:debugPrint("WARNING: Controls.productionMode not found - some features may be limited")
     end
@@ -608,6 +601,23 @@ function SingleRoomCameraController:registerEventHandlers()
         self:debugPrint("WARNING: Controls.compRoomControls not found")
     end
     
+    -- Register Production Mode handler for camACPR TrackingBypass
+    if Controls.btnProductionMode and self.components.camACPR then
+        Controls.btnProductionMode.EventHandler = function()
+            if Controls.btnProductionMode.Boolean then
+                self:safeComponentAccess(self.components.camACPR, "TrackingBypass", "set", true)
+            else
+                self:safeComponentAccess(self.components.camACPR, "TrackingBypass", "set", false)
+            end
+        end
+        -- Set initial state on startup
+        if Controls.btnProductionMode.Boolean then
+            self:safeComponentAccess(self.components.camACPR, "TrackingBypass", "set", true)
+        else
+            self:safeComponentAccess(self.components.camACPR, "TrackingBypass", "set", false)
+        end
+    end
+    
     self:debugPrint("Event handler registration completed")
 end
 
@@ -671,6 +681,11 @@ function SingleRoomCameraController:funcInit()
     initButton(3, 3, 2)
     initButton(4, 4, 2)
     initButton(5, 5, 2)
+    
+    -- Load presets from JSON
+    self:loadPresets()
+    self:updatePresetButtonColors()
+    self:registerPresetButtonHandlers()
     
     self:debugPrint("Single Room Camera Controller Initialized with " .. self.cameraModule.getCameraCount() .. " cameras")
 end
@@ -783,3 +798,62 @@ local cameraCount = mySingleRoomController.cameraModule.getCameraCount()
 -- Recalibrate PTZ
 mySingleRoomController.cameraModule.recalibratePTZ()
 ]]-- 
+
+-- Load presets from JSON
+function SingleRoomCameraController:loadPresets()
+    local json = Controls.txtJSONStorage.String
+    if json and json ~= "" then
+        local ok, data = pcall(rapidjson.decode, json)
+        if ok and type(data) == "table" then
+            self.presets = data
+        end
+    end
+end
+
+-- Save presets to JSON
+function SingleRoomCameraController:savePresets()
+    Controls.txtJSONStorage.String = rapidjson.encode(self.presets, {pretty=true, sort_keys=true})
+end
+
+-- Update button colors for the current camera
+function SingleRoomCameraController:updatePresetButtonColors(cameraNumber)
+    local last = self.lastRecalledPreset and self.lastRecalledPreset[cameraNumber]
+    for i = 1, 10 do
+        local btnNum = 17 + i  -- Button18..Button27
+        local color = (last == i) and "Blue" or "White"
+        self:safeComponentAccess(self.components.skaarhojPTZController, "Button"..btnNum..".color", "setString", color)
+    end
+end
+
+-- Event handler for each preset button
+function SingleRoomCameraController:registerPresetButtonHandlers()
+    for i = 18, 27 do
+        local presetIndex = i - 17  -- Preset 1-10
+        self.components.skaarhojPTZController["Button"..i..".press"].EventHandler = function(ctl)
+            local camNum = self.state.currentCameraSelection
+            self.presets[camNum] = self.presets[camNum] or {}
+            if ctl.Boolean then
+                -- Start long press timer (implement your timer logic)
+            else
+                if longPressed and longPressed[presetIndex] then
+                    -- Save preset
+                    self.presets[camNum][presetIndex] = { value = getCurrentPTZData() }
+                    self:savePresets()
+                else
+                    -- Recall preset
+                    local preset = self.presets[camNum][presetIndex]
+                    if preset then
+                        recallPTZData(preset.value)
+                        self.lastRecalledPreset[camNum] = presetIndex
+                        self:updatePresetButtonColors(camNum)
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- When camera selection changes:
+function SingleRoomCameraController:onCameraSelectionChanged(newCameraNumber)
+    self:updatePresetButtonColors(newCameraNumber)
+end 

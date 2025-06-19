@@ -278,9 +278,6 @@ function SingleRoomCameraController:initHookStateModule()
                 -- Off Hook - Privacy Off
                 self.ptzModule.enablePC()
                 self.privacyModule.setPrivacy(false)
-                if self.components.camACPR then
-                    self:safeComponentAccess(self.components.camACPR, "TrackingBypass", "set", false)
-                end
                 if self.components.compRoomControls then
                     self:safeComponentAccess(self.components.compRoomControls, "TrackingBypass", "set", true)
                 end
@@ -288,11 +285,6 @@ function SingleRoomCameraController:initHookStateModule()
                 -- On Hook - Privacy On
                 self.ptzModule.disablePC()
                 self.privacyModule.setPrivacy(true)
-                if self.components.camACPR then
-                    Timer.CallAfter(function()
-                        self:safeComponentAccess(self.components.camACPR, "TrackingBypass", "set", true)
-                    end, self.config.initializationDelay * 2)
-                end
             end
         end,
         
@@ -304,10 +296,6 @@ function SingleRoomCameraController:initHookStateModule()
                 end
                 if self.components.compRoomControls then
                     self:safeComponentAccess(self.components.compRoomControls, "CameraRouterOutput", "setString", "01")
-                end
-            else
-                if self.components.camACPR then
-                    self:safeComponentAccess(self.components.camACPR, "TrackingBypass", "set", true)
                 end
             end
         end
@@ -398,13 +386,6 @@ end
 
 function SingleRoomCameraController:setCamACPRComponent()
     self.components.camACPR = self:setComponent(Controls.compcamACPR, "Camera ACPR")
-    if self.components.camACPR ~= nil then
-        self.components.camACPR["TrackingBypass"].EventHandler = function()
-            local bypassState = self:safeComponentAccess(self.components.camACPR, "TrackingBypass", "get")
-            self.cameraModule.setAutoFrame(not bypassState)
-            self:debugPrint(bypassState and "Auto Framing Disabled" or "Auto Framing Enabled")
-        end
-    end
 end
 
 function SingleRoomCameraController:setCompRoomControlsComponent()
@@ -608,6 +589,17 @@ function SingleRoomCameraController:registerEventHandlers()
         self:debugPrint("WARNING: Controls.compRoomControls not found")
     end
     
+    if Controls.btnProductionMode then
+        Controls.btnProductionMode.EventHandler = function()
+            if self.components.camACPR then
+                self:safeComponentAccess(self.components.camACPR, "TrackingBypass", "set", Controls.btnProductionMode.Boolean)
+            end
+        end
+        self:debugPrint("Registered btnProductionMode handler for camACPR TrackingBypass")
+    else
+        self:debugPrint("WARNING: Controls.btnProductionMode not found")
+    end
+    
     self:debugPrint("Event handler registration completed")
 end
 
@@ -671,6 +663,11 @@ function SingleRoomCameraController:funcInit()
     initButton(3, 3, 2)
     initButton(4, 4, 2)
     initButton(5, 5, 2)
+    
+    -- Set initial camACPR TrackingBypass state based on btnProductionMode
+    if Controls.btnProductionMode and self.components.camACPR then
+        self:safeComponentAccess(self.components.camACPR, "TrackingBypass", "set", Controls.btnProductionMode.Boolean)
+    end
     
     self:debugPrint("Single Room Camera Controller Initialized with " .. self.cameraModule.getCameraCount() .. " cameras")
 end
