@@ -3,11 +3,18 @@
   Author: Nikolas Smith, Q-SYS (Refactored)
   2025-06-18
   Firmware Req: 10.0.0
-  Version: 1.0
+  Version: 1.1
   
   Refactored to follow class-based pattern for modularity and reusability
   Maintains all existing camera preset functionality including JSON handling
   Preserves camera position change detection and LED update logic
+  
+  NEW FEATURES:
+  - Preset Recall Feedback Tolerance: Configurable tolerance value for preset matching
+    Allows LED feedback to indicate when camera is "close enough" to a saved preset
+    Tolerance applies to pan, tilt, and zoom values independently
+    Default tolerance: 0.1 units (adjustable via presetTolerance variable)
+    To change tolerance: modify the presetTolerance variable at the top of the script
 ]]--
 
 -- Define control references
@@ -25,6 +32,9 @@ local controls = {
     compVideoBridge = Controls.compVideoBridge,
     txtStatus = Controls.txtStatus,
 }
+
+-- Preset tolerance variable (can be adjusted as needed)
+local presetTolerance = 0.1  -- Default tolerance value
 
 -- Required libraries
 rapidjson = require("rapidjson")
@@ -65,8 +75,10 @@ function CameraPresetController.new(config)
     self.config = {
         holdTime = config and config.holdTime or 3.0,
         ledOnTime = config and config.ledOnTime or 2.5,
+        presetTolerance = config and config.presetTolerance or presetTolerance,
         routerOutputs = config and config.routerOutputs or {"select.1"},  -- Default to first output
-        defaultCamera = config and config.defaultCamera or "devCam01"  -- Default to first camera
+        defaultCamera = config and config.defaultCamera or "devCam01",  -- Default to first camera
+        defaultPreset = config and config.defaultPreset or 1  -- Default to preset 1
     }
     
     -- Initialize modules
@@ -151,17 +163,25 @@ function CameraPresetController:initCameraModule()
         updatePresetMatchLEDs = function()
             local camName = Controls.seldevCams.String
             local currentPreset = ""
+            local isMoving = false
             
-            -- Get current preset if camera exists
+            -- Get current preset and movement status if camera exists
             if camName ~= "" and self.components.cameras[camName] then
                 currentPreset = self.components.cameras[camName]["ptz.preset"].String
+                -- Check if camera is moving
+                if self.components.cameras[camName]["is.moving"] then
+                    isMoving = self.components.cameras[camName]["is.moving"].Boolean
+                end
             end
             
             -- Update all LEDs in one loop
             for i, led in ipairs(Controls.ledPresetMatch) do
-                led.Boolean = (currentPreset ~= "" and 
-                             self.components.presets[camName] and 
-                             self.components.presets[camName][i] == currentPreset)
+                local presetMatches = false
+                -- Skip tolerance checking if camera is moving
+                if not isMoving and currentPreset ~= "" and self.components.presets[camName] and self.components.presets[camName][i] then
+                    presetMatches = self:comparePresetWithTolerance(currentPreset, self.components.presets[camName][i])
+                end
+                led.Boolean = presetMatches
             end
         end,
         
@@ -281,6 +301,63 @@ function CameraPresetController:debugPrint(str)
     if self.debugging then
         print("[Camera Presets Debug] " .. str)
     end
+end
+
+--------** Preset Tolerance Helper **--------
+function CameraPresetController:comparePresetWithTolerance(currentPreset, savedPreset)
+    -- If exact match, return true immediately
+    if currentPreset == savedPreset then
+        return true
+    end
+    
+    -- Parse preset strings (format: "pan tilt zoom")
+    local currentPan, currentTilt, currentZoom = currentPreset:match("([%-%d%.]+)%s+([%-%d%.]+)%s+([%-%d%.]+)")
+    local savedPan, savedTilt, savedZoom = savedPreset:match("([%-%d%.]+)%s+([%-%d%.]+)%s+([%-%d%.]+)")
+    
+    -- If parsing failed, fall back to exact string comparison
+    if not currentPan or not savedPan then
+        self:debugPrint("Failed to parse preset values, using exact comparison")
+        return currentPreset == savedPreset
+    end
+    
+    -- Convert to numbers
+    currentPan = tonumber(currentPan)
+    currentTilt = tonumber(currentTilt)
+    currentZoom = tonumber(currentZoom)
+    savedPan = tonumber(savedPan)
+    savedTilt = tonumber(savedTilt)
+    savedZoom = tonumber(savedZoom)
+    
+    -- Check if any value is nil (conversion failed)
+    if not currentPan or not currentTilt or not currentZoom or 
+       not savedPan or not savedTilt or not savedZoom then
+        self:debugPrint("Failed to convert preset values to numbers")
+        return false
+    end
+    
+    -- Get current tolerance value from control
+    local tolerance = self.config.presetTolerance
+    
+    -- Compare each axis with tolerance
+    local panMatch = math.abs(currentPan - savedPan) <= tolerance
+    local tiltMatch = math.abs(currentTilt - savedTilt) <= tolerance
+    local zoomMatch = math.abs(currentZoom - savedZoom) <= tolerance
+    
+    local allMatch = panMatch and tiltMatch and zoomMatch
+    
+    -- Debug output for tolerance comparison
+    if self.debugging and not allMatch then
+        self:debugPrint(string.format("Tolerance check failed - Current: %s, Saved: %s, Tolerance: %.3f", 
+            currentPreset, savedPreset, tolerance))
+        self:debugPrint(string.format("  Pan: %.3f vs %.3f (diff: %.3f, match: %s)", 
+            currentPan, savedPan, math.abs(currentPan - savedPan), tostring(panMatch)))
+        self:debugPrint(string.format("  Tilt: %.3f vs %.3f (diff: %.3f, match: %s)", 
+            currentTilt, savedTilt, math.abs(currentTilt - savedTilt), tostring(tiltMatch)))
+        self:debugPrint(string.format("  Zoom: %.3f vs %.3f (diff: %.3f, match: %s)", 
+            currentZoom, savedZoom, math.abs(currentZoom - savedZoom), tostring(zoomMatch)))
+    end
+    
+    return allMatch
 end
 
 --------** Component Management **--------
@@ -430,6 +507,13 @@ function CameraPresetController:funcInit()
         self.components.cameras[camName]["ptz.preset"].EventHandler = function()
             self.cameraModule.updatePresetMatchLEDs()
         end
+        
+        -- Set up camera movement status handlers
+        if self.components.cameras[camName]["is.moving"] then
+            self.components.cameras[camName]["is.moving"].EventHandler = function()
+                self.cameraModule.updatePresetMatchLEDs()
+            end
+        end
     end
     
     -- Setup router synchronization
@@ -438,6 +522,43 @@ function CameraPresetController:funcInit()
     -- Update UI
     Controls.seldevCams.Choices = cameraNames
     Controls.txtJSONStorage.IsDisabled = true
+    
+    -- Set default camera selection
+    if #cameraNames > 0 then
+        -- Try to set the configured default camera, fallback to first available
+        local defaultCameraFound = false
+        for i, camName in ipairs(cameraNames) do
+            if camName == self.config.defaultCamera then
+                Controls.seldevCams.String = camName
+                Controls.seldevCams.Value = i
+                defaultCameraFound = true
+                self:debugPrint("Set default camera: " .. camName)
+                break
+            end
+        end
+        
+        -- If configured default not found, use first camera
+        if not defaultCameraFound then
+            Controls.seldevCams.String = cameraNames[1]
+            Controls.seldevCams.Value = 1
+            self:debugPrint("Set fallback default camera: " .. cameraNames[1])
+        end
+        
+        -- Recall default preset for the selected camera
+        local selectedCamera = Controls.seldevCams.String
+        if selectedCamera ~= "" and self.components.cameras[selectedCamera] then
+            local defaultPresetIndex = self.config.defaultPreset
+            if self.components.presets[selectedCamera] and 
+               self.components.presets[selectedCamera][defaultPresetIndex] then
+                self.cameraModule.recallPreset(defaultPresetIndex)
+                self:debugPrint(string.format("Recalled default preset %d for camera: %s", 
+                    defaultPresetIndex, selectedCamera))
+            else
+                self:debugPrint(string.format("Default preset %d not available for camera: %s", 
+                    defaultPresetIndex, selectedCamera))
+            end
+        end
+    end
     
     -- Populate room controls choices
     self:populateRoomControlsChoices()
@@ -485,6 +606,9 @@ function CameraPresetController:cleanup()
         if camera["ptz.preset"].EventHandler then
             camera["ptz.preset"].EventHandler = nil
         end
+        if camera["is.moving"] and camera["is.moving"].EventHandler then
+            camera["is.moving"].EventHandler = nil
+        end
     end
     
     self:debugPrint("Cleanup completed")
@@ -496,7 +620,10 @@ local function createCameraPresetController(config)
         debugging = true,
         holdTime = Controls.knbHoldTime.Value,
         ledOnTime = Controls.knbledOnTime.Value,
-        routerOutputs = {"select.1", "select.2", "select.3"}  -- Default to first three outputs, add more if needed
+        presetTolerance = presetTolerance,
+        routerOutputs = {"select.1", "select.2"},  -- Default to first two outputs, add more if needed
+        defaultCamera = "devCam01",  -- Default camera selection
+        defaultPreset = 1  -- Default preset to recall on startup
     }
     
     local controllerConfig = config or defaultConfig

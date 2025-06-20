@@ -437,11 +437,15 @@ end
 
 -- Add safe layer visibility method with enhanced error handling
 function UCIController:safeSetLayerVisibility(page, layer, visible, transition)
+    print("Setting layer visibility: " .. layer .. " on page " .. page .. " to " .. tostring(visible) .. " with transition " .. transition)
+    
     local success, error = pcall(function()
         Uci.SetLayerVisibility(page, layer, visible, transition)
     end)
     
-    if not success then
+    if success then
+        print("Successfully set layer visibility: " .. layer .. " = " .. tostring(visible))
+    else
         print("Warning: Layer " .. layer .. " not found on page " .. page)
         print("Error: " .. tostring(error))
     end
@@ -459,73 +463,43 @@ function UCIController:callActivePopup()
 end
 
 function UCIController:showPresetSavedSublayer()
-    self:updateLayerVisibility({"J04-CamPresetSaved"}, Controls.pinLEDPresetSaved.Boolean, Controls.pinLEDPresetSaved.Boolean and "fade" or "none")
+    self:updatePresetSavedState(Controls.pinLEDPresetSaved.Boolean)
 end
 
 function UCIController:showHDMISublayer()
-    if Controls.pinLEDHDMIConnected.Boolean then
-        self:updateLayerVisibility({"L05-Laptop"}, true, "fade")
-        self:updateLayerVisibility({"L01-HDMIDisconnected"}, false, "none")
-    else
-        self:updateLayerVisibility({"L01-HDMIDisconnected"}, true, "fade")
-        self:updateLayerVisibility({"L05-Laptop"}, false, "none")
-    end
+    self:updateHDMI01State(Controls.pinLEDHDMI01Connect.Boolean)
 end
 
 function UCIController:showLaptopHelpSublayer()
-    if Controls.btnHelpLaptop.Boolean then
-        self:updateLayerVisibility({"I02-HelpLaptop"}, true, "fade")
-        self:updateLayerVisibility({"J05-CameraControls"}, false, "none")
-    else
-        self:updateLayerVisibility({"J05-CameraControls"}, true, "fade")
-        self:updateLayerVisibility({"I02-HelpLaptop"}, false, "none")
-    end
+    self:updateLaptopHelpState(Controls.btnHelpLaptop.Boolean)
 end
 
 function UCIController:showACPRSublayer()
-    if Controls.pinLEDACPRBypassActive.Boolean then
-        self:updateLayerVisibility({"J02-ACPRBypassOn"}, true, "fade")
-        self:updateLayerVisibility({"J05-CameraControls"}, false, "none")
-    else
-        self:updateLayerVisibility({"J05-CameraControls"}, true, "fade")
-        self:updateLayerVisibility({"J02-ACPRBypassOn"}, false, "none")
-    end
+    self:updateACPRBypassState(Controls.pinLEDACPRBypassActive.Boolean)
 end
 
 function UCIController:showPCHelpSublayer()
-    if Controls.btnHelpPC.Boolean then
-        self:updateLayerVisibility({"I03-HelpPC"}, true, "fade")
-        self:updateLayerVisibility({"J05-CameraControls"}, false, "none")
-    else
-        self:updateLayerVisibility({"J05-CameraControls"}, true, "fade")
-        self:updateLayerVisibility({"I03-HelpPC"}, false, "none")
-    end
+    self:updatePCHelpState(Controls.btnHelpPC.Boolean)
 end
 
 function UCIController:showWirelessHelpSublayer()
-    self:updateLayerVisibility({"I04-HelpWireless"}, Controls.btnHelpWireless.Boolean, "none") --if btnHelpWireless.Boolean is true, show I04-HelpWireless, otherwise hide it
+    self:updateWirelessHelpState(Controls.btnHelpWireless.Boolean)
 end
 
 function UCIController:showRoutingHelpSublayer()
-    self:updateLayerVisibility({"I05-HelpRouting"}, Controls.btnHelpRouting.Boolean, "none") --if btnHelpRouting.Boolean is true, show I05-HelpRouting, otherwise hide it
+    self:updateRoutingHelpState(Controls.btnHelpRouting.Boolean)
 end
 
 function UCIController:showDialerHelpSublayer()
-    self:updateLayerVisibility({"I06-HelpDialer"}, Controls.btnHelpDialer.Boolean, "none") --if btnHelpDialer.Boolean is true, show I06-HelpDialer, otherwise hide it
+    self:updateDialerHelpState(Controls.btnHelpDialer.Boolean)
 end
 
 function UCIController:showStreamMusicHelpSublayer()
-    self:updateLayerVisibility({"I07-HelpStreamMusic"}, Controls.btnHelpStreamMusic.Boolean, "none") --if btnHelpStreamMusic.Boolean is true, show I07-HelpStreamMusic, otherwise hide it   
+    self:updateStreamMusicHelpState(Controls.btnHelpStreamMusic.Boolean)
 end
 
 function UCIController:showCameraSublayer()
-    if Controls.pinLEDUSBPC.Boolean then
-        self:updateLayerVisibility({"J05-CameraControls"}, true, "fade")
-        self:updateLayerVisibility({"J01-USBConnectedNOT"}, false, "none")
-    else
-        self:updateLayerVisibility({"J01-USBConnectedNOT"}, true, "fade")
-        self:updateLayerVisibility({"J05-CameraControls"}, false, "none")
-    end
+    self:updateCameraState(Controls.pinLEDUSBPC.Boolean)
 end
 
 function UCIController:showRoutingLayer()
@@ -568,30 +542,6 @@ end
 -- Add state tracking table
 function UCIController:init()
     self.layerStates = {}
-    self:setupEventHandlers()
-end
-
-function UCIController:setupEventHandlers()
-    -- Setup event handlers for all control pins
-    Controls.pinLEDPresetSaved.EventHandler = function(ctl)
-        self:updatePresetSavedState(ctl.Boolean)
-    end
-    
-    Controls.pinLEDHDMIConnected.EventHandler = function(ctl)
-        self:updateHDMIState(ctl.Boolean)
-    end
-    
-    Controls.pinLEDACPRBypassActive.EventHandler = function(ctl)
-        self:updateACPRBypassState(ctl.Boolean)
-    end
-    
-    Controls.pinLEDUSBPC.EventHandler = function(ctl)
-        self:updateCameraState(ctl.Boolean)
-    end
-    
-    Controls.pinCallActive.EventHandler = function(ctl)
-        self:updateCallActiveState(ctl.Boolean)
-    end
 end
 
 function UCIController:updateLayerVisibility(layers, visible, transition)
@@ -606,27 +556,38 @@ function UCIController:updatePresetSavedState(isVisible)
     print("Preset Saved Sublayer: " .. (isVisible and "Showing" or "Hiding") .. " J04-CamPresetSaved")
 end
 
-function UCIController:updateHDMIState(isConnected)
+function UCIController:updateHDMI01State(isConnected)
+    if self.varActiveLayer ~= self.kLayerLaptop then
+        print("HDMI Sublayer: Not on laptop interface, ignoring HDMI state update")
+        return
+    end
+    
     if isConnected then
         self:updateLayerVisibility({"L05-Laptop"}, true, "fade")
-        self:updateLayerVisibility({"L01-HDMIDisconnected"}, false, "none")
-        print("HDMI Sublayer: Showing L05-Laptop, Hiding L01-HDMIDisconnected")
+        self:updateLayerVisibility({"L01-HDMIDisconnect"}, false, "none")
+        print("HDMI Sublayer: Showing L05-Laptop, Hiding L01-HDMIDisconnect")
     else
-        self:updateLayerVisibility({"L01-HDMIDisconnected"}, true, "fade")
+        self:updateLayerVisibility({"L01-HDMIDisconnect"}, true, "fade")
         self:updateLayerVisibility({"L05-Laptop"}, false, "none")
-        print("HDMI Sublayer: Showing L01-HDMIDisconnected, Hiding L05-Laptop")
+        self:updateLayerVisibility({"J05-CameraControls"}, false, "none")
+        print("HDMI Sublayer: Showing L01-HDMIDisconnect, Hiding L05-Laptop")
     end
 end
 
-function UCIController:updateACPRBypassState(isActive)
-    if isActive then
-        self:updateLayerVisibility({"J05-CameraControls"}, true, "fade")
-        self:updateLayerVisibility({"J02-ACPRBypassOn"}, false, "none")
-        print("ACPR Sublayer: Showing J05-CameraControls, Hiding J02-ACPRBypassOn")
-    else
-        self:updateLayerVisibility({"J02-ACPRBypassOn"}, true, "fade")
+function UCIController:updateACPRBypassState(isNotActive)
+    if self.varActiveLayer ~= self.kLayerLaptop and self.varActiveLayer ~= self.kLayerPC then
+        print("ACPR Sublayer: Not on laptop or PC interface, ignoring ACPR state update")
+        return
+    end
+
+    if isNotActive then
+        self:updateLayerVisibility({"J02-ACPROn"}, true, "fade")
         self:updateLayerVisibility({"J05-CameraControls"}, false, "none")
-        print("ACPR Sublayer: Showing J02-ACPRBypassOn, Hiding J05-CameraControls")
+        print("ACPR Sublayer: Showing J02-ACPROn, Hiding J05-CameraControls")
+    else
+        self:updateLayerVisibility({"J05-CameraControls"}, true, "fade")
+        self:updateLayerVisibility({"J02-ACPROn"}, false, "none")
+        print("ACPR Sublayer: Showing J05-CameraControls, Hiding J02-ACPROn")
     end
 end
 
@@ -645,6 +606,50 @@ end
 function UCIController:updateCallActiveState(isActive)
     self:updateLayerVisibility({"I01-CallActive"}, isActive, isActive and "fade" or "none")
     print("Call Active Popup: " .. (isActive and "Showing" or "Hiding") .. " I01-CallActive")
+end
+
+function UCIController:updateLaptopHelpState(isVisible)
+    if isVisible then
+        self:updateLayerVisibility({"I02-HelpLaptop"}, true, "fade")
+        self:updateLayerVisibility({"J05-CameraControls"}, false, "none")
+        print("Laptop Help Sublayer: Showing I02-HelpLaptop, Hiding J05-CameraControls")
+    else
+        self:updateLayerVisibility({"J05-CameraControls"}, true, "fade")
+        self:updateLayerVisibility({"I02-HelpLaptop"}, false, "none")
+        print("Laptop Help Sublayer: Showing J05-CameraControls, Hiding I02-HelpLaptop")
+    end
+end
+
+function UCIController:updatePCHelpState(isVisible)
+    if isVisible then
+        self:updateLayerVisibility({"I03-HelpPC"}, true, "fade")
+        self:updateLayerVisibility({"J05-CameraControls"}, false, "none")
+        print("PC Help Sublayer: Showing I03-HelpPC, Hiding J05-CameraControls")
+    else
+        self:updateLayerVisibility({"J05-CameraControls"}, true, "fade")
+        self:updateLayerVisibility({"I03-HelpPC"}, false, "none")
+        print("PC Help Sublayer: Showing J05-CameraControls, Hiding I03-HelpPC")
+    end
+end
+
+function UCIController:updateWirelessHelpState(isVisible)
+    self:updateLayerVisibility({"I04-HelpWireless"}, isVisible, "none")
+    print("Wireless Help Sublayer: " .. (isVisible and "Showing" or "Hiding") .. " I04-HelpWireless")
+end
+
+function UCIController:updateRoutingHelpState(isVisible)
+    self:updateLayerVisibility({"I05-HelpRouting"}, isVisible, "none")
+    print("Routing Help Sublayer: " .. (isVisible and "Showing" or "Hiding") .. " I05-HelpRouting")
+end
+
+function UCIController:updateDialerHelpState(isVisible)
+    self:updateLayerVisibility({"I06-HelpDialer"}, isVisible, "none")
+    print("Dialer Help Sublayer: " .. (isVisible and "Showing" or "Hiding") .. " I06-HelpDialer")
+end
+
+function UCIController:updateStreamMusicHelpState(isVisible)
+    self:updateLayerVisibility({"I07-HelpStreamMusic"}, isVisible, "none")
+    print("Stream Music Help Sublayer: " .. (isVisible and "Showing" or "Hiding") .. " I07-HelpStreamMusic")
 end
 
 -- Modify showLayer to use state information and validate transitions
@@ -667,12 +672,12 @@ function UCIController:showLayer()
         "I06-HelpDialer", 
         "I07-HelpStreamMusic", 
         "J01-USBConnectedNOT", 
-        "J02-ACPRBypassOn",
+        "J02-ACPROn",
         "J04-CamPresetSaved", 
         "J05-CameraControls", 
-        "P05-PC", 
-        "L01-HDMIDisconnected",
         "L05-Laptop", 
+        "P01-HDMIDisconnect",
+        "P05-PC", 
         "W05-Wireless", 
         "R01-Routing-Lobby", 
         "R02-Routing-WTerrace",
@@ -1030,26 +1035,26 @@ function UCIController:registerEventHandlers()
     
     -- Modal Popups - Button Triggers
     Controls.btnHelpLaptop.EventHandler = function()
-        self:showLaptopHelpSublayer()       -- show laptop help sublayer
+        self:updateLaptopHelpState(Controls.btnHelpLaptop.Boolean)
     end
     
     Controls.btnHelpPC.EventHandler = function()
-        self:showPCHelpSublayer()           -- show pc help sublayer
+        self:updatePCHelpState(Controls.btnHelpPC.Boolean)
     end
 
     Controls.btnHelpWireless.EventHandler = function()
-        self:showWirelessHelpSublayer()       -- show wireless help sublayer
+        self:updateWirelessHelpState(Controls.btnHelpWireless.Boolean)
     end
 
     Controls.btnHelpRouting.EventHandler = function()
-        self:showRoutingHelpSublayer()       -- show routing help sublayer
+        self:updateRoutingHelpState(Controls.btnHelpRouting.Boolean)
     end
     Controls.btnHelpDialer.EventHandler = function()
-        self:showDialerHelpSublayer()       -- show dialer help sublayer
+        self:updateDialerHelpState(Controls.btnHelpDialer.Boolean)
     end
 
     Controls.btnHelpStreamMusic.EventHandler = function()
-        self:showStreamMusicHelpSublayer()       -- show stream music help sublayer
+        self:updateStreamMusicHelpState(Controls.btnHelpStreamMusic.Boolean)
     end
 
     -- External Triggers
@@ -1088,7 +1093,7 @@ function UCIController:registerEventHandlers()
         self:debug()
     end
         
-    Controls.pinLEDLaptop01Active.EventHandler = function(ctl)
+    Controls.pinLEDHDMI01Active.EventHandler = function(ctl)
         if ctl.Boolean then
             self.varActiveLayer = self.kLayerLaptop -- show laptop layer
         end
@@ -1097,13 +1102,34 @@ function UCIController:registerEventHandlers()
         self:debug()
     end
     
-    Controls.pinLEDLaptop02Active.EventHandler = function(ctl)
+    Controls.pinLEDHDMI02Active.EventHandler = function(ctl)
         if ctl.Boolean then
-            self.varActiveLayer = self.kLayerLaptop -- show laptop layer        
+            self.varActiveLayer = self.kLayerPC -- show PC layer        
         end
         self:showLayer()
         self:interlock()
         self:debug()
+    end
+    
+    -- Pin Event Handlers for Sublayers
+    Controls.pinLEDPresetSaved.EventHandler = function(ctl)
+        self:updatePresetSavedState(ctl.Boolean)
+    end
+    
+    Controls.pinLEDHDMI01Connect.EventHandler = function(ctl)
+        self:updateHDMI01State(ctl.Boolean)
+    end
+    
+    Controls.pinLEDACPRBypassActive.EventHandler = function(ctl)
+        self:updateACPRBypassState(ctl.Boolean)
+    end
+    
+    Controls.pinLEDUSBPC.EventHandler = function(ctl)
+        self:updateCameraState(ctl.Boolean)
+    end
+    
+    Controls.pinCallActive.EventHandler = function(ctl)
+        self:updateCallActiveState(ctl.Boolean)
     end
     
     -- Legend label updates

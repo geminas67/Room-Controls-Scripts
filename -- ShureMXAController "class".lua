@@ -143,8 +143,8 @@ function ShureMXAController:setRoomControlsComponent()
                 this:debugPrint("System Power On")
             else
                 this:debugPrint("System Power Off")
-                this.mxaModule.setMute(true)
-                this.mxaModule.setLED(false)
+                self.mxaModule.setMute(true)
+                self.mxaModule.setLED(false)
             end
         end
 
@@ -289,7 +289,11 @@ function ShureMXAController:getComponentNames()
     Controls.compRoomControls.Choices = namesTable.RoomControlsNames
     Controls.compCallSync.Choices = namesTable.CallSyncNames
     Controls.compVideoBridge.Choices = namesTable.VideoBridgeNames
-    Controls.devMXAs.Choices = namesTable.MXANames
+    
+    -- Set choices for each MXA device control in the table
+    for i, v in ipairs(Controls.devMXAs) do
+        v.Choices = namesTable.MXANames
+    end
 end
 
 --------** Event Handler Registration **--------
