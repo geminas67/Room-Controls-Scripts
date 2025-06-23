@@ -1,12 +1,11 @@
 --[[
-  NV32 Router Controller - Unique Control Names Per Instance Template
+  NV32 Router Controller - Unique Control Names Per Instance Template (UCI Integrated)
   Author: Nikolas Smith, Q-SYS (Refactored)
   2025-06-18
   Firmware Req: 10.0.0
-  Version: 1.0
+  Version: 1.1 (UCI Integrated)
 
-  Class-based implementation maintaining simplicity of functional approach
-  Enhanced with UCI integration for automatic input switching based on UCI layer
+  This version includes UCI integration for automatic input switching based on UCI navigation button states.
 ]]--
 
 -- Define control references
@@ -482,4 +481,4 @@ UCI Integration:
   * btnNav09.Boolean = true → switches to HDMI3 (Graphic3)
 - You can also manually set the UCI controller reference using: myNV32RouterController:setUCIController(myUCI)
 - UCI integration can be enabled/disabled using enableUCIIntegration() and disableUCIIntegration()
-]]--
+]]-- 

@@ -88,9 +88,6 @@ function UCIController.new(uciPage, defaultRoutingLayer, defaultActiveLayer, hid
     self.hiddenHelpIndices = hiddenHelpIndices or {}
     self.isInitialized = false
     
-    -- External controller registration for UCI layer change notifications
-    self.externalControllers = {}
-    
     -- Check required controls before proceeding
     self:checkRequiredControls()
     
@@ -581,31 +578,13 @@ function UCIController:updateHDMI01State(isConnected)
     
     if isConnected then
         self:updateLayerVisibility({"L05-Laptop"}, true, "fade")
-        self:updateLayerVisibility({"L01-HDMI01Disconnected"}, false, "none")
-        print("HDMI Sublayer: Showing L05-Laptop, Hiding L01-HDMI01Disconnected")
+        self:updateLayerVisibility({"L01-HDMI01Disconnect"}, false, "none")
+        print("HDMI Sublayer: Showing L05-Laptop, Hiding L01-HDMI01Disconnect")
     else
-        self:updateLayerVisibility({"L01-HDMI01Disconnected"}, true, "fade")
+        self:updateLayerVisibility({"L01-HDMI01Disconnect"}, true, "fade")
         self:updateLayerVisibility({"L05-Laptop"}, false, "none")
         self:updateLayerVisibility({"J05-CameraControls"}, false, "none")
-        print("HDMI Sublayer: Showing L01-HDMI01Disconnected, Hiding L05-Laptop")
-    end
-end
-
-function UCIController:updateHDMI02State(isConnected)
-    if self.varActiveLayer ~= self.kLayerPC then
-        print("HDMI Sublayer: Not on PC interface, ignoring HDMI state update")
-        return
-    end
-    
-    if isConnected then
-        self:updateLayerVisibility({"P05-PC"}, true, "fade")
-        self:updateLayerVisibility({"P01-HDMI02Disconnected"}, false, "none")
-        print("HDMI Sublayer: Showing P05-PC, Hiding P01-HDMI02Disconnected")
-    else
-        self:updateLayerVisibility({"P01-HDMI02Disconnected"}, true, "fade")
-        self:updateLayerVisibility({"P05-PC"}, false, "none")
-        self:updateLayerVisibility({"J05-CameraControls"}, false, "none")
-        print("HDMI Sublayer: Showing P01-HDMI02Disconnected, Hiding P05-PC")
+        print("HDMI Sublayer: Showing L01-HDMI01Disconnect, Hiding L05-Laptop")
     end
 end
 
@@ -722,9 +701,9 @@ function UCIController:showLayer()
         "J03-ACPRActive",
         "J04-CamPresetSaved", 
         "J05-CameraControls", 
-        "L01-HDMI01Disconnected", 
+        "L01-HDMI01Disconnect", 
         "L05-Laptop", 
-        "P01-HDMI02Disconnected",
+        "P01-HDMI02Disconnect",
         "P05-PC", 
         "W05-Wireless", 
         "R01-Routing-Lobby", 
@@ -872,18 +851,18 @@ end
 
 function UCIController:debug()
     local layers = {
-        {var = self.kLayerAlarm,        msg = "Set UCI to Alarm"},
-        {var = self.kLayerIncomingCall, msg = "Set UCI to Incoming Call"},
-        {var = self.kLayerStart,        msg = "Set UCI to Start"},
-        {var = self.kLayerWarming,      msg = "Set UCI to Warming"},
-        {var = self.kLayerCooling,      msg = "Set UCI to Cooling"},
+        {var = self.kLayerAlarm, msg        = "Set UCI to Alarm"},
+        {var = self.kLayerIncomingCall, msg = "Set UCI to IncomingCall"},
+        {var = self.kLayerStart, msg        = "Set UCI to Start"},
+        {var = self.kLayerWarming, msg      = "Set UCI to Warming"},
+        {var = self.kLayerCooling, msg      = "Set UCI to Cooling"},
         {var = self.kLayerRoomControls, msg = "Set UCI to Room Controls"},
-        {var = self.kLayerPC,           msg = "Set UCI to PC"},
-        {var = self.kLayerLaptop,       msg = "Set UCI to Laptop"},
-        {var = self.kLayerWireless,     msg = "Set UCI to Wireless"},
-        {var = self.kLayerRouting,      msg = "Set UCI to Routing"},
-        {var = self.kLayerDialer,       msg = "Set UCI to Dialer"},
-        {var = self.kLayerStreamMusic,  msg = "Set UCI to Stream Music"}
+        {var = self.kLayerPC, msg           = "Set UCI to PC"},
+        {var = self.kLayerLaptop, msg       = "Set UCI to Laptop"},
+        {var = self.kLayerWireless, msg     = "Set UCI to Wireless"},
+        {var = self.kLayerRouting, msg      = "Set UCI to Routing"},
+        {var = self.kLayerDialer, msg       = "Set UCI to Dialer"},
+        {var = self.kLayerStreamMusic, msg  = "Set UCI to Stream Music"}
     }
     
     for i = 1, #layers do
@@ -901,39 +880,10 @@ function UCIController:btnNavEventHandler(argIndex)
         return
     end
     
-    local previousLayer = self.varActiveLayer
     self.varActiveLayer = argIndex
-    
-    -- Notify external controllers of layer change
-    local layerChangeInfo = {
-        previousLayer = previousLayer,
-        currentLayer = self.varActiveLayer,
-        layerName = self:getLayerName(self.varActiveLayer)
-    }
-    self:notifyExternalControllers(layerChangeInfo)
-    
     self:showLayer()
     self:interlock()
     self:debug()
-end
-
--- Helper method to get layer name
-function UCIController:getLayerName(layerNumber)
-    local layerNames = {
-        [self.kLayerAlarm] = "Alarm",
-        [self.kLayerIncomingCall] = "Incoming Call",
-        [self.kLayerStart] = "Start",
-        [self.kLayerWarming] = "Warming",
-        [self.kLayerCooling] = "Cooling",
-        [self.kLayerRoomControls] = "Room Controls",
-        [self.kLayerPC] = "PC",
-        [self.kLayerLaptop] = "Laptop",
-        [self.kLayerWireless] = "Wireless",
-        [self.kLayerRouting] = "Routing",
-        [self.kLayerDialer] = "Dialer",
-        [self.kLayerStreamMusic] = "Stream Music"
-    }
-    return layerNames[layerNumber] or "Unknown"
 end
 
 -- Modified Loading Bar with Room Automation Integration and timeout protection
@@ -1332,51 +1282,4 @@ if myUCI and mySystemController then
     
     syncTimer:Start(5)
     print("Room Automation sync timer started for UCI")
-end
-
--- Optional: Auto-connect NV32RouterController if it exists
-if myUCI and myNV32RouterController then
-    myUCI:registerExternalController(myNV32RouterController, "NV32Router")
-    print("NV32RouterController automatically connected to UCIController")
-    
-    -- Also set the UCI controller reference in the NV32 controller
-    myNV32RouterController:setUCIController(myUCI)
-    print("UCIController reference set in NV32RouterController")
-end
-
--- External Controller Registration Methods
-function UCIController:registerExternalController(controller, controllerType)
-    if not self.externalControllers[controllerType] then
-        self.externalControllers[controllerType] = {}
-    end
-    table.insert(self.externalControllers[controllerType], controller)
-    print("Registered external controller: " .. tostring(controllerType))
-end
-
-function UCIController:unregisterExternalController(controller, controllerType)
-    if self.externalControllers[controllerType] then
-        for i, registeredController in ipairs(self.externalControllers[controllerType]) do
-            if registeredController == controller then
-                table.remove(self.externalControllers[controllerType], i)
-                print("Unregistered external controller: " .. tostring(controllerType))
-                break
-            end
-        end
-    end
-end
-
-function UCIController:notifyExternalControllers(layerChangeInfo)
-    for controllerType, controllers in pairs(self.externalControllers) do
-        for _, controller in ipairs(controllers) do
-            -- Try to call the notification method if it exists
-            if controller.onUCILayerChange then
-                local success, err = pcall(function()
-                    controller:onUCILayerChange(layerChangeInfo)
-                end)
-                if not success then
-                    print("Warning: Failed to notify " .. tostring(controllerType) .. " controller: " .. tostring(err))
-                end
-            end
-        end
-    end
 end 

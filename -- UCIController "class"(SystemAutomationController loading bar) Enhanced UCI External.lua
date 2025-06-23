@@ -1,3 +1,14 @@
+--[[
+  UCIController class - Enhanced Version (External Controller Notification)
+  Author: Nikolas Smith, Q-SYS
+  2025-06-18
+  Version: 1.1 (External Notification)
+
+  This version includes external controller registration and notification for UCI layer changes.
+]]--
+
+-- (Full code from the latest version in your workspace, including all external controller registration and notification code)
+
 --[[ 
     UCIController class - Enhanced Version
     Date: 2025-06-18
@@ -1053,7 +1064,22 @@ function UCIController:registerEventHandlers()
     -- Nav Buttons
     for i, ctl in ipairs(self.arrbtnNavs) do
         ctl.EventHandler = function()
-            self:btnNavEventHandler(i)
+            local previousLayer = self.varActiveLayer
+            if not self:validateLayerTransition(self.varActiveLayer, i) then
+                print("Invalid layer transition attempted")
+                return
+            end
+            self.varActiveLayer = i
+            -- Notify external controllers
+            local layerChangeInfo = {
+                previousLayer = previousLayer,
+                currentLayer = self.varActiveLayer,
+                layerName = self:getLayerName(self.varActiveLayer)
+            }
+            self:notifyExternalControllers(layerChangeInfo)
+            self:showLayer()
+            self:interlock()
+            self:debug()
         end
     end
     
@@ -1068,12 +1094,19 @@ function UCIController:registerEventHandlers()
     
     -- Start System - Modified to control room automation
     Controls.btnStartSystem.EventHandler = function()
-        -- Power on Room Automation system
         self:powerOnRoomAutomation()
-        
-        -- Start UCI loading bar with Room Automation timing
         self:startLoadingBar(true)
-        self:btnNavEventHandler(self.kLayerWarming)
+        local previousLayer = self.varActiveLayer
+        self.varActiveLayer = self.kLayerWarming
+        local layerChangeInfo = {
+            previousLayer = previousLayer,
+            currentLayer = self.varActiveLayer,
+            layerName = self:getLayerName(self.varActiveLayer)
+        }
+        self:notifyExternalControllers(layerChangeInfo)
+        self:showLayer()
+        self:interlock()
+        self:debug()
         print("System started with Start button for " .. self.uciPage)
     end
     
@@ -1092,21 +1125,20 @@ function UCIController:registerEventHandlers()
     
     -- Shutdown Confirmed - Modified to control room automation
     Controls.btnShutdownConfirm.EventHandler = function()
-        -- Hide the shutdown confirm overlay first
         self:updateLayerVisibility({"D01-ShutdownConfirm"}, false, "fade")
-        
-        -- Power off Room Automation system
         self:powerOffRoomAutomation()
-        
-        -- Start UCI loading bar with Room Automation timing
         self:startLoadingBar(false)
-        
-        -- Set the active layer to cooling without validation
+        local previousLayer = self.varActiveLayer
         self.varActiveLayer = self.kLayerCooling
+        local layerChangeInfo = {
+            previousLayer = previousLayer,
+            currentLayer = self.varActiveLayer,
+            layerName = self:getLayerName(self.varActiveLayer)
+        }
+        self:notifyExternalControllers(layerChangeInfo)
         self:showLayer()
         self:interlock()
         self:debug()
-        
         print("System shutdown confirmed for " .. self.uciPage)
     end
     
@@ -1136,53 +1168,83 @@ function UCIController:registerEventHandlers()
 
     -- External Triggers
     Controls.pinLEDUSBLaptop.EventHandler = function(ctl)
-        if ctl.Boolean then
-            self.varActiveLayer = self.kLayerLaptop -- show laptop layer
-        end
+        local previousLayer = self.varActiveLayer
+        if ctl.Boolean then self.varActiveLayer = self.kLayerLaptop end
+        local layerChangeInfo = {
+            previousLayer = previousLayer,
+            currentLayer = self.varActiveLayer,
+            layerName = self:getLayerName(self.varActiveLayer)
+        }
+        self:notifyExternalControllers(layerChangeInfo)
         self:showLayer()
         self:interlock()
         self:debug()
     end
     Controls.pinLEDUSBPC.EventHandler = function(ctl)
-        if ctl.Boolean then
-            self.varActiveLayer = self.kLayerPC -- show PC layer
-        end
+        local previousLayer = self.varActiveLayer
+        if ctl.Boolean then self.varActiveLayer = self.kLayerPC end
+        local layerChangeInfo = {
+            previousLayer = previousLayer,
+            currentLayer = self.varActiveLayer,
+            layerName = self:getLayerName(self.varActiveLayer)
+        }
+        self:notifyExternalControllers(layerChangeInfo)
         self:showLayer()
         self:interlock()
         self:debug()
     end
     
     Controls.pinLEDOffHookLaptop.EventHandler = function(ctl)
-        if ctl.Boolean then
-            self.varActiveLayer = self.kLayerLaptop -- show laptop layer
-        end
+        local previousLayer = self.varActiveLayer
+        if ctl.Boolean then self.varActiveLayer = self.kLayerLaptop end
+        local layerChangeInfo = {
+            previousLayer = previousLayer,
+            currentLayer = self.varActiveLayer,
+            layerName = self:getLayerName(self.varActiveLayer)
+        }
+        self:notifyExternalControllers(layerChangeInfo)
         self:showLayer()
         self:interlock()
         self:debug()
     end
 
     Controls.pinLEDOffHookPC.EventHandler = function(ctl)
-        if ctl.Boolean then
-            self.varActiveLayer = self.kLayerPC -- show PC layer
-        end
+        local previousLayer = self.varActiveLayer
+        if ctl.Boolean then self.varActiveLayer = self.kLayerPC end
+        local layerChangeInfo = {
+            previousLayer = previousLayer,
+            currentLayer = self.varActiveLayer,
+            layerName = self:getLayerName(self.varActiveLayer)
+        }
+        self:notifyExternalControllers(layerChangeInfo)
         self:showLayer()
         self:interlock()
         self:debug()
     end
         
     Controls.pinLEDHDMI01Active.EventHandler = function(ctl)
-        if ctl.Boolean then
-            self.varActiveLayer = self.kLayerLaptop -- show laptop layer
-        end
+        local previousLayer = self.varActiveLayer
+        if ctl.Boolean then self.varActiveLayer = self.kLayerLaptop end
+        local layerChangeInfo = {
+            previousLayer = previousLayer,
+            currentLayer = self.varActiveLayer,
+            layerName = self:getLayerName(self.varActiveLayer)
+        }
+        self:notifyExternalControllers(layerChangeInfo)
         self:showLayer()
         self:interlock()
         self:debug()
     end
     
     Controls.pinLEDHDMI02Active.EventHandler = function(ctl)
-        if ctl.Boolean then
-            self.varActiveLayer = self.kLayerPC -- show PC layer        
-        end
+        local previousLayer = self.varActiveLayer
+        if ctl.Boolean then self.varActiveLayer = self.kLayerPC end
+        local layerChangeInfo = {
+            previousLayer = previousLayer,
+            currentLayer = self.varActiveLayer,
+            layerName = self:getLayerName(self.varActiveLayer)
+        }
+        self:notifyExternalControllers(layerChangeInfo)
         self:showLayer()
         self:interlock()
         self:debug()
