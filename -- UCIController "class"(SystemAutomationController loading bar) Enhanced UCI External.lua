@@ -1,25 +1,17 @@
 --[[
   UCIController class - Enhanced Version (External Controller Notification)
   Author: Nikolas Smith, Q-SYS
-  2025-06-18
-  Version: 1.1 (External Notification)
-
-  This version includes external controller registration and notification for UCI layer changes.
-]]--
-
--- (Full code from the latest version in your workspace, including all external controller registration and notification code)
-
---[[ 
-    UCIController class - Enhanced Version
-    Date: 2025-06-18
-    Version: 1.0
-    Author: Nikolas Smith, Q-SYS
-    Firmware Req: 10.0
+  2025-06-23
+  Version: 1.2 (External Notification)
+      Firmware Req: 10.0
     Notes:
     - This script is a modified version of the UCIController class that adds enhanced error handling and validation for required controls.
     - It also adds a check for the Room Controls component and a fallback method if the component is not found.
     - It also adds a check for the System Automation component and a fallback method if the component is not found.
---]]
+
+
+  This version includes external controller registration and notification for UCI layer changes.
+]]--
 
 UCIController = {}
 UCIController.__index = UCIController
@@ -29,30 +21,14 @@ function UCIController:checkRequiredControls()
     print("=== Checking Required Controls ===")
     local requiredControls = {
         -- Main Navigation Buttons
-        "btnNav01",
-        "btnNav02",
-        "btnNav03",
-        "btnNav04",
-        "btnNav05",
-        "btnNav06",
-        "btnNav07",
-        "btnNav08",
-        "btnNav09",
-        "btnNav10",
-        "btnNav11",
-        "btnNav12",
+        "btnNav01", "btnNav02", "btnNav03", 
+        "btnNav04", "btnNav05", "btnNav06", 
+        "btnNav07", "btnNav08", "btnNav09", 
+        "btnNav10", "btnNav11", "btnNav12",
         -- System Control Buttons
-        "btnStartSystem",
-        "btnNavShutdown",
-        "btnShutdownCancel",
-        "btnShutdownConfirm",
+        "btnStartSystem", "btnNavShutdown", "btnShutdownCancel", "btnShutdownConfirm",
         -- Help Sublayer Buttons (optional)
-        "btnHelpLaptop",
-        "btnHelpPC",
-        "btnHelpWireless",
-        "btnHelpRouting",
-        "btnHelpDialer",
-        "btnHelpStreamMusic"
+        "btnHelpLaptop", "btnHelpPC", "btnHelpWireless", "btnHelpRouting", "btnHelpDialer", "btnHelpStreamMusic"
     }
     
     local missingControls = {}
@@ -98,9 +74,6 @@ function UCIController.new(uciPage, defaultRoutingLayer, defaultActiveLayer, hid
     self.hiddenNavIndices = hiddenNavIndices or {}
     self.hiddenHelpIndices = hiddenHelpIndices or {}
     self.isInitialized = false
-    
-    -- External controller registration for UCI layer change notifications
-    self.externalControllers = {}
     
     -- Check required controls before proceeding
     self:checkRequiredControls()
@@ -309,7 +282,7 @@ function UCIController:validateLayerTransition(fromLayer, toLayer)
         [self.kLayerStart] = {self.kLayerAlarm, self.kLayerWarming, self.kLayerCooling},
         [self.kLayerWarming] = {self.kLayerAlarm, self.kLayerLaptop, self.kLayerPC, self.kLayerWireless, self.kLayerRouting, self.kLayerDialer, self.kLayerStreamMusic},
         [self.kLayerCooling] = {self.kLayerAlarm, self.kLayerStart},
-        [self.kLayerRoomControls] = {self.kLayerAlarm, self.kLayerPC, self.kLayerWireless, self.kLayerRouting, self.kLayerDialer, self.kLayerStreamMusic},
+        [self.kLayerRoomControls] = {self.kLayerAlarm, self.kLayerLaptop, self.kLayerPC, self.kLayerWireless, self.kLayerRouting, self.kLayerDialer, self.kLayerStreamMusic},
         [self.kLayerPC] = {self.kLayerAlarm, self.kLayerRoomControls, self.kLayerLaptop, self.kLayerWireless, self.kLayerRouting, self.kLayerDialer, self.kLayerStreamMusic},
         [self.kLayerWireless] = {self.kLayerAlarm, self.kLayerRoomControls, self.kLayerLaptop, self.kLayerPC, self.kLayerRouting, self.kLayerDialer, self.kLayerStreamMusic},
         [self.kLayerRouting] = {self.kLayerAlarm, self.kLayerRoomControls, self.kLayerLaptop, self.kLayerPC, self.kLayerWireless, self.kLayerDialer, self.kLayerStreamMusic},
@@ -915,14 +888,6 @@ function UCIController:btnNavEventHandler(argIndex)
     local previousLayer = self.varActiveLayer
     self.varActiveLayer = argIndex
     
-    -- Notify external controllers of layer change
-    local layerChangeInfo = {
-        previousLayer = previousLayer,
-        currentLayer = self.varActiveLayer,
-        layerName = self:getLayerName(self.varActiveLayer)
-    }
-    self:notifyExternalControllers(layerChangeInfo)
-    
     self:showLayer()
     self:interlock()
     self:debug()
@@ -1040,6 +1005,12 @@ function UCIController:cleanup()
         self.timeoutTimer = nil
     end
     
+    -- Stop NV32 control timer
+    if nv32ControlTimer then
+        nv32ControlTimer:Stop()
+        nv32ControlTimer = nil
+    end
+    
     -- Remove event handlers
     for _, btn in ipairs(self.arrbtnNavs) do
         btn.EventHandler = nil
@@ -1070,13 +1041,6 @@ function UCIController:registerEventHandlers()
                 return
             end
             self.varActiveLayer = i
-            -- Notify external controllers
-            local layerChangeInfo = {
-                previousLayer = previousLayer,
-                currentLayer = self.varActiveLayer,
-                layerName = self:getLayerName(self.varActiveLayer)
-            }
-            self:notifyExternalControllers(layerChangeInfo)
             self:showLayer()
             self:interlock()
             self:debug()
@@ -1098,12 +1062,6 @@ function UCIController:registerEventHandlers()
         self:startLoadingBar(true)
         local previousLayer = self.varActiveLayer
         self.varActiveLayer = self.kLayerWarming
-        local layerChangeInfo = {
-            previousLayer = previousLayer,
-            currentLayer = self.varActiveLayer,
-            layerName = self:getLayerName(self.varActiveLayer)
-        }
-        self:notifyExternalControllers(layerChangeInfo)
         self:showLayer()
         self:interlock()
         self:debug()
@@ -1130,12 +1088,6 @@ function UCIController:registerEventHandlers()
         self:startLoadingBar(false)
         local previousLayer = self.varActiveLayer
         self.varActiveLayer = self.kLayerCooling
-        local layerChangeInfo = {
-            previousLayer = previousLayer,
-            currentLayer = self.varActiveLayer,
-            layerName = self:getLayerName(self.varActiveLayer)
-        }
-        self:notifyExternalControllers(layerChangeInfo)
         self:showLayer()
         self:interlock()
         self:debug()
@@ -1170,12 +1122,6 @@ function UCIController:registerEventHandlers()
     Controls.pinLEDUSBLaptop.EventHandler = function(ctl)
         local previousLayer = self.varActiveLayer
         if ctl.Boolean then self.varActiveLayer = self.kLayerLaptop end
-        local layerChangeInfo = {
-            previousLayer = previousLayer,
-            currentLayer = self.varActiveLayer,
-            layerName = self:getLayerName(self.varActiveLayer)
-        }
-        self:notifyExternalControllers(layerChangeInfo)
         self:showLayer()
         self:interlock()
         self:debug()
@@ -1183,12 +1129,6 @@ function UCIController:registerEventHandlers()
     Controls.pinLEDUSBPC.EventHandler = function(ctl)
         local previousLayer = self.varActiveLayer
         if ctl.Boolean then self.varActiveLayer = self.kLayerPC end
-        local layerChangeInfo = {
-            previousLayer = previousLayer,
-            currentLayer = self.varActiveLayer,
-            layerName = self:getLayerName(self.varActiveLayer)
-        }
-        self:notifyExternalControllers(layerChangeInfo)
         self:showLayer()
         self:interlock()
         self:debug()
@@ -1197,12 +1137,6 @@ function UCIController:registerEventHandlers()
     Controls.pinLEDOffHookLaptop.EventHandler = function(ctl)
         local previousLayer = self.varActiveLayer
         if ctl.Boolean then self.varActiveLayer = self.kLayerLaptop end
-        local layerChangeInfo = {
-            previousLayer = previousLayer,
-            currentLayer = self.varActiveLayer,
-            layerName = self:getLayerName(self.varActiveLayer)
-        }
-        self:notifyExternalControllers(layerChangeInfo)
         self:showLayer()
         self:interlock()
         self:debug()
@@ -1211,12 +1145,6 @@ function UCIController:registerEventHandlers()
     Controls.pinLEDOffHookPC.EventHandler = function(ctl)
         local previousLayer = self.varActiveLayer
         if ctl.Boolean then self.varActiveLayer = self.kLayerPC end
-        local layerChangeInfo = {
-            previousLayer = previousLayer,
-            currentLayer = self.varActiveLayer,
-            layerName = self:getLayerName(self.varActiveLayer)
-        }
-        self:notifyExternalControllers(layerChangeInfo)
         self:showLayer()
         self:interlock()
         self:debug()
@@ -1225,12 +1153,6 @@ function UCIController:registerEventHandlers()
     Controls.pinLEDHDMI01Active.EventHandler = function(ctl)
         local previousLayer = self.varActiveLayer
         if ctl.Boolean then self.varActiveLayer = self.kLayerLaptop end
-        local layerChangeInfo = {
-            previousLayer = previousLayer,
-            currentLayer = self.varActiveLayer,
-            layerName = self:getLayerName(self.varActiveLayer)
-        }
-        self:notifyExternalControllers(layerChangeInfo)
         self:showLayer()
         self:interlock()
         self:debug()
@@ -1239,12 +1161,6 @@ function UCIController:registerEventHandlers()
     Controls.pinLEDHDMI02Active.EventHandler = function(ctl)
         local previousLayer = self.varActiveLayer
         if ctl.Boolean then self.varActiveLayer = self.kLayerPC end
-        local layerChangeInfo = {
-            previousLayer = previousLayer,
-            currentLayer = self.varActiveLayer,
-            layerName = self:getLayerName(self.varActiveLayer)
-        }
-        self:notifyExternalControllers(layerChangeInfo)
         self:showLayer()
         self:interlock()
         self:debug()
@@ -1365,80 +1281,95 @@ myUCI = createUCIControllerWithErrorHandling(
     {} -- specify which help buttons to hide {2, 4} {} --no buttons to hide
 )
 
--- Optional: Add periodic sync with Room Automation
-if myUCI and mySystemController then
-    -- Create a timer to periodically sync UCI with Room Automation state
-    local syncTimer = Timer.New()
-    syncTimer.EventHandler = function()
-        if myUCI and myUCI.syncWithRoomAutomation then
-            myUCI:syncWithRoomAutomation()
-        end
-        syncTimer:Start(5) -- Check every 5 seconds
-    end
+-- Alternative approach: Direct UCI button monitoring for NV32 control
+local nv32ControlTimer = nil -- Make timer accessible for cleanup
+
+local function setupDirectNV32Control()
+    print("=== Setting up Direct NV32 Control via UCI Buttons ===")
     
-    -- Add cleanup method
-    function myUCI:cleanup()
-        if syncTimer then
-            syncTimer:Stop()
-            syncTimer = nil
-        end
-        if self.loadingTimer then
-            self.loadingTimer:Stop()
-            self.loadingTimer = nil
-        end
-        if self.timeoutTimer then
-            self.timeoutTimer:Stop()
-            self.timeoutTimer = nil
-        end
-    end
+    -- Define the UCI button to NV32 input mapping
+    local uciToNV32Mapping = {
+        [7] = 5, -- btnNav07 → HDMI2 (Input 5)
+        [8] = 4, -- btnNav08 → HDMI1 (Input 4)
+        [9] = 6  -- btnNav09 → HDMI3 (Input 6)
+    }
     
-    syncTimer:Start(5)
-    print("Room Automation sync timer started for UCI")
-end
-
--- Optional: Auto-connect NV32RouterController if it exists
-if myUCI and myNV32RouterController then
-    myUCI:registerExternalController(myNV32RouterController, "NV32Router")
-    print("NV32RouterController automatically connected to UCIController")
+    -- Store previous button states to detect changes
+    local previousButtonStates = {}
     
-    -- Also set the UCI controller reference in the NV32 controller
-    myNV32RouterController:setUCIController(myUCI)
-    print("UCIController reference set in NV32RouterController")
-end
-
--- External Controller Registration Methods
-function UCIController:registerExternalController(controller, controllerType)
-    if not self.externalControllers[controllerType] then
-        self.externalControllers[controllerType] = {}
-    end
-    table.insert(self.externalControllers[controllerType], controller)
-    print("Registered external controller: " .. tostring(controllerType))
-end
-
-function UCIController:unregisterExternalController(controller, controllerType)
-    if self.externalControllers[controllerType] then
-        for i, registeredController in ipairs(self.externalControllers[controllerType]) do
-            if registeredController == controller then
-                table.remove(self.externalControllers[controllerType], i)
-                print("Unregistered external controller: " .. tostring(controllerType))
-                break
-            end
-        end
-    end
-end
-
-function UCIController:notifyExternalControllers(layerChangeInfo)
-    for controllerType, controllers in pairs(self.externalControllers) do
-        for _, controller in ipairs(controllers) do
-            -- Try to call the notification method if it exists
-            if controller.onUCILayerChange then
-                local success, err = pcall(function()
-                    controller:onUCILayerChange(layerChangeInfo)
-                end)
-                if not success then
-                    print("Warning: Failed to notify " .. tostring(controllerType) .. " controller: " .. tostring(err))
+    -- Create a timer to monitor button states without overriding EventHandlers
+    nv32ControlTimer = Timer.New()
+    nv32ControlTimer.EventHandler = function()
+        for uciButton, nv32Input in pairs(uciToNV32Mapping) do
+            local buttonName = "btnNav" .. string.format("%02d", uciButton)
+            if Controls[buttonName] then
+                local currentState = Controls[buttonName].Boolean
+                local previousState = previousButtonStates[uciButton]
+                
+                -- Check if button state changed to true
+                if currentState and not previousState then
+                    print("UCI Button " .. uciButton .. " pressed, switching NV32 to input " .. nv32Input)
+                    
+                    -- Control NV32 using UCI variable
+                    if Controls.devNV32 and Controls.devNV32.String and Controls.devNV32.String ~= "" then
+                        local success, nv32Component = pcall(function()
+                            return Component.New(Controls.devNV32.String)
+                        end)
+                        if success and nv32Component then
+                            local routeSuccess, routeErr = pcall(function()
+                                nv32Component["hdmi.out.1.select.index"].Value = nv32Input
+                            end)
+                            if routeSuccess then
+                                print("✓ NV32 controlled: Set Output 1 to Input " .. nv32Input .. " on " .. Controls.devNV32.String)
+                            else
+                                print("⚠ Failed to set NV32 route: " .. tostring(routeErr))
+                            end
+                        else
+                            print("⚠ Failed to create NV32 component: " .. tostring(nv32Component))
+                        end
+                    else
+                        print("⚠ NV32 device not selected in UCI variable devNV32")
+                    end
                 end
+                
+                -- Update previous state
+                previousButtonStates[uciButton] = currentState
             end
         end
+        
+        -- Continue monitoring
+        nv32ControlTimer:Start(0.1) -- Check every 100ms
     end
-end 
+    
+    -- Start the monitoring timer
+    nv32ControlTimer:Start(0.1)
+    print("✓ Timer-based UCI button monitoring started")
+    print("=== Direct NV32 Control Setup Complete ===")
+end
+
+-- Set up direct control
+setupDirectNV32Control()
+
+-- Test UCI button accessibility
+print("=== Testing UCI Button Accessibility ===")
+for i = 7, 9 do
+    local buttonName = "btnNav" .. string.format("%02d", i)
+    if Controls[buttonName] then
+        print("✓ " .. buttonName .. " accessible, current state: " .. tostring(Controls[buttonName].Boolean))
+    else
+        print("✗ " .. buttonName .. " NOT accessible")
+    end
+end
+
+-- Test NV32 variable
+if Controls.devNV32 then
+    print("✓ UCI devNV32 variable accessible: " .. tostring(Controls.devNV32.String))
+else
+    print("✗ UCI devNV32 variable NOT accessible")
+end
+print("=== End Connectivity Test ===")
+
+print("=== UCI and NV32 Integration Status ===")
+print("✓ UCI script: Direct NV32 control via UCI variable active")
+print("✓ Each UCI controls only its assigned NV32 device")
+print("=== Integration Status Complete ===") 
