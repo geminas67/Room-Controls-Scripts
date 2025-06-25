@@ -6,18 +6,17 @@
   Version: 1.1
 ]]--
 
---------------------------
--- CLASS DEFINITION
---------------------------
+--------** Class Constructor **--------
 SingleRoomCameraController = {}
 SingleRoomCameraController.__index = SingleRoomCameraController
 
 function SingleRoomCameraController.new(roomName, config)
     local self = setmetatable({}, SingleRoomCameraController)
+    -- Instance properties
     self.roomName = roomName or "Single Room"
     self.debugging = (config and config.debugging) or true
     self.clearString = "[Clear]"
-
+    -- Component references
     self.components = {
         callSync = nil,
         skaarhojPTZController = nil,
@@ -27,13 +26,13 @@ function SingleRoomCameraController.new(roomName, config)
         compRoomControls = nil,
         invalid = {}
     }
-
+    -- State variables
     self.state = {
         hookState = false,
         currentCameraSelection = 1,
         privacyState = false
     }
-
+    -- Configuration
     self.config = {
         buttonColors = {
             presetCalled = 'Blue',
@@ -53,43 +52,48 @@ function SingleRoomCameraController.new(roomName, config)
         initializationDelay = 0.1,
         recalibrationDelay = 1.0
     }
-
     -- Initialize modules
     self:initModules()
     return self
 end
 
---------------------------
--- DEBUG PRINT
---------------------------
+--------** Debug Helper **--------
 function SingleRoomCameraController:debugPrint(str)
     if self.debugging then print("["..self.roomName.." Camera Debug] "..str) end
 end
 
---------------------------
--- SAFE COMPONENT ACCESS (Optimized)
---------------------------
+--------** Safe Component Access **--------
 function SingleRoomCameraController:safeComponentAccess(component, control, action, value)
     local compCtrl = component and component[control]
-    if not compCtrl then return false end
+    if not compCtrl then 
+        return false 
+    end
     local ok, result = pcall(function()
-        if action == "set" then compCtrl.Boolean = value
-        elseif action == "setPosition" then compCtrl.Position = value
-        elseif action == "setString" then compCtrl.String = value
-        elseif action == "trigger" then compCtrl:Trigger()
-        elseif action == "get" then return compCtrl.Boolean
-        elseif action == "getPosition" then return compCtrl.Position
-        elseif action == "getString" then return compCtrl.String
+        if action == "set" then 
+            compCtrl.Boolean = value
+        elseif action == "setPosition" then 
+            compCtrl.Position = value
+        elseif action == "setString" then 
+            compCtrl.String = value
+        elseif action == "trigger" then 
+            compCtrl:Trigger()
+        elseif action == "get" then     
+            return compCtrl.Boolean
+        elseif action == "getPosition" then 
+            return compCtrl.Position
+        elseif action == "getString" then 
+            return compCtrl.String
         end
         return true
     end)
-    if not ok then self:debugPrint("Component access error: "..tostring(result)) end
+
+    if not ok then 
+        self:debugPrint("Component access error: "..tostring(result)) 
+    end
     return ok and result
 end
 
---------------------------
--- MODULE INITIALIZATION
---------------------------
+--------** Initialize Modules **--------
 function SingleRoomCameraController:initModules()
     self:initCameraModule()
     self:initPrivacyModule()
@@ -98,9 +102,7 @@ function SingleRoomCameraController:initModules()
     self:initHookStateModule()
 end
 
---------------------------
--- CAMERA MODULE
---------------------------
+--------** Camera Module **--------
 function SingleRoomCameraController:initCameraModule()
     self.cameraModule = {
         setPrivacy = function(state)
@@ -119,6 +121,7 @@ function SingleRoomCameraController:initCameraModule()
             for _, cam in pairs(self.components.devCams) do
                 if cam then self:safeComponentAccess(cam, "ptz.recalibrate", "set", true) end
             end
+            -- Stop recalibration after delay
             Timer.CallAfter(function()
                 for _, cam in pairs(self.components.devCams) do
                     if cam then self:safeComponentAccess(cam, "ptz.recalibrate", "set", false) end
@@ -133,12 +136,13 @@ function SingleRoomCameraController:initCameraModule()
     }
 end
 
---------------------------
--- PRIVACY MODULE
---------------------------
+--------** Privacy Module **--------
 function SingleRoomCameraController:initPrivacyModule()
     self.privacyModule = {
-        setPrivacy = function(state) self.cameraModule.setPrivacy(state) end,
+        setPrivacy = function(state) 
+            self.cameraModule.setPrivacy(state) 
+            self:debugPrint("Set Privacy to "..tostring(state))
+        end,
         updatePrivacyButton = function()
             local color = self.state.privacyState and self.config.buttonColors.white or self.config.buttonColors.buttonOff
             self:safeComponentAccess(self.components.skaarhojPTZController, "Button6.color", "setString", color)
@@ -146,9 +150,7 @@ function SingleRoomCameraController:initPrivacyModule()
     }
 end
 
---------------------------
--- ROUTING MODULE
---------------------------
+--------** Routing Module **--------
 function SingleRoomCameraController:initRoutingModule()
     local function setRouterOutput(outputNumber, cameraNumber)
         self:safeComponentAccess(self.components.camRouter, "select."..outputNumber, "setString", tostring(cameraNumber))
@@ -160,45 +162,76 @@ function SingleRoomCameraController:initRoutingModule()
         setRouterOutput(4, self.config.defaultCameraRouterSettings.usbB)
     end
     self.routingModule = {
-        setMonitorRouteA = function(cameraNumber) setRouterOutput(1, cameraNumber) end,
-        setMonitorRouteB = function(cameraNumber) setRouterOutput(2, cameraNumber) end,
-        setUSBRouteA = function(cameraNumber) setRouterOutput(3, cameraNumber) end,
-        setUSBRouteB = function(cameraNumber) setRouterOutput(4, cameraNumber) end,
-        clearRoutes = clearRoutes,
+        setMonitorRouteA = function(cameraNumber) 
+            setRouterOutput(1, cameraNumber) 
+            self:debugPrint("Set Monitor Route A to "..cameraNumber)
+        end,
+        setMonitorRouteB = function(cameraNumber) 
+            setRouterOutput(2, cameraNumber) 
+            self:debugPrint("Set Monitor Route B to "..cameraNumber)
+        end,
+        setUSBRouteA = function(cameraNumber) 
+            setRouterOutput(3, cameraNumber) 
+            self:debugPrint("Set USB Route A to "..cameraNumber)
+        end,
+        setUSBRouteB = function(cameraNumber) 
+            setRouterOutput(4, cameraNumber) 
+            self:debugPrint("Set USB Route B to "..cameraNumber)
+        end,
+        clearRoutes = clearRoutes,  
         setAllRoutes = function(cameraNumber)
             for i = 1, 4 do setRouterOutput(i, cameraNumber) end
         end
     }
 end
 
---------------------------
--- PTZ MODULE
---------------------------
+--------** PTZ Module **--------
 function SingleRoomCameraController:initPTZModule()
     local function setButtonProperties(buttonNumber, headerText, screenText, controlLink, color)
         local base = self.components.skaarhojPTZController
-        if not base then return end
-        if headerText then self:safeComponentAccess(base, "Button"..buttonNumber..".headerText", "setString", headerText) end
-        if screenText then self:safeComponentAccess(base, "Button"..buttonNumber..".screenText", "setString", screenText) end
-        if controlLink then self:safeComponentAccess(base, "Button"..buttonNumber..".controlLink", "setString", controlLink) end
-        if color then self:safeComponentAccess(base, "Button"..buttonNumber..".color", "setString", color) end
+        if not base then 
+            self:debugPrint("PTZ Controller not found")
+            return 
+        end
+        if headerText then 
+            self:safeComponentAccess(base, "Button"..buttonNumber..".headerText", "setString", headerText) 
+            self:debugPrint("Set Button"..buttonNumber..".headerText to "..headerText)
+        end
+        if screenText then 
+            self:safeComponentAccess(base, "Button"..buttonNumber..".screenText", "setString", screenText) 
+            self:debugPrint("Set Button"..buttonNumber..".screenText to "..screenText)
+        end
+        if controlLink then 
+            self:safeComponentAccess(base, "Button"..buttonNumber..".controlLink", "setString", controlLink) 
+            self:debugPrint("Set Button"..buttonNumber..".controlLink to "..controlLink)
+        end
+        if color then 
+            self:safeComponentAccess(base, "Button"..buttonNumber..".color", "setString", color) 
+            self:debugPrint("Set Button"..buttonNumber..".color to "..color)
+        end
     end
     self.ptzModule = {
-        enablePC = function() setButtonProperties(8, "Send to PC", nil, nil, self.config.buttonColors.warmWhite) end,
-        disablePC = function() setButtonProperties(8, "", "", "None", self.config.buttonColors.buttonOff) end,
+        enablePC = function() 
+            setButtonProperties(8, "Send to PC", nil, nil, self.config.buttonColors.warmWhite) 
+            self:debugPrint("Enabled PC")
+        end,
+        disablePC = function() 
+            setButtonProperties(8, "", "", "None", self.config.buttonColors.buttonOff) 
+            self:debugPrint("Disabled PC")
+        end,
         setButtonActive = function(buttonNumber, active)
             setButtonProperties(buttonNumber, active and "Active" or "Preview Mon")
+            self:debugPrint("Set Button"..buttonNumber.." to "..(active and "Active" or "Preview Mon"))
         end,
         setCameraLabel = function(buttonNumber, cameraNumber)
             local labels = {["1"]="Cam01", ["2"]="Cam02", ["3"]="Cam03", ["4"]="Cam04", ["5"]="Cam05"}
             setButtonProperties(buttonNumber, nil, labels[tostring(cameraNumber)] or "")
+            self:debugPrint("Set Button"..buttonNumber.." to "..(labels[tostring(cameraNumber)] or ""))
         end
     }
 end
 
---------------------------
--- HOOK STATE MODULE
---------------------------
+--------** Hook State Module **--------
 function SingleRoomCameraController:initHookStateModule()
     self.hookStateModule = {
         setHookState = function(state)
@@ -235,9 +268,7 @@ function SingleRoomCameraController:initHookStateModule()
     }
 end
 
---------------------------
--- COMPONENT MANAGEMENT (Optimized)
---------------------------
+--------** Component Management **--------
 function SingleRoomCameraController:setComponent(ctrl, componentType)
     local componentName = ctrl.String
     if componentName == "" or componentName == self.clearString then
@@ -267,7 +298,7 @@ function SingleRoomCameraController:setComponentValid(componentType)
 end
 
 function SingleRoomCameraController:checkStatus()
-    for _, v in pairs(self.components.invalid) do
+    for i, v in pairs(self.components.invalid) do
         if v == true then
             Controls.txtStatus.String = "Invalid Components"
             Controls.txtStatus.Value = 1
@@ -278,9 +309,7 @@ function SingleRoomCameraController:checkStatus()
     Controls.txtStatus.Value = 0
 end
 
---------------------------
--- COMPONENT SETUP
---------------------------
+--------** Component Setup **--------
 function SingleRoomCameraController:setupComponents()
     self:setCallSyncComponent()
     self:setSkaarhojPTZComponent()
@@ -309,7 +338,9 @@ end
 
 function SingleRoomCameraController:registerSkaarhojComponentButtonHandlers()
     local ptz = self.components.skaarhojPTZController
-    if not ptz then return end
+    if not ptz then 
+        return 
+    end
     for i = 1, 5 do
         local btn = ptz["Button"..i..".press"]
         if btn then
@@ -362,16 +393,12 @@ function SingleRoomCameraController:setCompRoomControlsComponent()
     self.components.compRoomControls = self:setComponent(Controls.compRoomControls, "Room Controls")
 end
 
---------------------------
--- PRIVACY VISUALS
---------------------------
+--------** Privacy Visuals **--------
 function SingleRoomCameraController:updatePrivacyVisuals()
     self.privacyModule.updatePrivacyButton()
 end
 
---------------------------
--- SYSTEM INITIALIZATION (Optimized)
---------------------------
+--------** System Initialization **--------
 function SingleRoomCameraController:performSystemInitialization()
     self:debugPrint("Performing system initialization")
     self.cameraModule.recalibratePTZ()
@@ -386,9 +413,7 @@ function SingleRoomCameraController:performSystemInitialization()
     end, self.config.recalibrationDelay)
 end
 
---------------------------
--- COMPONENT NAME DISCOVERY
---------------------------
+--------** Component Name Discovery **--------
 function SingleRoomCameraController:getComponentNames()
     local namesTable = {
         CallSyncNames = {},
@@ -415,31 +440,68 @@ function SingleRoomCameraController:getComponentNames()
             end
         end
     end
-    for _, list in pairs(namesTable) do table.sort(list); table.insert(list, self.clearString) end
-    if Controls.compCallSync then Controls.compCallSync.Choices = namesTable.CallSyncNames end
-    if Controls.compdevSkaarhojPTZ then Controls.compdevSkaarhojPTZ.Choices = namesTable.SkaarhojPTZNames end
-    if Controls.compcamRouter then Controls.compcamRouter.Choices = namesTable.CamRouterNames end
-    if Controls.compdevCams then
-        for i, v in ipairs(Controls.compdevCams) do v.Choices = namesTable.DevCamNames end
+    for _, list in pairs(namesTable) do 
+        table.sort(list)
+        table.insert(list, self.clearString)
     end
-    if Controls.compcamACPR then Controls.compcamACPR.Choices = namesTable.CamACPRNames end
-    if Controls.compRoomControls then Controls.compRoomControls.Choices = namesTable.CompRoomControlsNames end
+    if Controls.compCallSync then 
+        Controls.compCallSync.Choices = namesTable.CallSyncNames 
+    end
+    if Controls.compdevSkaarhojPTZ then 
+        Controls.compdevSkaarhojPTZ.Choices = namesTable.SkaarhojPTZNames 
+    end
+    if Controls.compcamRouter then 
+        Controls.compcamRouter.Choices = namesTable.CamRouterNames 
+    end
+    if Controls.compdevCams then
+        for i, v in ipairs(Controls.compdevCams) do 
+            v.Choices = namesTable.DevCamNames     
+        end
+    end
+    if Controls.compcamACPR then 
+        Controls.compcamACPR.Choices = namesTable.CamACPRNames 
+    end
+    if Controls.compRoomControls then 
+        Controls.compRoomControls.Choices = namesTable.CompRoomControlsNames 
+    end
 end
 
---------------------------
--- EVENT HANDLER REGISTRATION
---------------------------
+--------** Event Handler Registration **--------
 function SingleRoomCameraController:registerEventHandlers()
-    if Controls.compCallSync then Controls.compCallSync.EventHandler = function() self:setCallSyncComponent() end end
-    if Controls.compdevSkaarhojPTZ then Controls.compdevSkaarhojPTZ.EventHandler = function() self:setSkaarhojPTZComponent() end end
-    if Controls.compcamRouter then Controls.compcamRouter.EventHandler = function() self:setCamRouterComponent() end end
+    if Controls.compCallSync then 
+        Controls.compCallSync.EventHandler = function() 
+            self:setCallSyncComponent() 
+        end 
+    end
+    if Controls.compdevSkaarhojPTZ then 
+        Controls.compdevSkaarhojPTZ.EventHandler = function() 
+            self:setSkaarhojPTZComponent() 
+            self:registerSkaarhojComponentButtonHandlers()
+        end 
+    end
+    if Controls.compcamRouter then 
+        Controls.compcamRouter.EventHandler = function() 
+            self:setCamRouterComponent() 
+            self:registerCamRouterComponentButtonHandlers()
+        end 
+    end
     if Controls.compdevCams then
         for i, devCamComp in ipairs(Controls.compdevCams) do
             devCamComp.EventHandler = function() self:setDevCamComponent(i) end
         end
     end
-    if Controls.compcamACPR then Controls.compcamACPR.EventHandler = function() self:setCamACPRComponent() end end
-    if Controls.compRoomControls then Controls.compRoomControls.EventHandler = function() self:setCompRoomControlsComponent() end end
+    if Controls.compcamACPR then 
+        Controls.compcamACPR.EventHandler = function() 
+            self:setCamACPRComponent() 
+            self:registerCamACPRComponentButtonHandlers()
+        end 
+    end
+    if Controls.compRoomControls then 
+        Controls.compRoomControls.EventHandler = function() 
+            self:setCompRoomControlsComponent() 
+            self:registerCompRoomControlsComponentButtonHandlers()
+        end 
+    end
     if Controls.btnProductionMode then
         Controls.btnProductionMode.EventHandler = function()
             if self.components.camACPR then
@@ -452,9 +514,7 @@ function SingleRoomCameraController:registerEventHandlers()
     end
 end
 
---------------------------
--- INITIALIZATION
---------------------------
+--------** Initialization **--------
 function SingleRoomCameraController:funcInit()
     self:debugPrint("Starting Single Room Camera Controller initialization...")
     self:getComponentNames()
@@ -464,9 +524,7 @@ function SingleRoomCameraController:funcInit()
     self:debugPrint("Single Room Camera Controller Initialized with "..self.cameraModule.getCameraCount().." cameras")
 end
 
---------------------------
--- FACTORY FUNCTION
---------------------------
+--------** Factory Function **--------
 local function createSingleRoomController(roomName, config)
     print("Creating Single Room Camera Controller for: "..tostring(roomName))
     local success, controller = pcall(function()
@@ -483,9 +541,7 @@ local function createSingleRoomController(roomName, config)
     end
 end
 
---------------------------
--- INSTANCE CREATION
---------------------------
+--------** Instance Creation **--------
 if not Controls.roomName then
     print("ERROR: Controls.roomName not found!")
     return
