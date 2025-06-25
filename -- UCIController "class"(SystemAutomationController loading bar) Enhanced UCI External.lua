@@ -1294,6 +1294,50 @@ local function setupDirectNV32Control()
         [9] = 6  -- btnNav09 → HDMI3 (Input 6)
     }
     
+    -- Try multiple possible NV32 device variable names
+    local nv32DeviceName = nil
+    local possibleNV32Variables = {
+        "devNV32",
+        "codenameNV32", 
+        "varNV32CodeName",
+        "nv32Device",
+        "nv32Component"
+    }
+    
+    -- Check for existing NV32 device variable
+    for _, varName in ipairs(possibleNV32Variables) do
+        if Controls[varName] then
+            print("✓ Found UCI variable: " .. varName)
+            if Controls[varName].String and Controls[varName].String ~= "" then
+                nv32DeviceName = Controls[varName].String
+                print("✓ Found NV32 device variable: " .. varName .. " = " .. nv32DeviceName)
+                break
+            else
+                print("⚠ Variable '" .. varName .. "' exists but is empty or has no String property")
+            end
+        else
+            print("✗ UCI variable '" .. varName .. "' not found")
+        end
+    end
+    
+    -- If no variable found, try to auto-discover NV32 devices
+    if not nv32DeviceName then
+        print("⚠ No NV32 device variable found. Attempting auto-discovery...")
+        local nv32Devices = {}
+        for _, comp in pairs(Component.GetComponents()) do
+            if comp.Type == "streamer_hdmi_switcher" then
+                table.insert(nv32Devices, comp.Name)
+            end
+        end
+        
+        if #nv32Devices > 0 then
+            nv32DeviceName = nv32Devices[1] -- Use first found device
+            print("✓ Auto-discovered NV32 device: " .. nv32DeviceName)
+        else
+            print("⚠ No NV32 devices found in system")
+        end
+    end
+    
     -- Store previous button states to detect changes
     local previousButtonStates = {}
     
@@ -1310,17 +1354,17 @@ local function setupDirectNV32Control()
                 if currentState and not previousState then
                     print("UCI Button " .. uciButton .. " pressed, switching NV32 to input " .. nv32Input)
                     
-                    -- Control NV32 using UCI variable
-                    if Controls.devNV32 and Controls.devNV32.String and Controls.devNV32.String ~= "" then
+                    -- Control NV32 using discovered device name
+                    if nv32DeviceName then
                         local success, nv32Component = pcall(function()
-                            return Component.New(Controls.devNV32.String)
+                            return Component.New(nv32DeviceName)
                         end)
                         if success and nv32Component then
                             local routeSuccess, routeErr = pcall(function()
                                 nv32Component["hdmi.out.1.select.index"].Value = nv32Input
                             end)
                             if routeSuccess then
-                                print("✓ NV32 controlled: Set Output 1 to Input " .. nv32Input .. " on " .. Controls.devNV32.String)
+                                print("✓ NV32 controlled: Set Output 1 to Input " .. nv32Input .. " on " .. nv32DeviceName)
                             else
                                 print("⚠ Failed to set NV32 route: " .. tostring(routeErr))
                             end
@@ -1328,7 +1372,8 @@ local function setupDirectNV32Control()
                             print("⚠ Failed to create NV32 component: " .. tostring(nv32Component))
                         end
                     else
-                        print("⚠ NV32 device not selected in UCI variable devNV32")
+                        print("⚠ NV32 device not available - please add a UCI variable named 'devNV32' with your NV32 device name")
+                        print("   Example: Add UCI variable 'devNV32' = 'NV32-H-01'")
                     end
                 end
                 
@@ -1361,12 +1406,75 @@ for i = 7, 9 do
     end
 end
 
--- Test NV32 variable
+-- Test NV32 variable and provide setup instructions
+print("=== Testing NV32 Device Availability ===")
+local nv32Found = false
+local possibleNV32Variables = {"devNV32", "codenameNV32", "varNV32CodeName", "nv32Device", "nv32Component"}
+
+-- Special debug for devNV32
+print("=== Special Debug for devNV32 ===")
 if Controls.devNV32 then
-    print("✓ UCI devNV32 variable accessible: " .. tostring(Controls.devNV32.String))
+    print("✓ Controls.devNV32 exists")
+    print("   Type: " .. type(Controls.devNV32))
+    print("   String property exists: " .. tostring(Controls.devNV32.String ~= nil))
+    if Controls.devNV32.String then
+        print("   String value: '" .. Controls.devNV32.String .. "'")
+        if Controls.devNV32.String ~= "" then
+            print("✓ devNV32 has valid device name: " .. Controls.devNV32.String)
+            nv32Found = true
+        else
+            print("⚠ devNV32 exists but is empty")
+        end
+    else
+        print("⚠ devNV32.String is nil")
+    end
 else
-    print("✗ UCI devNV32 variable NOT accessible")
+    print("✗ Controls.devNV32 does not exist")
 end
+print("=== End Special Debug ===")
+
+for _, varName in ipairs(possibleNV32Variables) do
+    if Controls[varName] then
+        print("✓ UCI variable '" .. varName .. "' found")
+        if Controls[varName].String and Controls[varName].String ~= "" then
+            print("✓ NV32 device set: " .. Controls[varName].String)
+            nv32Found = true
+        else
+            print("⚠ Variable '" .. varName .. "' exists but is empty or has no String property")
+        end
+    else
+        print("✗ UCI variable '" .. varName .. "' not found")
+    end
+end
+
+if not nv32Found then
+    print("⚠ No NV32 device variable found or configured")
+    print("📋 SETUP INSTRUCTIONS:")
+    print("   1. In Q-SYS Designer, open your UCI design")
+    print("   2. Go to 'UCI Variables' section")
+    print("   3. Add a new String variable named 'devNV32'")
+    print("   4. Set its value to your NV32 device name (e.g., 'NV32-H-01')")
+    print("   5. Save and reload the UCI")
+    print("   OR use one of these alternative variable names: codenameNV32, varNV32CodeName")
+end
+
+-- Test for NV32 devices in system
+local nv32Devices = {}
+for _, comp in pairs(Component.GetComponents()) do
+    if comp.Type == "streamer_hdmi_switcher" then
+        table.insert(nv32Devices, comp.Name)
+    end
+end
+
+if #nv32Devices > 0 then
+    print("✓ Found " .. #nv32Devices .. " NV32 device(s) in system:")
+    for _, device in ipairs(nv32Devices) do
+        print("   - " .. device)
+    end
+else
+    print("⚠ No NV32 devices found in system")
+end
+
 print("=== End Connectivity Test ===")
 
 print("=== UCI and NV32 Integration Status ===")

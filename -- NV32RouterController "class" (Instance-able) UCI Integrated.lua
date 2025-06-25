@@ -23,11 +23,14 @@ NV32RouterController = {}
 NV32RouterController.__index = NV32RouterController
 
 --------** Class Constructor **--------
-function NV32RouterController.new()
+function NV32RouterController.new(config)
     local self = setmetatable({}, NV32RouterController)
     
+    -- Apply configuration
+    local config = config or {}
+    
     -- Instance properties
-    self.debugging = true
+    self.debugging = config.debugging or true
     self.clearString = "[Clear]"
     self.invalidComponents = {}
     self.lastInput = {} -- Store the last input for each output
@@ -356,5 +359,3 @@ UCI Integration:
 - No script-to-script communication required
 - Each UCI controls only its assigned NV32 device
 ]]-- 
-
-myNV32RouterController.debugging = true 

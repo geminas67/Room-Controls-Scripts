@@ -6,6 +6,7 @@
   Version: 1.0
 
   Class-based implementation maintaining simplicity of functional approach
+  Enhanced with UCI integration for automatic input switching based on UCI layer
 ]]--
 
 -- Define control references
@@ -32,6 +33,11 @@ function NV32RouterController.new()
     self.lastInput = {} -- Store the last input for each output
     self.preFireAlarmInput = {}
     self.fireAlarmActive = false
+    
+    -- UCI Integration properties
+    self.uciController = nil
+    self.uciIntegrationEnabled = true
+    self.lastUCILayer = nil
     
     -- Input/Output mapping
     self.inputs = {
@@ -60,15 +66,19 @@ function NV32RouterController.new()
         self.inputs.Graphic2
     }
     
+    -- UCI Layer to Input mapping
+    self.uciLayerToInput = {
+        [7] = self.uciInputs[2], -- btnNav07.Boolean = HDMI2 (Graphic2)
+        [8] = self.uciInputs[1], -- btnNav08.Boolean = HDMI1 (Graphic1) 
+        [9] = self.uciInputs[3], -- btnNav09.Boolean = HDMI3 (Graphic3)
+    }
+    
     -- Instance-specific control references
     self.controls = controls
     
     -- Component storage
-    self.components = {
-        nv32Router = nil,
-        roomControls = nil,
-        invalid = {}
-    }
+    self.nv32Router = nil
+    self.roomControls = nil
     
     -- Setup event handlers and initialize
     self:registerEventHandlers()
@@ -81,6 +91,113 @@ end
 function NV32RouterController:debugPrint(str)
     if self.debugging then
         print("[NV32 Router Debug] " .. str)
+    end
+end
+
+--------** UCI Integration Methods **--------
+function NV32RouterController:setUCIController(uciController)
+    self.uciController = uciController
+    self:debugPrint("UCI Controller reference set")
+    
+    -- Start monitoring UCI layer changes
+    if self.uciIntegrationEnabled then
+        self:startUCIMonitoring()
+    end
+end
+
+function NV32RouterController:startUCIMonitoring()
+    if not self.uciController then
+        self:debugPrint("No UCI Controller available for monitoring")
+        return
+    end
+    
+    -- Create a timer to monitor UCI layer changes
+    self.uciMonitorTimer = Timer.New()
+    self.uciMonitorTimer.EventHandler = function()
+        self:checkUCILayerChange()
+        self.uciMonitorTimer:Start(0.1) -- Check every 100ms
+    end
+    self.uciMonitorTimer:Start(0.1)
+    
+    self:debugPrint("UCI layer monitoring started")
+end
+
+function NV32RouterController:checkUCILayerChange()
+    if not self.uciController or not self.uciIntegrationEnabled then
+        return
+    end
+    
+    local currentLayer = self.uciController.varActiveLayer
+    
+    -- Check if layer has changed
+    if self.lastUCILayer ~= currentLayer then
+        self:debugPrint("UCI Layer changed from " .. tostring(self.lastUCILayer) .. " to " .. tostring(currentLayer))
+        self.lastUCILayer = currentLayer
+        
+        -- Check if this layer should trigger input switching
+        if self.uciLayerToInput[currentLayer] then
+            local targetInput = self.uciLayerToInput[currentLayer]
+            self:debugPrint("UCI Layer " .. currentLayer .. " triggers input switch to " .. targetInput)
+            self:setRoute(targetInput, self.outputs.OUTPUT1)
+        end
+    end
+end
+
+function NV32RouterController:enableUCIIntegration()
+    self.uciIntegrationEnabled = true
+    if self.uciController then
+        self:startUCIMonitoring()
+    end
+    self:debugPrint("UCI Integration enabled")
+end
+
+function NV32RouterController:disableUCIIntegration()
+    self.uciIntegrationEnabled = false
+    if self.uciMonitorTimer then
+        self.uciMonitorTimer:Stop()
+        self.uciMonitorTimer = nil
+    end
+    self:debugPrint("UCI Integration disabled")
+end
+
+-- Alternative method: Direct UCI button monitoring
+function NV32RouterController:setupDirectUCIButtonMonitoring()
+    -- Monitor UCI navigation buttons directly
+    local uciButtons = {
+        [7] = Controls.btnNav07,
+        [8] = Controls.btnNav08,
+        [9] = Controls.btnNav09
+    }
+    
+    for layer, button in pairs(uciButtons) do
+        if button then
+            button.EventHandler = function(ctl)
+                if ctl.Boolean and self.uciLayerToInput[layer] then
+                    local targetInput = self.uciLayerToInput[layer]
+                    self:debugPrint("UCI Button " .. layer .. " pressed, switching to input " .. targetInput)
+                    self:setRoute(targetInput, self.outputs.OUTPUT1)
+                end
+            end
+            self:debugPrint("Direct monitoring set up for UCI button " .. layer)
+        end
+    end
+end
+
+-- UCI Layer Change Notification Method
+function NV32RouterController:onUCILayerChange(layerChangeInfo)
+    if not self.uciIntegrationEnabled then
+        return
+    end
+    
+    self:debugPrint("UCI Layer changed from " .. tostring(layerChangeInfo.previousLayer) .. 
+                   " to " .. tostring(layerChangeInfo.currentLayer) .. 
+                   " (" .. layerChangeInfo.layerName .. ")")
+    
+    -- Check if this layer should trigger input switching
+    if self.uciLayerToInput[layerChangeInfo.currentLayer] then
+        local targetInput = self.uciLayerToInput[layerChangeInfo.currentLayer]
+        self:debugPrint("UCI Layer " .. layerChangeInfo.currentLayer .. " triggers input switch to " .. targetInput)
+        self:setRoute(targetInput, self.outputs.OUTPUT1)
     end
 end
 
@@ -164,21 +281,21 @@ end
 --------** Component Setup **--------
 function NV32RouterController:setNV32RouterComponent()
     -- Clean up old event handlers if switching devices
-    if self.components.nv32Router then
-        if self.components.nv32Router["hdmi.out.1.select.index"].EventHandler then
-            self.components.nv32Router["hdmi.out.1.select.index"].EventHandler = nil
+    if self.nv32Router then
+        if self.nv32Router["hdmi.out.1.select.index"].EventHandler then
+            self.nv32Router["hdmi.out.1.select.index"].EventHandler = nil
         end
-        if self.components.nv32Router["hdmi.out.2.select.index"].EventHandler then
-            self.components.nv32Router["hdmi.out.2.select.index"].EventHandler = nil
+        if self.nv32Router["hdmi.out.2.select.index"].EventHandler then
+            self.nv32Router["hdmi.out.2.select.index"].EventHandler = nil
         end
         self:debugPrint("Cleanup completed to due to switching devices")
     end
 
     -- Now assign the new device
-    self.components.nv32Router = self:setComponent(self.controls.devNV32, "NV32-H")
-    if self.components.nv32Router ~= nil then
+    self.nv32Router = self:setComponent(self.controls.devNV32, "NV32-H")
+    if self.nv32Router ~= nil then
         -- Add real-time feedback handler for Output 1
-        self.components.nv32Router["hdmi.out.1.select.index"].EventHandler = function(ctl)
+        self.nv32Router["hdmi.out.1.select.index"].EventHandler = function(ctl)
             for i, btn in ipairs(self.controls.btnNV32Out01) do
                 btn.Boolean = (self.uciInputs[i] == ctl.Value)
             end
@@ -186,7 +303,7 @@ function NV32RouterController:setNV32RouterComponent()
         end
 
         -- Add real-time feedback handler for Output 2
-        self.components.nv32Router["hdmi.out.2.select.index"].EventHandler = function(ctl)
+        self.nv32Router["hdmi.out.2.select.index"].EventHandler = function(ctl)
             for i, btn in ipairs(self.controls.btnNV32Out02) do
                 btn.Boolean = (self.uciInputs[i] == ctl.Value)
             end
@@ -196,12 +313,12 @@ function NV32RouterController:setNV32RouterComponent()
 end
 
 function NV32RouterController:setRoomControlsComponent()
-    self.components.roomControls = self:setComponent(self.controls.compRoomControls, "Room Controls")
-    if self.components.roomControls ~= nil then
+    self.roomControls = self:setComponent(self.controls.compRoomControls, "Room Controls")
+    if self.roomControls ~= nil then
         -- Add event handlers for system power and fire alarm
         local this = self  -- Capture self for use in handlers
 
-        self.components.roomControls["ledSystemPower"].EventHandler = function(ctl)
+        self.roomControls["ledSystemPower"].EventHandler = function(ctl)
             if ctl.Boolean then
                 this:setRoute(this.uciInputs[1], this.outputs.OUTPUT1)
                 this:setRoute(this.uciInputs[1], this.outputs.OUTPUT2)
@@ -211,7 +328,7 @@ function NV32RouterController:setRoomControlsComponent()
             end
         end
         -- Fire alarm active: store the last input before override
-        self.components.roomControls["ledFireAlarm"].EventHandler = function(ctl)
+        self.roomControls["ledFireAlarm"].EventHandler = function(ctl)
             if ctl.Boolean and not this.fireAlarmActive then
                 -- Fire alarm just activated: store the last input before override
                 this.preFireAlarmInput = this.preFireAlarmInput or {}
@@ -224,7 +341,7 @@ function NV32RouterController:setRoomControlsComponent()
             elseif not ctl.Boolean and this.fireAlarmActive then
                 -- Fire alarm just cleared: restore previous input
                 this.fireAlarmActive = false
-                if this.components.roomControls["ledSystemPower"].Boolean then
+                if this.roomControls["ledSystemPower"].Boolean then
                     this:setRoute(this.preFireAlarmInput[this.outputs.OUTPUT1] or this.uciInputs[1], this.outputs.OUTPUT1)
                     this:setRoute(this.preFireAlarmInput[this.outputs.OUTPUT2] or this.uciInputs[1], this.outputs.OUTPUT2)
                 end
@@ -238,8 +355,8 @@ end
 
 --------** Video Routing Functions **--------
 function NV32RouterController:setRoute(input, output)
-    if self.components.nv32Router then
-        self.components.nv32Router["hdmi.out."..tostring(output)..".select.index"].Value = input
+    if self.nv32Router then
+        self.nv32Router["hdmi.out."..tostring(output)..".select.index"].Value = input
         self:debugPrint("Set Output "..tostring(output).." to Input "..tostring(input))
         -- Track the last input for this output
         self.lastInput[output] = input
@@ -271,6 +388,9 @@ function NV32RouterController:registerEventHandlers()
             self:setRoute(self.uciInputs[i], self.outputs.OUTPUT2)
         end
     end
+    
+    -- Set up direct UCI button monitoring as an alternative to timer-based monitoring
+    self:setupDirectUCIButtonMonitoring()
 end
 
 --------** Initialization **--------
@@ -281,7 +401,7 @@ function NV32RouterController:funcInit()
     self:setRoomControlsComponent()
     
     -- Set default selection to first input (HDMI1) for both outputs
-    if self.components.nv32Router then
+    if self.nv32Router then
         self:setRoute(self.uciInputs[1], self.outputs.OUTPUT1)
         self:setRoute(self.uciInputs[1], self.outputs.OUTPUT2)
     end
@@ -291,23 +411,32 @@ end
 
 --------** Cleanup **--------
 function NV32RouterController:cleanup()
-    if self.components.nv32Router then
-        if self.components.nv32Router["hdmi.out.1.select.index"].EventHandler then
-            self.components.nv32Router["hdmi.out.1.select.index"].EventHandler = nil
+    -- Stop UCI monitoring timer
+    if self.uciMonitorTimer then
+        self.uciMonitorTimer:Stop()
+        self.uciMonitorTimer = nil
+    end
+    
+    if self.nv32Router then
+        if self.nv32Router["hdmi.out.1.select.index"].EventHandler then
+            self.nv32Router["hdmi.out.1.select.index"].EventHandler = nil
         end
-        if self.components.nv32Router["hdmi.out.2.select.index"].EventHandler then
-            self.components.nv32Router["hdmi.out.2.select.index"].EventHandler = nil
+        if self.nv32Router["hdmi.out.2.select.index"].EventHandler then
+            self.nv32Router["hdmi.out.2.select.index"].EventHandler = nil
         end
     end
     
-    if self.components.roomControls then
-        if self.components.roomControls["ledSystemPower"].EventHandler then
-            self.components.roomControls["ledSystemPower"].EventHandler = nil
+    if self.roomControls then
+        if self.roomControls["ledSystemPower"].EventHandler then
+            self.roomControls["ledSystemPower"].EventHandler = nil
         end
-        if self.components.roomControls["ledFireAlarm"].EventHandler then
-            self.components.roomControls["ledFireAlarm"].EventHandler = nil
+        if self.roomControls["ledFireAlarm"].EventHandler then
+            self.roomControls["ledFireAlarm"].EventHandler = nil
         end
     end
+    
+    -- Clear UCI controller reference
+    self.uciController = nil
     
     self:debugPrint("Cleanup completed")
 end
@@ -344,4 +473,13 @@ Usage:
 - Replace 'INSTANCE' in the controls table with your unique suffix for each instance.
 - Paste the customized script into each Text Controller instance.
 - Each instance will only control its own NV32 device and controls, with no risk of cross-talk.
+
+UCI Integration:
+- The controller now automatically monitors UCI navigation buttons (btnNav07, btnNav08, btnNav09)
+- When these buttons are active, it automatically switches the NV32 input accordingly:
+  * btnNav07.Boolean = true → switches to HDMI2 (Graphic2)
+  * btnNav08.Boolean = true → switches to HDMI1 (Graphic1)  
+  * btnNav09.Boolean = true → switches to HDMI3 (Graphic3)
+- You can also manually set the UCI controller reference using: myNV32RouterController:setUCIController(myUCI)
+- UCI integration can be enabled/disabled using enableUCIIntegration() and disableUCIIntegration()
 ]]--

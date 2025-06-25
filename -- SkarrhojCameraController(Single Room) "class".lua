@@ -7,9 +7,10 @@
   
   Simplified for single room operation with 5 cameras
   Camera Router Control Scheme:
-  - select.1 = Monitor Output
-  - select.2 = USB Output PC A
-  - select.3 = USB Output PC B
+  - select.1 = Monitor A Output
+  - select.2 = Monitor B Output
+  - select.3 = USB A Output PC A
+  - select.4 = USB B Output PC B
   Self-initializing script with automatic system setup on load
 ]]--
 
@@ -53,17 +54,20 @@ function SingleRoomCameraController.new(roomName, config)
             buttonOff = 'Off',
             warmWhite = 'Warm White',
             purple = 'Purple',
+            white = 'White',
             red = 'Red'
         },
         defaultCameraRouterSettings = {
-            monitor = '5',
-            usbA = '5',
-            usbB = '5'
+            monitorA = '6',
+            monitorB = '6',
+            usbA = '6',
+            usbB = '6'
         },
         -- Camera Router Select Control Mapping:
-        -- select.1 = Monitor Output
-        -- select.2 = USB Output PC A
-        -- select.3 = USB Output PC B
+        -- select.1 = Monitor A Output  
+        -- select.2 = Monitor B Output
+        -- select.3 = USB A Output PC A
+        -- select.4 = USB B Output PC B
         initializationDelay = 0.1,
         recalibrationDelay = 1.0
     }
@@ -176,7 +180,7 @@ function SingleRoomCameraController:initPrivacyModule()
         
         updatePrivacyButton = function()
             if self.state.privacyState then
-                self:safeComponentAccess(self.components.skaarhojPTZController, "Button6.color", "setString", self.config.buttonColors.red)
+                self:safeComponentAccess(self.components.skaarhojPTZController, "Button6.color", "setString", self.config.buttonColors.white)
             else
                 self:safeComponentAccess(self.components.skaarhojPTZController, "Button6.color", "setString", self.config.buttonColors.buttonOff)
             end
@@ -193,22 +197,27 @@ function SingleRoomCameraController:initRoutingModule()
     
     -- Helper function to clear router outputs
     local function clearRoutes()
-        setRouterOutput(1, self.config.defaultCameraRouterSettings.monitor)
-        setRouterOutput(2, self.config.defaultCameraRouterSettings.usbA)
-        setRouterOutput(3, self.config.defaultCameraRouterSettings.usbB)
+        setRouterOutput(1, self.config.defaultCameraRouterSettings.monitorA)
+        setRouterOutput(2, self.config.defaultCameraRouterSettings.monitorB)
+        setRouterOutput(3, self.config.defaultCameraRouterSettings.usbA)
+        setRouterOutput(4, self.config.defaultCameraRouterSettings.usbB)
     end
 
     self.routingModule = {
-        setMonitorRoute = function(cameraNumber)
+        setMonitorRouteA = function(cameraNumber)
             setRouterOutput(1, cameraNumber)
         end,
-        
-        setUSBRouteA = function(cameraNumber)
+
+        setMonitorRouteB = function(cameraNumber)
             setRouterOutput(2, cameraNumber)
         end,
         
-        setUSBRouteB = function(cameraNumber)
+        setUSBRouteA = function(cameraNumber)
             setRouterOutput(3, cameraNumber)
+        end,
+        
+        setUSBRouteB = function(cameraNumber)
+            setRouterOutput(4, cameraNumber)
         end,
         
         clearRoutes = function()
@@ -219,6 +228,7 @@ function SingleRoomCameraController:initRoutingModule()
             setRouterOutput(1, cameraNumber)
             setRouterOutput(2, cameraNumber)
             setRouterOutput(3, cameraNumber)
+            setRouterOutput(4, cameraNumber)
         end
     }
 end
@@ -257,11 +267,11 @@ function SingleRoomCameraController:initPTZModule()
         
         setCameraLabel = function(buttonNumber, cameraNumber)
             local cameraLabels = {
-                ["1"] = "CAM-01",
-                ["2"] = "CAM-02", 
-                ["3"] = "CAM-03",
-                ["4"] = "CAM-04",
-                ["5"] = "CAM-05"
+                ["1"] = "Cam01",
+                ["2"] = "Cam02", 
+                ["3"] = "Cam03",
+                ["4"] = "Cam04",
+                ["5"] = "Cam05"
             }
             local label = cameraLabels[tostring(cameraNumber)] or ""
             setButtonProperties(buttonNumber, nil, label)
@@ -291,11 +301,20 @@ function SingleRoomCameraController:initHookStateModule()
         handleHookState = function(isOffHook)
             self.hookStateModule.setHookState(isOffHook)
             if isOffHook then
+                if self.components.skaarhojPTZController and self.components.skaarhojPTZController["Button8"] then
+                    self:safeComponentAccess(self.components.skaarhojPTZController, "Button8.color", "setString", "Warm White")
+                    self:safeComponentAccess(self.components.skaarhojPTZController, "Button8.headerText", "setString", "Send to PC")
+                end
                 if self.components.camACPR then
                     self:safeComponentAccess(self.components.camACPR, "CameraRouterOutput", "setString", "01")
                 end
                 if self.components.compRoomControls then
                     self:safeComponentAccess(self.components.compRoomControls, "CameraRouterOutput", "setString", "01")
+                end
+            else    
+                if self.components.skaarhojPTZController and self.components.skaarhojPTZController["Button8"] then
+                    self:safeComponentAccess(self.components.skaarhojPTZController, "Button8.color", "setString", "Off")
+                    self:safeComponentAccess(self.components.skaarhojPTZController, "Button8.headerText", "setString", "Off")
                 end
             end
         end
@@ -367,6 +386,104 @@ end
 
 function SingleRoomCameraController:setSkaarhojPTZComponent()
     self.components.skaarhojPTZController = self:setComponent(Controls.compdevSkaarhojPTZ, "Skaarhoj PTZ Controller")
+    self:registerSkaarhojComponentButtonHandlers()
+end
+
+function SingleRoomCameraController:registerSkaarhojComponentButtonHandlers()
+    if not self.components.skaarhojPTZController then
+        self:debugPrint("Skaarhoj PTZ Controller component not set!")
+        return
+    end
+
+    -- Button 1-5 handlers
+    for i = 1, 5 do
+        local btnPress = self.components.skaarhojPTZController["Button" .. i .. ".press"]
+        if btnPress then
+            btnPress.EventHandler = function(ctl)
+                self:debugPrint("Component-level: Button" .. i .. " pressed!")
+                -- Set header text to Active
+                self:safeComponentAccess(self.components.skaarhojPTZController, "Button" .. i .. ".headerText", "setString", "Active")
+                -- Set camera router outputs
+                if self.components.camRouter then
+                    local camIndex = tostring(i)
+                    self:safeComponentAccess(self.components.camRouter, "select.1", "setString", camIndex)
+                    self:safeComponentAccess(self.components.camRouter, "select.2", "setString", camIndex)
+                    self:debugPrint("Set select.1 and select.2 to " .. camIndex)
+                end
+            end
+        else
+            self:debugPrint("Component-level: Button" .. i .. ".press not found")
+        end
+    end
+
+    -- Button8 special handler
+    local btn8Press = self.components.skaarhojPTZController["Button8.press"]
+    if btn8Press then
+        btn8Press.EventHandler = function(ctl)
+            self:debugPrint("Component-level: Button8 pressed!")
+            if self.components.callSync and self.components.callSync["off.hook"] and self.components.callSync["off.hook"].Boolean then
+                self:debugPrint("off.hook is TRUE, routing USB outputs to match select.1")
+                if self.components.camRouter then
+                    local currentValue = nil
+                    if self.components.camRouter["select.1"] and self.components.camRouter["select.1"].String then
+                        currentValue = self.components.camRouter["select.1"].String
+                    end
+                    if currentValue then
+                        self:safeComponentAccess(self.components.camRouter, "select.3", "setString", currentValue)
+                        self:safeComponentAccess(self.components.camRouter, "select.4", "setString", currentValue)
+                        self:debugPrint("Set select.3 and select.4 to " .. tostring(currentValue))
+                        -- Set Button8.screenText to the screenText of the currently selected button
+                        local selectedButtonScreenText = nil
+                        if self.components.skaarhojPTZController["Button" .. currentValue .. ".screenText"] then
+                            selectedButtonScreenText = self.components.skaarhojPTZController["Button" .. currentValue .. ".screenText"].String
+                        end
+                        if selectedButtonScreenText then
+                            self:safeComponentAccess(self.components.skaarhojPTZController, "Button8.screenText", "setString", selectedButtonScreenText)
+                            self:debugPrint("Set Button8.screenText to " .. tostring(selectedButtonScreenText))
+                        else
+                            self:debugPrint("Could not read selected button's screenText")
+                        end
+                    else
+                        self:debugPrint("Could not read select.1 value")
+                    end
+                end
+            else
+                self:debugPrint("off.hook is FALSE, not routing USB outputs")
+            end
+        end
+    else
+        self:debugPrint("Component-level: Button8.press not found")
+    end
+end
+
+function SingleRoomCameraController:handleSkaarhojButtonPress(buttonNumber)
+    self:debugPrint("Skaarhoj Button" .. buttonNumber .. " pressed - setting camera router selections")
+    
+    -- Set both select.1 and select.2 to the camera number corresponding to the button
+    if self.components.camRouter then
+        self:debugPrint("camRouter component is valid. Attempting to set select.1 and select.2...")
+        -- Set Monitor A (select.1) to the camera number
+        local result1 = self:safeComponentAccess(self.components.camRouter, "select.1", "setString", tostring(buttonNumber))
+        self:debugPrint("Result of setting select.1: " .. tostring(result1))
+        
+        -- Set Monitor B (select.2) to the camera number
+        local result2 = self:safeComponentAccess(self.components.camRouter, "select.2", "setString", tostring(buttonNumber))
+        self:debugPrint("Result of setting select.2: " .. tostring(result2))
+        
+        self:debugPrint("Set compcamRouter select.1 and select.2 to camera " .. buttonNumber)
+        
+        -- Update button visual state to show it's active
+        self.ptzModule.setButtonActive(buttonNumber, true)
+        
+        -- Set other buttons to inactive
+        for i = 1, 5 do
+            if i ~= buttonNumber then
+                self.ptzModule.setButtonActive(i, false)
+            end
+        end
+    else
+        self:debugPrint("ERROR: Camera router component not available")
+    end
 end
 
 function SingleRoomCameraController:setCamRouterComponent()
@@ -379,7 +496,7 @@ function SingleRoomCameraController:setDevCamComponent(idx)
         return
     end
     
-    local cameraLabels = {[1] = "CAM-01", [2] = "CAM-02", [3] = "CAM-03", [4] = "CAM-04", [5] = "CAM-05"}
+    local cameraLabels = {[1] = "Cam01", [2] = "Cam02", [3] = "Cam03", [4] = "Cam04", [5] = "Cam05"}
     local componentType = cameraLabels[idx] or "Camera [" .. idx .. "]"
     self.components.devCams[idx] = self:setComponent(Controls.compdevCams[idx], componentType)
 end
@@ -407,13 +524,6 @@ function SingleRoomCameraController:setupComponents()
         end
     else
         self:debugPrint("compdevCams control not found - skipping camera component setup")
-    end
-    
-    -- Setup legacy components (optional)
-    if Controls.productionMode then
-        self.components.productionMode = self:setComponent(Controls.productionMode, "Production Mode")
-    else
-        self:debugPrint("WARNING: Controls.productionMode not found - some features may be limited")
     end
 end
 
@@ -594,8 +704,11 @@ function SingleRoomCameraController:registerEventHandlers()
             if self.components.camACPR then
                 self:safeComponentAccess(self.components.camACPR, "TrackingBypass", "set", Controls.btnProductionMode.Boolean)
             end
+            if self.components.skaarhojPTZController then
+                self:safeComponentAccess(self.components.skaarhojPTZController, "Disable", "set", not Controls.btnProductionMode.Boolean)
+            end
         end
-        self:debugPrint("Registered btnProductionMode handler for camACPR TrackingBypass")
+        self:debugPrint("Registered btnProductionMode handler for camACPR TrackingBypass and Skaarhoj PTZ Disable (inverted)")
     else
         self:debugPrint("WARNING: Controls.btnProductionMode not found")
     end
@@ -663,13 +776,33 @@ function SingleRoomCameraController:funcInit()
     initButton(3, 3, 2)
     initButton(4, 4, 2)
     initButton(5, 5, 2)
-    
+
     -- Set initial camACPR TrackingBypass state based on btnProductionMode
     if Controls.btnProductionMode and self.components.camACPR then
         self:safeComponentAccess(self.components.camACPR, "TrackingBypass", "set", Controls.btnProductionMode.Boolean)
     end
+
+    -- Register panel button event handlers
+    self:registerPanelButtonEventHandlers()
     
     self:debugPrint("Single Room Camera Controller Initialized with " .. self.cameraModule.getCameraCount() .. " cameras")
+end
+
+function SingleRoomCameraController:registerPanelButtonEventHandlers()
+    for i = 1, 5 do
+        local btn = Controls["Button" .. i]
+        if btn and btn.press then
+            btn.press.EventHandler = function(ctl)
+                print("Button" .. i .. " pressed!")
+                -- Set header text to Active
+                local header = Controls["Button" .. i .. ".HeaderText"]
+                if header then header.String = "Active" end
+                -- Set camera router output
+                local router = Controls.compcamRouter["select.1"]
+                if router then router.String = tostring(i) end
+            end
+        end
+    end
 end
 
 --------** Cleanup **--------
@@ -696,10 +829,12 @@ local function createSingleRoomController(roomName, config)
             buttonOff = 'Off',
             warmWhite = 'Warm White',
             purple = 'Purple',
+            white = 'White',
             red = 'Red'
         },
         defaultCameraRouterSettings = {
-            monitor = '6',
+            monitorA = '5',
+            monitorB = '5',
             usbA = '6',
             usbB = '6'
         },
@@ -761,8 +896,9 @@ mySingleRoomController.privacyModule.setPrivacy(true)
 
 -- Set camera routing
 mySingleRoomController.routingModule.setMonitorRoute(1)  -- Sets select.1
-mySingleRoomController.routingModule.setUSBRouteA(2)     -- Sets select.2
-mySingleRoomController.routingModule.setUSBRouteB(3)     -- Sets select.3
+mySingleRoomController.routingModule.setMonitorRoute(2)  -- Sets select.2
+mySingleRoomController.routingModule.setUSBRouteA(3)     -- Sets select.3
+mySingleRoomController.routingModule.setUSBRouteB(4)     -- Sets select.4
 
 -- Set all routes to same camera
 mySingleRoomController.routingModule.setAllRoutes(1)
@@ -779,4 +915,4 @@ local cameraCount = mySingleRoomController.cameraModule.getCameraCount()
 
 -- Recalibrate PTZ
 mySingleRoomController.cameraModule.recalibratePTZ()
-]]-- 
+]]--
