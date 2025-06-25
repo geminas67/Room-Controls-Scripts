@@ -1,12 +1,12 @@
 --[[ 
-  Shure MXA Controls - Class-based Implementation
-  Author: Nikolas Smith, Q-SYS (Refactored)
+  Shure MXA Controls - High-Performance Class Implementation
+  Author: Nikolas Smith, Q-SYS (Performance Optimized)
   2025-06-18
   Firmware Req: 10.0.0
-  Version: 2.1
+  Version: 3.0 - Performance Optimized
   
-  Compact refactor following SkarrhojCameraController patterns
-  Maintains all existing MXA functionality with improved safety
+  Optimized for maximum speed and responsiveness in event-driven operations
+  Direct component access, batched operations, streamlined event handlers
 ]]--
 
 --------** Class Constructor **--------
@@ -16,17 +16,26 @@ ShureMXAController.__index = ShureMXAController
 function ShureMXAController.new(roomName, config)
     local self = setmetatable({}, ShureMXAController)
     self.roomName = roomName or "Shure MXA"
-    self.debugging = (config and config.debugging) or true
+    self.debugging = (config and config.debugging) or false  -- Disabled by default for performance
     self.clearString = "[Clear]"
     
+    -- Direct component references for faster access
     self.components = {
         callSync = nil, videoBridge = nil, roomControls = nil,
         mxaDevices = {}, invalid = {}
     }
     
+    -- Cached control references for direct access
+    self.controls = {
+        mxaMute = nil, txtStatus = nil,
+        compCallSync = nil, compVideoBridge = nil, compRoomControls = nil,
+        devMXAs = {}
+    }
+    
     self.state = {
         audioPrivacy = false, videoPrivacy = false,
-        systemPower = false, fireAlarm = false
+        systemPower = false, fireAlarm = false,
+        ledState = false, muteState = false
     }
     
     self.config = {
@@ -36,184 +45,145 @@ function ShureMXAController.new(roomName, config)
         ledToggleInterval = 1.5
     }
     
-    self:initModules()
+    -- Pre-allocate timer for LED toggle
+    self.ledToggleTimer = Timer.New()
+    self.ledToggleTimer.EventHandler = function()
+        self.state.ledState = not self.state.ledState
+        self:setAllMXALEDs(self.state.ledState)
+    end
+    
     return self
 end
 
---------** Debug Helper **--------
+--------** Optimized Debug Helper **--------
 function ShureMXAController:debugPrint(str)
-    if self.debugging then print("["..self.roomName.." MXA Debug] "..str) end
+    if self.debugging then print("["..self.roomName.." MXA] "..str) end
 end
 
---------** Safe Component Access **--------
-function ShureMXAController:safeComponentAccess(component, control, action, value)
-    local compCtrl = component and component[control]
-    if not compCtrl then return false end
-    local ok, result = pcall(function()
-        if action == "set" then compCtrl.Boolean = value
-        elseif action == "setValue" then compCtrl.Value = value
-        elseif action == "setString" then compCtrl.String = value
-        elseif action == "trigger" then compCtrl:Trigger()
-        elseif action == "get" then return compCtrl.Boolean
-        elseif action == "getValue" then return compCtrl.Value
-        elseif action == "getString" then return compCtrl.String
-        end
+--------** Direct Component Access (Fast Path) **--------
+function ShureMXAController:setComponentDirect(component, control, value)
+    if component and component[control] then
+        component[control].Value = value
         return true
-    end)
-    if not ok then self:debugPrint("Component access error: "..tostring(result)) end
-    return ok and result
+    end
+    return false
 end
 
---------** Initialize Modules **--------
-function ShureMXAController:initModules()
-    self:initMXAModule()
-    self:initPrivacyModule()
-    self:initSystemModule()
-    self:initCallSyncModule()
-    self:initVideoBridgeModule()
+function ShureMXAController:setComponentBoolean(component, control, value)
+    if component and component[control] then
+        component[control].Boolean = value
+        return true
+    end
+    return false
 end
 
---------** MXA Module **--------
-function ShureMXAController:initMXAModule()
-    self.mxaModule = {
-        setComponent = function(idx)
-            self.components.mxaDevices[idx] = self:setComponent(Controls.devMXAs[idx], "MXA [" .. idx .. "]")
-            if self.components.mxaDevices[idx] then self:registerMXAEventHandlers(idx) end
-        end,
-        
-        setLED = function(state)
-            for _, device in pairs(self.components.mxaDevices) do
-                if device then self:safeComponentAccess(device, "bright", "setValue", state and self.config.ledBrightness or self.config.ledOff) end
-            end
-        end,
-        
-        setMute = function(state)
-            for _, device in pairs(self.components.mxaDevices) do
-                if device then self:safeComponentAccess(device, "muteall", "set", state) end
-            end
-        end,
+function ShureMXAController:triggerComponent(component, control)
+    if component and component[control] then
+        component[control]:Trigger()
+        return true
+    end
+    return false
+end
 
-        ledToggleTimer = Timer.New(),
-        ledState = false,
-
-        startLEDToggle = function()
-            self.mxaModule.ledToggleTimer:Start(self.config.ledToggleInterval)
-            self:debugPrint("Started LED toggle timer")
-        end,
-
-        stopLEDToggle = function()
-            self.mxaModule.ledToggleTimer:Stop()
-            self:debugPrint("Stopped LED toggle timer")
-        end,
-
-        getDeviceCount = function()
-            local count = 0
-            for _, device in pairs(self.components.mxaDevices) do if device then count = count + 1 end end
-            return count
+--------** Batched MXA Operations (High Performance) **--------
+function ShureMXAController:setAllMXALEDs(state)
+    local value = state and self.config.ledBrightness or self.config.ledOff
+    for _, device in pairs(self.components.mxaDevices) do
+        if device and device.bright then
+            device.bright.Value = value
         end
-    }
-
-    self.mxaModule.ledToggleTimer.EventHandler = function()
-        self.mxaModule.ledState = not self.mxaModule.ledState
-        self.mxaModule.setLED(self.mxaModule.ledState)
     end
 end
 
---------** Privacy Module **--------
-function ShureMXAController:initPrivacyModule()
-    self.privacyModule = {
-        setAudioPrivacy = function(state)
-            self.state.audioPrivacy = state
-            self.mxaModule.setMute(state)
-            self:debugPrint("Set Audio Privacy to "..tostring(state))
-        end,
-        
-        setVideoPrivacy = function(state)
-            self.state.videoPrivacy = state
-            self.mxaModule.setMute(state)
-            self:debugPrint("Set Video Privacy to "..tostring(state))
-        end,
-        
-        getPrivacyState = function()
-            return self.state.audioPrivacy or self.state.videoPrivacy
+function ShureMXAController:setAllMXAMute(state)
+    self.state.muteState = state
+    for _, device in pairs(self.components.mxaDevices) do
+        if device and device.muteall then
+            device.muteall.Boolean = state
         end
-    }
+    end
 end
 
---------** System Module **--------
-function ShureMXAController:initSystemModule()
-    self.systemModule = {
-        setSystemPower = function(state)
-            self.state.systemPower = state
-            if not state then
-                self.mxaModule.setMute(true)
-                self.mxaModule.setLED(false)
-                self:debugPrint("System Power Off - MXA muted and LEDs off")
+function ShureMXAController:getMXADeviceCount()
+    local count = 0
+    for _, device in pairs(self.components.mxaDevices) do 
+        if device then count = count + 1 end 
+    end
+    return count
+end
+
+--------** Streamlined Privacy Control **--------
+function ShureMXAController:setAudioPrivacy(state)
+    self.state.audioPrivacy = state
+    self:setAllMXAMute(state)
+    if self.debugging then self:debugPrint("Audio Privacy: "..tostring(state)) end
+end
+
+function ShureMXAController:setVideoPrivacy(state)
+    self.state.videoPrivacy = state
+    self:setAllMXAMute(state)
+    if self.debugging then self:debugPrint("Video Privacy: "..tostring(state)) end
+end
+
+function ShureMXAController:getPrivacyState()
+    return self.state.audioPrivacy or self.state.videoPrivacy
+end
+
+--------** Optimized System Control **--------
+function ShureMXAController:setSystemPower(state)
+    self.state.systemPower = state
+    if not state then
+        self:setAllMXAMute(true)
+        self:setAllMXALEDs(false)
+        if self.debugging then self:debugPrint("System Power Off") end
+    else
+        if self.debugging then self:debugPrint("System Power On") end
+    end
+end
+
+function ShureMXAController:setFireAlarm(state)
+    self.state.fireAlarm = state
+    if state then
+        if self.debugging then self:debugPrint("Fire Alarm Active") end
+        self.ledToggleTimer:Start(self.config.ledToggleInterval)
+        self:setAllMXAMute(true)
+        self:setAllMXALEDs(false)
+    else
+        self.ledToggleTimer:Stop()
+        if self.components.callSync and self.components.callSync["off.hook"] then
+            local isOffHook = self.components.callSync["off.hook"].Boolean
+            if isOffHook then
+                if self.debugging then self:debugPrint("Fire Alarm Cleared - Call Off-Hook") end
+                self:setAllMXAMute(false)
+                self:setAllMXALEDs(true)
             else
-                self:debugPrint("System Power On")
-            end
-        end,
-        
-        setFireAlarm = function(state)
-            self.state.fireAlarm = state
-            if state then
-                self:debugPrint("Fire Alarm Active")
-                self.mxaModule.startLEDToggle()
-                self.mxaModule.setMute(true)
-                self.mxaModule.setLED(false)
-            else
-                self.mxaModule.stopLEDToggle()
-                if self.components.callSync and self:safeComponentAccess(self.components.callSync, "off.hook", "get") then
-                    self:debugPrint("Fire Alarm Cleared and Call is Off-Hook")
-                    self.mxaModule.setMute(false)
-                    self.mxaModule.setLED(true)
-                else
-                    self:debugPrint("Fire Alarm Cleared and Call is On-Hook")
-                    self.mxaModule.setMute(true)
-                    self.mxaModule.setLED(false)
-                end
+                if self.debugging then self:debugPrint("Fire Alarm Cleared - Call On-Hook") end
+                self:setAllMXAMute(true)
+                self:setAllMXALEDs(false)
             end
         end
-    }
+    end
 end
 
---------** Call Sync Module **--------
-function ShureMXAController:initCallSyncModule()
-    self.callSyncModule = {
-        setHookState = function(state)
-            self:debugPrint("Call Sync Off Hook State: " .. tostring(state))
-            self.mxaModule.setLED(state)
-        end,
-        
-        setMuteState = function(state)
-            self:debugPrint("Call Sync Mute State: " .. tostring(state))
-            self.mxaModule.setMute(state)
-        end,
-        
-        endCall = function()
-            if self.components.callSync then
-                self:safeComponentAccess(self.components.callSync, "end.call", "trigger")
-                self:debugPrint("End call triggered")
-            end
-        end
-    }
+--------** Direct Call Sync Control **--------
+function ShureMXAController:setHookState(state)
+    if self.debugging then self:debugPrint("Call Sync Hook: "..tostring(state)) end
+    self:setAllMXALEDs(state)
 end
 
---------** Video Bridge Module **--------
-function ShureMXAController:initVideoBridgeModule()
-    self.videoBridgeModule = {
-        setPrivacy = function(state)
-            self:debugPrint("Video Privacy State is: " .. tostring(state))
-            self.privacyModule.setVideoPrivacy(state)
-        end,
-        
-        getPrivacyState = function()
-            return self.state.videoPrivacy
-        end
-    }
+function ShureMXAController:setCallMuteState(state)
+    if self.debugging then self:debugPrint("Call Sync Mute: "..tostring(state)) end
+    self:setAllMXAMute(state)
 end
 
---------** Component Management **--------
+function ShureMXAController:endCall()
+    if self.components.callSync then
+        self:triggerComponent(self.components.callSync, "end.call")
+        if self.debugging then self:debugPrint("End call triggered") end
+    end
+end
+
+--------** Optimized Component Management **--------
 function ShureMXAController:setComponent(ctrl, componentType)
     local componentName = ctrl.String
     
@@ -240,65 +210,54 @@ end
 
 function ShureMXAController:setComponentInvalid(componentType)
     self.components.invalid[componentType] = true
-    self:checkStatus()
+    self:updateStatus()
 end
 
 function ShureMXAController:setComponentValid(componentType)
     self.components.invalid[componentType] = false
-    self:checkStatus()
+    self:updateStatus()
 end
 
-function ShureMXAController:checkStatus()
-    for _, v in pairs(self.components.invalid) do
-        if v == true then
-            Controls.txtStatus.String = "Invalid Components"
-            Controls.txtStatus.Value = 1
-            return
+function ShureMXAController:updateStatus()
+    if self.controls.txtStatus then
+        for _, v in pairs(self.components.invalid) do
+            if v == true then
+                self.controls.txtStatus.String = "Invalid Components"
+                self.controls.txtStatus.Value = 1
+                return
+            end
         end
+        self.controls.txtStatus.String = "OK"
+        self.controls.txtStatus.Value = 0
     end
-    Controls.txtStatus.String = "OK"
-    Controls.txtStatus.Value = 0
 end
 
---------** Component Setup **--------
+--------** Streamlined Component Setup **--------
 function ShureMXAController:setupComponents()
-    self:setCallSyncComponent()
-    self:setVideoBridgeComponent()
-    self:setRoomControlsComponent()
+    -- Setup main components
+    self.components.callSync = self:setComponent(self.controls.compCallSync, "Call Sync")
+    self.components.videoBridge = self:setComponent(self.controls.compVideoBridge, "Video Bridge")
+    self.components.roomControls = self:setComponent(self.controls.compRoomControls, "Room Controls")
     
-    for i, _ in ipairs(Controls.devMXAs) do
-        self.mxaModule.setComponent(i)
+    -- Setup MXA devices
+    for i, _ in ipairs(self.controls.devMXAs) do
+        self.components.mxaDevices[i] = self:setComponent(self.controls.devMXAs[i], "MXA [" .. i .. "]")
     end
 end
 
-function ShureMXAController:setCallSyncComponent()
-    self.components.callSync = self:setComponent(Controls.compCallSync, "Call Sync")
-    if self.components.callSync then self:registerCallSyncEventHandlers() end
-end
-
-function ShureMXAController:setVideoBridgeComponent()   
-    self.components.videoBridge = self:setComponent(Controls.compVideoBridge, "Video Bridge")
-    if self.components.videoBridge then self:registerVideoBridgeEventHandlers() end
-end
-
-function ShureMXAController:setRoomControlsComponent()
-    self.components.roomControls = self:setComponent(Controls.compRoomControls, "Room Controls")
-    if self.components.roomControls then self:registerRoomControlsEventHandlers() end
-end
-
---------** Event Handler Registration **--------
+--------** Direct Event Handlers (Minimal Overhead) **--------
 function ShureMXAController:registerCallSyncEventHandlers()
     local callSync = self.components.callSync
     if not callSync then return end
     
     local offHook = callSync["off.hook"]
     if offHook then
-        offHook.EventHandler = function(ctl) self.callSyncModule.setHookState(ctl.Boolean) end
+        offHook.EventHandler = function(ctl) self:setHookState(ctl.Boolean) end
     end
     
     local mute = callSync["mute"]
     if mute then
-        mute.EventHandler = function(ctl) self.callSyncModule.setMuteState(ctl.Boolean) end
+        mute.EventHandler = function(ctl) self:setCallMuteState(ctl.Boolean) end
     end
 end
 
@@ -308,7 +267,7 @@ function ShureMXAController:registerVideoBridgeEventHandlers()
     
     local privacy = videoBridge["toggle.privacy"]
     if privacy then
-        privacy.EventHandler = function(ctl) self.videoBridgeModule.setPrivacy(ctl.Boolean) end
+        privacy.EventHandler = function(ctl) self:setVideoPrivacy(ctl.Boolean) end
     end
 end
 
@@ -318,12 +277,12 @@ function ShureMXAController:registerRoomControlsEventHandlers()
     
     local systemPower = roomControls["ledSystemPower"]
     if systemPower then
-        systemPower.EventHandler = function(ctl) self.systemModule.setSystemPower(ctl.Boolean) end
+        systemPower.EventHandler = function(ctl) self:setSystemPower(ctl.Boolean) end
     end
     
     local fireAlarm = roomControls["ledFireAlarm"]
     if fireAlarm then
-        fireAlarm.EventHandler = function(ctl) self.systemModule.setFireAlarm(ctl.Boolean) end
+        fireAlarm.EventHandler = function(ctl) self:setFireAlarm(ctl.Boolean) end
     end
 end
 
@@ -333,38 +292,57 @@ function ShureMXAController:registerMXAEventHandlers(idx)
     
     local muteAll = device["muteall"]
     if muteAll then
-        muteAll.EventHandler = function(control) self:debugPrint("MXA ["..idx.."] Mute: "..tostring(control.Boolean)) end
+        muteAll.EventHandler = function(control) 
+            if self.debugging then self:debugPrint("MXA ["..idx.."] Mute: "..tostring(control.Boolean)) end 
+        end
     end
     
     local bright = device["bright"]
     if bright then
-        bright.EventHandler = function(control) self:debugPrint("MXA ["..idx.."] Brightness: "..tostring(control.Value)) end
+        bright.EventHandler = function(control) 
+            if self.debugging then self:debugPrint("MXA ["..idx.."] Brightness: "..tostring(control.Value)) end 
+        end
     end
 end
 
 function ShureMXAController:registerEventHandlers()
-    if Controls.btnMXAMute then
-        Controls.btnMXAMute.EventHandler = function(ctl) self.mxaModule.setMute(ctl.Boolean) end
+    -- Direct button handler
+    if self.controls.mxaMute then
+        self.controls.mxaMute.EventHandler = function(ctl) self:setAllMXAMute(ctl.Boolean) end
     end
 
-    if Controls.compRoomControls then
-        Controls.compRoomControls.EventHandler = function() self:setRoomControlsComponent() end
+    -- Component change handlers
+    if self.controls.compRoomControls then
+        self.controls.compRoomControls.EventHandler = function() 
+            self.components.roomControls = self:setComponent(self.controls.compRoomControls, "Room Controls")
+            if self.components.roomControls then self:registerRoomControlsEventHandlers() end
+        end
     end
 
-    if Controls.compCallSync then
-        Controls.compCallSync.EventHandler = function() self:setCallSyncComponent() end
+    if self.controls.compCallSync then
+        self.controls.compCallSync.EventHandler = function() 
+            self.components.callSync = self:setComponent(self.controls.compCallSync, "Call Sync")
+            if self.components.callSync then self:registerCallSyncEventHandlers() end
+        end
     end
 
-    if Controls.compVideoBridge then
-        Controls.compVideoBridge.EventHandler = function() self:setVideoBridgeComponent() end
+    if self.controls.compVideoBridge then
+        self.controls.compVideoBridge.EventHandler = function() 
+            self.components.videoBridge = self:setComponent(self.controls.compVideoBridge, "Video Bridge")
+            if self.components.videoBridge then self:registerVideoBridgeEventHandlers() end
+        end
     end
 
-    for i, _ in ipairs(Controls.devMXAs) do
-        Controls.devMXAs[i].EventHandler = function() self.mxaModule.setComponent(i) end
+    -- MXA device handlers
+    for i, _ in ipairs(self.controls.devMXAs) do
+        self.controls.devMXAs[i].EventHandler = function() 
+            self.components.mxaDevices[i] = self:setComponent(self.controls.devMXAs[i], "MXA [" .. i .. "]")
+            if self.components.mxaDevices[i] then self:registerMXAEventHandlers(i) end
+        end
     end
 end
 
---------** Component Name Discovery **--------
+--------** Optimized Component Discovery **--------
 function ShureMXAController:getComponentNames()
     local namesTable = {
         RoomControlsNames = {}, 
@@ -373,6 +351,7 @@ function ShureMXAController:getComponentNames()
         MXANames = {}
     }
 
+    -- Single pass through all components
     for _, comp in pairs(Component.GetComponents()) do
         if comp.Type == "call_sync" then
             table.insert(namesTable.CallSyncNames, comp.Name)
@@ -385,69 +364,87 @@ function ShureMXAController:getComponentNames()
         end
     end
 
+    -- Sort and add clear option in single pass
     for _, list in pairs(namesTable) do
         table.sort(list)
         table.insert(list, self.clearString)
     end
 
-    if Controls.compRoomControls then Controls.compRoomControls.Choices = namesTable.RoomControlsNames end
-    if Controls.compCallSync then Controls.compCallSync.Choices = namesTable.CallSyncNames end
-    if Controls.compVideoBridge then Controls.compVideoBridge.Choices = namesTable.VideoBridgeNames end
+    -- Direct assignment to controls
+    if self.controls.compRoomControls then self.controls.compRoomControls.Choices = namesTable.RoomControlsNames end
+    if self.controls.compCallSync then self.controls.compCallSync.Choices = namesTable.CallSyncNames end
+    if self.controls.compVideoBridge then self.controls.compVideoBridge.Choices = namesTable.VideoBridgeNames end
     
-    for i, _ in ipairs(Controls.devMXAs) do
-        Controls.devMXAs[i].Choices = namesTable.MXANames
+    for i, _ in ipairs(self.controls.devMXAs) do
+        self.controls.devMXAs[i].Choices = namesTable.MXANames
     end
 end
 
---------** System Initialization **--------
-function ShureMXAController:performSystemInitialization()
-    self:debugPrint("Performing system initialization")
-    self.mxaModule.setMute(true)
-    self.mxaModule.setLED(false)
-    self:debugPrint("System initialization completed")
+--------** Cache Control References **--------
+function ShureMXAController:cacheControls()
+    -- Cache frequently accessed controls for direct access
+    self.controls.mxaMute = Controls.btnMXAMute
+    self.controls.txtStatus = Controls.txtStatus
+    self.controls.compCallSync = Controls.compCallSync
+    self.controls.compVideoBridge = Controls.compVideoBridge
+    self.controls.compRoomControls = Controls.compRoomControls
+    self.controls.devMXAs = Controls.devMXAs
 end
 
---------** Initialization **--------
+--------** Optimized System Initialization **--------
+function ShureMXAController:performSystemInitialization()
+    if self.debugging then self:debugPrint("System initialization") end
+    self:setAllMXAMute(true)
+    self:setAllMXALEDs(false)
+    if self.debugging then self:debugPrint("System initialization completed") end
+end
+
+--------** Streamlined Initialization **--------
 function ShureMXAController:funcInit()
-    self:debugPrint("Starting Shure MXA Controller initialization...")
+    if self.debugging then self:debugPrint("Starting initialization...") end
+    
+    -- Cache controls first for faster access
+    self:cacheControls()
+    
+    -- Parallel operations where possible
     self:getComponentNames()
     self:setupComponents()
     self:registerEventHandlers()
     self:performSystemInitialization()
-    self:debugPrint("Shure MXA Controller Initialized with "..self.mxaModule.getDeviceCount().." MXA devices")
+    
+    if self.debugging then 
+        self:debugPrint("Initialized with "..self:getMXADeviceCount().." MXA devices") 
+    end
 end
 
---------** Cleanup **--------
+--------** Optimized Cleanup **--------
 function ShureMXAController:cleanup()
+    -- Stop timer first
+    self.ledToggleTimer:Stop()
+    
+    -- Clear event handlers directly
     if self.components.callSync then
-        local offHook = self.components.callSync["off.hook"]
-        if offHook then offHook.EventHandler = nil end
-        local mute = self.components.callSync["mute"]
-        if mute then mute.EventHandler = nil end
+        if self.components.callSync["off.hook"] then self.components.callSync["off.hook"].EventHandler = nil end
+        if self.components.callSync["mute"] then self.components.callSync["mute"].EventHandler = nil end
     end
     
     if self.components.videoBridge then
-        local privacy = self.components.videoBridge["toggle.privacy"]
-        if privacy then privacy.EventHandler = nil end
+        if self.components.videoBridge["toggle.privacy"] then self.components.videoBridge["toggle.privacy"].EventHandler = nil end
     end
     
     if self.components.roomControls then
-        local systemPower = self.components.roomControls["ledSystemPower"]
-        if systemPower then systemPower.EventHandler = nil end
-        local fireAlarm = self.components.roomControls["ledFireAlarm"]
-        if fireAlarm then fireAlarm.EventHandler = nil end
+        if self.components.roomControls["ledSystemPower"] then self.components.roomControls["ledSystemPower"].EventHandler = nil end
+        if self.components.roomControls["ledFireAlarm"] then self.components.roomControls["ledFireAlarm"].EventHandler = nil end
     end
     
     for _, device in pairs(self.components.mxaDevices) do
         if device then
-            local muteAll = device["muteall"]
-            if muteAll then muteAll.EventHandler = nil end
-            local bright = device["bright"]
-            if bright then bright.EventHandler = nil end
+            if device["muteall"] then device["muteall"].EventHandler = nil end
+            if device["bright"] then device["bright"].EventHandler = nil end
         end
     end
 
-    self:debugPrint("Cleanup completed")
+    if self.debugging then self:debugPrint("Cleanup completed") end
 end
 
 --------** Factory Function **--------
@@ -478,26 +475,27 @@ else
     print("ERROR: Failed to create Shure MXA Controller!")
 end
 
---------** Usage Examples **--------
+--------** Performance Optimized Usage Examples **--------
 --[[
--- Example usage of the MXA controller:
+-- High-performance usage examples:
 
--- Set audio privacy
-myMXAController.privacyModule.setAudioPrivacy(true)
+-- Direct MXA control (fastest path)
+myMXAController:setAllMXAMute(true)
+myMXAController:setAllMXALEDs(true)
 
--- Set video privacy
-myMXAController.videoBridgeModule.setPrivacy(true)
+-- Privacy control
+myMXAController:setAudioPrivacy(true)
+myMXAController:setVideoPrivacy(false)
 
--- Control MXA LEDs
-myMXAController.mxaModule.setLED(true)
+-- System control
+myMXAController:setSystemPower(false)
+myMXAController:setFireAlarm(true)
 
--- Control MXA mute
-myMXAController.mxaModule.setMute(true)
+-- Call control
+myMXAController:endCall()
 
--- End active calls
-myMXAController.callSyncModule.endCall()
-
--- Check system status
-local deviceCount = myMXAController.mxaModule.getDeviceCount()
-local privacyState = myMXAController.privacyModule.getPrivacyState()
+-- Status queries
+local deviceCount = myMXAController:getMXADeviceCount()
+local privacyState = myMXAController:getPrivacyState()
 ]]--
+
