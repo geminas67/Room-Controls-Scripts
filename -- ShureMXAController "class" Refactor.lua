@@ -55,12 +55,12 @@ function ShureMXAController.new(roomName, config)
     return self
 end
 
---------** Optimized Debug Helper **--------
+--------** Debug Helper **--------
 function ShureMXAController:debugPrint(str)
     if self.debugging then print("["..self.roomName.." MXA] "..str) end
 end
 
---------** Direct Component Access (Fast Path) **--------
+--------** Component Access **--------
 function ShureMXAController:setComponentDirect(component, control, value)
     if component and component[control] then
         component[control].Value = value
@@ -85,7 +85,7 @@ function ShureMXAController:triggerComponent(component, control)
     return false
 end
 
---------** Batched MXA Operations (High Performance) **--------
+--------** Batched MXA Operations **--------
 function ShureMXAController:setAllMXALEDs(state)
     local value = state and self.config.ledBrightness or self.config.ledOff
     for _, device in pairs(self.components.mxaDevices) do
@@ -112,7 +112,7 @@ function ShureMXAController:getMXADeviceCount()
     return count
 end
 
---------** Streamlined Privacy Control **--------
+--------** Privacy Control **--------
 function ShureMXAController:setAudioPrivacy(state)
     self.state.audioPrivacy = state
     self:setAllMXAMute(state)
@@ -129,7 +129,7 @@ function ShureMXAController:getPrivacyState()
     return self.state.audioPrivacy or self.state.videoPrivacy
 end
 
---------** Optimized System Control **--------
+--------** System Control **--------
 function ShureMXAController:setSystemPower(state)
     self.state.systemPower = state
     if not state then
@@ -165,7 +165,7 @@ function ShureMXAController:setFireAlarm(state)
     end
 end
 
---------** Direct Call Sync Control **--------
+--------** Call Sync Control **--------
 function ShureMXAController:setHookState(state)
     if self.debugging then self:debugPrint("Call Sync Hook: "..tostring(state)) end
     self:setAllMXALEDs(state)
@@ -183,7 +183,7 @@ function ShureMXAController:endCall()
     end
 end
 
---------** Optimized Component Management **--------
+--------** Component Management **--------
 function ShureMXAController:setComponent(ctrl, componentType)
     local componentName = ctrl.String
     
@@ -232,7 +232,7 @@ function ShureMXAController:updateStatus()
     end
 end
 
---------** Streamlined Component Setup **--------
+--------** Component Setup **--------
 function ShureMXAController:setupComponents()
     -- Setup main components
     self.components.callSync = self:setComponent(self.controls.compCallSync, "Call Sync")
@@ -245,7 +245,7 @@ function ShureMXAController:setupComponents()
     end
 end
 
---------** Direct Event Handlers (Minimal Overhead) **--------
+--------**  Event Handlers **--------
 function ShureMXAController:registerCallSyncEventHandlers()
     local callSync = self.components.callSync
     if not callSync then return end
@@ -342,7 +342,7 @@ function ShureMXAController:registerEventHandlers()
     end
 end
 
---------** Optimized Component Discovery **--------
+--------** Component Discovery **--------
 function ShureMXAController:getComponentNames()
     local namesTable = {
         RoomControlsNames = {}, 
@@ -380,7 +380,7 @@ function ShureMXAController:getComponentNames()
     end
 end
 
---------** Cache Control References **--------
+--------** Control Cache **--------
 function ShureMXAController:cacheControls()
     -- Cache frequently accessed controls for direct access
     self.controls.mxaMute = Controls.btnMXAMute
@@ -391,7 +391,7 @@ function ShureMXAController:cacheControls()
     self.controls.devMXAs = Controls.devMXAs
 end
 
---------** Optimized System Initialization **--------
+--------** System Initialization **--------
 function ShureMXAController:performSystemInitialization()
     if self.debugging then self:debugPrint("System initialization") end
     self:setAllMXAMute(true)
@@ -399,7 +399,7 @@ function ShureMXAController:performSystemInitialization()
     if self.debugging then self:debugPrint("System initialization completed") end
 end
 
---------** Streamlined Initialization **--------
+--------** Initialization **--------
 function ShureMXAController:funcInit()
     if self.debugging then self:debugPrint("Starting initialization...") end
     
@@ -417,7 +417,7 @@ function ShureMXAController:funcInit()
     end
 end
 
---------** Optimized Cleanup **--------
+--------** Cleanup **--------
 function ShureMXAController:cleanup()
     -- Stop timer first
     self.ledToggleTimer:Stop()
@@ -443,7 +443,12 @@ function ShureMXAController:cleanup()
             if device["bright"] then device["bright"].EventHandler = nil end
         end
     end
-
+    
+    -- Reset component references
+    self.components = {
+        callSync = nil, videoBridge = nil, roomControls = nil,
+        mxaDevices = {}, invalid = {}
+    }
     if self.debugging then self:debugPrint("Cleanup completed") end
 end
 
@@ -475,7 +480,7 @@ else
     print("ERROR: Failed to create Shure MXA Controller!")
 end
 
---------** Performance Optimized Usage Examples **--------
+--------** Usage Examples **--------
 --[[
 -- High-performance usage examples:
 

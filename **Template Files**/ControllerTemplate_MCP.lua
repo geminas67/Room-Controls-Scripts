@@ -2,10 +2,45 @@
   ControllerTemplate_MCP - Q-SYS Control Script Template (MCP Style)
   Author: <Your Name or AI>
   Date: <YYYY-MM-DD>
-  Version: 1.0
+  Version: 2.0
   Description: Use this template for all Q-SYS control scripts. 
   Follows Perplexity MCP-style efficiency and modularity.
+  Includes robust control validation and error handling.
 ]]--
+
+-- Define control references with nil checks
+local controls = {
+    roomName = Controls.roomName,
+    txtStatus = Controls.txtStatus,
+    ExampleComponent = Controls.ExampleComponent,
+    AnotherComponent = Controls.AnotherComponent,
+    -- Add more controls as needed for your specific implementation
+}
+
+-- Validate required controls exist
+local function validateControls()
+    local missingControls = {}
+    
+    if not controls.roomName then
+        table.insert(missingControls, "roomName")
+    end
+    
+    if not controls.txtStatus then
+        table.insert(missingControls, "txtStatus")
+    end
+    
+    -- Add validation for other required controls as needed
+    -- if not controls.ExampleComponent then
+    --     table.insert(missingControls, "ExampleComponent")
+    -- end
+    
+    if #missingControls > 0 then
+        print("ERROR: Missing required controls: " .. table.concat(missingControls, ", "))
+        return false
+    end
+    
+    return true
+end
 
 --------** Class Definition **--------
 ControllerTemplate_MCP = {}
@@ -17,6 +52,10 @@ function ControllerTemplate_MCP.new(roomName, config)
     self.roomName = roomName or "Default Room"
     self.debugging = (config and config.debugging) or true
     self.clearString = "[Clear]"
+    
+    -- Store reference to controls
+    self.controls = controls
+    
     -- Component references
     self.components = {
         exampleComponent = nil,
@@ -87,11 +126,15 @@ function ControllerTemplate_MCP:setupComponents()
 end
 
 function ControllerTemplate_MCP:setExampleComponent()
-    self.components.exampleComponent = self:setComponent(Controls.ExampleComponent, "Example Component")
+    if controls.ExampleComponent then
+        self.components.exampleComponent = self:setComponent(controls.ExampleComponent, "Example Component")
+    end
 end
 
 function ControllerTemplate_MCP:setAnotherComponent()
-    self.components.anotherComponent = self:setComponent(Controls.AnotherComponent, "Another Component")
+    if controls.AnotherComponent then
+        self.components.anotherComponent = self:setComponent(controls.AnotherComponent, "Another Component")
+    end
 end
 
 --------** Event Handler Registration **--------
@@ -150,13 +193,17 @@ end
 function ControllerTemplate_MCP:checkStatus()
     for _, v in pairs(self.components.invalid) do
         if v == true then
-            Controls.txtStatus.String = "Invalid Components"
-            Controls.txtStatus.Value = 1
+            if controls.txtStatus then
+                controls.txtStatus.String = "Invalid Components"
+                controls.txtStatus.Value = 1
+            end
             return
         end
     end
-    Controls.txtStatus.String = "OK"
-    Controls.txtStatus.Value = 0
+    if controls.txtStatus then
+        controls.txtStatus.String = "OK"
+        controls.txtStatus.Value = 0
+    end
 end
 
 --------** Initialization **--------
@@ -165,6 +212,36 @@ function ControllerTemplate_MCP:funcInit()
     self:setupComponents()
     self:registerEventHandlers()
     self:debugPrint("ControllerTemplate_MCP Initialized")
+end
+
+--------** Cleanup **--------
+function ControllerTemplate_MCP:cleanup()
+    -- Stop any timers first
+    if self.exampleTimer then
+        self.exampleTimer:Stop()
+    end
+    
+    -- Clear event handlers directly
+    if self.components.exampleComponent then
+        if self.components.exampleComponent["ExampleButton.press"] then 
+            self.components.exampleComponent["ExampleButton.press"].EventHandler = nil 
+        end
+    end
+    
+    if self.components.anotherComponent then
+        if self.components.anotherComponent["AnotherButton.press"] then 
+            self.components.anotherComponent["AnotherButton.press"].EventHandler = nil 
+        end
+    end
+    
+    -- Reset component references
+    self.components = {
+        exampleComponent = nil,
+        anotherComponent = nil,
+        invalid = {}
+    }
+    
+    if self.debugging then self:debugPrint("Cleanup completed") end
 end
 
 --------** Factory Function **--------
@@ -185,12 +262,19 @@ local function createControllerTemplate_MCP(roomName, config)
 end
 
 --------** Instance Creation **--------
-if not Controls.roomName then
-    print("ERROR: Controls.roomName not found!")
+-- Validate controls before creating instance
+if not validateControls() then
+    print("ERROR: Required controls are missing. Please check your Q-SYS design.")
     return
 end
 
-local formattedRoomName = "["..Controls.roomName.String.."]"
+-- Check if roomName control has a valid string value
+if not controls.roomName or not controls.roomName.String or controls.roomName.String == "" then
+    print("ERROR: Controls.roomName.String is empty or invalid!")
+    return
+end
+
+local formattedRoomName = "["..controls.roomName.String.."]"
 myControllerTemplate_MCP = createControllerTemplate_MCP(formattedRoomName)
 
 if myControllerTemplate_MCP then
