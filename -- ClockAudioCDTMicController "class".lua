@@ -11,20 +11,15 @@ local controls = {
     compMicBox = Controls.compMicBox or {},
     compMicMixer = Controls.compMicMixer,   
     compRoomControls = Controls.compRoomControls,
-    compVideoBridge = Controls.compVideoBridge,
     compCallSync = Controls.compCallSync,
     txtStatus = Controls.txtStatus,
-    roomName = Controls.roomName,
-    globalMute = Controls['ClockAudio-LED-MUTE'],
+    -- Test control for hook state emulation only
+    btnTestHookState = Controls.btnTestHookState,
 }
 
 -- Validate required controls exist
 local function validateControls()
     local missingControls = {}
-    
-    if not controls.roomName then
-        table.insert(missingControls, "roomName")
-    end
     
     if not controls.compMicBox then
         table.insert(missingControls, "compMicBox")
@@ -38,12 +33,8 @@ local function validateControls()
         table.insert(missingControls, "compCallSync")
     end
     
-    if not controls.compVideoBridge then
-        table.insert(missingControls, "compVideoBridge")
-    end
-    
-    if not controls.globalMute then
-        table.insert(missingControls, "ClockAudio-LED-MUTE")
+    if not controls.compRoomControls then
+        table.insert(missingControls, "compRoomControls")
     end
     
     if #missingControls > 0 then
@@ -71,7 +62,6 @@ function ClockAudioCDTMicController.new(roomName, config)
     
     -- Component references - direct access for speed
     self.components = {
-        videoBridge = nil,
         callSync = nil,
         micBoxes = {}, -- Array for direct indexing
         micMixer = nil,
@@ -83,7 +73,8 @@ function ClockAudioCDTMicController.new(roomName, config)
     self.state = {
         globalMute = false,
         offHook = false,
-        privacyEnabled = false
+        privacyEnabled = false,
+        testMode = false
     }
     
     -- Configuration
@@ -96,6 +87,7 @@ function ClockAudioCDTMicController.new(roomName, config)
     -- Initialize modules
     self:initLEDModule()
     self:initMicModule()
+    self:initTestModule()
     
     return self
 end
@@ -175,20 +167,6 @@ function ClockAudioCDTMicController:setCallSyncComponent()
                 this.ledModule.setAllGreenOn()
                 this.ledModule.setAllRedOff()
             end
-        end
-    end
-end
-
-
---------** Video Bridge Component **--------
-function ClockAudioCDTMicController:setVideoBridgeComponent()   
-    self.components.videoBridge = self:setComponent(controls.compVideoBridge, "Video Bridge")
-    if self.components.videoBridge ~= nil then
-        local this = self  -- Capture self for use in handlers
-        self.components.videoBridge["toggle.privacy"].EventHandler = function(ctl)
-            local state = ctl.Boolean
-            this:debugPrint("Video Privacy State is: " .. tostring(state))
-            this.micModule.setMute(state)
         end
     end
 end
@@ -336,7 +314,7 @@ function ClockAudioCDTMicController:initLEDModule()
     }
 end
 
---------** Mic Module - Direct Event Handling **--------
+--------** CDT Mic Module **--------
 function ClockAudioCDTMicController:initMicModule()
     local selfRef = self
     self.micModule = {
@@ -349,7 +327,7 @@ function ClockAudioCDTMicController:initMicModule()
             local buttonState = box['ButtonState '..(ledIndex * 2 + 4)].Boolean
             local isActive = buttonState
             
-            -- Direct mixer control
+            -- Direct mixer control -- no function calls
             mixer['input.'..mixerInput..'.mute'].Boolean = not isActive
             
             -- Immediate LED feedback
@@ -367,9 +345,9 @@ function ClockAudioCDTMicController:initMicModule()
         -- Global mute with immediate visual feedback
         setGlobalMute = function(muteState)
             selfRef.state.globalMute = muteState
-            local hid = selfRef.components.videoBridge
+            local hid = selfRef.components.callSync
             if hid then
-                hid['toggle.privacy'].Boolean = muteState
+                hid['mute'].Boolean = muteState
             end
             
             if muteState then
@@ -441,12 +419,77 @@ function ClockAudioCDTMicController:initMicModule()
     end
 end
 
+--------** Test Module - Hook State Emulation **--------
+function ClockAudioCDTMicController:initTestModule()
+    local selfRef = self
+    self.testModule = {
+        -- Emulated hook state only
+        emulatedHookState = false,
+        
+        -- Toggle hook state for testing
+        toggleHookState = function()
+            selfRef.testModule.emulatedHookState = not selfRef.testModule.emulatedHookState
+            selfRef:debugPrint("Test Mode: Hook State = " .. tostring(selfRef.testModule.emulatedHookState))
+            
+            -- Update mic module with emulated hook state
+            selfRef.micModule.setHookState(selfRef.testModule.emulatedHookState)
+        end,
+        
+        -- Enable test mode
+        enableTestMode = function()
+            selfRef.state.testMode = true
+            selfRef:debugPrint("Hook State Test Mode Enabled")
+            
+            -- Register test control event handlers
+            selfRef:registerTestControlHandlers()
+        end,
+        
+        -- Disable test mode
+        disableTestMode = function()
+            selfRef.state.testMode = false
+            selfRef:debugPrint("Hook State Test Mode Disabled")
+            
+            -- Clear test control event handlers
+            selfRef:clearTestControlHandlers()
+        end,
+        
+        -- Get current hook state
+        getHookState = function()
+            return selfRef.testModule.emulatedHookState
+        end
+    }
+end
+
+--------** Test Control Event Handlers **--------
+function ClockAudioCDTMicController:registerTestControlHandlers()
+    local selfRef = self
+    
+    -- Hook state test button
+    if controls.btnTestHookState then
+        controls.btnTestHookState.EventHandler = function(ctl)
+            if ctl.Boolean then
+                selfRef.testModule.toggleHookState()
+            end
+        end
+    end
+    
+    self:debugPrint("Hook state test control handler registered")
+end
+
+function ClockAudioCDTMicController:clearTestControlHandlers()
+    -- Clear hook state test control event handler
+    if controls.btnTestHookState then
+        controls.btnTestHookState.EventHandler = nil
+    end
+    
+    self:debugPrint("Hook state test control handler cleared")
+end
+
 --------** Component Name Discovery **--------
 function ClockAudioCDTMicController:getComponentNames()
     local namesTable = {
         RoomControlsNames = {},
         CallSyncNames = {},
-        VideoBridgeNames = {},
         MicBoxNames = {},
         MicMixerNames = {},
     }
@@ -457,7 +500,6 @@ function ClockAudioCDTMicController:getComponentNames()
         elseif v.Type == "%PLUGIN%_91b57fdec7bd41fb9b9741210ad2a1f3_%FP%_6bb184f66fd3a12efe1844e433fc11c3" then
             table.insert(namesTable.MicBoxNames, v.Name)
         elseif v.Type == "usb_uvc" then
-            table.insert(namesTable.VideoBridgeNames, v.Name)
         elseif v.Type == "device_controller_script" and string.match(v.Name, "^compRoomControls") then
             table.insert(namesTable.RoomControlsNames, v.Name)
         elseif v.Type == "mixer" then
@@ -479,10 +521,6 @@ function ClockAudioCDTMicController:getComponentNames()
         controls.compCallSync.Choices = namesTable.CallSyncNames
     end
     
-    if controls.compVideoBridge then
-        controls.compVideoBridge.Choices = namesTable.VideoBridgeNames
-    end
-    
     if controls.compMicMixer then
         controls.compMicMixer.Choices = namesTable.MicMixerNames
     end
@@ -501,29 +539,14 @@ end
 function ClockAudioCDTMicController:registerEventHandlers()
     local selfRef = self
     
-    -- Global mute control
-    if self.cachedControls.globalMute then
-        self.cachedControls.globalMute.EventHandler = function()
-            selfRef.micModule.setGlobalMute(self.cachedControls.globalMute.Boolean)
-        end
-    end
-    
     -- HID Hook state
     if self.components.callSync and self.components.callSync['off.hook'] then
         self.components.callSync['off.hook'].EventHandler = function()
             selfRef.micModule.setHookState(self.components.callSync['off.hook'].Boolean)
         end
-    end
-    
-    -- HID Privacy toggle
-    if self.components.videoBridge and self.components.videoBridge['toggle.privacy'] then
-        self.components.videoBridge['toggle.privacy'].EventHandler = function()
-            local isMuted = self.components.videoBridge['toggle.privacy'].Boolean
-            if isMuted then
-                print('Phone Mute')
-            else
-                print('Phone Unmute')
-            end
+        -- HID Mute toggle
+        self.components.callSync['mute'].EventHandler = function()
+            selfRef.micModule.setGlobalMute(self.components.callSync['mute'].Boolean)
         end
     end
     
@@ -557,7 +580,7 @@ function ClockAudioCDTMicController:registerMicButtonHandlers()
         micBox01['ButtonState 3'].EventHandler = createCallSyncMuteHandler(1)
         micBox01['ButtonState 4'].EventHandler = createCallSyncMuteHandler(1)
         
-        -- Existing ButtonState 6, 8, 10 handlers
+        -- ButtonState 6, 8, 10 handlers
         micBox01['ButtonState 6'].EventHandler = function()
             selfRef.micModule.toggleMic(1, 1, 1)
         end
@@ -578,7 +601,7 @@ function ClockAudioCDTMicController:registerMicButtonHandlers()
         micBox02['ButtonState 3'].EventHandler = createCallSyncMuteHandler(2)
         micBox02['ButtonState 4'].EventHandler = createCallSyncMuteHandler(2)
         
-        -- Existing ButtonState 6, 8, 10, 12 handlers
+        -- ButtonState 6, 8, 10, 12 handlers
         micBox02['ButtonState 6'].EventHandler = function()
             selfRef.micModule.toggleMic(2, 1, 4)
         end
@@ -602,7 +625,7 @@ function ClockAudioCDTMicController:registerMicButtonHandlers()
         micBox03['ButtonState 3'].EventHandler = createCallSyncMuteHandler(3)
         micBox03['ButtonState 4'].EventHandler = createCallSyncMuteHandler(3)
         
-        -- Existing ButtonState 6, 8, 10, 12 handlers
+        -- ButtonState 6, 8, 10, 12 handlers
         micBox03['ButtonState 6'].EventHandler = function()
             selfRef.micModule.toggleMic(3, 1, 8)
         end
@@ -626,7 +649,7 @@ function ClockAudioCDTMicController:registerMicButtonHandlers()
         micBox04['ButtonState 3'].EventHandler = createCallSyncMuteHandler(4)
         micBox04['ButtonState 4'].EventHandler = createCallSyncMuteHandler(4)
         
-        -- Existing ButtonState 6, 8, 10 handlers
+        -- ButtonState 6, 8, 10 handlers
         micBox04['ButtonState 6'].EventHandler = function()
             selfRef.micModule.toggleMic(4, 1, 12)
         end
@@ -647,7 +670,6 @@ function ClockAudioCDTMicController:setupComponents()
     -- Set up components using setComponent for proper validation
     self:setRoomControlsComponent()
     self:setCallSyncComponent()
-    self:setVideoBridgeComponent()
     
     -- Set up mic mixer component
     if controls.compMicMixer then
@@ -684,17 +706,49 @@ function ClockAudioCDTMicController:funcInit()
     -- Update LED states after initialization
     self.ledModule.updateAllLEDs()
     
+    -- Enable test mode for hook state emulation
+    self:enableTestModeIfNoCallSync()
+    
     if self.debugging then 
         self:debugPrint("Initialized with "..self:getMicBoxCount().." mic boxes") 
     end
+end
+
+--------** Test Mode Management **--------
+function ClockAudioCDTMicController:enableTestModeIfNoCallSync()
+    -- Check if call sync component is available
+    if not self.components.callSync then
+        self:debugPrint("No Call Sync component found - enabling hook state test mode")
+        self.testModule.enableTestMode()
+        
+        -- Set initial hook state (start on-hook)
+        self.testModule.emulatedHookState = false
+        
+        -- Initialize mic module with test hook state
+        self.micModule.setHookState(self.testModule.emulatedHookState)
+        
+        self:debugPrint("Hook state test mode ready - use btnTestHookState to toggle")
+    else
+        self:debugPrint("Call Sync component found - hook state test mode not needed")
+    end
+end
+
+function ClockAudioCDTMicController:isTestModeActive()
+    return self.state.testMode
+end
+
+function ClockAudioCDTMicController:getHookState()
+    if self.testModule then
+        return self.testModule.getHookState()
+    end
+    return nil
 end
 
 --------** Cache Controls for Performance **--------
 function ClockAudioCDTMicController:cacheControls()
     -- Cache frequently accessed controls for faster access
     self.cachedControls = {
-        globalMute = controls.globalMute,
-        roomName = controls.roomName
+        -- roomName will be read from room controls component
     }
 end
 
@@ -711,15 +765,17 @@ end
 
 --------** Internal System Initialization **--------
 function ClockAudioCDTMicController:performSystemInitialization()
-    -- Set initial mute state
-    if self.cachedControls.globalMute then
-        self.cachedControls.globalMute.Boolean = false
-        Timer.CallAfter(function()
-            self.cachedControls.globalMute.Boolean = true
-            if self.debugging then
-                self:debugPrint("System initialization sequence completed")
-            end
-        end, self.config.initDelay)
+    -- Set initial mute state based on call sync mute state
+    if self.components.callSync and self.components.callSync["mute"] then
+        local initialMuteState = self.components.callSync["mute"].Boolean
+        self.micModule.setGlobalMute(initialMuteState)
+        if self.debugging then
+            self:debugPrint("System initialization completed with mute state: " .. tostring(initialMuteState))
+        end
+    else
+        if self.debugging then
+            self:debugPrint("System initialization completed - no call sync mute control available")
+        end
     end
 end
 
@@ -731,13 +787,15 @@ function ClockAudioCDTMicController:cleanup()
         self.micModule.ledToggleTimer.EventHandler = nil
     end
     
+    -- Clear test mode if active
+    if self.testModule then
+        self.testModule.disableTestMode()
+    end
+    
     -- Clear event handlers directly
     if self.components.callSync then
         if self.components.callSync["off.hook"] then 
             self.components.callSync["off.hook"].EventHandler = nil 
-        end
-        if self.components.videoBridge["toggle.privacy"] then 
-            self.components.videoBridge["toggle.privacy"].EventHandler = nil 
         end
     end
     
@@ -763,16 +821,12 @@ function ClockAudioCDTMicController:cleanup()
         end
     end
     
-    -- Clear control event handlers
-    if self.cachedControls.globalMute then
-        self.cachedControls.globalMute.EventHandler = nil
-    end
-    
     -- Reset component references
     self.components = {
-        videoBridge = nil,
+        callSync = nil,
         micBoxes = {},
         micMixer = nil,
+        roomControls = nil,
         invalid = {}
     }
     
@@ -806,17 +860,24 @@ if not validateControls() then
     return
 end
 
--- Check if roomName control has a valid string value
-if not controls.roomName or not controls.roomName.String or controls.roomName.String == "" then
-    print("ERROR: Controls.roomName.String is empty or invalid!")
-    return
-end
-
-local formattedRoomName = "["..controls.roomName.String.."]"
-myClockAudioCDTMicController = createClockAudioCDTMicController(formattedRoomName)
+-- Create controller instance with a temporary room name
+local tempRoomName = "[ClockAudio CDT]"
+myClockAudioCDTMicController = createClockAudioCDTMicController(tempRoomName, {debugging = false})
 
 if myClockAudioCDTMicController then
-    print("ClockAudioCDTMicController created successfully!")
+    -- Update room name from room controls component if available
+    if myClockAudioCDTMicController.components.roomControls and 
+       myClockAudioCDTMicController.components.roomControls["roomName"] then
+        local actualRoomName = myClockAudioCDTMicController.components.roomControls["roomName"].String
+        if actualRoomName and actualRoomName ~= "" then
+            myClockAudioCDTMicController.roomName = "[" .. actualRoomName .. "]"
+            print("ClockAudioCDTMicController created successfully for room: " .. actualRoomName)
+        else
+            print("ClockAudioCDTMicController created successfully (using default room name)")
+        end
+    else
+        print("ClockAudioCDTMicController created successfully (room controls not available)")
+    end
 else
     print("ERROR: Failed to create ClockAudioCDTMicController!")
 end 

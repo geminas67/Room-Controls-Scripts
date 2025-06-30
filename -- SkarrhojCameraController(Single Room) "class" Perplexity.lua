@@ -485,7 +485,7 @@ function SingleRoomCameraController:getComponentNames()
                 table.insert(namesTable.DevCamNames, comp.Name)
             elseif comp.Type:find("ACPR") then
                 table.insert(namesTable.CamACPRNames, comp.Name)
-            elseif comp.Type == "device_controller_script" and comp.Name:find("compRoomControls") then
+            elseif comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls") then
                 table.insert(namesTable.CompRoomControlsNames, comp.Name)
             end
         end

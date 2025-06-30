@@ -22,11 +22,11 @@ SkaarhojCameraController = {}
 SkaarhojCameraController.__index = SkaarhojCameraController
 
 --------** Class Constructor **--------
-function SkaarhojCameraController.new(roomName, config)
+function SkaarhojCameraController.new(config)
     local self = setmetatable({}, SkaarhojCameraController)
     
     -- Instance properties
-    self.roomName = roomName or "Divisible Space"
+    self.roomName = "Divisible Space" -- Will be updated from component after initialization
     self.debugging = (config and config.debugging) or true
     self.clearString = "[Clear]"
     
@@ -631,6 +631,18 @@ function SkaarhojCameraController:setCompRoomControlsComponent()
     end
 end
 
+--------** Room Name Management **--------
+function SkaarhojCameraController:updateRoomName()
+    -- Try to get room name from the first room controls component
+    if self.components.compRoomControls and self.components.compRoomControls[1] then
+        local roomName = self:safeComponentAccess(self.components.compRoomControls[1], "roomName", "getString")
+        if roomName and roomName ~= "" and roomName ~= self.clearString then
+            self.roomName = roomName
+            self:debugPrint("Room name updated to: " .. roomName)
+        end
+    end
+end
+
 --------** Privacy Visuals **--------
 function SkaarhojCameraController:updatePrivacyVisuals()
     self.privacyModule.updatePrivacyButton()
@@ -748,6 +760,7 @@ function SkaarhojCameraController:registerEventHandlers()
         for i, roomControlComp in ipairs(Controls.compRoomControls) do
             roomControlComp.EventHandler = function() 
                 self:setCompRoomControlsComponent() 
+                self:updateRoomName() -- Update room name when component changes
             end 
         end
     end
@@ -771,36 +784,31 @@ function SkaarhojCameraController:funcInit()
     self:debugPrint("Starting Divisible Space Camera Controller initialization...")
     self:getComponentNames()
     self:setupComponents()
+    self:updateRoomName() -- Update room name from component
     self:registerEventHandlers()
     self:performSystemInitialization()
     self:debugPrint("Divisible Space Camera Controller Initialized with "..self.cameraModule.getCameraCount().." cameras")
 end
 
 --------** Factory Function **--------
-local function createDivisibleSpaceController(roomName, config)
-    print("Creating Divisible Space Camera Controller for: "..tostring(roomName))
+local function createDivisibleSpaceController(config)
+    print("Creating Divisible Space Camera Controller...")
     local success, controller = pcall(function()
-        local instance = SkaarhojCameraController.new(roomName, config)
+        local instance = SkaarhojCameraController.new(config)
         instance:funcInit()
         return instance
     end)
     if success then
-        print("Successfully created Divisible Space Camera Controller for "..roomName)
+        print("Successfully created Divisible Space Camera Controller")
         return controller
     else
-        print("Failed to create controller for "..roomName..": "..tostring(controller))
+        print("Failed to create controller: "..tostring(controller))
         return nil
     end
 end
 
 --------** Instance Creation **--------
-if not Controls.roomName then
-    print("ERROR: Controls.roomName not found!")
-    return
-end
-
-local formattedRoomName = "["..Controls.roomName.String.."]"
-myDivisibleSpaceController = createDivisibleSpaceController(formattedRoomName)
+myDivisibleSpaceController = createDivisibleSpaceController()
 
 if myDivisibleSpaceController then
     print("Divisible Space Camera Controller created successfully!")

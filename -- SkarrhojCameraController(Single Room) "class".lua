@@ -477,6 +477,9 @@ end
 function SingleRoomCameraController:setCompRoomControlsComponent()
     self.components.compRoomControls = self:setComponent(Controls.compRoomControls, "Room Controls")
     if self.components.compRoomControls then
+        -- Update room name from the component
+        self:updateRoomNameFromComponent()
+        
         -- Add event handler for system power LED
         local ledSystemPower = self.components.compRoomControls["ledSystemPower"]
         if ledSystemPower then
@@ -493,6 +496,28 @@ function SingleRoomCameraController:setCompRoomControlsComponent()
                         self:safeComponentAccess(self.components.skaarhojPTZController, "Disable", "set", true)
                     end
                 end
+            end
+        end
+        
+        -- Add event handler for room name changes
+        local roomNameControl = self.components.compRoomControls["roomName"]
+        if roomNameControl then
+            roomNameControl.EventHandler = function()
+                self:updateRoomNameFromComponent()
+            end
+        end
+    end
+end
+
+--------** Room Name Management **--------
+function SingleRoomCameraController:updateRoomNameFromComponent()
+    if self.components.compRoomControls then
+        local roomNameControl = self.components.compRoomControls["roomName"]
+        if roomNameControl and roomNameControl.String and roomNameControl.String ~= "" then
+            local newRoomName = "["..roomNameControl.String.."]"
+            if newRoomName ~= self.roomName then
+                self.roomName = newRoomName
+                self:debugPrint("Room name updated to: "..newRoomName)
             end
         end
     end
@@ -551,7 +576,7 @@ function SingleRoomCameraController:getComponentNames()
                 table.insert(namesTable.DevCamNames, comp.Name)
             elseif comp.Type:find("ACPR") then
                 table.insert(namesTable.CamACPRNames, comp.Name)
-            elseif comp.Type == "device_controller_script" and comp.Name:find("compRoomControls") then
+            elseif comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls") then
                 table.insert(namesTable.CompRoomControlsNames, comp.Name)
             end
         end
@@ -687,13 +712,25 @@ local function createSingleRoomController(roomName, config)
 end
 
 --------** Instance Creation **--------
-if not Controls.roomName then
-    print("ERROR: Controls.roomName not found!")
-    return
+-- Get room name from room controls component
+local function getRoomNameFromComponent()
+    -- First try to get from the room controls component if it's already set
+    if Controls.compRoomControls and Controls.compRoomControls.String ~= "" and Controls.compRoomControls.String ~= "[Clear]" then
+        local roomControlsComponent = Component.New(Controls.compRoomControls.String)
+        if roomControlsComponent and roomControlsComponent["roomName"] then
+            local roomName = roomControlsComponent["roomName"].String
+            if roomName and roomName ~= "" then
+                return "["..roomName.."]"
+            end
+        end
+    end
+    
+    -- Fallback to default room name if component not available
+    return "[Single Room]"
 end
 
-local formattedRoomName = "["..Controls.roomName.String.."]"
-mySingleRoomController = createSingleRoomController(formattedRoomName)
+local roomName = getRoomNameFromComponent()
+mySingleRoomController = createSingleRoomController(roomName)
 
 if mySingleRoomController then
     print("Single Room Camera Controller created successfully!")
