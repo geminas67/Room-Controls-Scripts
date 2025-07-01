@@ -15,15 +15,15 @@
 
 -- Define control references
 local controls = {
-    txtDestination = Controls['Text-Destination'],
-    btnAVMute = Controls['AV Mute BTN'],
-    btnDestClickShare = Controls['Destination Selector - ClickShare'],
-    btnDestTeamsPC = Controls['Destination Selector - Teams PC'],
-    btnDestLaptopFront = Controls['Destination Selector - Laptop Front'],
-    btnDestLaptopRear = Controls['Destination Selector - Laptop Rear'],
-    btnDestNoSource = Controls['Destination Selector - No Source'],
-    btnDestAllDisplays = Controls['Destination - All Displays'],
-    btnExtronSignalPresence = Controls['Extron DXP Signal Presence'],
+    txtDestination = Controls['txtDestination'],
+    btnAVMute = Controls['btnAVMute'],
+    btnSourceClickShare = Controls['btnSourceClickShare'],
+    btnSourceTeamsPC = Controls['btnSourceTeamsPC'],
+    btnSourceLaptopFront = Controls['btnSourceLaptopFront'],
+    btnSourceLaptopRear = Controls['btnSourceLaptopRear'],
+    btnSourceNoSource = Controls['btnSourceNoSource'],
+    btnSourceAllDisplays = Controls['btnSourceAllDisplays'],
+    btnExtronSignalPresence = Controls['btnExtronSignalPresence'],
 }
 
 -- ExtronDXPController class
@@ -69,7 +69,7 @@ function ExtronDXPController.new()
     -- Source priority mapping (for auto-switching)
     self.sourcePriority = {
         {name = "TeamsPC", input = self.inputs.TeamsPC, checkFunc = function() 
-            return HIDCallSync["off.hook"].Boolean or self.extronRouter["Extron DXP Signal Presence 3"].Boolean 
+            return callSync["off.hook"].Boolean or self.extronRouter["Extron DXP Signal Presence 3"].Boolean 
         end},
         {name = "LaptopFront", input = self.inputs.LaptopFront, checkFunc = function() 
             return self.extronRouter["Extron DXP Signal Presence 4"].Boolean 
@@ -93,7 +93,7 @@ function ExtronDXPController.new()
     self.roomControls = nil
     self.uciLayerSelector = nil
     self.statusBar = nil
-    self.hidConferencing = nil
+    self.callSync = nil
     
     -- Current state
     self.currentSource = nil
@@ -120,6 +120,7 @@ function ExtronDXPController:discoverComponents()
     local components = Component.GetComponents()
     local discovered = {
         ExtronDXPNames = {},
+        CallSyncNames = {},
         ClickShareNames = {},
         RoomControlsNames = {}
     }
@@ -128,6 +129,8 @@ function ExtronDXPController:discoverComponents()
         if v.Type == "%PLUGIN%_qsysc.extron.matrix.0.0.0.0-master_%FP%_bf09cd55c73845eb6fc31e4b896516ff)" then
             table.insert(discovered.ExtronDXPNames, v.Name)
         elseif v.Type == "call_sync" then
+            table.insert(discovered.CallSyncNames, v.Name)
+        elseif v.Type == "%PLUGIN%_bb4217ac-401f-4698-aad9-9e4b2496ff46_%FP%_e0a4597b59bdca3247ccb142ce451198" then
             table.insert(discovered.ClickShareNames, v.Name)
         elseif v.Type == "device_controller_script" and string.match(v.Name, "^compRoomControls") then
             table.insert(discovered.RoomControlsNames, v.Name)
@@ -155,8 +158,6 @@ function ExtronDXPController:setupComponents()
     
     -- Setup other components
     self.uciLayerSelector = Component.New('BDRM-UCI Layer Selector')
-    self.statusBar = Component.New('BDRM Status Bar')
-    self.hidConferencing = Component.New('HID Conferencing IOB-01')
 end
 
 --------** UCI Integration Methods **--------
@@ -238,7 +239,7 @@ function ExtronDXPController:clearAllDestinations()
     
     -- Clear all destination feedback
     for i = 1, 5 do
-        self.controls.btnDestAllDisplays[i].Boolean = false
+        self.controls.btnDestination[i].Boolean = false
     end
     
     -- Clear all source destination feedback buttons
@@ -248,10 +249,7 @@ end
 function ExtronDXPController:clearAllDestinationFeedback()
     -- Clear all destination feedback buttons for all sources
     for i = 1, 4 do
-        self.controls.btnDestClickShare[i].Boolean = false
-        self.controls.btnDestTeamsPC[i].Boolean = false
-        self.controls.btnDestLaptopFront[i].Boolean = false
-        self.controls.btnDestLaptopRear[i].Boolean = false
+        self.controls.btnDestination[i].Boolean = false
         self.controls.btnDestNoSource[i].Boolean = false
     end
 end
@@ -263,15 +261,15 @@ function ExtronDXPController:updateDestinationFeedback()
         local isActive = self.currentDestinations[i] or false
         -- Use the appropriate destination feedback button based on current source
         if self.currentSource == self.inputs.ClickShare then
-            self.controls.btnDestClickShare[i].Boolean = isActive
+            self.controls.btnDestination[i].Boolean = isActive
         elseif self.currentSource == self.inputs.TeamsPC then
-            self.controls.btnDestTeamsPC[i].Boolean = isActive
+            self.controls.btnDestination[i].Boolean = isActive
         elseif self.currentSource == self.inputs.LaptopFront then
-            self.controls.btnDestLaptopFront[i].Boolean = isActive
+            self.controls.btnDestination[i].Boolean = isActive
         elseif self.currentSource == self.inputs.LaptopRear then
-            self.controls.btnDestLaptopRear[i].Boolean = isActive
+            self.controls.btnDestination[i].Boolean = isActive
         elseif self.currentSource == self.inputs.NoSource then
-            self.controls.btnDestNoSource[i].Boolean = isActive
+            self.controls.btnDestination[i].Boolean = isActive
         end
     end
 end
@@ -350,9 +348,9 @@ function ExtronDXPController:setupAutoSwitchMonitoring()
         end
     end
     
-    -- Monitor HID off-hook state
-    if self.hidConferencing then
-        self.hidConferencing["spk_led_off_hook"].EventHandler = function(ctl)
+    -- Monitor CallSync off-hook state
+    if self.callSync then
+        self.callSync["off.hook"].EventHandler = function(ctl)
             if self.systemPowered and not self.systemWarming then
                 self:checkAutoSwitch()
             end
@@ -378,7 +376,7 @@ end
 function ExtronDXPController:registerEventHandlers()
     -- ClickShare destination selectors
     for i = 1, 5 do
-        self.controls.btnDestClickShare[i].EventHandler = function()
+        self.controls.btnVideoSource[i].EventHandler = function()
             self:clearAllDestinations()
             if i <= 4 then
                 self:setDestination(i, true)
@@ -389,14 +387,14 @@ function ExtronDXPController:registerEventHandlers()
                     self:setDestination(output, true)
                 end
                 self:setSource(self.inputs.ClickShare)
-                self.controls.btnDestAllDisplays[1].Boolean = true
+                self.controls.btnDestination[1].Boolean = true
             end
         end
     end
     
     -- Teams PC destination selectors
     for i = 1, 5 do
-        self.controls.btnDestTeamsPC[i].EventHandler = function()
+        self.controls.btnVideoSource[i].EventHandler = function()
             self:clearAllDestinations()
             if i == 1 then
                 -- Front displays
@@ -414,14 +412,14 @@ function ExtronDXPController:registerEventHandlers()
                     self:setDestination(output, true)
                 end
                 self:setSource(self.inputs.TeamsPC)
-                self.controls.btnDestAllDisplays[2].Boolean = true
+                self.controls.btnDestination[2].Boolean = true
             end
         end
     end
     
     -- Laptop Front destination selectors
     for i = 1, 5 do
-        self.controls.btnDestLaptopFront[i].EventHandler = function()
+        self.controls.btnVideoSource[i].EventHandler = function()
             self:clearAllDestinations()
             if i <= 4 then
                 self:setDestination(i, true)
@@ -432,14 +430,14 @@ function ExtronDXPController:registerEventHandlers()
                     self:setDestination(output, true)
                 end
                 self:setSource(self.inputs.LaptopFront)
-                self.controls.btnDestAllDisplays[3].Boolean = true
+                self.controls.btnDestination[3].Boolean = true
             end
         end
     end
     
     -- Laptop Rear destination selectors
     for i = 1, 5 do
-        self.controls.btnDestLaptopRear[i].EventHandler = function()
+        self.controls.btnVideoSource[i].EventHandler = function()
             self:clearAllDestinations()
             if i <= 4 then
                 self:setDestination(i, true)
@@ -450,14 +448,14 @@ function ExtronDXPController:registerEventHandlers()
                     self:setDestination(output, true)
                 end
                 self:setSource(self.inputs.LaptopRear)
-                self.controls.btnDestAllDisplays[4].Boolean = true
+                self.controls.btnDestination[4].Boolean = true
             end
         end
     end
     
     -- No Source destination selectors
     for i = 1, 5 do
-        self.controls.btnDestNoSource[i].EventHandler = function()
+        self.controls.btnVideoSource[i].EventHandler = function()
             self:clearAllDestinations()
             if i <= 4 then
                 self:setDestination(i, true)
@@ -468,14 +466,14 @@ function ExtronDXPController:registerEventHandlers()
                     self:setDestination(output, true)
                 end
                 self:setSource(self.inputs.NoSource)
-                self.controls.btnDestAllDisplays[5].Boolean = true
+                self.controls.btnDestination[5].Boolean = true
             end
         end
     end
     
     -- Extron DXP Signal Presence handlers
     for i = 1, 5 do
-        self.controls.btnExtronSignalPresence[i].EventHandler = function()
+        self.controls.ledExtronSignalPresence[i].EventHandler = function()
             if self.systemPowered and not self.systemWarming then
                 self:checkAutoSwitch()
             end
@@ -485,10 +483,12 @@ function ExtronDXPController:registerEventHandlers()
     -- UCI Layer Selector (disable Teams PC buttons for Mon-02 and Mon-04)
     if self.uciLayerSelector then
         self.uciLayerSelector['selector'].EventHandler = function(ctl)
-            self.controls.btnDestTeamsPC[2].Color = '#ff6666'
-            self.controls.btnDestTeamsPC[4].Color = '#ff6666'
-            self.controls.btnDestTeamsPC[2].Legend = 'N/A'
-            self.controls.btnDestTeamsPC[4].Legend = 'N/A'
+            self.controls.btnDestination[2].Color = '#ff6666'
+            self.controls.btnDestination[4].Color = '#ff6666'
+            self.controls.btnDestination[2].Legend = 'N/A'
+            self.controls.btnDestination[4].Legend = 'N/A'
+            self.controls.btnDestination[2].IsDisabled = true
+            self.controls.btnDestination[4].IsDisabled = true
         end
     end
 end

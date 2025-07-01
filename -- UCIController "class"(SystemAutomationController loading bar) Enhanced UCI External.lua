@@ -1,20 +1,259 @@
 --[[
-  UCIController class - Enhanced Version (External Controller Notification)
+  UCIController class - Enhanced Version (External Controller Notification) with Universal Video Switcher Integration
   Author: Nikolas Smith, Q-SYS
   2025-06-23
-  Version: 1.2 (External Notification)
+  Version: 1.3 (Universal Video Switcher Integration)
       Firmware Req: 10.0
     Notes:
     - This script is a modified version of the UCIController class that adds enhanced error handling and validation for required controls.
     - It also adds a check for the Room Controls component and a fallback method if the component is not found.
     - It also adds a check for the System Automation component and a fallback method if the component is not found.
-
-
-  This version includes external controller registration and notification for UCI layer changes.
+    - NEW: Universal video switcher integration supporting NV32, Extron DXP, and other video switchers
+    - This version includes external controller registration and notification for UCI layer changes.
 ]]--
 
 UCIController = {}
 UCIController.__index = UCIController
+
+-- Video Switcher Integration System
+local VideoSwitcherIntegration = {}
+
+-- Video Switcher Types and Configurations
+VideoSwitcherIntegration.SwitcherTypes = {
+    NV32 = {
+        name = "NV32",
+        componentType = "streamer_hdmi_switcher",
+        variableNames = {"devNV32", "codenameNV32", "varNV32CodeName", "nv32Device", "nv32Component"},
+        routingMethod = "hdmi.out.1.select.index",
+        defaultMapping = {
+            [7] = 5, -- btnNav07 → HDMI2 (Input 5)
+            [8] = 4, -- btnNav08 → HDMI1 (Input 4)
+            [9] = 6  -- btnNav09 → HDMI3 (Input 6)
+        }
+    },
+    ExtronDXP = {
+        name = "Extron DXP",
+        componentType = "%PLUGIN%_qsysc.extron.matrix.0.0.0.0-master_%FP%_bf09cd55c73845eb6fc31e4b896516ff)",
+        variableNames = {"devExtronDXP", "codenameExtronDXP", "varExtronDXPCodeName", "extronDXPDevice", "extronDXPComponent"},
+        routingMethod = "output_1", -- Uses String property with input number
+        defaultMapping = {
+            [7] = 2, -- btnNav07 → Teams PC (Input 2)
+            [8] = 4, -- btnNav08 → Laptop Front (Input 4)
+            [9] = 1  -- btnNav09 → ClickShare (Input 1)
+        }
+    },
+    Generic = {
+        name = "Generic",
+        componentType = nil, -- Will be auto-detected
+        variableNames = {"devVideoSwitcher", "codenameVideoSwitcher", "varVideoSwitcherCodeName"},
+        routingMethod = "output_1", -- Default routing method
+        defaultMapping = {
+            [7] = 1, -- btnNav07 → Input 1
+            [8] = 2, -- btnNav08 → Input 2
+            [9] = 3  -- btnNav09 → Input 3
+        }
+    }
+}
+
+-- Video Switcher Integration Class
+function VideoSwitcherIntegration.new()
+    local self = {}
+    
+    -- Instance properties
+    self.switcherType = nil
+    self.switcherComponent = nil
+    self.switcherConfig = nil
+    self.isEnabled = false
+    self.debugMode = true
+    self.uciToInputMapping = {}
+    self.monitoringTimer = nil
+    self.previousButtonStates = {}
+    
+    -- Debug helper
+    function self:debugPrint(str)
+        if self.debugMode then
+            print("[Video Switcher] " .. str)
+        end
+    end
+    
+    -- Discover video switcher components
+    function self:discoverSwitchers()
+        local components = Component.GetComponents()
+        local discovered = {}
+        
+        for _, comp in pairs(components) do
+            for switcherType, config in pairs(VideoSwitcherIntegration.SwitcherTypes) do
+                if config.componentType and comp.Type == config.componentType then
+                    if not discovered[switcherType] then
+                        discovered[switcherType] = {}
+                    end
+                    table.insert(discovered[switcherType], comp.Name)
+                end
+            end
+        end
+        
+        return discovered
+    end
+    
+    -- Auto-detect switcher type
+    function self:autoDetectSwitcherType()
+        local discovered = self:discoverSwitchers()
+        
+        -- Check UCI variables first
+        for switcherType, config in pairs(VideoSwitcherIntegration.SwitcherTypes) do
+            for _, varName in ipairs(config.variableNames) do
+                if Controls[varName] and Controls[varName].String and Controls[varName].String ~= "" then
+                    self:debugPrint("Found " .. switcherType .. " via UCI variable: " .. varName)
+                    return switcherType, Controls[varName].String
+                end
+            end
+        end
+        
+        -- Check discovered components
+        for switcherType, components in pairs(discovered) do
+            if #components > 0 then
+                self:debugPrint("Auto-detected " .. switcherType .. " component: " .. components[1])
+                return switcherType, components[1]
+            end
+        end
+        
+        return nil, nil
+    end
+    
+    -- Initialize video switcher integration
+    function self:initialize()
+        self:debugPrint("Initializing Video Switcher Integration")
+        
+        -- Auto-detect switcher type and component
+        local switcherType, componentName = self:autoDetectSwitcherType()
+        
+        if not switcherType then
+            self:debugPrint("No video switcher detected - integration disabled")
+            return false
+        end
+        
+        -- Set up configuration
+        self.switcherType = switcherType
+        self.switcherConfig = VideoSwitcherIntegration.SwitcherTypes[switcherType]
+        self.uciToInputMapping = self.switcherConfig.defaultMapping
+        
+        -- Create component reference
+        local success, component = pcall(function()
+            return Component.New(componentName)
+        end)
+        
+        if success and component then
+            self.switcherComponent = component
+            self:debugPrint("Video switcher component created: " .. componentName)
+        else
+            self:debugPrint("Failed to create video switcher component: " .. tostring(component))
+            return false
+        end
+        
+        -- Set up UCI button monitoring
+        self:setupUCIButtonMonitoring()
+        
+        self.isEnabled = true
+        self:debugPrint("Video Switcher Integration initialized successfully")
+        return true
+    end
+    
+    -- Set up UCI button monitoring
+    function self:setupUCIButtonMonitoring()
+        if not self.isEnabled then return end
+        
+        -- Create monitoring timer
+        self.monitoringTimer = Timer.New()
+        self.monitoringTimer.EventHandler = function()
+            for uciButton, inputNumber in pairs(self.uciToInputMapping) do
+                local buttonName = "btnNav" .. string.format("%02d", uciButton)
+                if Controls[buttonName] then
+                    local currentState = Controls[buttonName].Boolean
+                    local previousState = self.previousButtonStates[uciButton]
+                    
+                    -- Check if button state changed to true
+                    if currentState and not previousState then
+                        self:switchToInput(inputNumber, uciButton)
+                    end
+                    
+                    -- Update previous state
+                    self.previousButtonStates[uciButton] = currentState
+                end
+            end
+            
+            -- Continue monitoring
+            self.monitoringTimer:Start(0.1) -- Check every 100ms
+        end
+        
+        -- Start the monitoring timer
+        self.monitoringTimer:Start(0.1)
+        self:debugPrint("UCI button monitoring started")
+    end
+    
+    -- Switch to specific input
+    function self:switchToInput(inputNumber, uciButton)
+        if not self.isEnabled or not self.switcherComponent then
+            return false
+        end
+        
+        self:debugPrint("UCI Button " .. uciButton .. " pressed, switching to input " .. inputNumber)
+        
+        local success, err = pcall(function()
+            if self.switcherType == "NV32" then
+                -- NV32 uses Value property
+                self.switcherComponent[self.switcherConfig.routingMethod].Value = inputNumber
+            elseif self.switcherType == "ExtronDXP" then
+                -- Extron DXP uses String property
+                self.switcherComponent[self.switcherConfig.routingMethod].String = tostring(inputNumber)
+            else
+                -- Generic switcher - try both methods
+                local success1 = pcall(function()
+                    self.switcherComponent[self.switcherConfig.routingMethod].Value = inputNumber
+                end)
+                if not success1 then
+                    self.switcherComponent[self.switcherConfig.routingMethod].String = tostring(inputNumber)
+                end
+            end
+        end)
+        
+        if success then
+            self:debugPrint("✓ Successfully switched to input " .. inputNumber)
+            return true
+        else
+            self:debugPrint("⚠ Failed to switch to input " .. inputNumber .. ": " .. tostring(err))
+            return false
+        end
+    end
+    
+    -- Update UCI to input mapping
+    function self:updateMapping(newMapping)
+        self.uciToInputMapping = newMapping or self.switcherConfig.defaultMapping
+        self:debugPrint("Updated UCI to input mapping")
+    end
+    
+    -- Get current status
+    function self:getStatus()
+        return {
+            enabled = self.isEnabled,
+            switcherType = self.switcherType,
+            componentValid = (self.switcherComponent ~= nil),
+            mapping = self.uciToInputMapping
+        }
+    end
+    
+    -- Cleanup
+    function self:cleanup()
+        if self.monitoringTimer then
+            self.monitoringTimer:Stop()
+            self.monitoringTimer = nil
+        end
+        self.switcherComponent = nil
+        self.isEnabled = false
+        self:debugPrint("Video Switcher Integration cleaned up")
+    end
+    
+    return self
+end
 
 -- Add debug check for required controls
 function UCIController:checkRequiredControls()
@@ -74,6 +313,9 @@ function UCIController.new(uciPage, defaultRoutingLayer, defaultActiveLayer, hid
     self.hiddenNavIndices = hiddenNavIndices or {}
     self.hiddenHelpIndices = hiddenHelpIndices or {}
     self.isInitialized = false
+    
+    -- Video Switcher Integration
+    self.videoSwitcher = VideoSwitcherIntegration.new()
     
     -- Check required controls before proceeding
     self:checkRequiredControls()
@@ -1005,10 +1247,9 @@ function UCIController:cleanup()
         self.timeoutTimer = nil
     end
     
-    -- Stop NV32 control timer
-    if nv32ControlTimer then
-        nv32ControlTimer:Stop()
-        nv32ControlTimer = nil
+    -- Cleanup video switcher integration
+    if self.videoSwitcher then
+        self.videoSwitcher:cleanup()
     end
     
     -- Remove event handlers
@@ -1215,6 +1456,17 @@ function UCIController:funcInit()
         self.varActiveLayer = self.kLayerStart
         print("Room Automation not available - using default UCI initialization")
     end
+    
+    -- Initialize video switcher integration
+    if self.videoSwitcher then
+        local videoSwitcherSuccess = self.videoSwitcher:initialize()
+        if videoSwitcherSuccess then
+            print("Video Switcher Integration initialized successfully")
+        else
+            print("Video Switcher Integration failed to initialize - continuing without video switching")
+        end
+    end
+    
     -- Hide specified navigation buttons [1][3]
     for _, index in ipairs(self.hiddenNavIndices) do
         if self.arrbtnNavs[index] then
@@ -1281,203 +1533,76 @@ myUCI = createUCIControllerWithErrorHandling(
     {} -- specify which help buttons to hide {2, 4} {} --no buttons to hide
 )
 
--- Alternative approach: Direct UCI button monitoring for NV32 control
-local nv32ControlTimer = nil -- Make timer accessible for cleanup
-
-local function setupDirectNV32Control()
-    print("=== Setting up Direct NV32 Control via UCI Buttons ===")
-    
-    -- Define the UCI button to NV32 input mapping
-    local uciToNV32Mapping = {
-        [7] = 5, -- btnNav07 → HDMI2 (Input 5)
-        [8] = 4, -- btnNav08 → HDMI1 (Input 4)
-        [9] = 6  -- btnNav09 → HDMI3 (Input 6)
-    }
-    
-    -- Try multiple possible NV32 device variable names
-    local nv32DeviceName = nil
-    local possibleNV32Variables = {
-        "devNV32",
-        "codenameNV32", 
-        "varNV32CodeName",
-        "nv32Device",
-        "nv32Component"
-    }
-    
-    -- Check for existing NV32 device variable
-    for _, varName in ipairs(possibleNV32Variables) do
-        if Controls[varName] then
-            print("✓ Found UCI variable: " .. varName)
-            if Controls[varName].String and Controls[varName].String ~= "" then
-                nv32DeviceName = Controls[varName].String
-                print("✓ Found NV32 device variable: " .. varName .. " = " .. nv32DeviceName)
-                break
-            else
-                print("⚠ Variable '" .. varName .. "' exists but is empty or has no String property")
+-- Video Switcher Configuration and Debugging Functions
+function printVideoSwitcherStatus()
+    if myUCI then
+        local status = myUCI:getVideoSwitcherStatus()
+        print("=== Video Switcher Status ===")
+        print("Enabled: " .. tostring(status.enabled))
+        print("Type: " .. tostring(status.switcherType))
+        print("Component Valid: " .. tostring(status.componentValid))
+        if status.mapping then
+            print("Current Mapping:")
+            for uciButton, inputNumber in pairs(status.mapping) do
+                print("  btnNav" .. string.format("%02d", uciButton) .. " → Input " .. inputNumber)
             end
-        else
-            print("✗ UCI variable '" .. varName .. "' not found")
         end
+        print("=== End Video Switcher Status ===")
+    else
+        print("UCI Controller not available")
     end
-    
-    -- If no variable found, try to auto-discover NV32 devices
-    if not nv32DeviceName then
-        print("⚠ No NV32 device variable found. Attempting auto-discovery...")
-        local nv32Devices = {}
-        for _, comp in pairs(Component.GetComponents()) do
-            if comp.Type == "streamer_hdmi_switcher" then
-                table.insert(nv32Devices, comp.Name)
-            end
-        end
+end
+
+-- Example: Custom video switcher mapping
+function configureCustomVideoSwitcherMapping()
+    if myUCI then
+        -- Example: Custom mapping for a different video switcher
+        local customMapping = {
+            [7] = 3, -- btnNav07 → Input 3 (PC)
+            [8] = 1, -- btnNav08 → Input 1 (Laptop)
+            [9] = 2  -- btnNav09 → Input 2 (Wireless)
+        }
         
-        if #nv32Devices > 0 then
-            nv32DeviceName = nv32Devices[1] -- Use first found device
-            print("✓ Auto-discovered NV32 device: " .. nv32DeviceName)
+        local success = myUCI:updateVideoSwitcherMapping(customMapping)
+        if success then
+            print("Custom video switcher mapping applied successfully")
+            printVideoSwitcherStatus()
         else
-            print("⚠ No NV32 devices found in system")
+            print("Failed to apply custom video switcher mapping")
         end
     end
-    
-    -- Store previous button states to detect changes
-    local previousButtonStates = {}
-    
-    -- Create a timer to monitor button states without overriding EventHandlers
-    nv32ControlTimer = Timer.New()
-    nv32ControlTimer.EventHandler = function()
-        for uciButton, nv32Input in pairs(uciToNV32Mapping) do
-            local buttonName = "btnNav" .. string.format("%02d", uciButton)
-            if Controls[buttonName] then
-                local currentState = Controls[buttonName].Boolean
-                local previousState = previousButtonStates[uciButton]
-                
-                -- Check if button state changed to true
-                if currentState and not previousState then
-                    print("UCI Button " .. uciButton .. " pressed, switching NV32 to input " .. nv32Input)
-                    
-                    -- Control NV32 using discovered device name
-                    if nv32DeviceName then
-                        local success, nv32Component = pcall(function()
-                            return Component.New(nv32DeviceName)
-                        end)
-                        if success and nv32Component then
-                            local routeSuccess, routeErr = pcall(function()
-                                nv32Component["hdmi.out.1.select.index"].Value = nv32Input
-                            end)
-                            if routeSuccess then
-                                print("✓ NV32 controlled: Set Output 1 to Input " .. nv32Input .. " on " .. nv32DeviceName)
-                            else
-                                print("⚠ Failed to set NV32 route: " .. tostring(routeErr))
-                            end
-                        else
-                            print("⚠ Failed to create NV32 component: " .. tostring(nv32Component))
-                        end
-                    else
-                        print("⚠ NV32 device not available - please add a UCI variable named 'devNV32' with your NV32 device name")
-                        print("   Example: Add UCI variable 'devNV32' = 'NV32-H-01'")
-                    end
-                end
-                
-                -- Update previous state
-                previousButtonStates[uciButton] = currentState
-            end
-        end
-        
-        -- Continue monitoring
-        nv32ControlTimer:Start(0.1) -- Check every 100ms
+end
+
+-- Print initial video switcher status
+Timer.CallAfter(function()
+    printVideoSwitcherStatus()
+end, 2)
+
+print("=== Universal Video Switcher Integration Status ===")
+print("✓ UCI script: Universal video switcher integration active")
+print("✓ Supports NV32, Extron DXP, and other video switchers")
+print("✓ Auto-detection and configuration")
+print("=== Integration Status Complete ===")
+
+-- Video Switcher Integration Methods
+function UCIController:getVideoSwitcherStatus()
+    if self.videoSwitcher then
+        return self.videoSwitcher:getStatus()
     end
-    
-    -- Start the monitoring timer
-    nv32ControlTimer:Start(0.1)
-    print("✓ Timer-based UCI button monitoring started")
-    print("=== Direct NV32 Control Setup Complete ===")
+    return { enabled = false, switcherType = "None", componentValid = false }
 end
 
--- Set up direct control
-setupDirectNV32Control()
-
--- Test UCI button accessibility
-print("=== Testing UCI Button Accessibility ===")
-for i = 7, 9 do
-    local buttonName = "btnNav" .. string.format("%02d", i)
-    if Controls[buttonName] then
-        print("✓ " .. buttonName .. " accessible, current state: " .. tostring(Controls[buttonName].Boolean))
-    else
-        print("✗ " .. buttonName .. " NOT accessible")
+function UCIController:updateVideoSwitcherMapping(newMapping)
+    if self.videoSwitcher then
+        self.videoSwitcher:updateMapping(newMapping)
+        return true
     end
+    return false
 end
 
--- Test NV32 variable and provide setup instructions
-print("=== Testing NV32 Device Availability ===")
-local nv32Found = false
-local possibleNV32Variables = {"devNV32", "codenameNV32", "varNV32CodeName", "nv32Device", "nv32Component"}
-
--- Special debug for devNV32
-print("=== Special Debug for devNV32 ===")
-if Controls.devNV32 then
-    print("✓ Controls.devNV32 exists")
-    print("   Type: " .. type(Controls.devNV32))
-    print("   String property exists: " .. tostring(Controls.devNV32.String ~= nil))
-    if Controls.devNV32.String then
-        print("   String value: '" .. Controls.devNV32.String .. "'")
-        if Controls.devNV32.String ~= "" then
-            print("✓ devNV32 has valid device name: " .. Controls.devNV32.String)
-            nv32Found = true
-        else
-            print("⚠ devNV32 exists but is empty")
-        end
-    else
-        print("⚠ devNV32.String is nil")
+function UCIController:switchVideoInput(inputNumber)
+    if self.videoSwitcher then
+        return self.videoSwitcher:switchToInput(inputNumber, 0) -- 0 indicates manual switch
     end
-else
-    print("✗ Controls.devNV32 does not exist")
-end
-print("=== End Special Debug ===")
-
-for _, varName in ipairs(possibleNV32Variables) do
-    if Controls[varName] then
-        print("✓ UCI variable '" .. varName .. "' found")
-        if Controls[varName].String and Controls[varName].String ~= "" then
-            print("✓ NV32 device set: " .. Controls[varName].String)
-            nv32Found = true
-        else
-            print("⚠ Variable '" .. varName .. "' exists but is empty or has no String property")
-        end
-    else
-        print("✗ UCI variable '" .. varName .. "' not found")
-    end
-end
-
-if not nv32Found then
-    print("⚠ No NV32 device variable found or configured")
-    print("📋 SETUP INSTRUCTIONS:")
-    print("   1. In Q-SYS Designer, open your UCI design")
-    print("   2. Go to 'UCI Variables' section")
-    print("   3. Add a new String variable named 'devNV32'")
-    print("   4. Set its value to your NV32 device name (e.g., 'NV32-H-01')")
-    print("   5. Save and reload the UCI")
-    print("   OR use one of these alternative variable names: codenameNV32, varNV32CodeName")
-end
-
--- Test for NV32 devices in system
-local nv32Devices = {}
-for _, comp in pairs(Component.GetComponents()) do
-    if comp.Type == "streamer_hdmi_switcher" then
-        table.insert(nv32Devices, comp.Name)
-    end
-end
-
-if #nv32Devices > 0 then
-    print("✓ Found " .. #nv32Devices .. " NV32 device(s) in system:")
-    for _, device in ipairs(nv32Devices) do
-        print("   - " .. device)
-    end
-else
-    print("⚠ No NV32 devices found in system")
-end
-
-print("=== End Connectivity Test ===")
-
-print("=== UCI and NV32 Integration Status ===")
-print("✓ UCI script: Direct NV32 control via UCI variable active")
-print("✓ Each UCI controls only its assigned NV32 device")
-print("=== Integration Status Complete ===") 
+    return false
+end 
