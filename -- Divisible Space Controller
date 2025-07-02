@@ -1,0 +1,76 @@
+-- ExternalDivisibleSpaceController.lua
+
+-- Table to hold all room controller instances
+local roomControllers = {
+  RoomA = createSystemController("Room A", "Conference Room"),
+  RoomB = createSystemController("Room B", "Conference Room"),
+  -- Add more as needed
+}
+
+-- State tracking
+local combined = false
+
+-- Helper: Combine rooms
+local function combineRooms()
+  combined = true
+  -- Example: Power on both rooms, set shared volume, mute privacy, etc.
+  roomControllers.RoomA.powerModule.powerOn()
+  roomControllers.RoomB.powerModule.powerOn()
+  -- Set both to same volume (or custom logic)
+  roomControllers.RoomA.audioModule.setVolume(0.7)
+  roomControllers.RoomB.audioModule.setVolume(0.7)
+  -- Unmute privacy if needed
+  roomControllers.RoomA.audioModule.setPrivacy(false)
+  roomControllers.RoomB.audioModule.setPrivacy(false)
+  -- Additional logic for shared video/audio routing
+end
+
+-- Helper: Separate rooms
+local function separateRooms()
+  combined = false
+  -- Example: Reset each room to independent state
+  roomControllers.RoomA.powerModule.powerOn()
+  roomControllers.RoomB.powerModule.powerOn()
+  -- Restore independent volumes or privacy
+  roomControllers.RoomA.audioModule.setPrivacy(true)
+  roomControllers.RoomB.audioModule.setPrivacy(true)
+  -- Additional logic for routing
+end
+
+-- UI or sensor event handler
+Controls.btnCombine.EventHandler = function(ctl)
+  if ctl.Boolean then
+    combineRooms()
+  else
+    separateRooms()
+  end
+end
+
+-- Optionally, monitor partition sensor:
+-- Controls.partitionSensor.EventHandler = function(ctl)
+--   if ctl.Boolean then combineRooms() else separateRooms() end
+-- end
+
+-- Aggregate state for monitoring or UI
+local function publishSystemState()
+  local state = {
+    RoomA = roomControllers.RoomA.publishNotification(),
+    RoomB = roomControllers.RoomB.publishNotification(),
+    Combined = combined
+  }
+  -- Publish to notification system or UI
+  Notifications.Publish("DivisibleSpaceState", state)
+end
+
+-- Optionally, subscribe to state changes in each room and republish
+roomControllers.RoomA.publishNotification = publishSystemState
+roomControllers.RoomB.publishNotification = publishSystemState
+
+-- Initialization
+local function init()
+  -- Set initial state, e.g., separated
+  separateRooms()
+  -- Register additional event handlers as needed
+end
+
+init()
