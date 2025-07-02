@@ -350,7 +350,7 @@ function ShureMXAController:getComponentNames()
             table.insert(namesTable.CallSyncNames, comp.Name)
         elseif comp.Type == "%PLUGIN%_984f65d4-443f-406d-9742-3cb4027ff81c_%FP%_1257aeeea0835196bee126b4dccce889" then
             table.insert(namesTable.MXANames, comp.Name)
-        elseif comp.Type == "device_controller_script" and comp.Name:find("compRoomControls") then
+        elseif comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls") then
             table.insert(namesTable.RoomControlsNames, comp.Name)
         end
     end
