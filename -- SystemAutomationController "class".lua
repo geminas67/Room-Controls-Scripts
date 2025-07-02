@@ -641,7 +641,7 @@ function SystemAutomationController:publishNotification()
         SystemCooling = Controls.ledSystemCooling.Boolean,
         AudioPrivacy = Controls.btnAudioPrivacy.Boolean,
         VideoPrivacy = Controls.btnVideoPrivacy.Boolean,
-        ACPRState = Controls.compACPR.Boolean,
+        ACPRState = (self.components.camACPR and self.components.camACPR["TrackingBypass"] and self.components.camACPR["TrackingBypass"].Boolean) or false,
         Timestamp = os.time()
     }
     

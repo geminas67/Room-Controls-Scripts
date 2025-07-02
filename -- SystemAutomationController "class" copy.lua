@@ -1,13 +1,11 @@
 --[[ 
   System Automation Helper Script - Modular Version with Gain Table
-  Author: Hope Roth, Q-SYS
-  February, 2025
-  Firmware Req: 9.12
-  Version: 2.2
-  
-  Refactored to follow UCI script pattern for modularity and reusability
-  Modified to use unified compGains array for all gain controls
-  Added individual volume up/down controls for each gain
+  Author: Nikolas Smith, Q-SYS
+  2025-06-20
+  Firmware Req: 10.0.0
+  Version: 1.0
+
+  Class-based implementation maintaining simplicity of functional approach
 ]] --
 
 -- SystemAutomationController class
@@ -330,7 +328,7 @@ function SystemAutomationController:initPowerModule()
             self.audioModule.setVolume(self.config.defaultVolume) -- Sets all gains
             self.audioModule.setMute(false)
             self.audioModule.setPrivacy(true)
-            -- self.videoModule.setPrivacy(false)
+            -- self.videoModule.setPrivacy(false) -- setPrivacy for Video during Startup, this is handled on Hook State since the room uses ACPR
             self.displayModule.powerAll(true)
             self:publishNotification()
         end,
@@ -461,6 +459,13 @@ function SystemAutomationController:setCamACPRComponent()
         self.components.camACPR["TrackingBypass"].EventHandler = function()
             self:updateACPRTrackingBypass()
         end
+        
+        -- Set initial disabled state based on call status
+        if self.components.callSync then
+            local callState = self:safeComponentAccess(self.components.callSync, "off.hook", "get")
+            self.components.camACPR["TrackingBypass"].IsDisabled = not callState
+        end
+        self.components.camACPR["TrackingBypass"].Legend = " "
     end
 end
 
@@ -483,9 +488,16 @@ function SystemAutomationController:callSyncCheckConnection()
         local state = self:safeComponentAccess(self.components.callSync, "off.hook", "get")
         self:debugPrint("Call Connection State: " .. tostring(state))
         
+        -- Check mute state when call connection changes
+        self:callSyncCheckMute()
+        
+        -- Update video privacy based on call state
+        self.videoModule.setPrivacy(not state)
+        
         -- Update ACPR tracking bypass based on call state
         if self.components.camACPR then
             self:safeComponentAccess(self.components.camACPR, "TrackingBypass", "set", not state)
+            self.components.camACPR["TrackingBypass"].IsDisabled = not state
         end
     end
 end
@@ -515,10 +527,10 @@ function SystemAutomationController:updateVolumeVisuals(gainIndex)
     if volumeFader and volumeMute then
         -- Update mute button appearance based on mute state
         if volumeMute.Boolean then
-            volumeMute.CssClass = "icon-volume_off"
+            volumeMute.CssClass = "icon-volume_mute"
             volumeFader.Color = "#CCCCCC"
         else
-            volumeMute.CssClass = "icon-volume_mute"
+            volumeMute.CssClass = "icon-volume_off"
             volumeFader.Color = "#0561A5"
         end
     end
@@ -586,7 +598,7 @@ function SystemAutomationController:getComponentNames()
             table.insert(namesTable.CallSyncNames, v.Name)
         elseif v.Type == "usb_uvc" then
             table.insert(namesTable.VideoBridgeNames, v.Name)
-        elseif v.Type == "%PLUGIN%_78a74df3-40bf-447b-a714-f564ebae238a_%FP%_17f7c2b905c38a7cdf412359a2a9a848" then
+        elseif v.Type == "%PLUGIN%_78a74df3-40bf-447b-a714-f564ebae238a_%FP%_bec481a6666b76b5249bbd12046c3920" then
             table.insert(namesTable.DisplayNames, v.Name)
         elseif v.Type == "gain" then
             table.insert(namesTable.GainNames, v.Name)
@@ -594,7 +606,7 @@ function SystemAutomationController:getComponentNames()
             table.insert(namesTable.MuteNames, v.Name)
         elseif v.Type == "%PLUGIN%_648260e3-c166-4b00-98ba-ba16ksnza4a63b0_%FP%_a4d2263b4380c424e16eebb67084f355" then
             table.insert(namesTable.CamACPRNames, v.Name)
-        end
+        end       
     end
 
     for i, v in pairs(namesTable) do
@@ -865,13 +877,13 @@ function SystemAutomationController:setupConfigSelection()
         "User Defined"
     }
 
-    -- Define control mappings
+    -- Define control mappings with array support
     local controlMappings = {
-        { control = "WarmupTime", config = "warmupTime" },
-        { control = "CooldownTime", config = "cooldownTime" },
-        { control = "MotionTimeout", config = "motionTimeout" },
-        { control = "MotionGracePeriod", config = "gracePeriod" },
-        { control = "DefaultVolume", config = "defaultVolume" }
+        { control = "WarmupTime", config = "warmupTime", isArray = false },
+        { control = "CooldownTime", config = "cooldownTime", isArray = false },
+        { control = "MotionTimeout", config = "motionTimeout", isArray = false },
+        { control = "MotionGracePeriod", config = "gracePeriod", isArray = false },
+        { control = "DefaultVolume", config = "defaultVolume", isArray = true, index = 1 }
     }
 
     -- Function to update control values based on selected configuration
@@ -882,8 +894,11 @@ function SystemAutomationController:setupConfigSelection()
         -- Enable/Disable controls based on configuration type
         local isUserDefined = configType == "User Defined"
         for _, mapping in ipairs(controlMappings) do
-            Controls[mapping.control].Value = config[mapping.config]
-            Controls[mapping.control].IsDisabled = not isUserDefined
+            local control = mapping.isArray and Controls[mapping.control][mapping.index] or Controls[mapping.control]
+            if control then
+                control.Value = config[mapping.config]
+                control.IsDisabled = not isUserDefined
+            end
         end
     end
 
@@ -894,9 +909,12 @@ function SystemAutomationController:setupConfigSelection()
 
     -- Event handlers for User Defined mode using loop
     for _, mapping in ipairs(controlMappings) do
-        Controls[mapping.control].EventHandler = function(ctl)
-            if Controls.selDefaultConfigs.String == "User Defined" then
-                self.defaultConfigs["User Defined"][mapping.config] = ctl.Value
+        local control = mapping.isArray and Controls[mapping.control][mapping.index] or Controls[mapping.control]
+        if control then
+            control.EventHandler = function(ctl)
+                if Controls.selDefaultConfigs.String == "User Defined" then
+                    self.defaultConfigs["User Defined"][mapping.config] = ctl.Value
+                end
             end
         end
     end
@@ -947,7 +965,7 @@ local function createSystemController(roomName, roomType)
             cooldownTime = Controls.CooldownTime.Value,
             motionTimeout = Controls.MotionTimeout.Value,
             gracePeriod = Controls.MotionGracePeriod.Value,
-            defaultVolume = Controls.DefaultVolume.Value
+            defaultVolume = Controls.DefaultVolume[1].Value
         }
     }
 
