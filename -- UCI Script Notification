@@ -1,0 +1,331 @@
+--[[ 
+
+  UCI Notifications Example Script - REFACTORED FOR PERFORMANCE
+  Author: Hope Roth, Q-SYS
+  October, 2024
+  Firmware Req: 9.12
+  Version: 2.0 - Optimized for Speed and Responsiveness
+  
+  ]] --
+
+----* Constants and Variables *----
+
+local NumSources = 3
+local CurrentSrc = 1
+local AnnouncementText = ""
+local NoteId, AnnounceSub
+local HelpResponseTimer
+
+-- Pre-cache frequently accessed controls for direct access
+local Controls = Controls
+local Uci = Uci
+local Notifications = Notifications
+local Timer = Timer
+
+-- Control groups for batch operations
+local IncomingCallCtrls = {Controls.Btn_CallAccept, Controls.Btn_CallReject}
+local OffHookCallCtrls = {Controls.Btn_Disconnect}
+local HelpRequestCtrls = {Controls.Combo_HelpMessage}
+local SourceButtons = {}
+local SourceTexts = {}
+
+-- Pre-build source control arrays for faster access
+for i = 1, NumSources do
+    SourceButtons[i] = Controls["Btn_Src_" .. i]
+    SourceTexts[i] = Controls["Txt_Src_" .. i]
+end
+
+local HelpPrompt = "[Please Select a Help Request]"
+local AnnouncementId = "SystemAnnouncement"
+local BlinkTimer = Timer.New()
+local BlinkCadence = 1
+
+-- Component references
+local SvgControls = Component.New("SVG Text Control")
+local Giphify = Component.New("Giphify Helper")
+local ResponseSelect = Component.New("Response Select")
+
+----* Optimized Helper Functions *----
+
+-- Direct announcement handler with minimal processing
+local function AnnouncementsHandler(name, announcement)
+    AnnouncementText = announcement
+    Controls.Txt_Announcement.String = announcement
+    
+    -- Direct timer control without function call overhead
+    if announcement ~= "" then
+        BlinkTimer:Start(BlinkCadence)
+    else
+        BlinkTimer:Stop()
+    end
+end
+
+-- Streamlined room notes handler with direct state updates
+local function RoomNotesHandler(name, notes)
+    local notificationType = notes.NotificationType
+    local data = notes.Data
+    
+    if notificationType == "RoomParams" then
+        -- Direct room parameter updates
+        if data.RoomName then Controls.Txt_RoomName.String = data.RoomName end
+        if data.HelpHeading then Controls.Txt_HelpHeading.String = data.HelpHeading end
+        if data.HelpDeskNumber then Controls.Txt_HelpNumber.String = data.HelpDeskNumber end
+        
+        -- Batch source updates
+        if data.Sources then
+            for i = 1, NumSources do
+                local source = data.Sources[i]
+                if source then
+                    SourceButtons[i].CssClass = source.CSS
+                    SourceTexts[i].String = source.Name
+                end
+            end
+        end
+        
+        if data.HelpRequests then
+            Controls.Combo_HelpMessage.Choices = data.HelpRequests
+        end
+        
+    elseif notificationType == "Volume" then
+        -- Direct volume state updates
+        local mute = data.Mute
+        Controls.Btn_VolumeMute.Boolean = mute
+        Controls.Fader_Volume.Position = mute and 0 or data.Volume
+        
+    elseif notificationType == "Power" then
+        -- Direct power state updates
+        local state = data.State
+        Uci.SetLayerVisibility("Main", "Splash", not state, "none")
+        Uci.SetLayerVisibility("Main", "Power On", state, "none")
+        
+    elseif notificationType == "Source" then
+        -- Direct source feedback updates
+        CurrentSrc = data.Source
+        for i = 1, NumSources do
+            SourceButtons[i].Boolean = (i == CurrentSrc)
+        end
+        
+    elseif notificationType == "Call" then
+        -- Direct call state updates with batch visibility control
+        Controls.LED_UsbConnected.Boolean = data.UsbConnected
+        Controls.LED_IncomingCall.Boolean = data.IncomingCall
+        Controls.LED_OffHook.Boolean = data.OffHook
+        Controls.Btn_VolumePrivacy.Boolean = data.Privacy
+        
+        -- Batch visibility updates
+        local incomingVisible = data.IncomingCall
+        local offHookVisible = data.OffHook
+        
+        for _, ctrl in ipairs(IncomingCallCtrls) do
+            ctrl.IsInvisible = not incomingVisible
+        end
+        
+        for _, ctrl in ipairs(OffHookCallCtrls) do
+            ctrl.IsInvisible = not offHookVisible
+        end
+        
+    elseif notificationType == "HelpResponse" then
+        -- Direct help response handling
+        Controls.Txt_HelpResponse.String = data.Response
+        
+        -- Check response immediately
+        if data.Response == ResponseSelect["value"].String then
+            if Uci.Variables.Room_ID.String ~= "RoomControls" and 
+               Uci.Variables.Room_ID.String ~= "Template" and 
+               Uci.Variables.Room_ID.String ~= "Boardroom" then
+                Timer.CallAfter(GreatSuccess, 1)
+            end
+        end
+        
+        -- Clear response after delay
+        if HelpResponseTimer then HelpResponseTimer:Cancel() end
+        HelpResponseTimer = Timer.CallAfter(function()
+            Controls.Txt_HelpResponse.String = ""
+        end, 60)
+        
+        if data.Clear then
+            -- Direct help state reset
+            Controls.Btn_HelpRequestOn.Boolean = false
+            Controls.Btn_HelpRequestOff.Boolean = true
+            Controls.Combo_HelpMessage.String = HelpPrompt
+            for _, ctrl in ipairs(HelpRequestCtrls) do
+                ctrl.IsInvisible = true
+            end
+        end
+    end
+end
+
+-- Optimized notification publishing with direct string concatenation
+local function PublishPanelNotification(str)
+    local panelId = Uci.Variables.Panel_ID.String
+    if panelId ~= "" then
+        Notifications.Publish(panelId, str)
+    end
+end
+
+-- Streamlined subscription management
+local function RoomSubscribe()
+    local roomId = Uci.Variables.Room_ID.String
+    if roomId ~= "" then
+        if NoteId then Notifications.Unsubscribe(NoteId) end
+        NoteId = Notifications.Subscribe(roomId, RoomNotesHandler)
+        Controls.LED_Subscribed.Boolean = NoteId ~= nil
+        PublishPanelNotification("request_params")
+    end
+end
+
+local function AnnouncementSubscribe()
+    if AnnounceSub then Notifications.Unsubscribe(AnnounceSub) end
+    AnnounceSub = Notifications.Subscribe(AnnouncementId, AnnouncementsHandler)
+end
+
+-- Direct success layer management
+local function HideSuccessLayer()
+    Uci.SetLayerVisibility("Main", "Help Desk", false, "none")
+    Controls.Txt_HelpResponse.String = ""
+    SvgControls["SVG"].IsInvisible = true
+    Giphify["Animated Button"].IsInvisible = true
+end
+
+local function GreatSuccess()
+    SvgControls["SVG"].IsInvisible = false
+    Giphify["Animated Button"].IsInvisible = false
+    Uci.SetLayerVisibility("Main", "Help Desk", true, "right")
+end
+
+----* Optimized Event Handlers *----
+
+-- Direct blink timer handler
+BlinkTimer.EventHandler = function()
+    local currentText = Controls.Txt_Announcement.String
+    Controls.Txt_Announcement.String = (currentText == "") and AnnouncementText or ""
+    BlinkTimer:Start(BlinkCadence)
+end
+
+-- Streamlined power controls with immediate visual feedback
+Controls.Btn_Splash.EventHandler = function()
+    Uci.SetLayerVisibility("Main", "Splash", false, "none")
+    Uci.SetLayerVisibility("Main", "Power On", true, "none")
+    PublishPanelNotification("set_power_true")
+end
+
+Controls.Btn_PowerOff.EventHandler = function()
+    Uci.SetLayerVisibility("Main", "Splash", true, "none")
+    Uci.SetLayerVisibility("Main", "Power On", false, "none")
+    PublishPanelNotification("set_power_false")
+end
+
+-- Direct source selection with immediate feedback
+for i = 1, NumSources do
+    SourceButtons[i].EventHandler = function()
+        CurrentSrc = i
+        -- Immediate visual feedback
+        for j = 1, NumSources do
+            SourceButtons[j].Boolean = (j == i)
+        end
+        PublishPanelNotification("set_src_" .. i)
+    end
+end
+
+-- Direct volume controls
+Controls.Btn_VolumeMute.EventHandler = function(ctl)
+    PublishPanelNotification("set_volume_mute_" .. tostring(ctl.Boolean))
+end
+
+Controls.Fader_Volume.EventHandler = function(ctl)
+    PublishPanelNotification("set_volume_lvl_" .. tostring(ctl.Position))
+end
+
+Controls.Btn_VolumePrivacy.EventHandler = function(ctl)
+    PublishPanelNotification("set_privacy_" .. tostring(ctl.Boolean))
+end
+
+-- Direct call controls
+Controls.Btn_CallAccept.EventHandler = function()
+    PublishPanelNotification("call_accept")
+end
+
+Controls.Btn_CallReject.EventHandler = function()
+    PublishPanelNotification("call_decline")
+end
+
+Controls.Btn_Disconnect.EventHandler = function()
+    PublishPanelNotification("call_decline")
+end
+
+-- Streamlined help controls with immediate state updates
+Controls.Btn_HelpRequestOn.EventHandler = function()
+    Controls.Btn_HelpRequestOn.Boolean = true
+    Controls.Btn_HelpRequestOff.Boolean = false
+    Controls.Combo_HelpMessage.IsInvisible = false
+    PublishPanelNotification("help_request_true")
+end
+
+Controls.Btn_HelpRequestOff.EventHandler = function()
+    Controls.Btn_HelpRequestOn.Boolean = false
+    Controls.Btn_HelpRequestOff.Boolean = true
+    Controls.Combo_HelpMessage.IsInvisible = true
+    Controls.Combo_HelpMessage.String = HelpPrompt
+    PublishPanelNotification("help_request_false")
+end
+
+Controls.Combo_HelpMessage.EventHandler = function(ctl)
+    PublishPanelNotification("help_request_msg_" .. ctl.String)
+end
+
+-- Direct success layer control
+Controls.Btn_DontDill.EventHandler = HideSuccessLayer
+
+-- Variable change handlers
+Uci.Variables.Panel_ID.EventHandler = RoomSubscribe
+Uci.Variables.Room_ID.EventHandler = RoomSubscribe
+
+----* Optimized Initialization *----
+
+-- Single initialization timer for all delayed tasks
+local InitTimer = Timer.New()
+InitTimer.EventHandler = function()
+    -- Batch all initialization tasks
+    AnnouncementSubscribe()
+    RoomSubscribe()
+    
+    -- Direct initial state setup
+    for _, ctrl in ipairs(IncomingCallCtrls) do
+        ctrl.IsInvisible = true
+    end
+    
+    for _, ctrl in ipairs(OffHookCallCtrls) do
+        ctrl.IsInvisible = true
+    end
+    
+    Controls.Btn_HelpRequestOn.Boolean = false
+    Controls.Btn_HelpRequestOff.Boolean = true
+    Controls.Combo_HelpMessage.IsInvisible = true
+    Controls.Combo_HelpMessage.String = HelpPrompt
+    
+    HideSuccessLayer()
+    
+    InitTimer:Cancel()
+end
+
+-- Start initialization
+InitTimer:Start(0.1)
+
+--[[
+Copyright 2024 QSC, LLC
+Permission is hereby granted, free of charge, to any person obtaining a copy 
+of this softwareand associated documentation files (the "Software"), to deal 
+in the Software without restriction, including without limitation the rights 
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is furnished
+to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all 
+copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE 
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+]] --
+                                               

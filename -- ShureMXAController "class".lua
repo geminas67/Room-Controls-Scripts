@@ -16,7 +16,6 @@ local controls = {
     btnMXAMute = Controls.btnMXAMute,
     compRoomControls = Controls.compRoomControls,
     compCallSync = Controls.compCallSync,
-    compVideoBridge = Controls.compVideoBridge,
     txtStatus = Controls.txtStatus,
 }
 
@@ -35,7 +34,6 @@ function ShureMXAController.new(config)
     -- Component storage
     self.components = {
         callSync = nil,
-        videoBridge = nil,
         roomControls = nil,
         mxaDevices = {}, -- Table of MXA devices
         invalid = {}
@@ -44,7 +42,6 @@ function ShureMXAController.new(config)
     -- State tracking
     self.state = {
         audioPrivacy = false,
-        videoPrivacy = false
     }
     
     -- Configuration
@@ -195,19 +192,6 @@ function ShureMXAController:setCallSyncComponent()
     end
 end
 
---------** Video Bridge Component **--------
-function ShureMXAController:setVideoBridgeComponent()   
-    self.components.videoBridge = self:setComponent(self.controls.compVideoBridge, "Video Bridge")
-    if self.components.videoBridge ~= nil then
-        local this = self  -- Capture self for use in handlers
-        self.components.videoBridge["toggle.privacy"].EventHandler = function(ctl)
-            local state = ctl.Boolean
-            this:debugPrint("Video Privacy State is: " .. tostring(state))
-            this.mxaModule.setMute(state)
-        end
-    end
-end
-
 --------** Component Management **--------
 function ShureMXAController:setComponent(ctrl, componentType)
     self:debugPrint("Setting Component: " .. componentType)
@@ -260,12 +244,11 @@ function ShureMXAController:checkStatus()
     Controls.txtStatus.Value = 0
 end
 
---------** Component Name Discovery **--------
+--------** Component Discovery **--------
 function ShureMXAController:getComponentNames()
     local namesTable = {
         RoomControlsNames = {},
         CallSyncNames = {},
-        VideoBridgeNames = {},
         MXANames = {}
     }
 
@@ -274,8 +257,6 @@ function ShureMXAController:getComponentNames()
             table.insert(namesTable.CallSyncNames, v.Name)
         elseif v.Type == "%PLUGIN%_984f65d4-443f-406d-9742-3cb4027ff81c_%FP%_1257aeeea0835196bee126b4dccce889" then
             table.insert(namesTable.MXANames, v.Name)
-        elseif v.Type == "usb_uvc" then
-            table.insert(namesTable.VideoBridgeNames, v.Name)
         elseif v.Type == "device_controller_script" and string.match(v.Name, "^compRoomControls") then
             table.insert(namesTable.RoomControlsNames, v.Name)
         end
@@ -288,7 +269,6 @@ function ShureMXAController:getComponentNames()
 
     Controls.compRoomControls.Choices = namesTable.RoomControlsNames
     Controls.compCallSync.Choices = namesTable.CallSyncNames
-    Controls.compVideoBridge.Choices = namesTable.VideoBridgeNames
     
     -- Set choices for each MXA device control in the table
     for i, v in ipairs(Controls.devMXAs) do
@@ -298,7 +278,6 @@ end
 
 --------** Event Handler Registration **--------
 function ShureMXAController:registerEventHandlers()
-
     Controls.btnMXAMute.EventHandler = function(ctl)
         self.mxaModule.setMute(ctl.Boolean)
     end
@@ -310,10 +289,6 @@ function ShureMXAController:registerEventHandlers()
 
     self.controls.compCallSync.EventHandler = function()
         self:setCallSyncComponent()
-    end
-
-    self.controls.compVideoBridge.EventHandler = function()
-        self:setVideoBridgeComponent()
     end
 
     -- MXA device handlers
@@ -330,7 +305,6 @@ function ShureMXAController:funcInit()
 
     -- Set components with current selections
     self:setCallSyncComponent()
-    self:setVideoBridgeComponent()
     self:setRoomControlsComponent()
     
     -- Initialize MXA devices
@@ -347,10 +321,6 @@ function ShureMXAController:cleanup()
     if self.components.callSync then
         self.components.callSync["off.hook"].EventHandler = nil
         self.components.callSync["mute"].EventHandler = nil
-    end
-    
-    if self.components.videoBridge then
-        self.components.videoBridge["toggle.privacy"].EventHandler = nil
     end
     
     for i, device in pairs(self.components.mxaDevices) do
@@ -389,8 +359,13 @@ local function createShureMXAController(config)
 end
 
 --------** Instance Creation **--------
--- Create the main MXA controller instance
 myMXAController = createShureMXAController()
+
+if myMXAController then
+    print("Shure MXA Controller created successfully!")
+else
+    print("ERROR: Failed to create Shure MXA Controller!")
+end
 
 --------** Usage Examples **--------
 --[[
@@ -398,9 +373,6 @@ myMXAController = createShureMXAController()
 
 -- Set audio privacy
 myMXAController.callSyncModule.setMute(true)
-
--- Set video privacy
-myMXAController.videoBridgeModule.setPrivacy(true)
 
 -- Control MXA LEDs
 myMXAController.mxaModule.setLED(true)

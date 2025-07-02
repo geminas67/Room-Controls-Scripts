@@ -317,3 +317,139 @@ local status = extronDXPController:getStatus()
 ## Conclusion
 
 The refactored Extron DXP Matrix Routing Controller provides significant performance improvements while maintaining all existing functionality. The class-based architecture makes the code more maintainable and extensible, while the optimizations reduce system overhead and improve responsiveness. 
+
+## Key Features
+
+### Enhanced UCI Integration
+The ExtronDXP controller now features the same robust UCI integration as the NV32Router controller:
+
+#### Multiple Integration Approaches
+1. **Timer-based Monitoring**: Monitors UCI controller's `varActiveLayer` property every 100ms
+2. **Direct Button Monitoring**: Directly monitors `btnNav07`, `btnNav08`, `btnNav09` button states
+3. **Layer Change Notification**: Receives layer change events from external UCI controllers
+
+#### Robust State Management
+- Tracks last UCI layer to prevent redundant switching
+- Proper cleanup of timers and event handlers
+- Enable/disable integration at runtime
+- Error handling for missing UCI controllers
+
+#### Enhanced Debugging
+- Detailed UCI status reporting via `getUCIStatus()`
+- Layer change logging with debug messages
+- Integration state monitoring
+- Component validation status
+
+## UCI Integration Comparison
+
+### Before (Original ExtronDXP)
+```lua
+-- Simple direct button monitoring only
+function ExtronDXPMatrixController:setupUCIButtonMonitoring()
+    local uciButtons = {
+        [7] = Controls.btnNav07,
+        [8] = Controls.btnNav08,
+        [9] = Controls.btnNav09
+    }
+    
+    for layer, button in pairs(uciButtons) do
+        if button then
+            button.EventHandler = function(ctl)
+                if ctl.Boolean and self.uciLayerToInput[layer] then
+                    local targetInput = self.uciLayerToInput[layer]
+                    self:setSource(targetInput)
+                end
+            end
+        end
+    end
+end
+```
+
+### After (Enhanced ExtronDXP)
+```lua
+-- Multiple integration approaches with robust error handling
+function ExtronDXPMatrixController:setUCIController(uciController)
+    self.uciController = uciController
+    if self.uciIntegrationEnabled then
+        self:startUCIMonitoring()
+    end
+end
+
+function ExtronDXPMatrixController:startUCIMonitoring()
+    if not self.uciController then return end
+    
+    self.uciMonitorTimer = Timer.New()
+    self.uciMonitorTimer.EventHandler = function()
+        self:checkUCILayerChange()
+        self.uciMonitorTimer:Start(0.1)
+    end
+    self.uciMonitorTimer:Start(0.1)
+end
+
+function ExtronDXPMatrixController:checkUCILayerChange()
+    if not self.uciController or not self.uciIntegrationEnabled then return end
+    
+    local currentLayer = self.uciController.varActiveLayer
+    if self.lastUCILayer ~= currentLayer then
+        self.lastUCILayer = currentLayer
+        if self.uciLayerToInput[currentLayer] then
+            self:setSource(self.uciLayerToInput[currentLayer])
+        end
+    end
+end
+```
+
+## Usage Examples
+
+### Basic UCI Integration
+```lua
+-- Controller automatically monitors UCI buttons
+myExtronDXPMatrixController = createExtronDXPMatrixController()
+```
+
+### Advanced UCI Integration
+```lua
+-- Manual UCI controller connection
+myExtronDXPMatrixController:setUCIController(myUCI)
+
+-- Enable/disable integration
+myExtronDXPMatrixController:enableUCIIntegration()
+myExtronDXPMatrixController:disableUCIIntegration()
+
+-- Get UCI status
+local uciStatus = myExtronDXPMatrixController:getUCIStatus()
+print("UCI Integration: " .. tostring(uciStatus.integrationEnabled))
+print("Controller Connected: " .. tostring(uciStatus.controllerConnected))
+print("Monitor Active: " .. tostring(uciStatus.monitorActive))
+print("Last Layer: " .. tostring(uciStatus.lastLayer))
+
+-- Cleanup
+myExtronDXPMatrixController:cleanup()
+```
+
+## UCI Layer Mapping
+- **Layer 7** (btnNav07) → TeamsPC (input 2)
+- **Layer 8** (btnNav08) → LaptopFront (input 4)  
+- **Layer 9** (btnNav09) → ClickShare (input 1)
+
+## Auto-Switching Integration
+The controller integrates with:
+- System power and warming states
+- CallSync off-hook detection
+- Extron signal presence monitoring
+- Priority-based source selection
+
+## Performance Improvements
+- Eliminates redundant function calls and timers
+- Direct routing and state management
+- Component discovery using `Component.GetComponents()`
+- CallSync integration for enhanced automation
+
+## Error Handling
+- Graceful handling of missing UCI controllers
+- Component validation with status reporting
+- Timer cleanup to prevent memory leaks
+- Fallback mechanisms for different integration scenarios
+
+## Compatibility
+This implementation provides the same robust UCI integration capabilities as the NV32RouterController with enhanced error handling and multiple integration approaches for maximum compatibility across different Q-SYS configurations. 

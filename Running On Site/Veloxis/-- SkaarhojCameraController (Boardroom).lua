@@ -423,21 +423,6 @@ function SingleRoomCameraController:updatePrivacyVisuals()
     self.privacyModule.updatePrivacyButton()
 end
 
---------** Button Visual Restoration Helper **--------
-function SingleRoomCameraController:applyButtonVisuals()
-    -- Reapply camera labels to buttons 1-5
-    for i = 1, 5 do
-        self.ptzModule.setCameraLabel(i, i)
-    end
-    self.privacyModule.updatePrivacyButton()
-    if self.state.hookState then
-        self.ptzModule.enablePC()
-    else
-        self.ptzModule.disablePC()
-    end
-    self:debugPrint("Button visuals reapplied")
-end
-
 --------** System Initialization **--------
 function SingleRoomCameraController:performSystemInitialization()
     self:debugPrint("Performing system initialization")
@@ -477,15 +462,15 @@ function SingleRoomCameraController:getComponentNames()
         if comp.Name and comp.Name ~= "" then
             if comp.Type == "call_sync" then
                 table.insert(namesTable.CallSyncNames, comp.Name)
-            elseif comp.Type:find("Skaarhoj") then
+            elseif comp.Type == "%PLUGIN%_8a9d1632-c069-47d7-933c-cab299e75a5f_%FP%_fefe17b4f72c22b6bab67399fef8482d" then
                 table.insert(namesTable.SkaarhojPTZNames, comp.Name)
             elseif comp.Type == "video_router" then
                 table.insert(namesTable.CamRouterNames, comp.Name)
             elseif comp.Type == "onvif_camera_operative" then
                 table.insert(namesTable.DevCamNames, comp.Name)
-            elseif comp.Type:find("ACPR") then
+            elseif comp.Type == "%PLUGIN%_648260e3-c166-4b00-98ba-ba16ksnza4a63b0_%FP%_a4d2263b4380c424e16eebb670841355" then
                 table.insert(namesTable.CamACPRNames, comp.Name)
-            elseif comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls") then
+            elseif comp.Type == "device_controller_script" and comp.Name:find("compRoomControls") then
                 table.insert(namesTable.CompRoomControlsNames, comp.Name)
             end
         end
@@ -593,20 +578,6 @@ function SingleRoomCameraController:funcInit()
     self:registerEventHandlers()
     self:performSystemInitialization()
     
-    -- Device reconnection handler
-    if Controls.devSkaarhojOnline then  -- Replace with actual control name
-        Controls.devSkaarhojOnline.EventHandler = function(ctl)
-            if ctl.Boolean then
-                self:debugPrint("Skaarhoj device reconnected, reapplying button labels")
-                self:applyButtonVisuals()  -- Reapply custom labels
-            end
-        end
-        -- Apply immediately if already connected
-        if Controls.devSkaarhojOnline.Boolean then
-            self:applyButtonVisuals()
-        end
-    end
-    
     -- Get initial hook state
     if self.components.callSync then
         local initialHookState = self:safeComponentAccess(self.components.callSync, "off.hook", "get")
@@ -614,7 +585,7 @@ function SingleRoomCameraController:funcInit()
         self.hookStateModule.handleHookState(initialHookState)
     end
     
-    self:debugPrint("Controller Initialized with "..self.cameraModule.getCameraCount().." cameras")
+    self:debugPrint("Single Room Camera Controller Initialized with "..self.cameraModule.getCameraCount().." cameras")
 end
 
 --------** Factory Function **--------

@@ -41,20 +41,20 @@ function NV32RouterController.new()
     
     -- Input/Output mapping
     self.inputs = {
-        Graphic1 =  1,
-        Graphic2 =  2,
-        Graphic3 =  3,
-        HDMI1 =     4,
-        HDMI2 =     5,
-        HDMI3 =     6,
-        AV1 =       7,
-        AV2 =       8,
-        AV3 =       9,
+        Graphic1  =  1,
+        Graphic2  =  2,
+        Graphic3  =  3,
+        HDMI1     =  4,
+        HDMI2     =  5,
+        HDMI3     =  6,
+        AV1       =  7,
+        AV2       =  8,
+        AV3       =  9,
     }
     
     self.outputs = {
-        OUTPUT1 =   1,
-        OUTPUT2 =   2,
+        OUTPUT1    = 1,
+        OUTPUT2    = 2,
     }
     
     -- UCI Input mapping (matching original implementation)

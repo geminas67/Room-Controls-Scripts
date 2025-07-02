@@ -10,53 +10,56 @@
   - Direct routing and state management
   - UCI integration for automatic input switching
   - Component discovery using Component.GetComponents()
-  - HIDCallSync integration
+  - CallSync integration
 ]]--
 
 -- Define control references
 local controls = {
-    txtDestination = Controls['txtDestination'],
-    btnAVMute = Controls['btnAVMute'],
-    btnSourceClickShare = Controls['btnSourceClickShare'],
-    btnSourceTeamsPC = Controls['btnSourceTeamsPC'],
-    btnSourceLaptopFront = Controls['btnSourceLaptopFront'],
-    btnSourceLaptopRear = Controls['btnSourceLaptopRear'],
-    btnSourceNoSource = Controls['btnSourceNoSource'],
-    btnSourceAllDisplays = Controls['btnSourceAllDisplays'],
-    btnExtronSignalPresence = Controls['btnExtronSignalPresence'],
+    txtDestination = Controls.txtDestination,
+    btnVideoSource = Controls.btnVideoSource,
+    btnAVMute = Controls.btnAVMute,
+    btnDestinations = Controls.btnDestinations,
+    ledExtronSignalPresence = Controls.ledExtronSignalPresence,
+    btnNav07 = Controls['btnNav07'],
+    btnNav08 = Controls['btnNav08'],
+    btnNav09 = Controls['btnNav09'],
 }
 
--- ExtronDXPController class
-ExtronDXPController = {}
-ExtronDXPController.__index = ExtronDXPController
+-- ExtronDXPMatrixController class
+ExtronDXPMatrixController = {}
+ExtronDXPMatrixController.__index = ExtronDXPMatrixController
 
 --------** Class Constructor **--------
-function ExtronDXPController.new()
-    local self = setmetatable({}, ExtronDXPController)
+function ExtronDXPMatrixController.new()
+    local self = setmetatable({}, ExtronDXPMatrixController)
     
     -- Instance properties
     self.debugging = true
     self.clearString = "[Clear]"
     self.invalidComponents = {}
+    self.lastInput = {} -- Store the last input for each output
+    self.preFireAlarmInput = {}
+    self.fireAlarmActive = false
     
     -- UCI Integration properties
+    self.uciController = nil
     self.uciIntegrationEnabled = true
     self.lastUCILayer = nil
     
     -- Input/Output mapping
     self.inputs = {
-        ClickShare = 1,
-        TeamsPC = 2,
+        ClickShare  = 1,
+        TeamsPC     = 2,
         LaptopFront = 4,
-        LaptopRear = 5,
-        NoSource = 0
+        LaptopRear  = 5,
+        NoSource    = 0
     }
     
     self.outputs = {
-        MON01 = 1,
-        MON02 = 2,
-        MON03 = 3,
-        MON04 = 4
+        MON01       = 1,
+        MON02       = 2,
+        MON03       = 3,
+        MON04       = 4
     }
     
     -- UCI Layer to Input mapping
@@ -69,19 +72,19 @@ function ExtronDXPController.new()
     -- Source priority mapping (for auto-switching)
     self.sourcePriority = {
         {name = "TeamsPC", input = self.inputs.TeamsPC, checkFunc = function() 
-            return callSync["off.hook"].Boolean or self.extronRouter["Extron DXP Signal Presence 3"].Boolean 
+            return callSync["off.hook"].Boolean or self.ledExtronSignalPresence[3].Boolean 
         end},
         {name = "LaptopFront", input = self.inputs.LaptopFront, checkFunc = function() 
-            return self.extronRouter["Extron DXP Signal Presence 4"].Boolean 
+            return self.ledExtronSignalPresence[4].Boolean 
         end},
         {name = "LaptopRear", input = self.inputs.LaptopRear, checkFunc = function() 
-            return self.extronRouter["Extron DXP Signal Presence 5"].Boolean 
+            return self.ledExtronSignalPresence[5].Boolean 
         end},
         {name = "ClickShare", input = self.inputs.ClickShare, checkFunc = function() 
-            return self.extronRouter["Extron DXP Signal Presence 1"].Boolean 
+            return self.ledExtronSignalPresence[1].Boolean 
         end},
         {name = "TeamsPC2", input = self.inputs.TeamsPC, checkFunc = function() 
-            return self.extronRouter["Extron DXP Signal Presence 2"].Boolean 
+            return self.ledExtronSignalPresence[2].Boolean 
         end}
     }
     
@@ -92,7 +95,6 @@ function ExtronDXPController.new()
     self.extronRouter = nil
     self.roomControls = nil
     self.uciLayerSelector = nil
-    self.statusBar = nil
     self.callSync = nil
     
     -- Current state
@@ -109,14 +111,23 @@ function ExtronDXPController.new()
 end
 
 --------** Debug Helper **--------
-function ExtronDXPController:debugPrint(str)
+function ExtronDXPMatrixController:debugPrint(str)
     if self.debugging then
         print("[Extron DXP Debug] " .. str)
     end
 end
 
+--------** Helper Methods **--------
+function ExtronDXPMatrixController:setDestinationButtonProperties(buttonIndex, color, legend, isDisabled)
+    if self.controls.btnDestination[buttonIndex] then
+        self.controls.btnDestination[buttonIndex].Color = color
+        self.controls.btnDestination[buttonIndex].Legend = legend
+        self.controls.btnDestination[buttonIndex].IsDisabled = isDisabled
+    end
+end
+
 --------** Component Discovery **--------
-function ExtronDXPController:discoverComponents()
+function ExtronDXPMatrixController:discoverComponents()
     local components = Component.GetComponents()
     local discovered = {
         ExtronDXPNames = {},
@@ -141,7 +152,7 @@ function ExtronDXPController:discoverComponents()
 end
 
 --------** Component Setup **--------
-function ExtronDXPController:setupComponents()
+function ExtronDXPMatrixController:setupComponents()
     local discovered = self:discoverComponents()
     
     -- Setup Extron DXP Router
@@ -161,7 +172,73 @@ function ExtronDXPController:setupComponents()
 end
 
 --------** UCI Integration Methods **--------
-function ExtronDXPController:setupUCIButtonMonitoring()
+function ExtronDXPMatrixController:setUCIController(uciController)
+    self.uciController = uciController
+    self:debugPrint("UCI Controller reference set")
+    
+    -- Start monitoring UCI layer changes
+    if self.uciIntegrationEnabled then
+        self:startUCIMonitoring()
+    end
+end
+
+function ExtronDXPMatrixController:startUCIMonitoring()
+    if not self.uciController then
+        self:debugPrint("No UCI Controller available for monitoring")
+        return
+    end
+    
+    -- Create a timer to monitor UCI layer changes
+    self.uciMonitorTimer = Timer.New()
+    self.uciMonitorTimer.EventHandler = function()
+        self:checkUCILayerChange()
+        self.uciMonitorTimer:Start(0.1) -- Check every 100ms
+    end
+    self.uciMonitorTimer:Start(0.1)
+    
+    self:debugPrint("UCI layer monitoring started")
+end
+
+function ExtronDXPMatrixController:checkUCILayerChange()
+    if not self.uciController or not self.uciIntegrationEnabled then
+        return
+    end
+    
+    local currentLayer = self.uciController.varActiveLayer
+    
+    -- Check if layer has changed
+    if self.lastUCILayer ~= currentLayer then
+        self:debugPrint("UCI Layer changed from " .. tostring(self.lastUCILayer) .. " to " .. tostring(currentLayer))
+        self.lastUCILayer = currentLayer
+        
+        -- Check if this layer should trigger input switching
+        if self.uciLayerToInput[currentLayer] then
+            local targetInput = self.uciLayerToInput[currentLayer]
+            self:debugPrint("UCI Layer " .. currentLayer .. " triggers input switch to " .. targetInput)
+            self:setSource(targetInput)
+        end
+    end
+end
+
+function ExtronDXPMatrixController:enableUCIIntegration()
+    self.uciIntegrationEnabled = true
+    if self.uciController then
+        self:startUCIMonitoring()
+    end
+    self:debugPrint("UCI Integration enabled")
+end
+
+function ExtronDXPMatrixController:disableUCIIntegration()
+    self.uciIntegrationEnabled = false
+    if self.uciMonitorTimer then
+        self.uciMonitorTimer:Stop()
+        self.uciMonitorTimer = nil
+    end
+    self:debugPrint("UCI Integration disabled")
+end
+
+-- Alternative method: Direct UCI button monitoring
+function ExtronDXPMatrixController:setupDirectUCIButtonMonitoring()
     -- Monitor UCI navigation buttons directly
     local uciButtons = {
         [7] = Controls.btnNav07,
@@ -183,8 +260,26 @@ function ExtronDXPController:setupUCIButtonMonitoring()
     end
 end
 
+-- UCI Layer Change Notification Method
+function ExtronDXPMatrixController:onUCILayerChange(layerChangeInfo)
+    if not self.uciIntegrationEnabled then
+        return
+    end
+    
+    self:debugPrint("UCI Layer changed from " .. tostring(layerChangeInfo.previousLayer) .. 
+                   " to " .. tostring(layerChangeInfo.currentLayer) .. 
+                   " (" .. layerChangeInfo.layerName .. ")")
+    
+    -- Check if this layer should trigger input switching
+    if self.uciLayerToInput[layerChangeInfo.currentLayer] then
+        local targetInput = self.uciLayerToInput[layerChangeInfo.currentLayer]
+        self:debugPrint("UCI Layer " .. layerChangeInfo.currentLayer .. " triggers input switch to " .. targetInput)
+        self:setSource(targetInput)
+    end
+end
+
 --------** Routing Methods **--------
-function ExtronDXPController:setSource(input)
+function ExtronDXPMatrixController:setSource(input)
     if not self.extronRouter then return end
     
     self.currentSource = input
@@ -207,7 +302,7 @@ function ExtronDXPController:setSource(input)
     self:updateDestinationText()
 end
 
-function ExtronDXPController:setDestination(output, active)
+function ExtronDXPMatrixController:setDestination(output, active)
     if not self.extronRouter then return end
     
     self.currentDestinations[output] = active
@@ -229,7 +324,7 @@ function ExtronDXPController:setDestination(output, active)
     self:updateDestinationText()
 end
 
-function ExtronDXPController:clearAllDestinations()
+function ExtronDXPMatrixController:clearAllDestinations()
     for output = 1, 4 do
         self.currentDestinations[output] = false
         if self.extronRouter then
@@ -246,7 +341,7 @@ function ExtronDXPController:clearAllDestinations()
     self:clearAllDestinationFeedback()
 end
 
-function ExtronDXPController:clearAllDestinationFeedback()
+function ExtronDXPMatrixController:clearAllDestinationFeedback()
     -- Clear all destination feedback buttons for all sources
     for i = 1, 4 do
         self.controls.btnDestination[i].Boolean = false
@@ -254,7 +349,7 @@ function ExtronDXPController:clearAllDestinationFeedback()
     end
 end
 
-function ExtronDXPController:updateDestinationFeedback()
+function ExtronDXPMatrixController:updateDestinationFeedback()
     -- Update destination feedback based on current source and destinations
     -- All sources (including No Source) use the same destination feedback buttons
     for i = 1, 4 do
@@ -274,7 +369,7 @@ function ExtronDXPController:updateDestinationFeedback()
     end
 end
 
-function ExtronDXPController:updateDestinationText()
+function ExtronDXPMatrixController:updateDestinationText()
     local destinationNames = {
         [1] = "Front Left",
         [2] = "Front Right", 
@@ -308,7 +403,7 @@ function ExtronDXPController:updateDestinationText()
 end
 
 --------** Auto-Switching Methods **--------
-function ExtronDXPController:checkAutoSwitch()
+function ExtronDXPMatrixController:checkAutoSwitch()
     if not self.systemPowered or self.systemWarming then
         return
     end
@@ -325,7 +420,7 @@ function ExtronDXPController:checkAutoSwitch()
     end
 end
 
-function ExtronDXPController:setupAutoSwitchMonitoring()
+function ExtronDXPMatrixController:setupAutoSwitchMonitoring()
     -- Monitor system power state
     if self.roomControls then
         self.roomControls["ledSystemPower"].EventHandler = function(ctl)
@@ -358,9 +453,9 @@ function ExtronDXPController:setupAutoSwitchMonitoring()
     end
     
     -- Monitor Extron signal presence
-    if self.extronRouter then
+    if self.Controls.ledExtronSignalPresence then
         for i = 1, 5 do
-            local signalControl = self.extronRouter["Extron DXP Signal Presence " .. i]
+            local signalControl = self.Controls.ledExtronSignalPresence[i]
             if signalControl then
                 signalControl.EventHandler = function(ctl)
                     if self.systemPowered and not self.systemWarming then
@@ -373,7 +468,7 @@ function ExtronDXPController:setupAutoSwitchMonitoring()
 end
 
 --------** Event Handler Registration **--------
-function ExtronDXPController:registerEventHandlers()
+function ExtronDXPMatrixController:registerEventHandlers()
     -- ClickShare destination selectors
     for i = 1, 5 do
         self.controls.btnVideoSource[i].EventHandler = function()
@@ -483,26 +578,40 @@ function ExtronDXPController:registerEventHandlers()
     -- UCI Layer Selector (disable Teams PC buttons for Mon-02 and Mon-04)
     if self.uciLayerSelector then
         self.uciLayerSelector['selector'].EventHandler = function(ctl)
-            self.controls.btnDestination[2].Color = '#ff6666'
-            self.controls.btnDestination[4].Color = '#ff6666'
-            self.controls.btnDestination[2].Legend = 'N/A'
-            self.controls.btnDestination[4].Legend = 'N/A'
-            self.controls.btnDestination[2].IsDisabled = true
-            self.controls.btnDestination[4].IsDisabled = true
+            self:setDestinationButtonProperties(2, '#ff6666', 'N/A', true)
+            self:setDestinationButtonProperties(4, '#ff6666', 'N/A', true)
         end
     end
 end
 
 --------** Initialization **--------
-function ExtronDXPController:funcInit()
+function ExtronDXPMatrixController:funcInit()
+    self:populateExtronDXPChoices()
+    self:populateRoomControlsChoices()
+    self:setExtronDXPComponent()
+    self:setRoomControlsComponent()
+    
+    -- Set default selection to No Source       
+    if self.extronRouter then
+        self:setSource(self.inputs.NoSource)
+    end
+    
     self:debugPrint("Initializing Extron DXP Controller")
     
     -- Setup components
     self:setupComponents()
     
-    -- Setup UCI integration
+    -- Setup UCI integration with multiple approaches
     if self.uciIntegrationEnabled then
-        self:setupUCIButtonMonitoring()
+        -- Always set up direct button monitoring as fallback
+        self:setupDirectUCIButtonMonitoring()
+        self:debugPrint("Direct UCI button monitoring started")
+        
+        -- If UCI controller is available, also start timer-based monitoring
+        if self.uciController then
+            self:startUCIMonitoring()
+            self:debugPrint("Timer-based UCI monitoring started")
+        end
     end
     
     -- Setup auto-switching
@@ -514,37 +623,116 @@ function ExtronDXPController:funcInit()
         self.systemWarming = self.roomControls["ledSystemWarming"].Boolean
     end
     
-    -- Initialize with no source
-    self:setSource(self.inputs.NoSource)
-    
     self:debugPrint("Extron DXP Controller initialization complete")
 end
 
+--------** Cleanup **--------
+function ExtronDXPMatrixController:cleanup()
+    -- Stop UCI monitoring timer
+    if self.uciMonitorTimer then
+        self.uciMonitorTimer:Stop()
+        self.uciMonitorTimer = nil
+    end
+    
+    -- Clear UCI controller reference
+    self.uciController = nil
+    
+    self:debugPrint("Cleanup completed")
+end
+
 --------** Public Interface **--------
-function ExtronDXPController:enableUCIIntegration()
-    self.uciIntegrationEnabled = true
-    self:setupUCIButtonMonitoring()
-    self:debugPrint("UCI Integration enabled")
-end
-
-function ExtronDXPController:disableUCIIntegration()
-    self.uciIntegrationEnabled = false
-    self:debugPrint("UCI Integration disabled")
-end
-
-function ExtronDXPController:getStatus()
+function ExtronDXPMatrixController:getStatus()
     local status = {
         systemPowered = self.systemPowered,
         systemWarming = self.systemWarming,
         currentSource = self.currentSource,
         currentDestinations = self.currentDestinations,
-        componentsValid = (self.extronRouter ~= nil and self.roomControls ~= nil)
+        componentsValid = (self.extronRouter ~= nil and self.roomControls ~= nil),
+        uciIntegrationEnabled = self.uciIntegrationEnabled,
+        uciControllerConnected = (self.uciController ~= nil),
+        uciMonitorActive = (self.uciMonitorTimer ~= nil)
     }
     return status
 end
 
+function ExtronDXPMatrixController:getUCIStatus()
+    local uciStatus = {
+        integrationEnabled = self.uciIntegrationEnabled,
+        controllerConnected = (self.uciController ~= nil),
+        monitorActive = (self.uciMonitorTimer ~= nil),
+        lastLayer = self.lastUCILayer,
+        layerMapping = self.uciLayerToInput
+    }
+    return uciStatus
+end
+
 -- Create and return the controller instance
-local extronDXPController = ExtronDXPController.new()
+local extronDXPController = ExtronDXPMatrixController.new()
 
 -- Export for external access
-_G.ExtronDXPController = extronDXPController 
+_G.ExtronDXPMatrixController = extronDXPController
+
+--------** Factory Function **--------
+local function createExtronDXPMatrixController(config)
+    local defaultConfig = {
+        debugging = true,
+        uciIntegrationEnabled = true
+    }
+    
+    local controllerConfig = config or defaultConfig
+    
+    local success, controller = pcall(function()
+        return ExtronDXPMatrixController.new(controllerConfig)
+    end)
+    
+    if success then
+        print("Successfully created Extron DXP Matrix Controller")
+        return controller
+    else
+        print("Failed to create controller: " .. tostring(controller))
+        return nil
+    end
+end
+
+--------** Instance Creation **--------
+-- Create the controller for this script instance
+myExtronDXPMatrixController = createExtronDXPMatrixController()
+
+--[[
+Enhanced UCI Integration Features:
+
+1. Multiple Integration Approaches:
+   - Timer-based monitoring (when UCI controller reference is available)
+   - Direct button monitoring (fallback when no UCI controller)
+   - Layer change notification method (for external UCI controllers)
+
+2. Robust State Management:
+   - Tracks last UCI layer to prevent redundant switching
+   - Proper cleanup of timers and event handlers
+   - Enable/disable integration at runtime
+
+3. Enhanced Debugging:
+   - Detailed UCI status reporting
+   - Layer change logging
+   - Integration state monitoring
+
+4. Usage Examples:
+   - Manual UCI controller connection: myExtronDXPMatrixController:setUCIController(myUCI)
+   - Enable/disable integration: myExtronDXPMatrixController:enableUCIIntegration()
+   - Get UCI status: myExtronDXPMatrixController:getUCIStatus()
+   - Cleanup: myExtronDXPMatrixController:cleanup()
+
+5. UCI Layer to Input Mapping:
+   - Layer 7 (btnNav07) → TeamsPC (input 2)
+   - Layer 8 (btnNav08) → LaptopFront (input 4)  
+   - Layer 9 (btnNav09) → ClickShare (input 1)
+
+6. Auto-switching Integration:
+   - Monitors system power and warming states
+   - Integrates with CallSync off-hook detection
+   - Extron signal presence monitoring
+   - Priority-based source selection
+
+This implementation provides the same robust UCI integration capabilities as the NV32RouterController
+with enhanced error handling and multiple integration approaches for maximum compatibility.
+]]-- 

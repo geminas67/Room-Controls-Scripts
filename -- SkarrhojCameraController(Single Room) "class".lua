@@ -387,7 +387,8 @@ function SingleRoomCameraController:registerSkaarhojComponentButtonHandlers()
                     local camIndex = tostring(i)
                     self.components.camRouter["select.1"].String = camIndex
                     self.components.camRouter["select.2"].String = camIndex
-                    -- The router's EventHandler will automatically update the button states
+                    -- Optimistically update button visuals for instant feedback
+                    self.ptzModule.syncButtonStates(i)
                     self:debugPrint("Skaarhoj Button"..i.." pressed - set router to Camera "..camIndex)
                 end
             end
@@ -480,7 +481,7 @@ function SingleRoomCameraController:setCompRoomControlsComponent()
         -- Update room name from the component
         self:updateRoomNameFromComponent()
         
-        -- Add event handler for system power LED
+        -- EventHandler for system power LED changes
         local ledSystemPower = self.components.compRoomControls["ledSystemPower"]
         if ledSystemPower then
             ledSystemPower.EventHandler = function()
@@ -499,7 +500,7 @@ function SingleRoomCameraController:setCompRoomControlsComponent()
             end
         end
         
-        -- Add event handler for room name changes
+        -- EventHandler for room name changes
         local roomNameControl = self.components.compRoomControls["roomName"]
         if roomNameControl then
             roomNameControl.EventHandler = function()
