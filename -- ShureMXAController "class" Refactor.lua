@@ -18,7 +18,13 @@ function ShureMXAController.new(roomName, config)
     self.roomName = roomName or "Shure MXA"
     self.debugging = (config and config.debugging) or false  -- Disabled by default for performance
     self.clearString = "[Clear]"
-    
+
+    -- Component type definitions
+    self.componentTypes = {
+        callSync = "call_sync",
+        mxaDevices = "%PLUGIN%_984f65d4-443f-406d-9742-3cb4027ff81c_%FP%_1257aeeea0835196bee126b4dccce889",
+        roomControls = (comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls"))
+    }
     -- Direct component references for faster access
     self.components = {
         callSync = nil, roomControls = nil,
@@ -346,11 +352,11 @@ function ShureMXAController:getComponentNames()
 
     -- Single pass through all components
     for _, comp in pairs(Component.GetComponents()) do
-        if comp.Type == "call_sync" then
+        if comp.Type == self.componentTypes.callSync then
             table.insert(namesTable.CallSyncNames, comp.Name)
-        elseif comp.Type == "%PLUGIN%_984f65d4-443f-406d-9742-3cb4027ff81c_%FP%_1257aeeea0835196bee126b4dccce889" then
+        elseif comp.Type == self.componentTypes.mxaDevices then
             table.insert(namesTable.MXANames, comp.Name)
-        elseif comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls") then
+        elseif comp.Type == self.componentTypes.roomControls then
             table.insert(namesTable.RoomControlsNames, comp.Name)
         end
     end

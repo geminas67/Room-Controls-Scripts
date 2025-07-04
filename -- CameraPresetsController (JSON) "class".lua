@@ -50,7 +50,13 @@ function CameraPresetController.new(config)
     -- Instance properties
     self.debugging = config and config.debugging or true
     self.clearString = "[Clear]"
-    
+
+    -- Component type definitions
+    self.componentTypes = {
+        cameras = "onvif_camera_operative",
+        routers = "video_router",
+        roomControls = (comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls"))
+    }
     -- Component storage
     self.components = {
         cameras = {},
@@ -125,7 +131,7 @@ function CameraPresetController:initCameraModule()
             local cameraNames = {}
             for index, tblComponents in pairs(Component.GetComponents()) do
                 for k, v in pairs(tblComponents) do
-                    if v == "onvif_camera_operative" then
+                    if v == self.componentTypes.cameras then
                         table.insert(cameraNames, tblComponents.Name)
                         self.components.cameras[tblComponents.Name] = Component.New(tblComponents.Name)
                         self:debugPrint("Found camera: " .. tblComponents.Name)
@@ -233,7 +239,7 @@ function CameraPresetController:initRouterModule()
         discoverRouters = function()
             for index, tblComponents in pairs(Component.GetComponents()) do
                 for k, v in pairs(tblComponents) do
-                    if v == "video_router" then
+                    if v == self.componentTypes.routers then
                         self.components.routers[tblComponents.Name] = Component.New(tblComponents.Name)
                         self:debugPrint("Found video router: " .. tblComponents.Name)
                     end

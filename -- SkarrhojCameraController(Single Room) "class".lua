@@ -16,6 +16,16 @@ function SingleRoomCameraController.new(roomName, config)
     self.roomName = roomName or "Single Room"
     self.debugging = (config and config.debugging) or true
     self.clearString = "[Clear]"
+
+    -- Component type definitions
+    self.componentTypes = {
+        callSync = "call_sync",
+        skaarhojPTZController = "Skaarhoj",
+        camRouter = "video_router",
+        devCams = "onvif_camera_operative",
+        camACPR = "%PLUGIN%_648260e3-c166-4b00-98ba-ba16ksnza4a63b0_%FP%_a4d2263b4380c424e16eebb67084f355",
+        roomControls = (comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls"))
+    }
     -- Component references
     self.components = {
         callSync = nil,
@@ -567,17 +577,17 @@ function SingleRoomCameraController:getComponentNames()
     }
     for _, comp in pairs(Component.GetComponents()) do
         if comp.Name and comp.Name ~= "" then
-            if comp.Type == "call_sync" then
+            if comp.Type == self.componentTypes.callSync then
                 table.insert(namesTable.CallSyncNames, comp.Name)
-            elseif comp.Type:find("Skaarhoj") then
+            elseif comp.Type == self.componentTypes.skaarhojPTZController then
                 table.insert(namesTable.SkaarhojPTZNames, comp.Name)
-            elseif comp.Type == "video_router" then
+            elseif comp.Type == self.componentTypes.camRouter then
                 table.insert(namesTable.CamRouterNames, comp.Name)
-            elseif comp.Type == "onvif_camera_operative" then
+            elseif comp.Type == self.componentTypes.devCams then
                 table.insert(namesTable.DevCamNames, comp.Name)
-            elseif comp.Type:find("ACPR") then
+            elseif comp.Type == self.componentTypes.camACPR then
                 table.insert(namesTable.CamACPRNames, comp.Name)
-            elseif comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls") then
+            elseif comp.Type == self.componentTypes.roomControls then
                 table.insert(namesTable.CompRoomControlsNames, comp.Name)
             end
         end

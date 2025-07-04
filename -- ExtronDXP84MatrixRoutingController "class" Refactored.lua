@@ -90,13 +90,20 @@ function ExtronDXPMatrixController.new()
     
     -- Instance-specific control references
     self.controls = controls
-    
+
+    -- Component type definitions
+    self.componentTypes = {
+        extronRouter = "%PLUGIN%_qsysc.extron.matrix.0.0.0.0-master_%FP%_bf09cd55c73845eb6fc31e4b896516ff",
+        callSync = "call_sync",
+        ClickShare = "%PLUGIN%_bb4217ac-401f-4698-aad9-9e4b2496ff46_%FP%_e0a4597b59bdca3247ccb142ce451198",
+        roomControls = (comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls"))
+    }
     -- Component storage
     self.extronRouter = nil
     self.roomControls = nil
     self.uciLayerSelector = nil
     self.callSync = nil
-    
+    self.ClickShare = nil
     -- Current state
     self.currentSource = nil
     self.currentDestinations = {}
@@ -137,13 +144,13 @@ function ExtronDXPMatrixController:discoverComponents()
     }
     
     for _, v in pairs(components) do
-        if v.Type == "%PLUGIN%_qsysc.extron.matrix.0.0.0.0-master_%FP%_bf09cd55c73845eb6fc31e4b896516ff)" then
+        if v.Type == self.componentTypes.extronRouter then
             table.insert(discovered.ExtronDXPNames, v.Name)
-        elseif v.Type == "call_sync" then
+        elseif v.Type == self.componentTypes.callSync then
             table.insert(discovered.CallSyncNames, v.Name)
-        elseif v.Type == "%PLUGIN%_bb4217ac-401f-4698-aad9-9e4b2496ff46_%FP%_e0a4597b59bdca3247ccb142ce451198" then
+        elseif v.Type == self.componentTypes.ClickShare then
             table.insert(discovered.ClickShareNames, v.Name)
-        elseif v.Type == "device_controller_script" and string.match(v.Name, "^compRoomControls") then
+        elseif v.Type == self.componentTypes.roomControls then
             table.insert(discovered.RoomControlsNames, v.Name)
         end
     end

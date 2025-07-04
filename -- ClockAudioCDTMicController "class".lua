@@ -59,7 +59,14 @@ function ClockAudioCDTMicController.new(roomName, config)
     
     -- Store reference to controls
     self.controls = controls
-    
+
+    -- Component type definitions
+    self.componentTypes = {
+        callSync = "call_sync",
+        micBoxes = "%PLUGIN%_91b57fdec7bd41fb9b9741210ad2a1f3_%FP%_6bb184f66fd3a12efe1844e433fc11c3",
+        micMixer = "mixer",
+        roomControls = (comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls"))
+    }
     -- Component references - direct access for speed
     self.components = {
         callSync = nil,
@@ -495,14 +502,13 @@ function ClockAudioCDTMicController:getComponentNames()
     }
 
     for i, v in pairs(Component.GetComponents()) do
-        if v.Type == "call_sync" then
+        if v.Type == self.componentTypes.callSync then
             table.insert(namesTable.CallSyncNames, v.Name)
-        elseif v.Type == "%PLUGIN%_91b57fdec7bd41fb9b9741210ad2a1f3_%FP%_6bb184f66fd3a12efe1844e433fc11c3" then
+        elseif v.Type == self.componentTypes.micBoxes then
             table.insert(namesTable.MicBoxNames, v.Name)
-        elseif v.Type == "usb_uvc" then
-        elseif v.Type == "device_controller_script" and string.match(v.Name, "^compRoomControls") then
+        elseif v.Type == self.componentTypes.roomControls then
             table.insert(namesTable.RoomControlsNames, v.Name)
-        elseif v.Type == "mixer" then
+        elseif v.Type == self.componentTypes.micMixer then
             table.insert(namesTable.MicMixerNames, v.Name)
         end
     end

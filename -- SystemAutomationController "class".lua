@@ -20,6 +20,16 @@ function SystemAutomationController.new(roomName, config)
     self.roomName = roomName or "Default Room"
     self.debugging = config and config.debugging or true
     self.clearString = "[Clear]"
+
+    -- Component type definitions
+    self.componentTypes = {
+        callSync = "call_sync",
+        videoBridge = "usb_uvc",
+        displays = "%PLUGIN%_78a74df3-40bf-447b-a714-f564ebae238a_%FP%_bec481a6666b76b5249bbd12046c3920", -- Generic Display Plugin
+        gains = "gain",
+        systemMute = "system_mute",
+        camACPR = "%PLUGIN%_648260e3-c166-4b00-98ba-ba16ksnza4a63b0_%FP%_a4d2263b4380c424e16eebb67084f355",
+    }
     
     -- Component storage
     self.components = {
@@ -594,17 +604,17 @@ function SystemAutomationController:getComponentNames()
     }
 
     for i, v in pairs(Component.GetComponents()) do
-        if v.Type == "call_sync" then
+        if v.Type == self.componentTypes.callSync then
             table.insert(namesTable.CallSyncNames, v.Name)
-        elseif v.Type == "usb_uvc" then
+        elseif v.Type == self.componentTypes.videoBridge then
             table.insert(namesTable.VideoBridgeNames, v.Name)
-        elseif v.Type == "%PLUGIN%_78a74df3-40bf-447b-a714-f564ebae238a_%FP%_bec481a6666b76b5249bbd12046c3920" then
+        elseif v.Type == self.componentTypes.displays then
             table.insert(namesTable.DisplayNames, v.Name)
-        elseif v.Type == "gain" then
+        elseif v.Type == self.componentTypes.gains then
             table.insert(namesTable.GainNames, v.Name)
-        elseif v.Type == "system_mute" then
+        elseif v.Type == self.componentTypes.systemMute then
             table.insert(namesTable.MuteNames, v.Name)
-        elseif v.Type == "%PLUGIN%_648260e3-c166-4b00-98ba-ba16ksnza4a63b0_%FP%_a4d2263b4380c424e16eebb67084f355" then
+        elseif v.Type == self.componentTypes.camACPR then
             table.insert(namesTable.CamACPRNames, v.Name)
         end       
     end

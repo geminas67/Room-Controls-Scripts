@@ -75,7 +75,12 @@ function NV32RouterController.new()
     
     -- Instance-specific control references
     self.controls = controls
-    
+
+    -- Component type definitions
+    self.componentTypes = {
+        nv32Router = "streamer_hdmi_switcher",
+        roomControls = (comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls"))
+    }
     -- Component storage
     self.nv32Router = nil
     self.roomControls = nil
@@ -257,7 +262,7 @@ end
 function NV32RouterController:populateNV32Choices()
     local names = {}
     for _, comp in pairs(Component.GetComponents()) do
-        if comp.Type == "streamer_hdmi_switcher" then
+        if comp.Type == self.componentTypes.nv32Router then
             table.insert(names, comp.Name)
         end
     end
@@ -269,7 +274,7 @@ end
 function NV32RouterController:populateRoomControlsChoices()
     local names = {}
     for _, comp in pairs(Component.GetComponents()) do
-        if comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls") then
+        if comp.Type == self.componentTypes.roomControls then
             table.insert(names, comp.Name)
         end
     end

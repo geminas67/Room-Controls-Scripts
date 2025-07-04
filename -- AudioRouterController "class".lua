@@ -46,6 +46,11 @@ function AudioRouterController.new(config)
     self.outputs = {
         OUTPUT01 = 1
     }
+    -- Component type definitions
+    self.componentTypes = {
+        audioRouter = "router_with_output",
+        roomControls =  (comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls"))
+    }
     
     -- Component storage
     self.audioRouter = nil
@@ -121,30 +126,30 @@ function AudioRouterController:checkStatus()
 end
 
 --------** Component Name Discovery **--------
-function AudioRouterController:getComponentNames()
-    local namesTable = {}
+function AudioRouterController:discoverComponents()
+    local audioRouterNames = {}
+    local roomControlsNames = {}
 
+    -- Single pass through all components
     for i, v in pairs(Component.GetComponents()) do
-        if v.Type == "router_with_output" then
-            table.insert(namesTable, v.Name)
+        if v.Type == self.componentTypes.audioRouter then
+            table.insert(audioRouterNames, v.Name)
+        elseif v.Type == self.componentTypes.roomControls then
+            table.insert(roomControlsNames, v.Name)
         end
     end
-    table.sort(namesTable)
-    table.insert(namesTable, self.clearString)
-
-    self.controls.compAudioRouter.Choices = namesTable
-end
-
-function AudioRouterController:populateRoomControlsChoices()
-    local names = {}
-    for _, comp in pairs(Component.GetComponents()) do
-        if comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls") then
-            table.insert(names, comp.Name)
-        end
-    end
-    table.sort(names)
-    table.insert(names, self.clearString)
-    self.controls.compRoomControls.Choices = names
+    
+    -- Sort and add clear string for audio router components
+    table.sort(audioRouterNames)
+    table.insert(audioRouterNames, self.clearString)
+    self.controls.compAudioRouter.Choices = audioRouterNames
+    
+    -- Sort and add clear string for room controls components
+    table.sort(roomControlsNames)
+    table.insert(roomControlsNames, self.clearString)
+    self.controls.compRoomControls.Choices = roomControlsNames
+    
+    self:debugPrint("Component discovery completed - Audio Router: " .. #audioRouterNames - 1 .. ", Room Controls: " .. #roomControlsNames - 1)
 end
 
 
@@ -228,8 +233,7 @@ end
 
 --------** Initialization **--------
 function AudioRouterController:funcInit()
-    self:getComponentNames()
-    self:populateRoomControlsChoices()
+    self:discoverComponents()
     self:setAudioRouterComponent()
     self:setRoomControlsComponent()
     self:debugPrint("Audio Router Controller Initialized")

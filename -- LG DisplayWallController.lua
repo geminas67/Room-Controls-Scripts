@@ -57,6 +57,12 @@ function ControllerTemplate_MCP.new(roomName, config)
     
     -- Store reference to controls
     self.controls = controls
+
+    -- Component type definitions
+    self.componentTypes = {
+        displays = "%PLUGIN%_e9ef4a50-ba74-4653-a22e-a58c02839313_%FP%_c7165c3b15ead5f69821d69583f73c8b",
+        roomControls = (comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls"))
+    }
     
     -- Component references (using arrays for multiple instances)
     self.components = {
@@ -114,10 +120,10 @@ function ControllerTemplate_MCP:discoverComponentNames()
     -- Discover components by type using Component.GetComponents()
     for _, component in pairs(Component.GetComponents()) do
         -- Example: Discover gain components
-        if component.Type == "gain" then
+        if component.Type == self.componentTypes.displays then
             table.insert(namesTable.ExampleComponentNames, component.Name)
         -- Example: Discover display components  
-        elseif component.Type == "%PLUGIN%_78a74df3-40bf-447b-a714-f564ebae238a_%FP%_bec481a6666b76b5249bbd12046c3920" then
+        elseif component.Type == self.componentTypes.displays then
             table.insert(namesTable.AnotherComponentNames, component.Name)
         -- Add more component type checks as needed
         -- elseif component.Type == "your_component_type" then
