@@ -112,20 +112,38 @@ function LGDisplayWallController:getInputButtonNumber(input)
     return buttonNumber
 end
 
---------** Direct Component Access **--------
+--------** Safe Component Access **--------
 function LGDisplayWallController:safeComponentAccess(component, control, action, value)
-    local compCtrl = component and component[control]
-    if not compCtrl then return false end
+    local success, result = pcall(function()
+        if component and component[control] then
+            if action == "set" then
+                component[control].Boolean = value
+                return true
+            elseif action == "setPosition" then
+                component[control].Position = value
+                return true
+            elseif action == "setString" then
+                component[control].String = value
+                return true
+            elseif action == "trigger" then
+                component[control]:Trigger()
+                return true
+            elseif action == "get" then
+                return component[control].Boolean
+            elseif action == "getPosition" then
+                return component[control].Position
+            elseif action == "getString" then
+                return component[control].String
+            end
+        end
+        return false
+    end)
     
-    if action == "set" then compCtrl.Boolean = value
-    elseif action == "setPosition" then compCtrl.Position = value
-    elseif action == "setString" then compCtrl.String = value
-    elseif action == "trigger" then compCtrl:Trigger()
-    elseif action == "get" then return compCtrl.Boolean
-    elseif action == "getPosition" then return compCtrl.Position
-    elseif action == "getString" then return compCtrl.String
+    if not success then
+        self:debugPrint("Component access error: " .. tostring(result))
+        return false
     end
-    return true
+    return result
 end
 
 --------** Display Module **--------

@@ -1,9 +1,9 @@
 --[[
-  LG DisplayWallController - Q-SYS Control Script for LG Display Wall
+  Planar DisplayWallController - Q-SYS Control Script for Planar Display Wall
   Author: Nikolas Smith, Q-SYS
   Date: 2025-07-06
   Version: 1.3
-  Description: Controls LG Display Wall components with power management,
+  Description: Controls Planar Display Wall components with power management,
   input switching, and display wall configuration. 
   Integrates with SystemAutomationController.
 ]]--
@@ -13,11 +13,14 @@ local vDisplayControls = {
     -- Power Controls
     vPowerOn = "PowerOn",
     vPowerOff = "PowerOff", 
-    vPowerStatus = "PowerStatus",
+    vPowerIsOn = "PowerIsOn",
+    vPowerIsOff = "PowerIsOff",
     
-    -- Input Controls (Option 1: ComboBox method)
+     --[[
+    Input Controls (Option 1: ComboBox method) 
     vInputSelectComboBox = "InputSelectComboBox",
     vInputStatusLED = "InputStatus",
+    ]]--
     
     -- Input Controls (Option 2: Button method)
     vInputSelectButtons = "InputSelectButtons ",
@@ -46,11 +49,11 @@ local function validateControls()
 end
 
 --------** Class Definition **--------
-LGDisplayWallController = {}
-LGDisplayWallController.__index = LGDisplayWallController
+PlanarDisplayWallController = {}
+PlanarDisplayWallController.__index = PlanarDisplayWallController
 
-function LGDisplayWallController.new(roomName, config)
-    local self = setmetatable({}, LGDisplayWallController)
+function PlanarDisplayWallController.new(roomName, config)
+    local self = setmetatable({}, PlanarDisplayWallController)
     
     -- Instance properties
     self.roomName = roomName or "Default Room"
@@ -98,12 +101,12 @@ function LGDisplayWallController.new(roomName, config)
 end
 
 --------** Debug Helper **--------
-function LGDisplayWallController:debugPrint(str)
+function PlanarDisplayWallController:debugPrint(str)
     if self.debugging then print("["..self.roomName.." Debug] "..str) end
 end
 
 --------** Input Button Mapping **--------
-function LGDisplayWallController:getInputButtonNumber(input)
+function PlanarDisplayWallController:getInputButtonNumber(input)
     local normalizedInput = input:gsub("USB%-C", "USB_C")
     local buttonNumber = self.inputButtonMap[normalizedInput]
     if not buttonNumber then
@@ -112,24 +115,66 @@ function LGDisplayWallController:getInputButtonNumber(input)
     return buttonNumber
 end
 
---------** Direct Component Access **--------
-function LGDisplayWallController:safeComponentAccess(component, control, action, value)
-    local compCtrl = component and component[control]
-    if not compCtrl then return false end
+--------** Power Status Helper **--------
+function PlanarDisplayWallController:getPowerStatus(display)
+    if not display then return nil end
     
-    if action == "set" then compCtrl.Boolean = value
-    elseif action == "setPosition" then compCtrl.Position = value
-    elseif action == "setString" then compCtrl.String = value
-    elseif action == "trigger" then compCtrl:Trigger()
-    elseif action == "get" then return compCtrl.Boolean
-    elseif action == "getPosition" then return compCtrl.Position
-    elseif action == "getString" then return compCtrl.String
+            -- Check for new dual-control structure first
+        if display[vDisplayControls.vPowerIsOn] and display[vDisplayControls.vPowerIsOff] then
+            local powerIsOn = self:safeComponentAccess(display, vDisplayControls.vPowerIsOn, "get")
+            local powerIsOff = self:safeComponentAccess(display, vDisplayControls.vPowerIsOff, "get")
+        
+        -- Return the power state (PowerIsOn takes precedence if both are true)
+        if powerIsOn then return true
+        elseif powerIsOff then return false
+        else return nil -- Neither is true, status unknown
+        end
     end
-    return true
+    
+            -- Fallback to old single control if it exists
+        if display["PowerStatus"] then
+            return self:safeComponentAccess(display, "PowerStatus", "get")
+        end
+    
+    return nil
+end
+
+--------** Safe Component Access **--------
+function PlanarDisplayWallController:safeComponentAccess(component, control, action, value)
+    local success, result = pcall(function()
+        if component and component[control] then
+            if action == "set" then
+                component[control].Boolean = value
+                return true
+            elseif action == "setPosition" then
+                component[control].Position = value
+                return true
+            elseif action == "setString" then
+                component[control].String = value
+                return true
+            elseif action == "trigger" then
+                component[control]:Trigger()
+                return true
+            elseif action == "get" then
+                return component[control].Boolean
+            elseif action == "getPosition" then
+                return component[control].Position
+            elseif action == "getString" then
+                return component[control].String
+            end
+        end
+        return false
+    end)
+    
+    if not success then
+        self:debugPrint("Component access error: " .. tostring(result))
+        return false
+    end
+    return result
 end
 
 --------** Display Module **--------
-function LGDisplayWallController:initDisplayModule()
+function PlanarDisplayWallController:initDisplayModule()
     local selfRef = self
     self.displayModule = {
         powerAll = function(state)
@@ -264,7 +309,7 @@ function LGDisplayWallController:initDisplayModule()
 end
 
 --------** Power Module **--------
-function LGDisplayWallController:initPowerModule()
+function PlanarDisplayWallController:initPowerModule()
     local selfRef = self
     self.powerModule = {
         enableDisablePowerControls = function(state)
@@ -326,7 +371,7 @@ function LGDisplayWallController:initPowerModule()
 end
 
 --------** Component Management **--------
-function LGDisplayWallController:setComponent(ctrl, componentType)
+function PlanarDisplayWallController:setComponent(ctrl, componentType)
     local componentName = ctrl and ctrl.String or nil
     if not componentName or componentName == "" or componentName == self.clearString then
         if ctrl then ctrl.Color = "white" end
@@ -346,17 +391,17 @@ function LGDisplayWallController:setComponent(ctrl, componentType)
     end
 end
 
-function LGDisplayWallController:setComponentInvalid(componentType)
+function PlanarDisplayWallController:setComponentInvalid(componentType)
     self.components.invalid[componentType] = true
     self:checkStatus()
 end
 
-function LGDisplayWallController:setComponentValid(componentType)
+function PlanarDisplayWallController:setComponentValid(componentType)
     self.components.invalid[componentType] = false
     self:checkStatus()
 end
 
-function LGDisplayWallController:checkStatus()
+function PlanarDisplayWallController:checkStatus()
     for _, v in pairs(self.components.invalid) do
         if v == true then
             if Controls.txtStatus then
@@ -373,7 +418,7 @@ function LGDisplayWallController:checkStatus()
 end
 
 --------** Component Setup **--------
-function LGDisplayWallController:setupDisplayComponents()
+function PlanarDisplayWallController:setupDisplayComponents()
     if not Controls.devDisplays then 
         self:debugPrint("No Controls.devDisplays found")
         return 
@@ -388,11 +433,11 @@ function LGDisplayWallController:setupDisplayComponents()
     end
 end
 
-function LGDisplayWallController:setRoomControlsComponent()
+function PlanarDisplayWallController:setRoomControlsComponent()
     self.components.compRoomControls = self:setComponent(Controls.compRoomControls, "Room Controls")
 end
 
-function LGDisplayWallController:setDisplayComponent(index)
+function PlanarDisplayWallController:setDisplayComponent(index)
     if not Controls.devDisplays or not Controls.devDisplays[index] then
         self:debugPrint("Display control " .. index .. " not found")
         return
@@ -410,16 +455,24 @@ function LGDisplayWallController:setDisplayComponent(index)
 end
 
 --------** Component Event Setup **--------
-function LGDisplayWallController:setupDisplayEvents(index)
+function PlanarDisplayWallController:setupDisplayEvents(index)
     local display = self.components.displays[index]
     if not display then return end
     
-    -- Set up power status monitoring
-    if display[vDisplayControls.vPowerStatus] then
-        display[vDisplayControls.vPowerStatus].EventHandler = function()
-            local powerState = self:safeComponentAccess(display, vDisplayControls.vPowerStatus, "get")
+    -- Set up power status monitoring (new dual-control structure)
+    if display[vDisplayControls.vPowerIsOn] then
+        display[vDisplayControls.vPowerIsOn].EventHandler = function()
+            local powerIsOn = self:safeComponentAccess(display, vDisplayControls.vPowerIsOn, "get")
             local componentName = Controls.devDisplays and Controls.devDisplays[index] and Controls.devDisplays[index].String or "Unknown"
-            self:debugPrint("Display " .. componentName .. " power status: " .. tostring(powerState))
+            self:debugPrint("Display " .. componentName .. " power is ON: " .. tostring(powerIsOn))
+        end
+    end
+    
+    if display[vDisplayControls.vPowerIsOff] then
+        display[vDisplayControls.vPowerIsOff].EventHandler = function()
+            local powerIsOff = self:safeComponentAccess(display, vDisplayControls.vPowerIsOff, "get")
+            local componentName = Controls.devDisplays and Controls.devDisplays[index] and Controls.devDisplays[index].String or "Unknown"
+            self:debugPrint("Display " .. componentName .. " power is OFF: " .. tostring(powerIsOff))
         end
     end
     
@@ -454,7 +507,7 @@ function LGDisplayWallController:setupDisplayEvents(index)
 end
 
 --------** Dynamic Component Discovery **--------
-function LGDisplayWallController:getComponentNames()
+function PlanarDisplayWallController:getComponentNames()
     local namesTable = {
         DisplayNames = {},
         RoomControlsNames = {},
@@ -462,7 +515,7 @@ function LGDisplayWallController:getComponentNames()
 
     -- Dynamic component discovery - single pass through all components
     for _, comp in pairs(Component.GetComponents()) do
-        -- Look for LG Display components (dynamic discovery)
+        -- Look for Planar Display components (dynamic discovery)
         if string.match(comp.Type, "e9ef4a50%-ba74%-4653%-a22e%-a58c02839313") then
             table.insert(namesTable.DisplayNames, comp.Name)
         elseif comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls") then
@@ -491,7 +544,7 @@ function LGDisplayWallController:getComponentNames()
 end
 
 --------** Room Name Management **--------
-function LGDisplayWallController:updateRoomNameFromComponent()
+function PlanarDisplayWallController:updateRoomNameFromComponent()
     if self.components.compRoomControls then
         local roomNameControl = self.components.compRoomControls["roomName"]
         if roomNameControl and roomNameControl.String and roomNameControl.String ~= "" then
@@ -505,7 +558,7 @@ function LGDisplayWallController:updateRoomNameFromComponent()
 end
 
 --------** Timer Event Handlers **--------
-function LGDisplayWallController:registerTimerHandlers()
+function PlanarDisplayWallController:registerTimerHandlers()
     self.timers.warmup.EventHandler = function()
         self:debugPrint("Warmup Period Has Ended")
         self.powerModule.enableDisablePowerControls(true)
@@ -520,7 +573,7 @@ function LGDisplayWallController:registerTimerHandlers()
 end
 
 --------** Streamlined Event Handler Registration **--------
-function LGDisplayWallController:registerEventHandlers()
+function PlanarDisplayWallController:registerEventHandlers()
     -- Room controls component handler
     if Controls.compRoomControls then
         Controls.compRoomControls.EventHandler = function()
@@ -606,8 +659,8 @@ function LGDisplayWallController:registerEventHandlers()
 end
 
 --------** Initialization **--------
-function LGDisplayWallController:funcInit()
-    self:debugPrint("Starting LG DisplayWallController initialization...")
+function PlanarDisplayWallController:funcInit()
+    self:debugPrint("Starting Planar DisplayWallController initialization...")
     
     -- Discover and populate component choices
     self:getComponentNames()
@@ -627,17 +680,20 @@ function LGDisplayWallController:funcInit()
         Controls.txtDisplayWallMode.String = self.state.displayWallMode
     end
     
-    self:debugPrint("LG DisplayWallController Initialized with " .. 
+    self:debugPrint("Planar DisplayWallController Initialized with " .. 
                    self.displayModule.getDisplayCount() .. " displays")
 end
 
 --------** Cleanup **--------
-function LGDisplayWallController:cleanup()
+function PlanarDisplayWallController:cleanup()
     -- Clear event handlers for displays
     for i, display in pairs(self.components.displays) do
         if display then
-            if display["PowerStatus"] then
-                display["PowerStatus"].EventHandler = nil
+            if display[vDisplayControls.vPowerIsOn] then
+                display[vDisplayControls.vPowerIsOn].EventHandler = nil
+            end
+            if display[vDisplayControls.vPowerIsOff] then
+                display[vDisplayControls.vPowerIsOff].EventHandler = nil
             end
             if display["InputStatus"] then
                 display["InputStatus"].EventHandler = nil
@@ -656,15 +712,15 @@ function LGDisplayWallController:cleanup()
 end
 
 --------** Factory Function **--------
-local function createLGDisplayWallController(roomName, config)
-    print("Creating LG DisplayWallController for: "..tostring(roomName))
+local function createPlanarDisplayWallController(roomName, config)
+    print("Creating Planar DisplayWallController for: "..tostring(roomName))
     local success, controller = pcall(function()
-        local instance = LGDisplayWallController.new(roomName, config)
+        local instance = PlanarDisplayWallController.new(roomName, config)
         instance:funcInit()
         return instance
     end)
     if success then
-        print("Successfully created LG DisplayWallController for "..roomName)
+        print("Successfully created Planar DisplayWallController for "..roomName)
         return controller
     else
         print("Failed to create controller for "..roomName..": "..tostring(controller))
@@ -697,14 +753,14 @@ local function getRoomNameFromComponent()
     end
     
     -- Final fallback to default room name
-    return "[LG Display Wall]"
+    return "[Planar Display Wall]"
 end
 
 local roomName = getRoomNameFromComponent()
-myLGDisplayWallController = createLGDisplayWallController(roomName)
+myPlanarDisplayWallController = createPlanarDisplayWallController(roomName)
 
-if myLGDisplayWallController then
-    print("LG DisplayWallController created successfully!")
+if myPlanarDisplayWallController then
+    print("Planar DisplayWallController created successfully!")
 else
-    print("ERROR: Failed to create LG DisplayWallController!")
+    print("ERROR: Failed to create Planar DisplayWallController!")
 end 
