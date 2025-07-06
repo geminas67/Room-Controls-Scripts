@@ -2,10 +2,11 @@
   ControllerTemplate_MCP - Q-SYS Control Script Template (MCP Style)
   Author: <Your Name or AI>
   Date: <YYYY-MM-DD>
-  Version: 2.1
+  Version: 2.2
   Description: Use this template for all Q-SYS control scripts. 
   Follows Perplexity MCP-style efficiency and modularity.
   Includes robust control validation, error handling, and dynamic component discovery.
+  Now includes RoomControls component support for room name management.
 ]]--
 
 -- Define control references with nil checks
@@ -58,10 +59,18 @@ function ControllerTemplate_MCP.new(roomName, config)
     -- Store reference to controls
     self.controls = controls
     
+    -- Component type definitions
+    self.componentTypes = {
+        exampleComponent = "example_component_type",
+        anotherComponent = "another_component_type",
+        roomControls = "device_controller_script" -- RoomControls component type
+    }
+    
     -- Component references (using arrays for multiple instances)
     self.components = {
         exampleComponents = {}, -- Array for multiple example components
         anotherComponents = {}, -- Array for multiple another components
+        compRoomControls = nil, -- RoomControls component
         invalid = {}
     }
     -- State variables
@@ -108,6 +117,7 @@ function ControllerTemplate_MCP:discoverComponentNames()
     local namesTable = {
         ExampleComponentNames = {},
         AnotherComponentNames = {},
+        CompRoomControlsNames = {},
         -- Add more component type arrays as needed
     }
 
@@ -119,6 +129,9 @@ function ControllerTemplate_MCP:discoverComponentNames()
         -- Example: Discover display components  
         elseif component.Type == "%PLUGIN%_78a74df3-40bf-447b-a714-f564ebae238a_%FP%_bec481a6666b76b5249bbd12046c3920" then
             table.insert(namesTable.AnotherComponentNames, component.Name)
+        -- Discover RoomControls components
+        elseif component.Type == self.componentTypes.roomControls and string.match(component.Name, "^compRoomControls") then
+            table.insert(namesTable.CompRoomControlsNames, component.Name)
         -- Add more component type checks as needed
         -- elseif component.Type == "your_component_type" then
         --     table.insert(namesTable.YourComponentNames, component.Name)
@@ -156,6 +169,11 @@ function ControllerTemplate_MCP:populateComponentChoices()
         end
     end
     
+    -- Populate choices for RoomControls component
+    if controls.roomControls then
+        controls.roomControls.Choices = namesTable.CompRoomControlsNames
+    end
+    
     -- Add more component choice population as needed
 end
 
@@ -190,6 +208,7 @@ end
 function ControllerTemplate_MCP:setupComponents()
     self:setupExampleComponents()
     self:setupAnotherComponents()
+    self:setupRoomControlsComponent()
     -- Add more component setup calls here
 end
 
@@ -211,6 +230,12 @@ function ControllerTemplate_MCP:setupAnotherComponents()
             self:setAnotherComponent(i)
         end
     end
+end
+
+function ControllerTemplate_MCP:setupRoomControlsComponent()
+    if not controls.roomControls then return end
+    
+    self:setRoomControlsComponent()
 end
 
 function ControllerTemplate_MCP:setExampleComponent(index)
@@ -243,6 +268,24 @@ function ControllerTemplate_MCP:setAnotherComponent(index)
     end
 end
 
+function ControllerTemplate_MCP:setRoomControlsComponent()
+    if not controls.roomControls then
+        self:debugPrint("RoomControls component control not found")
+        return
+    end
+    
+    local componentType = "Room Controls"
+    self.components.compRoomControls = self:setComponent(controls.roomControls, componentType)
+    
+    if self.components.compRoomControls then
+        -- Update room name from the component
+        self:updateRoomNameFromComponent()
+        
+        -- Set up event handlers for RoomControls component
+        self:setupRoomControlsComponentEvents()
+    end
+end
+
 --------** Component Event Setup **--------
 function ControllerTemplate_MCP:setupExampleComponentEvents(index)
     local comp = self.components.exampleComponents[index]
@@ -270,6 +313,45 @@ function ControllerTemplate_MCP:setupAnotherComponentEvents(index)
     end
 end
 
+function ControllerTemplate_MCP:setupRoomControlsComponentEvents()
+    local comp = self.components.compRoomControls
+    if not comp then return end
+    
+    -- EventHandler for system power LED changes
+    local ledSystemPower = comp["ledSystemPower"]
+    if ledSystemPower then
+        ledSystemPower.EventHandler = function()
+            local systemPowerState = self:safeComponentAccess(comp, "ledSystemPower", "get")
+            if not systemPowerState then
+                self:debugPrint("System power off")
+                -- Add system power off logic here
+            end
+        end
+    end
+    
+    -- EventHandler for room name changes
+    local roomNameControl = comp["roomName"]
+    if roomNameControl then
+        roomNameControl.EventHandler = function()
+            self:updateRoomNameFromComponent()
+        end
+    end
+end
+
+--------** Room Name Management **--------
+function ControllerTemplate_MCP:updateRoomNameFromComponent()
+    if self.components.compRoomControls then
+        local roomNameControl = self.components.compRoomControls["roomName"]
+        if roomNameControl and roomNameControl.String and roomNameControl.String ~= "" then
+            local newRoomName = "["..roomNameControl.String.."]"
+            if newRoomName ~= self.roomName then
+                self.roomName = newRoomName
+                self:debugPrint("Room name updated to: "..newRoomName)
+            end
+        end
+    end
+end
+
 --------** Event Handler Registration **--------
 function ControllerTemplate_MCP:registerEventHandlers()
     -- Register event handlers for component selectors
@@ -290,6 +372,13 @@ function ControllerTemplate_MCP:registerEventHandlers()
                     self:setAnotherComponent(i)
                 end
             end
+        end
+    end
+    
+    -- Register event handler for RoomControls component
+    if controls.roomControls then
+        controls.roomControls.EventHandler = function()
+            self:setRoomControlsComponent()
         end
     end
     
@@ -379,10 +468,24 @@ function ControllerTemplate_MCP:cleanup()
         end
     end
     
+    -- Clear event handlers for RoomControls component
+    if self.components.compRoomControls then
+        local ledSystemPower = self.components.compRoomControls["ledSystemPower"]
+        if ledSystemPower then
+            ledSystemPower.EventHandler = nil
+        end
+        
+        local roomNameControl = self.components.compRoomControls["roomName"]
+        if roomNameControl then
+            roomNameControl.EventHandler = nil
+        end
+    end
+    
     -- Reset component references
     self.components = {
         exampleComponents = {},
         anotherComponents = {},
+        compRoomControls = nil,
         invalid = {}
     }
     
@@ -413,14 +516,30 @@ if not validateControls() then
     return
 end
 
--- Check if roomName control has a valid string value
-if not controls.roomName or not controls.roomName.String or controls.roomName.String == "" then
-    print("ERROR: Controls.roomName.String is empty or invalid!")
-    return
+-- Get room name from room controls component or fallback to control
+local function getRoomNameFromComponent()
+    -- First try to get from the room controls component if it's already set
+    if controls.roomControls and controls.roomControls.String ~= "" and controls.roomControls.String ~= "[Clear]" then
+        local roomControlsComponent = Component.New(controls.roomControls.String)
+        if roomControlsComponent and roomControlsComponent["roomName"] then
+            local roomName = roomControlsComponent["roomName"].String
+            if roomName and roomName ~= "" then
+                return "["..roomName.."]"
+            end
+        end
+    end
+    
+    -- Fallback to roomName control
+    if controls.roomName and controls.roomName.String and controls.roomName.String ~= "" then
+        return "["..controls.roomName.String.."]"
+    end
+    
+    -- Final fallback to default room name
+    return "[Default Room]"
 end
 
-local formattedRoomName = "["..controls.roomName.String.."]"
-myControllerTemplate_MCP = createControllerTemplate_MCP(formattedRoomName)
+local roomName = getRoomNameFromComponent()
+myControllerTemplate_MCP = createControllerTemplate_MCP(roomName)
 
 if myControllerTemplate_MCP then
     print("ControllerTemplate_MCP created successfully!")

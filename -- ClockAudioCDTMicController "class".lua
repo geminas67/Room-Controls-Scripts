@@ -63,7 +63,7 @@ function ClockAudioCDTMicController.new(roomName, config)
     -- Component type definitions
     self.componentTypes = {
         callSync = "call_sync",
-        micBoxes = "%PLUGIN%_91b57fdec7bd41fb9b9741210ad2a1f3_%FP%_6bb184f66fd3a12efe1844e433fc11c3",
+        micBoxes = "usb_uvc",
         micMixer = "mixer",
         roomControls = (comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls"))
     }

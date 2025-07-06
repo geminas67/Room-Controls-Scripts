@@ -265,7 +265,7 @@ function SystemAutomationController:initDisplayModule()
         powerAll = function(state)
             for i, display in pairs(self.components.displays) do
                 if display then
-                    local control = state and "PowerOnTrigger" or "PowerOffTrigger"
+                    local control = state and "PowerOn" or "PowerOff"
                     self:safeComponentAccess(display, control, "trigger")
                 end
             end
@@ -274,7 +274,7 @@ function SystemAutomationController:initDisplayModule()
         powerSingle = function(index, state)
             local display = self.components.displays[index]
             if display then
-                local control = state and "PowerOnTrigger" or "PowerOffTrigger"
+                local control = state and "PowerOn" or "PowerOff"
                 self:safeComponentAccess(display, control, "trigger")
             end
         end

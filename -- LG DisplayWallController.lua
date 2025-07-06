@@ -1,309 +1,332 @@
 --[[
-  ControllerTemplate_MCP - Q-SYS Control Script Template (MCP Style)
-  Author: <Your Name or AI>
-  Date: <YYYY-MM-DD>
-  Version: 2.1
-  Description: Use this template for all Q-SYS control scripts. 
-  Follows Perplexity MCP-style efficiency and modularity.
-  Includes robust control validation, error handling, and dynamic component discovery.
+  LG DisplayWallController - Q-SYS Control Script for LG Display Wall
+  Author: Nikolas Smith, Q-SYS
+  Date: 2025-07-06
+  Version: 1.3
+  Description: Controls LG Display Wall components with power management,
+  input switching, and display wall configuration. 
+  Integrates with SystemAutomationController.
 ]]--
 
--- Define control references with nil checks
-local controls = {
-    roomName = Controls.roomName,
-    txtStatus = Controls.txtStatus,
-    roomControls = Controls.compRoomControls,
-    -- Component selection controls (arrays for multiple instances)
-    compExampleComponents = Controls.compExampleComponents, -- Array of component selectors
-    compAnotherComponents = Controls.compAnotherComponents, -- Array of component selectors
-    -- Add more component selection controls as needed
+-- Display Control Configuration (easily changeable for different manufacturers)
+local vDisplayControls = {
+    -- Power Controls
+    vPowerOn = "PowerOn",
+    vPowerOff = "PowerOff", 
+    vPowerStatus = "PowerStatus",
+    
+    -- Input Controls (Option 1: ComboBox method)
+    vInputSelectComboBox = "InputSelectComboBox",
+    vInputStatusLED = "InputStatus",
+    
+    -- Input Controls (Option 2: Button method)
+    vInputSelectButtons = "InputSelectButtons ",
+    vInputNames = "InputNames ",
+    vCurrentInput = "CurrentInput ",
+    
+    -- Wall Configuration
+    vWallMode = "WallMode",
+    vWallPosition = "WallPosition"
+}
+
+-- Timer Configuration (easily changeable)
+local vTimerConfig = {
+    vWarmupTime = 7,      -- Seconds for displays to warm up
+    vCooldownTime = 5,     -- Seconds for displays to cool down
+    vMaxDisplays = 9       -- Maximum number of displays supported
 }
 
 -- Validate required controls exist
 local function validateControls()
-    local missingControls = {}
-    
-    if not controls.roomName then
-        table.insert(missingControls, "roomName")
-    end
-    
-    if not controls.txtStatus then
-        table.insert(missingControls, "txtStatus")
-    end
-    
-    -- Add validation for other required controls as needed
-    -- if not controls.compExampleComponents then
-    --     table.insert(missingControls, "compExampleComponents")
-    -- end
-    
-    if #missingControls > 0 then
-        print("ERROR: Missing required controls: " .. table.concat(missingControls, ", "))
+    if not Controls.txtStatus or not Controls.devDisplays then
+        print("ERROR: Missing required controls. Please check your Q-SYS design.")
         return false
     end
-    
     return true
 end
 
 --------** Class Definition **--------
-ControllerTemplate_MCP = {}
-ControllerTemplate_MCP.__index = ControllerTemplate_MCP
+LGDisplayWallController = {}
+LGDisplayWallController.__index = LGDisplayWallController
 
-function ControllerTemplate_MCP.new(roomName, config)
-    local self = setmetatable({}, ControllerTemplate_MCP)
+function LGDisplayWallController.new(roomName, config)
+    local self = setmetatable({}, LGDisplayWallController)
+    
     -- Instance properties
     self.roomName = roomName or "Default Room"
     self.debugging = (config and config.debugging) or true
     self.clearString = "[Clear]"
     
-    -- Store reference to controls
-    self.controls = controls
-
-    -- Component type definitions
-    self.componentTypes = {
-        displays = "%PLUGIN%_e9ef4a50-ba74-4653-a22e-a58c02839313_%FP%_c7165c3b15ead5f69821d69583f73c8b",
-        roomControls = (comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls"))
-    }
-    
-    -- Component references (using arrays for multiple instances)
+    -- Component storage
     self.components = {
-        exampleComponents = {}, -- Array for multiple example components
-        anotherComponents = {}, -- Array for multiple another components
+        displays = {}, -- Array for multiple displays
+        compRoomControls = nil, -- Room controls component
         invalid = {}
     }
-    -- State variables
+    
+    -- State tracking
     self.state = {
-        exampleState = false
+        displayWallMode = "Single", -- Single, 2x2, 3x3, etc.
+        lastInput = "HDMI1",
+        powerState = false
     }
+    
     -- Configuration
     self.config = {
-        exampleSetting = true,
-        maxExampleComponents = config and config.maxExampleComponents or 4,
-        maxAnotherComponents = config and config.maxAnotherComponents or 2
+        maxDisplays = config and config.maxDisplays or vTimerConfig.vMaxDisplays,
+        defaultInput = "HDMI1",
+        displayWallModes = {"Single", "2x2", "3x3", "Custom"},
+        inputChoices = {"HDMI1", "HDMI2", "DisplayPort", "USB-C"}
     }
+    
+    -- Input to button mapping
+    self.inputButtonMap = {
+        HDMI1 = 1, HDMI2 = 2, DisplayPort = 3, USB_C = 4,
+        DVI = 5, VGA = 6, Component = 7, Composite = 8, S_Video = 9, RF = 10
+    }
+    
+    -- Timers
+    self.timers = {
+        warmup = Timer.New(),
+        cooldown = Timer.New()
+    }
+    
     -- Initialize modules
-    self:initModules()
+    self:initDisplayModule()
+    self:initPowerModule()
     return self
 end
 
 --------** Debug Helper **--------
-function ControllerTemplate_MCP:debugPrint(str)
+function LGDisplayWallController:debugPrint(str)
     if self.debugging then print("["..self.roomName.." Debug] "..str) end
 end
 
---------** Safe Component Access **--------
-function ControllerTemplate_MCP:safeComponentAccess(component, control, action, value)
+--------** Input Button Mapping **--------
+function LGDisplayWallController:getInputButtonNumber(input)
+    local normalizedInput = input:gsub("USB%-C", "USB_C")
+    local buttonNumber = self.inputButtonMap[normalizedInput]
+    if not buttonNumber then
+        self:debugPrint("WARNING: No button mapping found for input: " .. input)
+    end
+    return buttonNumber
+end
+
+--------** Direct Component Access **--------
+function LGDisplayWallController:directComponentAccess(component, control, action, value)
     local compCtrl = component and component[control]
     if not compCtrl then return false end
-    local ok, result = pcall(function()
-        if action == "set" then compCtrl.Boolean = value
-        elseif action == "setPosition" then compCtrl.Position = value
-        elseif action == "setString" then compCtrl.String = value
-        elseif action == "trigger" then compCtrl:Trigger()
-        elseif action == "get" then return compCtrl.Boolean
-        elseif action == "getPosition" then return compCtrl.Position
-        elseif action == "getString" then return compCtrl.String
-        end
-        return true
-    end)
-    if not ok then self:debugPrint("Component access error: "..tostring(result)) end
-    return ok and result
-end
-
---------** Component Discovery **--------
-function ControllerTemplate_MCP:discoverComponentNames()
-    local namesTable = {
-        ExampleComponentNames = {},
-        AnotherComponentNames = {},
-        -- Add more component type arrays as needed
-    }
-
-    -- Discover components by type using Component.GetComponents()
-    for _, component in pairs(Component.GetComponents()) do
-        -- Example: Discover gain components
-        if component.Type == self.componentTypes.displays then
-            table.insert(namesTable.ExampleComponentNames, component.Name)
-        -- Example: Discover display components  
-        elseif component.Type == self.componentTypes.displays then
-            table.insert(namesTable.AnotherComponentNames, component.Name)
-        -- Add more component type checks as needed
-        -- elseif component.Type == "your_component_type" then
-        --     table.insert(namesTable.YourComponentNames, component.Name)
-        end
-    end
-
-    -- Sort component names and add clear option
-    for _, nameArray in pairs(namesTable) do
-        table.sort(nameArray)
-        table.insert(nameArray, self.clearString)
-    end
-
-    return namesTable
-end
-
---------** Populate Component Choices **--------
-function ControllerTemplate_MCP:populateComponentChoices()
-    local namesTable = self:discoverComponentNames()
     
-    -- Populate choices for example component selectors
-    if controls.compExampleComponents then
-        for i, compSelector in ipairs(controls.compExampleComponents) do
-            if compSelector then
-                compSelector.Choices = namesTable.ExampleComponentNames
-            end
-        end
+    if action == "set" then compCtrl.Boolean = value
+    elseif action == "setPosition" then compCtrl.Position = value
+    elseif action == "setString" then compCtrl.String = value
+    elseif action == "trigger" then compCtrl:Trigger()
+    elseif action == "get" then return compCtrl.Boolean
+    elseif action == "getPosition" then return compCtrl.Position
+    elseif action == "getString" then return compCtrl.String
     end
-    
-    -- Populate choices for another component selectors
-    if controls.compAnotherComponents then
-        for i, compSelector in ipairs(controls.compAnotherComponents) do
-            if compSelector then
-                compSelector.Choices = namesTable.AnotherComponentNames
-            end
-        end
-    end
-    
-    -- Add more component choice population as needed
+    return true
 end
 
---------** Initialize Modules **--------
-function ControllerTemplate_MCP:initModules()
-    self:initExampleModule()
-    -- Add more module initializations here
-end
-
---------** Example Module **--------
-function ControllerTemplate_MCP:initExampleModule()
+--------** Display Module **--------
+function LGDisplayWallController:initDisplayModule()
     local selfRef = self
-    self.exampleModule = {
-        doSomething = function(param, componentIndex)
-            local comp = componentIndex and selfRef.components.exampleComponents[componentIndex] or selfRef.components.exampleComponents[1]
-            if comp then
-                selfRef:safeComponentAccess(comp, "ExampleControl", "setString", param)
+    self.displayModule = {
+        powerAll = function(state)
+            selfRef:debugPrint("Powering all displays: " .. tostring(state))
+            for i, display in pairs(selfRef.components.displays) do
+                if display then
+                    local control = state and vDisplayControls.vPowerOn or vDisplayControls.vPowerOff
+                    selfRef:directComponentAccess(display, control, "trigger")
+                end
+            end
+            selfRef.state.powerState = state
+            if Controls.ledDisplayPower then
+                Controls.ledDisplayPower.Boolean = state
             end
         end,
         
-        getComponentCount = function()
+        powerSingle = function(index, state)
+            local display = selfRef.components.displays[index]
+            if display then
+                local control = state and vDisplayControls.vPowerOn or vDisplayControls.vPowerOff
+                selfRef:directComponentAccess(display, control, "trigger")
+                selfRef:debugPrint("Display " .. index .. " power: " .. tostring(state))
+            end
+        end,
+        
+        setInputAll = function(input)
+            selfRef:debugPrint("Setting all displays to input: " .. input)
+            for i, display in pairs(selfRef.components.displays) do
+                if display then
+                    -- Try Option 1: InputSelectComboBox (if available)
+                    if display[vDisplayControls.vInputSelectComboBox] then
+                        selfRef:directComponentAccess(display, vDisplayControls.vInputSelectComboBox, "setString", input)
+                    else
+                        -- Fallback to Option 2: InputSelectButtons
+                        local buttonNumber = selfRef:getInputButtonNumber(input)
+                        if buttonNumber then
+                            local buttonName = vDisplayControls.vInputSelectButtons .. buttonNumber
+                            selfRef:directComponentAccess(display, buttonName, "trigger")
+                        end
+                    end
+                end
+            end
+            selfRef.state.lastInput = input
+            if Controls.ledDisplayInput then
+                Controls.ledDisplayInput.String = input
+            end
+        end,
+        
+        setInputSingle = function(index, input)
+            local display = selfRef.components.displays[index]
+            if display then
+                -- Try Option 1: InputSelectComboBox (if available)
+                if display[vDisplayControls.vInputSelectComboBox] then
+                    selfRef:directComponentAccess(display, vDisplayControls.vInputSelectComboBox, "setString", input)
+                    selfRef:debugPrint("Display " .. index .. " input: " .. input .. " (via ComboBox)")
+                else
+                    -- Fallback to Option 2: InputSelectButtons
+                    local buttonNumber = selfRef:getInputButtonNumber(input)
+                    if buttonNumber then
+                        local buttonName = vDisplayControls.vInputSelectButtons .. buttonNumber
+                        selfRef:directComponentAccess(display, buttonName, "trigger")
+                        selfRef:debugPrint("Display " .. index .. " input: " .. input .. " (button " .. buttonNumber .. ")")
+                    end
+                end
+            end
+        end,
+        
+        getDisplayCount = function()
             local count = 0
-            for _, comp in pairs(selfRef.components.exampleComponents) do
-                if comp then count = count + 1 end
+            for _, display in pairs(selfRef.components.displays) do
+                if display then count = count + 1 end
             end
             return count
+        end,
+        
+        getCurrentInput = function(displayIndex)
+            local display = selfRef.components.displays[displayIndex]
+            if not display then return nil end
+            
+            -- Try Option 1: InputSelectComboBox
+            if display[vDisplayControls.vInputSelectComboBox] then
+                return selfRef:directComponentAccess(display, vDisplayControls.vInputSelectComboBox, "getString")
+            end
+            
+            -- Option 2: Check CurrentInput 1-10 LEDs to find active input
+            for i = 1, 10 do
+                local currentInputControl = display[vDisplayControls.vCurrentInput .. i]
+                if currentInputControl then
+                    local isActive = selfRef:directComponentAccess(display, vDisplayControls.vCurrentInput .. i, "get")
+                    if isActive then
+                        -- Get the input name from InputNames
+                        local inputNameControl = display[vDisplayControls.vInputNames .. i]
+                        if inputNameControl then
+                            return selfRef:directComponentAccess(display, vDisplayControls.vInputNames .. i, "getString")
+                        else
+                            return "Input " .. i
+                        end
+                    end
+                end
+            end
+            
+            return nil
+        end,
+        
+        configureDisplayWall = function(mode)
+            selfRef:debugPrint("Configuring display wall mode: " .. mode)
+            selfRef.state.displayWallMode = mode
+            
+            -- Configure display wall based on mode
+            local maxDisplays = (mode == "2x2" and 4) or (mode == "3x3" and 9) or 0
+            if maxDisplays > 0 then
+                for i = 1, maxDisplays do
+                    if selfRef.components.displays[i] then
+                        selfRef:directComponentAccess(selfRef.components.displays[i], vDisplayControls.vWallMode, "setString", mode)
+                        selfRef:directComponentAccess(selfRef.components.displays[i], vDisplayControls.vWallPosition, "setString", "Position" .. i)
+                    end
+                end
+            else
+                -- Single mode - disable wall mode
+                for i, display in pairs(selfRef.components.displays) do
+                    if display then
+                        selfRef:directComponentAccess(display, vDisplayControls.vWallMode, "setString", "Single")
+                    end
+                end
+            end
+            
+            if Controls.ledDisplayWallMode then
+                Controls.ledDisplayWallMode.String = mode
+            end
         end
     }
 end
 
---------** Component Setup **--------
-function ControllerTemplate_MCP:setupComponents()
-    self:setupExampleComponents()
-    self:setupAnotherComponents()
-    -- Add more component setup calls here
-end
-
-function ControllerTemplate_MCP:setupExampleComponents()
-    if not controls.compExampleComponents then return end
-    
-    for i, compSelector in ipairs(controls.compExampleComponents) do
-        if compSelector then
-            self:setExampleComponent(i)
-        end
-    end
-end
-
-function ControllerTemplate_MCP:setupAnotherComponents()
-    if not controls.compAnotherComponents then return end
-    
-    for i, compSelector in ipairs(controls.compAnotherComponents) do
-        if compSelector then
-            self:setAnotherComponent(i)
-        end
-    end
-end
-
-function ControllerTemplate_MCP:setExampleComponent(index)
-    if not controls.compExampleComponents or not controls.compExampleComponents[index] then
-        self:debugPrint("Example component control " .. index .. " not found")
-        return
-    end
-    
-    local componentType = "Example Component [" .. index .. "]"
-    self.components.exampleComponents[index] = self:setComponent(controls.compExampleComponents[index], componentType)
-    
-    if self.components.exampleComponents[index] then
-        -- Set up event handlers for this component
-        self:setupExampleComponentEvents(index)
-    end
-end
-
-function ControllerTemplate_MCP:setAnotherComponent(index)
-    if not controls.compAnotherComponents or not controls.compAnotherComponents[index] then
-        self:debugPrint("Another component control " .. index .. " not found")
-        return
-    end
-    
-    local componentType = "Another Component [" .. index .. "]"
-    self.components.anotherComponents[index] = self:setComponent(controls.compAnotherComponents[index], componentType)
-    
-    if self.components.anotherComponents[index] then
-        -- Set up event handlers for this component
-        self:setupAnotherComponentEvents(index)
-    end
-end
-
---------** Component Event Setup **--------
-function ControllerTemplate_MCP:setupExampleComponentEvents(index)
-    local comp = self.components.exampleComponents[index]
-    if not comp then return end
-    
-    -- Example event handler setup
-    if comp["ExampleButton.press"] then
-        comp["ExampleButton.press"].EventHandler = function()
-            self:debugPrint("ExampleButton pressed on component " .. index .. "!")
-            -- Handler logic here
-        end
-    end
-end
-
-function ControllerTemplate_MCP:setupAnotherComponentEvents(index)
-    local comp = self.components.anotherComponents[index]
-    if not comp then return end
-    
-    -- Example event handler setup
-    if comp["AnotherButton.press"] then
-        comp["AnotherButton.press"].EventHandler = function()
-            self:debugPrint("AnotherButton pressed on component " .. index .. "!")
-            -- Handler logic here
-        end
-    end
-end
-
---------** Event Handler Registration **--------
-function ControllerTemplate_MCP:registerEventHandlers()
-    -- Register event handlers for component selectors
-    if controls.compExampleComponents then
-        for i, compSelector in ipairs(controls.compExampleComponents) do
-            if compSelector then
-                compSelector.EventHandler = function()
-                    self:setExampleComponent(i)
+--------** Power Module **--------
+function LGDisplayWallController:initPowerModule()
+    local selfRef = self
+    self.powerModule = {
+        enableDisablePowerControls = function(state)
+            -- Enable/disable all power controls using arrays
+            local powerControls = {"btnDisplayPowerOn", "btnDisplayPowerOff", "btnDisplayPowerSingle"}
+            for _, controlName in ipairs(powerControls) do
+                if Controls[controlName] then
+                    for i, btn in ipairs(Controls[controlName]) do
+                        btn.IsDisabled = not state
+                    end
                 end
             end
-        end
-    end
-    
-    if controls.compAnotherComponents then
-        for i, compSelector in ipairs(controls.compAnotherComponents) do
-            if compSelector then
-                compSelector.EventHandler = function()
-                    self:setAnotherComponent(i)
-                end
+            -- Enable/disable global power controls
+            if Controls.btnDisplayPowerAll then
+                Controls.btnDisplayPowerAll.IsDisabled = not state
+            end
+        end,
+        
+        powerOnDisplay = function(index)
+            selfRef:debugPrint("Powering on display " .. index)
+            selfRef.displayModule.powerSingle(index, true)
+            selfRef.powerModule.enableDisableIndexPowerControl(index, "powerOn", false)
+            selfRef.timers.warmup:Start(vTimerConfig.vWarmupTime)
+        end,
+        
+        powerOffDisplay = function(index)
+            selfRef:debugPrint("Powering off display " .. index)
+            selfRef.displayModule.powerSingle(index, false)
+            selfRef.powerModule.enableDisableIndexPowerControl(index, "powerOff", false)
+            selfRef.timers.cooldown:Start(vTimerConfig.vCooldownTime)
+        end,
+        
+        powerOnAll = function()
+            selfRef:debugPrint("Powering on all displays")
+            selfRef.displayModule.powerAll(true)
+            selfRef.powerModule.enableDisablePowerControls(false)
+            selfRef.timers.warmup:Start(vTimerConfig.vWarmupTime)
+        end,
+        
+        powerOffAll = function()
+            selfRef:debugPrint("Powering off all displays")
+            selfRef.displayModule.powerAll(false)
+            selfRef.powerModule.enableDisablePowerControls(false)
+            selfRef.timers.cooldown:Start(vTimerConfig.vCooldownTime)
+        end,
+        
+        enableDisableIndexPowerControl = function(index, controlType, state)
+            local controlMap = {
+                powerOn = "btnDisplayPowerOn",
+                powerOff = "btnDisplayPowerOff", 
+                powerSingle = "btnDisplayPowerSingle"
+            }
+            local controlName = controlMap[controlType]
+            if controlName and Controls[controlName] and Controls[controlName][index] then
+                Controls[controlName][index].IsDisabled = not state
             end
         end
-    end
-    
-    -- Add more event handler registrations as needed
+    }
 end
 
 --------** Component Management **--------
-function ControllerTemplate_MCP:setComponent(ctrl, componentType)
+function LGDisplayWallController:setComponent(ctrl, componentType)
     local componentName = ctrl and ctrl.String or nil
     if not componentName or componentName == "" or componentName == self.clearString then
         if ctrl then ctrl.Color = "white" end
@@ -323,72 +346,309 @@ function ControllerTemplate_MCP:setComponent(ctrl, componentType)
     end
 end
 
-function ControllerTemplate_MCP:setComponentInvalid(componentType)
+function LGDisplayWallController:setComponentInvalid(componentType)
     self.components.invalid[componentType] = true
     self:checkStatus()
 end
 
-function ControllerTemplate_MCP:setComponentValid(componentType)
+function LGDisplayWallController:setComponentValid(componentType)
     self.components.invalid[componentType] = false
     self:checkStatus()
 end
 
-function ControllerTemplate_MCP:checkStatus()
+function LGDisplayWallController:checkStatus()
     for _, v in pairs(self.components.invalid) do
         if v == true then
-            if controls.txtStatus then
-                controls.txtStatus.String = "Invalid Components"
-                controls.txtStatus.Value = 1
+            if Controls.txtStatus then
+                Controls.txtStatus.String = "Invalid Components"
+                Controls.txtStatus.Value = 1
             end
             return
         end
     end
-    if controls.txtStatus then
-        controls.txtStatus.String = "OK"
-        controls.txtStatus.Value = 0
+    if Controls.txtStatus then
+        Controls.txtStatus.String = "OK"
+        Controls.txtStatus.Value = 0
+    end
+end
+
+--------** Component Setup **--------
+function LGDisplayWallController:setupDisplayComponents()
+    if not Controls.devDisplays then 
+        self:debugPrint("No Controls.devDisplays found")
+        return 
+    end
+    
+    self:debugPrint("Setting up " .. #Controls.devDisplays .. " display components")
+    for i, displaySelector in ipairs(Controls.devDisplays) do
+        if displaySelector then
+            self:debugPrint("Setting up display component " .. i)
+            self:setDisplayComponent(i)
+        end
+    end
+end
+
+function LGDisplayWallController:setRoomControlsComponent()
+    self.components.compRoomControls = self:setComponent(Controls.compRoomControls, "Room Controls")
+end
+
+function LGDisplayWallController:setDisplayComponent(index)
+    if not Controls.devDisplays or not Controls.devDisplays[index] then
+        self:debugPrint("Display control " .. index .. " not found")
+        return
+    end
+    
+    local componentType = "Display [" .. index .. "]"
+    self.components.displays[index] = self:setComponent(Controls.devDisplays[index], componentType)
+    
+    if self.components.displays[index] then
+        self:debugPrint("Successfully set up display component " .. index)
+        self:setupDisplayEvents(index)
+    else
+        self:debugPrint("Failed to set up display component " .. index)
+    end
+end
+
+--------** Component Event Setup **--------
+function LGDisplayWallController:setupDisplayEvents(index)
+    local display = self.components.displays[index]
+    if not display then return end
+    
+    -- Set up power status monitoring
+    if display[vDisplayControls.vPowerStatus] then
+        display[vDisplayControls.vPowerStatus].EventHandler = function()
+            local powerState = self:directComponentAccess(display, vDisplayControls.vPowerStatus, "get")
+            local componentName = Controls.devDisplays and Controls.devDisplays[index] and Controls.devDisplays[index].String or "Unknown"
+            self:debugPrint("Display " .. componentName .. " power status: " .. tostring(powerState))
+        end
+    end
+    
+    -- Set up input status monitoring (Option 1: InputSelectComboBox + InputStatus LED)
+    if display[vDisplayControls.vInputSelectComboBox] then
+        display[vDisplayControls.vInputSelectComboBox].EventHandler = function()
+            local currentInput = self:directComponentAccess(display, vDisplayControls.vInputSelectComboBox, "getString")
+            local componentName = Controls.devDisplays and Controls.devDisplays[index] and Controls.devDisplays[index].String or "Unknown"
+            self:debugPrint("Display " .. componentName .. " current input: " .. tostring(currentInput))
+        end
+    end
+    
+    if display[vDisplayControls.vInputStatusLED] then
+        display[vDisplayControls.vInputStatusLED].EventHandler = function()
+            local inputActive = self:directComponentAccess(display, vDisplayControls.vInputStatusLED, "get")
+            local componentName = Controls.devDisplays and Controls.devDisplays[index] and Controls.devDisplays[index].String or "Unknown"
+            self:debugPrint("Display " .. componentName .. " input active: " .. tostring(inputActive))
+        end
+    end
+    
+    -- Set up input status monitoring (Option 2: CurrentInput 1-10 LEDs)
+    for i = 1, 10 do
+        local currentInputControl = display[vDisplayControls.vCurrentInput .. i]
+        if currentInputControl then
+            currentInputControl.EventHandler = function()
+                local inputActive = self:directComponentAccess(display, vDisplayControls.vCurrentInput .. i, "get")
+                local componentName = Controls.devDisplays and Controls.devDisplays[index] and Controls.devDisplays[index].String or "Unknown"
+                self:debugPrint("Display " .. componentName .. " input " .. i .. " active: " .. tostring(inputActive))
+            end
+        end
+    end
+end
+
+--------** Dynamic Component Discovery **--------
+function LGDisplayWallController:getComponentNames()
+    local namesTable = {
+        DisplayNames = {},
+        RoomControlsNames = {},
+    }
+
+    -- Dynamic component discovery - single pass through all components
+    for _, comp in pairs(Component.GetComponents()) do
+        -- Look for LG Display components (dynamic discovery)
+        if string.match(comp.Type, "e9ef4a50%-ba74%-4653%-a22e%-a58c02839313") then
+            table.insert(namesTable.DisplayNames, comp.Name)
+        elseif comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls") then
+            table.insert(namesTable.RoomControlsNames, comp.Name)
+        end
+    end
+
+    -- Sort and add clear option
+    for _, list in pairs(namesTable) do
+        table.sort(list)
+        table.insert(list, self.clearString)
+    end
+
+    -- Direct assignment to controls
+    if Controls.devDisplays then
+        for i, _ in ipairs(Controls.devDisplays) do
+            Controls.devDisplays[i].Choices = namesTable.DisplayNames
+        end
+        self:debugPrint("Set choices for " .. #Controls.devDisplays .. " display controls")
+        self:debugPrint("Found " .. #namesTable.DisplayNames .. " display components")
+    end
+    
+    if Controls.compRoomControls then
+        Controls.compRoomControls.Choices = namesTable.RoomControlsNames
+    end
+end
+
+--------** Room Name Management **--------
+function LGDisplayWallController:updateRoomNameFromComponent()
+    if self.components.compRoomControls then
+        local roomNameControl = self.components.compRoomControls["roomName"]
+        if roomNameControl and roomNameControl.String and roomNameControl.String ~= "" then
+            local newRoomName = "["..roomNameControl.String.."]"
+            if newRoomName ~= self.roomName then
+                self.roomName = newRoomName
+                self:debugPrint("Room name updated to: "..newRoomName)
+            end
+        end
+    end
+end
+
+--------** Timer Event Handlers **--------
+function LGDisplayWallController:registerTimerHandlers()
+    self.timers.warmup.EventHandler = function()
+        self:debugPrint("Warmup Period Has Ended")
+        self.powerModule.enableDisablePowerControls(true)
+        self.timers.warmup:Stop()
+    end
+
+    self.timers.cooldown.EventHandler = function()
+        self:debugPrint("Cooldown Period Has Ended")
+        self.powerModule.enableDisablePowerControls(true)
+        self.timers.cooldown:Stop()
+    end
+end
+
+--------** Streamlined Event Handler Registration **--------
+function LGDisplayWallController:registerEventHandlers()
+    -- Room controls component handler
+    if Controls.compRoomControls then
+        Controls.compRoomControls.EventHandler = function()
+            self:setRoomControlsComponent()
+        end
+    end
+    
+    -- Global power control - direct event handling
+    if Controls.btnDisplayPowerAll then
+        Controls.btnDisplayPowerAll.EventHandler = function(ctl)
+            if ctl.Boolean then
+                self.powerModule.powerOnAll()
+            else
+                self.powerModule.powerOffAll()
+            end
+        end
+    end
+    
+    -- Individual display power controls - streamlined array handling
+    local powerControlTypes = {
+        {name = "btnDisplayPowerOn", action = "powerOn", toggleState = true},
+        {name = "btnDisplayPowerOff", action = "powerOff", toggleState = false},
+        {name = "btnDisplayPowerSingle", action = "powerSingle", toggleState = nil}
+    }
+    
+    for _, controlType in ipairs(powerControlTypes) do
+        if Controls[controlType.name] then
+            for i, btn in ipairs(Controls[controlType.name]) do
+                self:debugPrint("Found " .. controlType.name .. "[" .. i .. "]")
+                btn.EventHandler = function(ctl)
+                    -- Direct control disabling
+                    self.powerModule.enableDisableIndexPowerControl(i, controlType.action, false)
+                    
+                    -- Direct power operations based on control type
+                    if controlType.action == "powerSingle" then
+                        if ctl.Boolean then
+                            self.powerModule.powerOnDisplay(i)
+                        else
+                            self.powerModule.powerOffDisplay(i)
+                        end
+                    else
+                        if controlType.action == "powerOn" then
+                            self.powerModule.powerOnDisplay(i)
+                        else
+                            self.powerModule.powerOffDisplay(i)
+                        end
+                        
+                        -- Direct UI state update
+                        if Controls.btnDisplayPowerSingle and Controls.btnDisplayPowerSingle[i] then
+                            Controls.btnDisplayPowerSingle[i].Boolean = controlType.toggleState
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Display input controls - direct event handling
+    if Controls.btnDisplayInputAll then
+        Controls.btnDisplayInputAll.EventHandler = function()
+            self.displayModule.setInputAll(self.config.defaultInput)
+        end
+    end
+    
+    -- Display wall configuration - direct event handling
+    if Controls.btnDisplayWallConfig then
+        Controls.btnDisplayWallConfig.EventHandler = function()
+            local mode = Controls.txtDisplayWallMode and Controls.txtDisplayWallMode.String or "Single"
+            self.displayModule.configureDisplayWall(mode)
+        end
+    end
+    
+    -- Display component handlers - direct event handling
+    if Controls.devDisplays then
+        for i, displaySelector in ipairs(Controls.devDisplays) do
+            if displaySelector then
+                displaySelector.EventHandler = function()
+                    self:setDisplayComponent(i)
+                end
+            end
+        end
     end
 end
 
 --------** Initialization **--------
-function ControllerTemplate_MCP:funcInit()
-    self:debugPrint("Starting ControllerTemplate_MCP initialization...")
+function LGDisplayWallController:funcInit()
+    self:debugPrint("Starting LG DisplayWallController initialization...")
     
     -- Discover and populate component choices
-    self:populateComponentChoices()
+    self:getComponentNames()
     
     -- Setup components and event handlers
-    self:setupComponents()
+    self:setRoomControlsComponent()
+    self:setupDisplayComponents()
     self:registerEventHandlers()
+    self:registerTimerHandlers()
     
-    self:debugPrint("ControllerTemplate_MCP Initialized with " .. 
-                   self.exampleModule.getComponentCount() .. " example components")
+    -- Update room name from component
+    self:updateRoomNameFromComponent()
+    
+    -- Set initial display wall mode
+    if Controls.txtDisplayWallMode then
+        Controls.txtDisplayWallMode.Choices = self.config.displayWallModes
+        Controls.txtDisplayWallMode.String = self.state.displayWallMode
+    end
+    
+    self:debugPrint("LG DisplayWallController Initialized with " .. 
+                   self.displayModule.getDisplayCount() .. " displays")
 end
 
 --------** Cleanup **--------
-function ControllerTemplate_MCP:cleanup()
-    -- Stop any timers first
-    if self.exampleTimer then
-        self.exampleTimer:Stop()
-    end
-    
-    -- Clear event handlers for example components
-    for i, comp in pairs(self.components.exampleComponents) do
-        if comp and comp["ExampleButton.press"] then 
-            comp["ExampleButton.press"].EventHandler = nil 
-        end
-    end
-    
-    -- Clear event handlers for another components
-    for i, comp in pairs(self.components.anotherComponents) do
-        if comp and comp["AnotherButton.press"] then 
-            comp["AnotherButton.press"].EventHandler = nil 
+function LGDisplayWallController:cleanup()
+    -- Clear event handlers for displays
+    for i, display in pairs(self.components.displays) do
+        if display then
+            if display["PowerStatus"] then
+                display["PowerStatus"].EventHandler = nil
+            end
+            if display["InputStatus"] then
+                display["InputStatus"].EventHandler = nil
+            end
         end
     end
     
     -- Reset component references
     self.components = {
-        exampleComponents = {},
-        anotherComponents = {},
+        displays = {},
+        compRoomControls = nil,
         invalid = {}
     }
     
@@ -396,15 +656,15 @@ function ControllerTemplate_MCP:cleanup()
 end
 
 --------** Factory Function **--------
-local function createControllerTemplate_MCP(roomName, config)
-    print("Creating ControllerTemplate_MCP for: "..tostring(roomName))
+local function createLGDisplayWallController(roomName, config)
+    print("Creating LG DisplayWallController for: "..tostring(roomName))
     local success, controller = pcall(function()
-        local instance = ControllerTemplate_MCP.new(roomName, config)
+        local instance = LGDisplayWallController.new(roomName, config)
         instance:funcInit()
         return instance
     end)
     if success then
-        print("Successfully created ControllerTemplate_MCP for "..roomName)
+        print("Successfully created LG DisplayWallController for "..roomName)
         return controller
     else
         print("Failed to create controller for "..roomName..": "..tostring(controller))
@@ -415,21 +675,36 @@ end
 --------** Instance Creation **--------
 -- Validate controls before creating instance
 if not validateControls() then
-    print("ERROR: Required controls are missing. Please check your Q-SYS design.")
     return
 end
 
--- Check if roomName control has a valid string value
-if not controls.roomName or not controls.roomName.String or controls.roomName.String == "" then
-    print("ERROR: Controls.roomName.String is empty or invalid!")
-    return
+-- Get room name from room controls component or fallback to control
+local function getRoomNameFromComponent()
+    -- First try to get from the room controls component if it's already set
+    if Controls.compRoomControls and Controls.compRoomControls.String ~= "" and Controls.compRoomControls.String ~= "[Clear]" then
+        local roomControlsComponent = Component.New(Controls.compRoomControls.String)
+        if roomControlsComponent and roomControlsComponent["roomName"] then
+            local roomName = roomControlsComponent["roomName"].String
+            if roomName and roomName ~= "" then
+                return "["..roomName.."]"
+            end
+        end
+    end
+    
+    -- Fallback to roomName control (if it exists)
+    if Controls.roomName and Controls.roomName.String and Controls.roomName.String ~= "" then
+        return "["..Controls.roomName.String.."]"
+    end
+    
+    -- Final fallback to default room name
+    return "[LG Display Wall]"
 end
 
-local formattedRoomName = "["..controls.roomName.String.."]"
-myControllerTemplate_MCP = createControllerTemplate_MCP(formattedRoomName)
+local roomName = getRoomNameFromComponent()
+myLGDisplayWallController = createLGDisplayWallController(roomName)
 
-if myControllerTemplate_MCP then
-    print("ControllerTemplate_MCP created successfully!")
+if myLGDisplayWallController then
+    print("LG DisplayWallController created successfully!")
 else
-    print("ERROR: Failed to create ControllerTemplate_MCP!")
+    print("ERROR: Failed to create LG DisplayWallController!")
 end 
