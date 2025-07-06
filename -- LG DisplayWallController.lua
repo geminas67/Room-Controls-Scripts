@@ -75,7 +75,7 @@ function LGDisplayWallController.new(roomName, config)
     self.config = {
         maxDisplays = config and config.maxDisplays or vTimerConfig.vMaxDisplays,
         defaultInput = "HDMI1",
-        displayWallModes = {"Single", "2x2", "3x3", "Custom"},
+        displayWallModes = {"Single", "2x2", "3x3", "4x4", "Custom"},
         inputChoices = {"HDMI1", "HDMI2", "DisplayPort", "USB-C"}
     }
     
