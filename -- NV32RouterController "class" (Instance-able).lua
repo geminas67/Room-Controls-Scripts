@@ -79,7 +79,7 @@ function NV32RouterController.new()
     -- Component type definitions
     self.componentTypes = {
         nv32Router = "streamer_hdmi_switcher",
-        roomControls = (comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls"))
+        roomControls = "device_controller_script" -- Will be filtered to only those starting with "compRoomControls"
     }
     -- Component storage
     self.nv32Router = nil
@@ -274,7 +274,7 @@ end
 function NV32RouterController:populateRoomControlsChoices()
     local names = {}
     for _, comp in pairs(Component.GetComponents()) do
-        if comp.Type == self.componentTypes.roomControls then
+        if comp.Type == self.componentTypes.roomControls and string.match(comp.Name, "^compRoomControls") then
             table.insert(names, comp.Name)
         end
     end

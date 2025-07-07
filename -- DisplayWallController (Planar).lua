@@ -23,7 +23,7 @@ local vDisplayControls = {
     ]]--
     
     -- Input Controls (Option 2: Button method)
-    vInputSelectButtons = "InputSelectButtons ",
+    vInputSelectButtons = "VideoInputs ",
     vInputNames = "InputNames ",
     vCurrentInput = "CurrentInput ",
     
