@@ -11,8 +11,8 @@
 -- Display Control Configuration (easily changeable for different manufacturers)
 local vDisplayControls = {
     -- Power Controls
-    vPowerOn = "PowerOn",
-    vPowerOff = "PowerOff", 
+    vPowerOn = "PowerOnTrigger",
+    vPowerOff = "PowerOffTrigger", 
     vPowerStatus = "PowerStatus",
     
     -- Input Controls (Option 1: ComboBox method)
@@ -20,7 +20,7 @@ local vDisplayControls = {
     vInputStatusLED = "InputStatus",
     
     -- Input Controls (Option 2: Button method)
-    vInputSelectButtons = "InputSelectButtons ",
+    vInputSelectButtons = "Input",
     vInputNames = "InputNames ",
     vCurrentInput = "CurrentInput ",
     
@@ -56,6 +56,11 @@ function LGDisplayWallController.new(roomName, config)
     self.roomName = roomName or "Default Room"
     self.debugging = (config and config.debugging) or true
     self.clearString = "[Clear]"
+
+    self.componentTypes = {
+        displays = "%PLUGIN%_e9ef4a50-ba74-4653-a22e-a58c02839313_%FP%_c7165c3b15ead5f69821d69583f73c8b",
+        roomControls = "device_controller_script" -- Will be filtered to only those starting with "compRoomControls"
+    }
     
     -- Component storage
     self.components = {
@@ -112,20 +117,38 @@ function LGDisplayWallController:getInputButtonNumber(input)
     return buttonNumber
 end
 
---------** Direct Component Access **--------
+--------** Safe Component Access **--------
 function LGDisplayWallController:safeComponentAccess(component, control, action, value)
-    local compCtrl = component and component[control]
-    if not compCtrl then return false end
+    local success, result = pcall(function()
+        if component and component[control] then
+            if action == "set" then
+                component[control].Boolean = value
+                return true
+            elseif action == "setPosition" then
+                component[control].Position = value
+                return true
+            elseif action == "setString" then
+                component[control].String = value
+                return true
+            elseif action == "trigger" then
+                component[control]:Trigger()
+                return true
+            elseif action == "get" then
+                return component[control].Boolean
+            elseif action == "getPosition" then
+                return component[control].Position
+            elseif action == "getString" then
+                return component[control].String
+            end
+        end
+        return false
+    end)
     
-    if action == "set" then compCtrl.Boolean = value
-    elseif action == "setPosition" then compCtrl.Position = value
-    elseif action == "setString" then compCtrl.String = value
-    elseif action == "trigger" then compCtrl:Trigger()
-    elseif action == "get" then return compCtrl.Boolean
-    elseif action == "getPosition" then return compCtrl.Position
-    elseif action == "getString" then return compCtrl.String
+    if not success then
+        self:debugPrint("Component access error: " .. tostring(result))
+        return false
     end
-    return true
+    return result
 end
 
 --------** Display Module **--------
@@ -166,7 +189,7 @@ function LGDisplayWallController:initDisplayModule()
                         -- Fallback to Option 2: InputSelectButtons
                         local buttonNumber = selfRef:getInputButtonNumber(input)
                         if buttonNumber then
-                            local buttonName = vDisplayControls.vInputSelectButtons .. buttonNumber
+                            local buttonName = vDisplayControls.vInputSelectButtons .. buttonNumber .. "Trigger"
                             selfRef:safeComponentAccess(display, buttonName, "trigger")
                         end
                     end
@@ -189,7 +212,7 @@ function LGDisplayWallController:initDisplayModule()
                     -- Fallback to Option 2: InputSelectButtons
                     local buttonNumber = selfRef:getInputButtonNumber(input)
                     if buttonNumber then
-                        local buttonName = vDisplayControls.vInputSelectButtons .. buttonNumber
+                        local buttonName = vDisplayControls.vInputSelectButtons .. buttonNumber .. "Trigger"
                         selfRef:safeComponentAccess(display, buttonName, "trigger")
                         selfRef:debugPrint("Display " .. index .. " input: " .. input .. " (button " .. buttonNumber .. ")")
                     end
@@ -463,9 +486,9 @@ function LGDisplayWallController:getComponentNames()
     -- Dynamic component discovery - single pass through all components
     for _, comp in pairs(Component.GetComponents()) do
         -- Look for LG Display components (dynamic discovery)
-        if string.match(comp.Type, "e9ef4a50%-ba74%-4653%-a22e%-a58c02839313") then
+        if comp.Type == self.componentTypes.displays then
             table.insert(namesTable.DisplayNames, comp.Name)
-        elseif comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls") then
+        elseif comp.Type == self.componentTypes.roomControls and string.match(comp.Name, "^compRoomControls") then
             table.insert(namesTable.RoomControlsNames, comp.Name)
         end
     end

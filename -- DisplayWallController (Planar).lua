@@ -59,6 +59,11 @@ function PlanarDisplayWallController.new(roomName, config)
     self.roomName = roomName or "Default Room"
     self.debugging = (config and config.debugging) or true
     self.clearString = "[Clear]"
+
+    self.componentTypes = {
+        displays = "%PLUGIN%_404F4311-A38D-4891-AF61-709B8F48A6E1_%FP%_77008e895ac50ad 1242e3dee981c5e4", -- Planar Display Wall
+        roomControls = "device_controller_script" -- Will be filtered to only those starting with "compRoomControls"
+    }
     
     -- Component storage
     self.components = {
@@ -113,30 +118,6 @@ function PlanarDisplayWallController:getInputButtonNumber(input)
         self:debugPrint("WARNING: No button mapping found for input: " .. input)
     end
     return buttonNumber
-end
-
---------** Power Status Helper **--------
-function PlanarDisplayWallController:getPowerStatus(display)
-    if not display then return nil end
-    
-            -- Check for new dual-control structure first
-        if display[vDisplayControls.vPowerIsOn] and display[vDisplayControls.vPowerIsOff] then
-            local powerIsOn = self:safeComponentAccess(display, vDisplayControls.vPowerIsOn, "get")
-            local powerIsOff = self:safeComponentAccess(display, vDisplayControls.vPowerIsOff, "get")
-        
-        -- Return the power state (PowerIsOn takes precedence if both are true)
-        if powerIsOn then return true
-        elseif powerIsOff then return false
-        else return nil -- Neither is true, status unknown
-        end
-    end
-    
-            -- Fallback to old single control if it exists
-        if display["PowerStatus"] then
-            return self:safeComponentAccess(display, "PowerStatus", "get")
-        end
-    
-    return nil
 end
 
 --------** Safe Component Access **--------
@@ -306,6 +287,30 @@ function PlanarDisplayWallController:initDisplayModule()
             end
         end
     }
+end
+
+--------** Power Status Helper **--------
+function PlanarDisplayWallController:getPowerStatus(display)
+    if not display then return nil end
+    
+            -- Check for new dual-control structure first
+        if display[vDisplayControls.vPowerIsOn] and display[vDisplayControls.vPowerIsOff] then
+            local powerIsOn = self:safeComponentAccess(display, vDisplayControls.vPowerIsOn, "get")
+            local powerIsOff = self:safeComponentAccess(display, vDisplayControls.vPowerIsOff, "get")
+        
+        -- Return the power state (PowerIsOn takes precedence if both are true)
+        if powerIsOn then return true
+        elseif powerIsOff then return false
+        else return nil -- Neither is true, status unknown
+        end
+    end
+    
+            -- Fallback to old single control if it exists
+        if display["PowerStatus"] then
+            return self:safeComponentAccess(display, "PowerStatus", "get")
+        end
+    
+    return nil
 end
 
 --------** Power Module **--------
@@ -516,9 +521,9 @@ function PlanarDisplayWallController:getComponentNames()
     -- Dynamic component discovery - single pass through all components
     for _, comp in pairs(Component.GetComponents()) do
         -- Look for Planar Display components (dynamic discovery)
-        if string.match(comp.Type, "e9ef4a50%-ba74%-4653%-a22e%-a58c02839313") then
+        if comp.Type == self.componentTypes.displays then
             table.insert(namesTable.DisplayNames, comp.Name)
-        elseif comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls") then
+        elseif comp.Type == self.componentTypes.roomControls and string.match(comp.Name, "^compRoomControls") then
             table.insert(namesTable.RoomControlsNames, comp.Name)
         end
     end

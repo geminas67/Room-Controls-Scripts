@@ -824,8 +824,12 @@ function UCIController:showPresetSavedSublayer()
     self:updatePresetSavedState(safeControl("pinLEDPresetSaved", "Boolean") or false)
 end
 
-function UCIController:showHDMISublayer()
+function UCIController:showHDMI01Sublayer()
     self:updateHDMI01State(safeControl("pinLEDHDMI01Connect", "Boolean") or false)
+end
+
+function UCIController:showHDMI02Sublayer()
+    self:updateHDMI02State(safeControl("pinLEDHDMI02Connect", "Boolean") or false)
 end
 
 function UCIController:showLaptopHelpSublayer()
@@ -1153,7 +1157,7 @@ function UCIController:showLayer()
         [self.kLayerLaptop] = {
             showLayers = {"L05-Laptop"},
             callFunctions = {
-                function() self:showHDMISublayer() end,
+                function() self:showHDMI01Sublayer() end,
                 function() self:showCameraSublayer() end,
                 function() self:showPresetSavedSublayer() end,
                 function() self:showACPRSublayer() end,
@@ -1164,6 +1168,7 @@ function UCIController:showLayer()
         [self.kLayerPC] = {
             showLayers = {"P05-PC"},
             callFunctions = {
+                function() self:showHDMI02Sublayer() end,
                 function() self:showCameraSublayer() end,
                 function() self:showPresetSavedSublayer() end,
                 function() self:showACPRSublayer() end,

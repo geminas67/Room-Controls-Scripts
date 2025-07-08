@@ -56,6 +56,11 @@ function LGDisplayWallController.new(roomName, config)
     self.roomName = roomName or "Default Room"
     self.debugging = (config and config.debugging) or true
     self.clearString = "[Clear]"
+
+    self.componentTypes = {
+        displays = "%PLUGIN%_e9ef4a50-ba74-4653-a22e-a58c02839313_%FP%_c7165c3b15ead5f69821d69583f73c8b",
+        roomControls = "device_controller_script" -- Will be filtered to only those starting with "compRoomControls"
+    }
     
     -- Component storage
     self.components = {
@@ -481,9 +486,9 @@ function LGDisplayWallController:getComponentNames()
     -- Dynamic component discovery - single pass through all components
     for _, comp in pairs(Component.GetComponents()) do
         -- Look for LG Display components (dynamic discovery)
-        if string.match(comp.Type, "e9ef4a50%-ba74%-4653%-a22e%-a58c02839313") then
+        if comp.Type == self.componentTypes.displays then
             table.insert(namesTable.DisplayNames, comp.Name)
-        elseif comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls") then
+        elseif comp.Type == self.componentTypes.roomControls and string.match(comp.Name, "^compRoomControls") then
             table.insert(namesTable.RoomControlsNames, comp.Name)
         end
     end
