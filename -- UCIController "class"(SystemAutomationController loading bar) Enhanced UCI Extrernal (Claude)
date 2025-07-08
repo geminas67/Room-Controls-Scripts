@@ -1,0 +1,1537 @@
+--[[ 
+    UCIController class - Performance Optimized Version (Complete Logic)
+    Date: 2025-01-08
+    Version: 2.3 (All Original Logic Preserved)
+    Notes:
+    - ALL original logic preserved
+    - Performance optimizations applied where safe
+    - Complete warming/cooling functionality
+--]]
+
+UCIController = {}
+UCIController.__index = UCIController
+
+-- Cache for frequently accessed controls
+local controlCache = {}
+local buttonNameCache = {}
+local legendNameCache = {}
+
+-- Pre-compute button/legend names
+for i = 1, 12 do
+    buttonNameCache[i] = "btnNav" .. string.format("%02d", i)
+    legendNameCache[i] = "txtNav" .. string.format("%02d", i)
+end
+
+-- Safe control access with caching
+local function getControl(name)
+    if not controlCache[name] then
+        controlCache[name] = Controls[name]
+    end
+    return controlCache[name]
+end
+
+-- Safe control access for critical operations
+local function safeControl(controlName, property)
+    local control = getControl(controlName)
+    if not control then
+        return nil
+    end
+    
+    if property then
+        return control[property]
+    end
+    
+    return control
+end
+
+-- Video Switcher Integration (Simplified but safe)
+local VideoSwitcherIntegration = {}
+VideoSwitcherIntegration.SwitcherTypes = {
+    NV32 = {
+        name = "NV32",
+        componentType = "streamer_hdmi_switcher",
+        variableNames = {"devNV32", "codenameNV32", "varNV32", "nv32Device", "nv32Component"},
+        routingMethod = "hdmi.out.1.select.index",
+        defaultMapping = { [7] = 5, [8] = 4, [9] = 6 }
+    },
+    ExtronDXP = {
+        name = "Extron DXP",
+        componentType = "%PLUGIN%_qsysc.extron.matrix.0.0.0.0-master_%FP%_bf09cd55c73845eb6fc31e4b896516ff",
+        variableNames = {"devExtronDXP", "codenameExtronDXP", "varExtronDXP", "extronDXPDevice", "extronDXPComponent"},
+        routingMethod = "output.1",
+        defaultMapping = { [7] = 2, [8] = 4, [9] = 1 }
+    },
+    Generic = {
+        name = "Generic",
+        componentType = nil,
+        variableNames = {"devVideoSwitcher", "codenameVideoSwitcher", "varVideoSwitcher"},
+        routingMethod = "output.1",
+        defaultMapping = { [7] = 1, [8] = 2, [9] = 3 }
+    }
+}
+
+function VideoSwitcherIntegration.new()
+    local self = {
+        switcherType = nil,
+        switcherComponent = nil,
+        switcherConfig = nil,
+        isEnabled = false,
+        debugMode = true,
+        uciToInputMapping = {},
+        monitoringTimer = nil,
+        previousButtonStates = {}
+    }
+    
+    function self:debugPrint(str)
+        if self.debugMode then
+            print("[Video Switcher] " .. str)
+        end
+    end
+    
+    function self:discoverSwitchers()
+        local components = Component.GetComponents()
+        local discovered = {}
+        
+        -- Build component type map
+        local componentTypeMap = {}
+        for _, comp in pairs(components) do
+            if not componentTypeMap[comp.Type] then
+                componentTypeMap[comp.Type] = {}
+            end
+            table.insert(componentTypeMap[comp.Type], comp.Name)
+        end
+        
+        -- Check for matches
+        for switcherType, config in pairs(VideoSwitcherIntegration.SwitcherTypes) do
+            if config.componentType and componentTypeMap[config.componentType] then
+                discovered[switcherType] = componentTypeMap[config.componentType]
+                self:debugPrint("Found " .. switcherType .. " components: " .. #componentTypeMap[config.componentType])
+            end
+        end
+        
+        return discovered
+    end
+    
+    function self:autoDetectSwitcherType()
+        local discovered = self:discoverSwitchers()
+        
+        -- Check UCI variables first
+        for switcherType, config in pairs(VideoSwitcherIntegration.SwitcherTypes) do
+            for _, varName in ipairs(config.variableNames) do
+                if Controls[varName] then
+                    local varValue = Controls[varName].String or ""
+                    if varValue ~= "" then
+                        self:debugPrint("Found " .. switcherType .. " via UCI variable: " .. varName)
+                        return switcherType, varValue
+                    end
+                end
+            end
+        end
+        
+        -- Check discovered components
+        for switcherType, components in pairs(discovered) do
+            if #components > 0 then
+                self:debugPrint("Auto-detected " .. switcherType .. " component: " .. components[1])
+                return switcherType, components[1]
+            end
+        end
+        
+        return nil, nil
+    end
+    
+    function self:initialize()
+        self:debugPrint("Initializing Video Switcher Integration")
+        
+        local switcherType, componentName = self:autoDetectSwitcherType()
+        
+        if not switcherType then
+            self:debugPrint("No video switcher detected - integration disabled")
+            return false
+        end
+        
+        self.switcherType = switcherType
+        self.switcherConfig = VideoSwitcherIntegration.SwitcherTypes[switcherType]
+        self.uciToInputMapping = self.switcherConfig.defaultMapping
+        
+        local success, component = pcall(function()
+            return Component.New(componentName)
+        end)
+        
+        if success and component then
+            self.switcherComponent = component
+            self:debugPrint("Video switcher component created: " .. componentName)
+            self.isEnabled = true
+            self:debugPrint("Video Switcher Integration initialized successfully")
+            return true
+        else
+            self:debugPrint("Failed to create video switcher component: " .. tostring(component))
+            return false
+        end
+    end
+    
+    function self:switchToInput(inputNumber, uciButton)
+        if not self.isEnabled or not self.switcherComponent then
+            self:debugPrint("⚠ Video switcher not enabled or component not available")
+            return false
+        end
+        
+        self:debugPrint("UCI Button " .. uciButton .. " pressed, switching to input " .. inputNumber)
+        
+        local success, err = pcall(function()
+            if self.switcherType == "NV32" then
+                self.switcherComponent[self.switcherConfig.routingMethod].Value = inputNumber
+            elseif self.switcherType == "ExtronDXP" then
+                self.switcherComponent[self.switcherConfig.routingMethod].String = tostring(inputNumber)
+            else
+                -- Try both methods for generic
+                local success1 = pcall(function()
+                    self.switcherComponent[self.switcherConfig.routingMethod].Value = inputNumber
+                end)
+                if not success1 then
+                    self.switcherComponent[self.switcherConfig.routingMethod].String = tostring(inputNumber)
+                end
+            end
+        end)
+        
+        if success then
+            self:debugPrint("✓ Successfully switched to input " .. inputNumber)
+            return true
+        else
+            self:debugPrint("⚠ Failed to switch to input " .. inputNumber .. ": " .. tostring(err))
+            return false
+        end
+    end
+    
+    function self:updateMapping(newMapping)
+        self.uciToInputMapping = newMapping or self.switcherConfig.defaultMapping
+        self:debugPrint("Updated UCI to input mapping")
+    end
+    
+    function self:getStatus()
+        return {
+            enabled = self.isEnabled,
+            switcherType = self.switcherType,
+            componentValid = (self.switcherComponent ~= nil),
+            mapping = self.uciToInputMapping
+        }
+    end
+    
+    function self:cleanup()
+        self.switcherComponent = nil
+        self.isEnabled = false
+        self:debugPrint("Video Switcher Integration cleaned up")
+    end
+    
+    return self
+end
+
+function UCIController.new(uciPage, defaultRoutingLayer, defaultActiveLayer, hiddenNavIndices, hiddenHelpIndices)
+    local self = setmetatable({}, UCIController)
+    
+    print("=== Creating new UCIController ===")
+    print("Page name: " .. tostring(uciPage))
+    print("Default routing layer: " .. tostring(defaultRoutingLayer))
+    print("Default active layer: " .. tostring(defaultActiveLayer))
+    
+    -- Initialize layerStates table first
+    self.layerStates = {}
+    
+    -- Instance properties
+    self.uciPage = uciPage
+    self.varActiveLayer = defaultActiveLayer or 3
+    self.defaultActiveLayer = defaultActiveLayer or 8
+    self.isAnimating = false
+    self.loadingTimer = nil
+    self.timeoutTimer = nil
+    self.hiddenNavIndices = hiddenNavIndices or {}
+    self.hiddenHelpIndices = hiddenHelpIndices or {}
+    self.isInitialized = false
+    
+    -- External controller registration
+    self.externalControllers = {}
+    
+    -- Video Switcher Integration
+    self.videoSwitcher = VideoSwitcherIntegration.new()
+    
+    -- Layer constants
+    self.kLayerAlarm = 1
+    self.kLayerIncomingCall = 2
+    self.kLayerStart = 3
+    self.kLayerWarming = 4
+    self.kLayerCooling = 5
+    self.kLayerRoomControls = 6
+    self.kLayerPC = 7
+    self.kLayerLaptop = 8
+    self.kLayerWireless = 9
+    self.kLayerRouting = 10
+    self.kLayerDialer = 11
+    self.kLayerStreamMusic = 12
+    
+    -- Room Automation Component Reference
+    self.roomControlsComponent = nil
+    self:initializeRoomControlsComponent()
+    
+    -- Setup arrays for controls and labels
+    self.arrbtnNavs = {}
+    local navButtons = {
+        "btnNav01", "btnNav02", "btnNav03", "btnNav04",
+        "btnNav05", "btnNav06", "btnNav07", "btnNav08",
+        "btnNav09", "btnNav10", "btnNav11", "btnNav12"
+    }
+    
+    for i, buttonName in ipairs(navButtons) do
+        self.arrbtnNavs[i] = getControl(buttonName)
+    end
+    
+    self.arrUCILegends = {}
+    local legendControls = {
+        "txtNav01", "txtNav02", "txtNav03", "txtNav04",
+        "txtNav05", "txtNav06", "txtNav07", "txtNav08",
+        "txtNav09", "txtNav10", "txtNav11", "txtNav12",
+        "txtNavShutdown", "txtRoomName", "txtRoomNameStart",
+        "txtRoutingRooms", "txtRouting01", "txtRouting02", "txtRouting03",
+        "txtRouting04", "txtRouting05", "txtRoutingSources",
+        "txtAudSrc01", "txtAudSrc02", "txtAudSrc03", "txtAudSrc04",
+        "txtAudSrc05", "txtAudSrc06", "txtAudSrc07", "txtAudSrc08",
+        "txtGainPGM", "txtGain01", "txtGain02", "txtGain03", "txtGain04",
+        "txtGain05", "txtGain06", "txtGain07", "txtGain08", "txtGain09", "txtGain10",
+        "txtDisplay01", "txtDisplay02", "txtDisplay03", "txtDisplay04"
+    }
+    
+    for i, controlName in ipairs(legendControls) do
+        self.arrUCILegends[i] = getControl(controlName)
+    end
+    
+    self.arrUCIUserLabels = {}
+    local userLabelVariables = {
+        "txtLabelNav01", "txtLabelNav02", "txtLabelNav03", "txtLabelNav04",
+        "txtLabelNav05", "txtLabelNav06", "txtLabelNav07", "txtLabelNav08",
+        "txtLabelNav09", "txtLabelNav10", "txtLabelNav11", "txtLabelNav12",
+        "txtLabelNavShutdown", "txtLabelRoomName", "txtLabelRoomNameStart",
+        "txtLabelRoutingRooms", "txtLabelRouting01", "txtLabelRouting02", "txtLabelRouting03",
+        "txtLabelRouting04", "txtLabelRouting05", "txtLabelRoutingSources",
+        "txtLabelAudSrc01", "txtLabelAudSrc02", "txtLabelAudSrc03", "txtLabelAudSrc04",
+        "txtLabelAudSrc05", "txtLabelAudSrc06", "txtLabelAudSrc07", "txtLabelAudSrc08",
+        "txtLabelGainPGM", "txtLabelGain01", "txtLabelGain02", "txtLabelGain03", "txtLabelGain04",
+        "txtLabelGain05", "txtLabelGain06", "txtLabelGain07", "txtLabelGain08", "txtLabelGain09", "txtLabelGain10",
+        "txtLabelDisplay01", "txtLabelDisplay02", "txtLabelDisplay03", "txtLabelDisplay04"
+    }
+    
+    for i, varName in ipairs(userLabelVariables) do
+        if Uci.Variables[varName] then
+            self.arrUCIUserLabels[i] = Uci.Variables[varName]
+        end
+    end
+    
+    -- Setup arrays for routing controls
+    self.arrRoutingButtons = {}
+    local routingButtons = {
+        "btnRouting01", "btnRouting02", "btnRouting03", "btnRouting04", "btnRouting05"
+    }
+    
+    for i, buttonName in ipairs(routingButtons) do
+        self.arrRoutingButtons[i] = getControl(buttonName)
+    end
+    
+    self.routingLayers = {
+        "R01-Routing-Lobby", 
+        "R02-Routing-WTerrace", 
+        "R03-Routing-NTerraceWall",
+        "R04-Routing-Garden", 
+        "R05-Routing-NTerraceFloor"
+    }
+    
+    -- Set default routing layer
+    self.activeRoutingLayer = defaultRoutingLayer or 1
+    
+    -- Setup
+    self:registerEventHandlers()
+    self:funcInit()
+    
+    return self
+end
+
+-- Initialize Room Controls Component Reference
+function UCIController:initializeRoomControlsComponent()
+    local componentName = nil
+    
+    if Uci.Variables.compRoomControls then
+        componentName = Uci.Variables.compRoomControls.String
+    end
+    
+    if not componentName then
+        local pageName = self.uciPage:match("UCI%s+([^(]+)")
+        if pageName then
+            pageName = pageName:gsub("%s+", "")
+            componentName = "compRoomControls" .. pageName
+        end
+    end
+    
+    if not componentName then
+        print("Warning: Could not determine Room Controls component name")
+        self.roomControlsComponent = nil
+        return
+    end
+    
+    print("Attempting to reference Room Controls component: " .. componentName)
+    
+    local success, component = pcall(function()
+        return Component.New(componentName)
+    end)
+    
+    if success and component then
+        self.roomControlsComponent = component
+        print("Room Controls Component successfully referenced: " .. componentName)
+    else
+        print("Warning: Room Controls Component '" .. componentName .. "' not found - using direct control method")
+        self.roomControlsComponent = nil
+    end
+end
+
+-- Layer state management
+function UCIController:resetLayerStates()
+    self.layerStates = {}
+    print("Layer states reset for " .. self.uciPage)
+end
+
+function UCIController:getLayerState(layerName)
+    return self.layerStates[layerName]
+end
+
+function UCIController:setLayerState(layerName, visible)
+    self.layerStates[layerName] = visible
+end
+
+function UCIController:updateLayerVisibility(layers, visible, transition)
+    for _, layer in ipairs(layers) do
+        local currentState = self:getLayerState(layer)
+        if not self.isInitialized or currentState ~= visible then
+            local success, err = pcall(function()
+                Uci.SetLayerVisibility(self.uciPage, layer, visible, transition)
+            end)
+            
+            if success then
+                self:setLayerState(layer, visible)
+            else
+                print("Warning: Layer '" .. layer .. "' not found on page " .. self.uciPage .. ". Error: " .. tostring(err))
+            end
+        end
+    end
+end
+
+-- Core sublayer functions
+function UCIController:hideBaseLayers()
+    self:updateLayerVisibility({"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}, false, "none")
+end
+
+function UCIController:callActivePopup()
+    local callActiveState = safeControl("pinCallActive", "Boolean") or false
+    self:updateLayerVisibility({"I01-CallActive"}, callActiveState, callActiveState and "fade" or "none")
+end
+
+function UCIController:showPresetSavedSublayer()
+    local isVisible = safeControl("pinLEDPresetSaved", "Boolean") or false
+    self:updateLayerVisibility({"J04-CamPresetSaved"}, isVisible, isVisible and "fade" or "none")
+    print("Preset Saved Sublayer: " .. (isVisible and "Showing" or "Hiding") .. " J04-CamPresetSaved")
+end
+
+function UCIController:showHDMI01Sublayer()
+    local isConnected = safeControl("pinLEDHDMI01Connect", "Boolean") or false
+    if self.varActiveLayer ~= self.kLayerLaptop then
+        print("HDMI Sublayer: Not on laptop interface, ignoring HDMI state update")
+        return
+    end
+    
+    if isConnected then
+        self:updateLayerVisibility({"L05-Laptop"}, true, "fade")
+        self:updateLayerVisibility({"L01-HDMI01Disconnected"}, false, "none")
+        print("HDMI Sublayer: Showing L05-Laptop, Hiding L01-HDMI01Disconnected")
+    else
+        self:updateLayerVisibility({"L01-HDMI01Disconnected"}, true, "fade")
+        self:updateLayerVisibility({"L05-Laptop"}, false, "none")
+        self:updateLayerVisibility({"J05-CameraControls"}, false, "none")
+        print("HDMI Sublayer: Showing L01-HDMI01Disconnected, Hiding L05-Laptop")
+    end
+end
+
+function UCIController:showHDMI02Sublayer()
+    local isConnected = safeControl("pinLEDHDMI02Connect", "Boolean") or false
+    if self.varActiveLayer ~= self.kLayerPC then
+        print("HDMI Sublayer: Not on PC interface, ignoring HDMI state update")
+        return
+    end
+    
+    if isConnected then
+        self:updateLayerVisibility({"P05-PC"}, true, "fade")
+        self:updateLayerVisibility({"P01-HDMI02Disconnected"}, false, "none")
+        print("HDMI Sublayer: Showing P05-PC, Hiding P01-HDMI02Disconnected")
+    else
+        self:updateLayerVisibility({"P01-HDMI02Disconnected"}, true, "fade")
+        self:updateLayerVisibility({"P05-PC"}, false, "none")
+        self:updateLayerVisibility({"J05-CameraControls"}, false, "none")
+        print("HDMI Sublayer: Showing P01-HDMI02Disconnected, Hiding P05-PC")
+    end
+end
+
+function UCIController:showLaptopHelpSublayer()
+    local isVisible = safeControl("btnHelpLaptop", "Boolean") or false
+    if isVisible then
+        self:updateLayerVisibility({"I02-HelpLaptop"}, true, "fade")
+        self:updateLayerVisibility({"J05-CameraControls"}, false, "none")
+        self:updateLayerVisibility({"J01-ConnectUSBLaptop", "J02-ConnectUSBPC"}, false, "none")
+        print("Laptop Help Sublayer: Showing I02-HelpLaptop, Hiding Camera Controls")
+    else
+        self:updateLayerVisibility({"I02-HelpLaptop"}, false, "none")
+        self:showCameraSublayer()
+        print("Laptop Help Sublayer: Hiding I02-HelpLaptop, restoring camera state")
+    end
+end
+
+function UCIController:showACPRSublayer()
+    if self.varActiveLayer ~= self.kLayerLaptop and self.varActiveLayer ~= self.kLayerPC then
+        print("ACPR Sublayer: Not on laptop or PC interface, ignoring ACPR state update")
+        return
+    end
+
+    local isBypassActive = safeControl("pinLEDACPRBypassActive", "Boolean") or false
+    if not isBypassActive then
+        self:updateLayerVisibility({"J03-ACPRActive"}, true, "fade")
+        self:updateLayerVisibility({"J05-CameraControls"}, false, "none")
+        print("ACPR Sublayer: Showing J03-ACPRActive, Hiding J05-CameraControls")
+    else
+        self:updateLayerVisibility({"J05-CameraControls"}, true, "fade")
+        self:updateLayerVisibility({"J03-ACPRActive"}, false, "none")
+        print("ACPR Sublayer: Showing J05-CameraControls, Hiding J03-ACPRActive")
+    end
+end
+
+function UCIController:showPCHelpSublayer()
+    local isVisible = safeControl("btnHelpPC", "Boolean") or false
+    if isVisible then
+        self:updateLayerVisibility({"I03-HelpPC"}, true, "fade")
+        self:updateLayerVisibility({"J05-CameraControls"}, false, "none")
+        self:updateLayerVisibility({"J01-ConnectUSBLaptop", "J02-ConnectUSBPC"}, false, "none")
+        print("PC Help Sublayer: Showing I03-HelpPC, Hiding Camera Controls")
+    else
+        self:updateLayerVisibility({"I03-HelpPC"}, false, "none")
+        self:showCameraSublayer()
+        print("PC Help Sublayer: Hiding I03-HelpPC, restoring camera state")
+    end
+end
+
+function UCIController:showWirelessHelpSublayer()
+    local isVisible = safeControl("btnHelpWireless", "Boolean") or false
+    self:updateLayerVisibility({"I04-HelpWireless"}, isVisible, "none")
+    print("Wireless Help Sublayer: " .. (isVisible and "Showing" or "Hiding") .. " I04-HelpWireless")
+end
+
+function UCIController:showRoutingHelpSublayer()
+    local isVisible = safeControl("btnHelpRouting", "Boolean") or false
+    self:updateLayerVisibility({"I05-HelpRouting"}, isVisible, "none")
+    print("Routing Help Sublayer: " .. (isVisible and "Showing" or "Hiding") .. " I05-HelpRouting")
+end
+
+function UCIController:showDialerHelpSublayer()
+    local isVisible = safeControl("btnHelpDialer", "Boolean") or false
+    self:updateLayerVisibility({"I06-HelpDialer"}, isVisible, "none")
+    print("Dialer Help Sublayer: " .. (isVisible and "Showing" or "Hiding") .. " I06-HelpDialer")
+end
+
+function UCIController:showStreamMusicHelpSublayer()
+    local isVisible = safeControl("btnHelpStreamMusic", "Boolean") or false
+    self:updateLayerVisibility({"I07-HelpStreamMusic"}, isVisible, "none")
+    print("Stream Music Help Sublayer: " .. (isVisible and "Showing" or "Hiding") .. " I07-HelpStreamMusic")
+end
+
+function UCIController:showCameraSublayer()
+    local usbConnected = false
+    
+    if self.varActiveLayer == self.kLayerLaptop then
+        usbConnected = safeControl("pinLEDUSBLaptop", "Boolean") or false
+        print("Camera Sublayer: Checking laptop USB state: " .. tostring(usbConnected))
+    elseif self.varActiveLayer == self.kLayerPC then
+        usbConnected = safeControl("pinLEDUSBPC", "Boolean") or false
+        print("Camera Sublayer: Checking PC USB state: " .. tostring(usbConnected))
+    else
+        print("Camera Sublayer: Not on laptop or PC layer, skipping camera state update")
+        return
+    end
+    
+    local usbNotConnectedLayerToShow
+    if self.varActiveLayer == self.kLayerLaptop then
+        usbNotConnectedLayerToShow = "J01-ConnectUSBLaptop"
+    elseif self.varActiveLayer == self.kLayerPC then
+        usbNotConnectedLayerToShow = "J02-ConnectUSBPC"
+    end
+
+    if usbConnected then
+        self:updateLayerVisibility({"J05-CameraControls"}, true, "fade")
+        self:updateLayerVisibility({"J01-ConnectUSBLaptop", "J02-ConnectUSBPC"}, false, "none")
+        print("Camera Sublayer: Showing J05-CameraControls")
+    else
+        self:updateLayerVisibility({usbNotConnectedLayerToShow}, true, "fade")
+        self:updateLayerVisibility({"J05-CameraControls"}, false, "none")
+        print("Camera Sublayer: Showing " .. usbNotConnectedLayerToShow .. ", Hiding J05-CameraControls")
+    end
+end
+
+function UCIController:showRoutingLayer()
+    if self.activeRoutingLayer < 1 or self.activeRoutingLayer > #self.routingLayers then
+        self.activeRoutingLayer = 1
+    end
+    
+    self:updateLayerVisibility({"X01-ProgramVolume"}, false, "none")
+    
+    for _, layer in ipairs(self.routingLayers) do
+        self:updateLayerVisibility({layer}, false, "none")
+    end
+    
+    self:updateLayerVisibility({self.routingLayers[self.activeRoutingLayer]}, true, "fade")
+    self:interlockRoutingButtons()
+end
+
+function UCIController:interlockRoutingButtons()
+    for i, btn in ipairs(self.arrRoutingButtons) do
+        if btn then
+            btn.Boolean = (i == self.activeRoutingLayer)
+        end
+    end
+end
+
+function UCIController:routingButtonEventHandler(buttonIndex)
+    if buttonIndex < 1 or buttonIndex > #self.routingLayers then
+        print("Invalid routing button index: " .. tostring(buttonIndex))
+        return
+    end
+    
+    self.activeRoutingLayer = buttonIndex
+    self:showRoutingLayer()
+    print("Routing layer switched to: " .. self.routingLayers[buttonIndex])
+end
+
+-- Main layer display logic
+function UCIController:showLayer()
+    -- Hide all layers first
+    local layersToHide = {
+        "A01-Alarm", "B01-IncomingCall", "C05-Start", "D01-ShutdownConfirm",
+        "E01-SystemProgressWarming", "E02-SystemProgressCooling", "E05-SystemProgress",
+        "H01-RoomControls", "I01-CallActive", "I02-HelpLaptop", "I03-HelpPC",
+        "I04-HelpWireless", "I05-HelpRouting", "I06-HelpDialer", "I07-HelpStreamMusic",
+        "J01-ConnectUSBLaptop", "J02-ConnectUSBPC", "J03-ACPRActive",
+        "J04-CamPresetSaved", "J05-CameraControls", "L01-HDMI01Disconnected",
+        "L05-Laptop", "P01-HDMI02Disconnected", "P05-PC", "W05-Wireless",
+        "R01-Routing-Lobby", "R02-Routing-WTerrace", "R03-Routing-NTerraceWall",
+        "R04-Routing-Garden", "R05-Routing-NTerraceFloor", "R10-Routing",
+        "S05-StreamMusic", "V05-Dialer", "X01-ProgramVolume", "Y01-Navbar", "Z01-Base"
+    }
+    
+    for _, layer in ipairs(layersToHide) do
+        self:updateLayerVisibility({layer}, false, "none")
+    end
+
+    -- Set base layers visible
+    self:updateLayerVisibility({"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}, true, "none")
+
+    local layerConfigs = {
+        [self.kLayerAlarm] = {
+            showLayers = {"A01-Alarm"},
+            callFunctions = {function() self:hideBaseLayers() end}
+        },
+        [self.kLayerIncomingCall] = {
+            showLayers = {"B01-IncomingCall"}
+        },
+        [self.kLayerStart] = {
+            showLayers = {"C05-Start"},
+            callFunctions = {function() self:hideBaseLayers() end}
+        },
+        [self.kLayerWarming] = {
+            showLayers = {"E05-SystemProgress", "E01-SystemProgressWarming"},
+            callFunctions = {function() self:hideBaseLayers() end}
+        },
+        [self.kLayerCooling] = {
+            showLayers = {"E05-SystemProgress", "E02-SystemProgressCooling"},
+            callFunctions = {function() self:hideBaseLayers() end}
+        },
+        [self.kLayerRoomControls] = {
+            showLayers = {"H01-RoomControls"},
+            hideLayers = {"X01-ProgramVolume"},
+            callFunctions = {
+                function() self:callActivePopup() end
+            }
+        },
+        [self.kLayerLaptop] = {
+            showLayers = {"L05-Laptop"},
+            callFunctions = {
+                function() self:showHDMI01Sublayer() end,
+                function() self:showCameraSublayer() end,
+                function() self:showPresetSavedSublayer() end,
+                function() self:showACPRSublayer() end,
+                function() self:showLaptopHelpSublayer() end,
+                function() self:callActivePopup() end
+            }
+        },
+        [self.kLayerPC] = {
+            showLayers = {"P05-PC"},
+            callFunctions = {
+                function() self:showHDMI02Sublayer() end,
+                function() self:showCameraSublayer() end,
+                function() self:showPresetSavedSublayer() end,
+                function() self:showACPRSublayer() end,
+                function() self:showPCHelpSublayer() end,
+                function() self:callActivePopup() end
+            }
+        },
+        [self.kLayerWireless] = {
+            showLayers = {"W05-Wireless"},
+            callFunctions = {
+                function() self:showWirelessHelpSublayer() end,
+                function() self:callActivePopup() end
+            }
+        },
+        [self.kLayerRouting] = {
+            showLayers = {"R10-Routing"},
+            callFunctions = {
+                function() self:showRoutingLayer() end,
+                function() self:callActivePopup() end
+            }
+        },
+        [self.kLayerDialer] = {
+            showLayers = {"V05-Dialer"},
+            callFunctions = {
+                function() self:showDialerHelpSublayer() end,
+                function() self:callActivePopup() end
+            }
+        },
+        [self.kLayerStreamMusic] = {
+            showLayers = {"S05-StreamMusic"},
+            callFunctions = {
+                function() self:showStreamMusicHelpSublayer() end,
+                function() self:callActivePopup() end
+            }
+        }
+    }
+    
+    local config = layerConfigs[self.varActiveLayer]
+    if config then
+        -- Show main layers
+        for _, layer in ipairs(config.showLayers or {}) do
+            self:updateLayerVisibility({layer}, true, "fade")
+        end
+        
+        -- Hide specified layers
+        for _, layer in ipairs(config.hideLayers or {}) do
+            self:updateLayerVisibility({layer}, false, "none")
+        end
+        
+        -- Call functions in order
+        for _, func in ipairs(config.callFunctions or {}) do
+            func()
+        end
+    end
+ end
+ 
+ function UCIController:interlock()
+    for i = 1, 12 do
+        local control = self.arrbtnNavs[i]
+        if control then
+            control.Boolean = false
+        end
+    end
+    
+    local layerToButton = {
+        [self.kLayerAlarm]           = 1,
+        [self.kLayerIncomingCall]    = 2,
+        [self.kLayerStart]           = 3,
+        [self.kLayerWarming]         = 4,
+        [self.kLayerCooling]         = 5,
+        [self.kLayerRoomControls]    = 6,
+        [self.kLayerPC]              = 7,
+        [self.kLayerLaptop]          = 8,
+        [self.kLayerWireless]        = 9,
+        [self.kLayerRouting]         = 10,
+        [self.kLayerDialer]          = 11,
+        [self.kLayerStreamMusic]     = 12
+    }
+    
+    local btnIndex = layerToButton[self.varActiveLayer]
+    if btnIndex then
+        local control = self.arrbtnNavs[btnIndex]
+        if control then
+            control.Boolean = true
+        end
+    end
+ end
+ 
+ function UCIController:debug()
+    local layers = {
+        {var = self.kLayerAlarm,        msg = "Set UCI to Alarm"},
+        {var = self.kLayerIncomingCall, msg = "Set UCI to Incoming Call"},
+        {var = self.kLayerStart,        msg = "Set UCI to Start"},
+        {var = self.kLayerWarming,      msg = "Set UCI to Warming"},
+        {var = self.kLayerCooling,      msg = "Set UCI to Cooling"},
+        {var = self.kLayerRoomControls, msg = "Set UCI to Room Controls"},
+        {var = self.kLayerPC,           msg = "Set UCI to PC"},
+        {var = self.kLayerLaptop,       msg = "Set UCI to Laptop"},
+        {var = self.kLayerWireless,     msg = "Set UCI to Wireless"},
+        {var = self.kLayerRouting,      msg = "Set UCI to Routing"},
+        {var = self.kLayerDialer,       msg = "Set UCI to Dialer"},
+        {var = self.kLayerStreamMusic,  msg = "Set UCI to Stream Music"}
+    }
+    
+    for i = 1, #layers do
+        if self.varActiveLayer == layers[i].var then
+            print(layers[i].msg)
+            break
+        end
+    end
+ end
+ 
+ function UCIController:btnNavEventHandler(argIndex)
+    local previousLayer = self.varActiveLayer
+    self.varActiveLayer = argIndex
+    
+    -- Notify external controllers
+    local layerChangeInfo = {
+        previousLayer = previousLayer,
+        currentLayer = self.varActiveLayer,
+        layerName = self:getLayerName(self.varActiveLayer)
+    }
+    self:notifyExternalControllers(layerChangeInfo)
+    
+    -- Trigger video switcher for specific buttons
+    if self.videoSwitcher and self.videoSwitcher.isEnabled then
+        local inputNumber = self.videoSwitcher.uciToInputMapping[argIndex]
+        if inputNumber then
+            print("UCI Button " .. argIndex .. " pressed - triggering video switcher to input " .. inputNumber)
+            self.videoSwitcher:switchToInput(inputNumber, argIndex)
+        end
+    end
+    
+    self:showLayer()
+    self:interlock()
+    self:debug()
+ end
+ 
+ -- Helper method to get layer name
+ function UCIController:getLayerName(layerNumber)
+    local layerNames = {
+        [self.kLayerAlarm] = "Alarm",
+        [self.kLayerIncomingCall] = "Incoming Call",
+        [self.kLayerStart] = "Start",
+        [self.kLayerWarming] = "Warming",
+        [self.kLayerCooling] = "Cooling",
+        [self.kLayerRoomControls] = "Room Controls",
+        [self.kLayerPC] = "PC",
+        [self.kLayerLaptop] = "Laptop",
+        [self.kLayerWireless] = "Wireless",
+        [self.kLayerRouting] = "Routing",
+        [self.kLayerDialer] = "Dialer",
+        [self.kLayerStreamMusic] = "Stream Music"
+    }
+    return layerNames[layerNumber] or "Unknown"
+ end
+ 
+ -- Loading Bar with Room Automation Integration (ORIGINAL LOGIC PRESERVED)
+ function UCIController:startLoadingBar(isPoweringOn)
+    if self.isAnimating then
+        return
+    end
+    
+    self.isAnimating = true
+    
+    -- Get timing from Room Automation or use defaults
+    local duration = self:getRoomAutomationTiming(isPoweringOn)
+    
+    local steps = 100
+    local interval = duration / steps
+    local currentStep = 0
+    
+    if self.loadingTimer then
+        self.loadingTimer:Stop()
+        self.loadingTimer = nil
+    end
+    
+    if self.timeoutTimer then
+        self.timeoutTimer:Stop()
+        self.timeoutTimer = nil
+    end
+    
+    self.loadingTimer = Timer.New()
+    self.timeoutTimer = Timer.New()
+    
+    local progressBar = safeControl("knbProgressBar")
+    local progressText = safeControl("txtProgressBar")
+    if progressBar then
+        progressBar.Value = isPoweringOn and 0 or 100
+    end
+    if progressText then
+        progressText.String = (isPoweringOn and 0 or 100) .. "%"
+    end
+    
+    -- Add timeout protection
+    self.timeoutTimer.EventHandler = function()
+        if self.isAnimating then
+            print("Warning: Loading bar timeout reached")
+            self.isAnimating = false
+            if self.loadingTimer then
+                self.loadingTimer:Stop()
+                self.loadingTimer = nil
+            end
+            -- Force transition to appropriate state
+            self:btnNavEventHandler(isPoweringOn and self.kLayerLaptop or self.kLayerStart)
+        end
+    end
+    self.timeoutTimer:Start(300) -- 5-minute timeout
+    
+    self.loadingTimer.EventHandler = function()
+        currentStep = currentStep + 1
+        
+        local progressBar = safeControl("knbProgressBar")
+        local progressText = safeControl("txtProgressBar")
+        
+        if isPoweringOn then
+            if progressBar then
+                progressBar.Value = currentStep
+            end
+            if progressText then
+                progressText.String = currentStep .. "%"
+            end
+        else
+            if progressBar then
+                progressBar.Value = 100 - currentStep
+            end
+            if progressText then
+                progressText.String = (100 - currentStep) .. "%"
+            end
+        end
+        
+        if currentStep >= steps then
+            self.loadingTimer:Stop()
+            self.timeoutTimer:Stop()
+            self.isAnimating = false
+            
+            if isPoweringOn then
+                self:btnNavEventHandler(self.kLayerLaptop)
+            else
+                self:btnNavEventHandler(self.kLayerStart)
+            end
+        else
+            self.loadingTimer:Start(interval)
+        end
+    end
+    
+    self.loadingTimer:Start(interval)
+ end
+ 
+ -- Get Room Automation Timing
+ function UCIController:getRoomAutomationTiming(isPoweringOn)
+    local duration
+    
+    -- Try to get timing from component reference first
+    if self.roomControlsComponent then
+        local success, result = pcall(function()
+            if isPoweringOn then
+                return self.roomControlsComponent["warmupTime"] and self.roomControlsComponent["warmupTime"].Value or 10
+            else
+                return self.roomControlsComponent["cooldownTime"] and self.roomControlsComponent["cooldownTime"].Value or 5
+            end
+        end)
+        
+        if success and result then
+            duration = result
+            print("Using Room Automation component timing: " .. duration .. " seconds")
+            return duration
+        end
+    end
+    
+    -- Fallback to UCI variables
+    if isPoweringOn then
+        duration = tonumber(Uci.Variables.timeProgressWarming) or 10
+    else
+        duration = tonumber(Uci.Variables.timeProgressCooling) or 5
+    end
+    
+    print("Using UCI fallback timing: " .. duration .. " seconds")
+    return duration
+ end
+ 
+ function UCIController:updateLegends()
+    for i, lbl in ipairs(self.arrUCILegends) do
+        if lbl and self.arrUCIUserLabels[i] then
+            lbl.Legend = self.arrUCIUserLabels[i].String
+        end
+    end
+ end
+ 
+ function UCIController:cleanup()
+    -- Stop and cleanup timers
+    if self.loadingTimer then
+        self.loadingTimer:Stop()
+        self.loadingTimer = nil
+    end
+    
+    if self.timeoutTimer then
+        self.timeoutTimer:Stop()
+        self.timeoutTimer = nil
+    end
+    
+    -- Cleanup video switcher integration
+    if self.videoSwitcher then
+        self.videoSwitcher:cleanup()
+    end
+    
+    -- Remove event handlers
+    for _, btn in ipairs(self.arrbtnNavs) do
+        if btn then
+            btn.EventHandler = nil
+        end
+    end
+    
+    for _, btn in ipairs(self.arrRoutingButtons) do
+        if btn then
+            btn.EventHandler = nil
+        end
+    end
+    
+    for _, lbl in ipairs(self.arrUCIUserLabels) do
+        if lbl then
+            lbl.EventHandler = nil
+        end
+    end
+    
+    -- Clear component reference
+    self.roomControlsComponent = nil
+    
+    -- Reset layer states
+    self:resetLayerStates()
+    
+    print("UCI Controller cleaned up for " .. self.uciPage)
+ end
+ 
+ -- All Event Handlers (COMPLETE ORIGINAL LOGIC)
+ function UCIController:registerEventHandlers()
+    -- Nav Buttons
+    for i, ctl in ipairs(self.arrbtnNavs) do
+        if ctl then
+            ctl.EventHandler = function()
+                self:btnNavEventHandler(i)
+            end
+        end
+    end
+    
+    -- Routing Buttons
+    for i, btn in ipairs(self.arrRoutingButtons) do
+        if btn then
+            btn.EventHandler = function()
+                self:routingButtonEventHandler(i)
+            end
+        end
+    end
+    
+    -- System State with Room Automation Integration
+    
+    -- Start System - Controls room automation
+    local btnStartSystem = safeControl("btnStartSystem")
+    if btnStartSystem then
+        btnStartSystem.EventHandler = function()
+            -- Power on Room Automation system
+            self:powerOnRoomAutomation()
+            
+            -- Start UCI loading bar with Room Automation timing
+            self:startLoadingBar(true)
+            self:btnNavEventHandler(self.kLayerWarming)
+            print("System started with Start button for " .. self.uciPage)
+        end
+    end
+    
+    -- Shutdown Confirm
+    local btnNavShutdown = safeControl("btnNavShutdown")
+    if btnNavShutdown then
+        btnNavShutdown.EventHandler = function()
+            self:updateLayerVisibility({"D01-ShutdownConfirm"}, true, "fade")
+            print("Shutdown Confirm page set for " .. self.uciPage)
+        end
+    end
+    
+    -- Shutdown Cancel
+    local btnShutdownCancel = safeControl("btnShutdownCancel")
+    if btnShutdownCancel then
+        btnShutdownCancel.EventHandler = function()
+            self:updateLayerVisibility({"D01-ShutdownConfirm"}, false, "fade")
+            print("Shutdown cancelled by Cancel button for " .. self.uciPage)
+            self:debug()
+        end
+    end
+    
+    -- Shutdown Confirmed - Controls room automation
+    local btnShutdownConfirm = safeControl("btnShutdownConfirm")
+    if btnShutdownConfirm then
+        btnShutdownConfirm.EventHandler = function()
+            -- Hide the shutdown confirm overlay first
+            self:updateLayerVisibility({"D01-ShutdownConfirm"}, false, "fade")
+            
+            -- Power off Room Automation system
+            self:powerOffRoomAutomation()
+            
+            -- Start UCI loading bar with Room Automation timing
+            self:startLoadingBar(false)
+            
+            -- Set the active layer to cooling
+            self.varActiveLayer = self.kLayerCooling
+            self:showLayer()
+            self:interlock()
+            self:debug()
+            
+            print("System shutdown confirmed for " .. self.uciPage)
+        end
+    end
+    
+    -- Modal Popups - Button Triggers
+    local btnHelpLaptop = safeControl("btnHelpLaptop")
+    if btnHelpLaptop then
+        btnHelpLaptop.EventHandler = function()
+            self:showLaptopHelpSublayer()
+        end
+    end
+    
+    local btnHelpPC = safeControl("btnHelpPC")
+    if btnHelpPC then
+        btnHelpPC.EventHandler = function()
+            self:showPCHelpSublayer()
+        end
+    end
+ 
+    local btnHelpWireless = safeControl("btnHelpWireless")
+    if btnHelpWireless then
+        btnHelpWireless.EventHandler = function()
+            self:showWirelessHelpSublayer()
+        end
+    end
+ 
+    local btnHelpRouting = safeControl("btnHelpRouting")
+    if btnHelpRouting then
+        btnHelpRouting.EventHandler = function()
+            self:showRoutingHelpSublayer()
+        end
+    end
+    
+    local btnHelpDialer = safeControl("btnHelpDialer")
+    if btnHelpDialer then
+        btnHelpDialer.EventHandler = function()
+            self:showDialerHelpSublayer()
+        end
+    end
+ 
+    local btnHelpStreamMusic = safeControl("btnHelpStreamMusic")
+    if btnHelpStreamMusic then
+        btnHelpStreamMusic.EventHandler = function()
+            self:showStreamMusicHelpSublayer()
+        end
+    end
+ 
+    -- External Triggers (ALL ORIGINAL LOGIC)
+    local pinLEDUSBLaptop = safeControl("pinLEDUSBLaptop")
+    if pinLEDUSBLaptop then
+        pinLEDUSBLaptop.EventHandler = function(ctl)
+            if ctl.Boolean then
+                self.varActiveLayer = self.kLayerLaptop
+            end
+            self:showLayer()
+            self:interlock()
+            self:debug()
+        end
+    end
+    
+    local pinLEDUSBPC = safeControl("pinLEDUSBPC")
+    if pinLEDUSBPC then
+        pinLEDUSBPC.EventHandler = function(ctl)
+            if ctl.Boolean then
+                self.varActiveLayer = self.kLayerPC
+            end
+            self:showLayer()
+            self:interlock()
+            self:debug()
+        end
+    end
+    
+    local pinLEDOffHookLaptop = safeControl("pinLEDOffHookLaptop")
+    if pinLEDOffHookLaptop then
+        pinLEDOffHookLaptop.EventHandler = function(ctl)
+            if ctl.Boolean then
+                self.varActiveLayer = self.kLayerLaptop
+            end
+            self:showLayer()
+            self:interlock()
+            self:debug()
+        end
+    end
+ 
+    local pinLEDOffHookPC = safeControl("pinLEDOffHookPC")
+    if pinLEDOffHookPC then
+        pinLEDOffHookPC.EventHandler = function(ctl)
+            if ctl.Boolean then
+                self.varActiveLayer = self.kLayerPC
+            end
+            self:showLayer()
+            self:interlock()
+            self:debug()
+        end
+    end
+        
+    local pinLEDHDMI01Active = safeControl("pinLEDHDMI01Active")
+    if pinLEDHDMI01Active then
+        pinLEDHDMI01Active.EventHandler = function(ctl)
+            if ctl.Boolean then
+                self.varActiveLayer = self.kLayerLaptop
+            end
+            self:showLayer()
+            self:interlock()
+            self:debug()
+        end
+    end
+    
+    local pinLEDHDMI02Active = safeControl("pinLEDHDMI02Active")
+    if pinLEDHDMI02Active then
+        pinLEDHDMI02Active.EventHandler = function(ctl)
+            if ctl.Boolean then
+                self.varActiveLayer = self.kLayerPC      
+            end
+            self:showLayer()
+            self:interlock()
+            self:debug()
+        end
+    end
+    
+    -- Pin Event Handlers for Sublayers
+    local pinLEDPresetSaved = safeControl("pinLEDPresetSaved")
+    if pinLEDPresetSaved then
+        pinLEDPresetSaved.EventHandler = function(ctl)
+            self:showPresetSavedSublayer()
+        end
+    end
+    
+    local pinLEDHDMI01Connect = safeControl("pinLEDHDMI01Connect")
+    if pinLEDHDMI01Connect then
+        pinLEDHDMI01Connect.EventHandler = function(ctl)
+            self:showHDMI01Sublayer()
+        end
+    end
+    
+    local pinLEDHDMI02Connect = safeControl("pinLEDHDMI02Connect")
+    if pinLEDHDMI02Connect then
+        pinLEDHDMI02Connect.EventHandler = function(ctl)
+            self:showHDMI02Sublayer()
+        end
+    end
+    
+    local pinLEDACPRBypassActive = safeControl("pinLEDACPRBypassActive")
+    if pinLEDACPRBypassActive then
+        pinLEDACPRBypassActive.EventHandler = function(ctl)
+            self:showACPRSublayer()
+        end
+    end
+    
+    local pinCallActive = safeControl("pinCallActive")
+    if pinCallActive then
+        pinCallActive.EventHandler = function(ctl)
+            self:callActivePopup()
+        end
+    end
+    
+    -- Legend label updates
+    for i, lbl in ipairs(self.arrUCIUserLabels) do
+        if lbl then
+            lbl.EventHandler = function()
+                self:updateLegends()
+            end
+        end
+    end
+    print("funcUpdateLegends ran successfully for " .. self.uciPage)
+ end
+ 
+ -- Room Automation Integration Methods (COMPLETE)
+ function UCIController:powerOnRoomAutomation()
+    local success = false
+    local methodUsed = "none"
+    
+    -- Method 1: Component Reference
+    if self.roomControlsComponent and self.roomControlsComponent["btnSystemOnOff"] then
+        local componentSuccess, componentResult = pcall(function()
+            self.roomControlsComponent["btnSystemOnOff"].Boolean = true
+            return self.roomControlsComponent["btnSystemOnOff"].Boolean == true
+        end)
+        if componentSuccess and componentResult then
+            print("Room powered ON via component reference")
+            success = true
+            methodUsed = "component"
+        end
+    end
+    
+    -- Method 2: Direct Control (fallback)
+    if not success then
+        local directSuccess, directResult = pcall(function()
+            local control = safeControl("btnSystemOnOff")
+            if control then
+                control.Boolean = true
+                return control.Boolean == true
+            end
+            return false
+        end)
+        if directSuccess and directResult then
+            print("Room powered ON via direct control")
+            success = true
+            methodUsed = "direct"
+        end
+    end
+    
+    -- Method 3: Global Controller Reference (if available)
+    if not success and mySystemController then
+        local controllerSuccess, controllerResult = pcall(function()
+            mySystemController.powerModule.powerOn()
+            return mySystemController.powerModule and mySystemController.powerModule.isPoweredOn and mySystemController.powerModule.isPoweredOn() or true
+        end)
+        if controllerSuccess and controllerResult then
+            print("Room powered ON via global controller")
+            success = true
+            methodUsed = "global_controller"
+        end
+    end
+    
+    if not success then
+        print("Warning: Failed to power on room automation system - all methods failed")
+    else
+        print("Room automation power ON successful via method: " .. methodUsed)
+    end
+    
+    return success
+ end
+ 
+ function UCIController:powerOffRoomAutomation()
+    local success = false
+    local methodUsed = "none"
+    
+    -- Method 1: Component Reference
+    if self.roomControlsComponent and self.roomControlsComponent["btnSystemOnOff"] then
+        local componentSuccess, componentResult = pcall(function()
+            self.roomControlsComponent["btnSystemOnOff"].Boolean = false
+            return self.roomControlsComponent["btnSystemOnOff"].Boolean == false
+        end)
+        if componentSuccess and componentResult then
+            print("Room powered OFF via component reference")
+            success = true
+            methodUsed = "component"
+        end
+    end
+    
+    -- Method 2: Direct Control (fallback)
+    if not success then
+        local directSuccess, directResult = pcall(function()
+            local control = safeControl("btnSystemOnOff")
+            if control then
+                control.Boolean = false
+                return control.Boolean == false
+            end
+            return false
+        end)
+        if directSuccess and directResult then
+            print("Room powered OFF via direct control")
+            success = true
+            methodUsed = "direct"
+        end
+    end
+    
+    -- Method 3: Global Controller Reference (if available)
+    if not success and mySystemController then
+        local controllerSuccess, controllerResult = pcall(function()
+            mySystemController.powerModule.powerOff()
+            return mySystemController.powerModule and mySystemController.powerModule.isPoweredOff and mySystemController.powerModule.isPoweredOff() or true
+        end)
+        if controllerSuccess and controllerResult then
+            print("Room powered OFF via global controller")
+            success = true
+            methodUsed = "global_controller"
+        end
+    end
+    
+    if not success then
+        print("Warning: Failed to power off room automation system - all methods failed")
+    else
+        print("Room automation power OFF successful via method: " .. methodUsed)
+    end
+    
+    return success
+ end
+ 
+ function UCIController:funcInit()
+    -- Reset layer states
+    self:resetLayerStates()
+    
+    -- Sync with Room Automation state if available
+    if mySystemController and mySystemController.state then
+        local systemPowerState = safeControl("ledSystemPower", "Boolean")
+        if systemPowerState then
+            if mySystemController.state.isWarming then
+                self.varActiveLayer = self.kLayerWarming
+                self:startLoadingBar(true)
+            else
+                self.varActiveLayer = self.defaultActiveLayer
+            end
+        else
+            self.varActiveLayer = self.kLayerStart
+        end
+        print("UCI synchronized with Room Automation state")
+    else
+        self.varActiveLayer = self.kLayerStart
+        print("Room Automation not available - using default UCI initialization")
+    end
+    
+    -- Initialize video switcher integration
+    if self.videoSwitcher then
+        local videoSwitcherSuccess = self.videoSwitcher:initialize()
+        if videoSwitcherSuccess then
+            print("Video Switcher Integration initialized successfully")
+        else
+            print("Video Switcher Integration failed to initialize - continuing without video switching")
+        end
+    end
+    
+    -- Hide specified navigation buttons
+    for _, index in ipairs(self.hiddenNavIndices) do
+        if self.arrbtnNavs[index] then
+            self.arrbtnNavs[index].Visible = false
+            print("Hidden navigation button: " .. buttonNameCache[index])
+        end
+    end
+ 
+    self:showLayer()
+    self:interlock()
+    self:debug()
+    self:updateLegends()
+    print("UCI Initialized for " .. self.uciPage)
+    self.isInitialized = true
+ end
+ 
+ -- External controller methods
+ function UCIController:notifyExternalControllers(layerChangeInfo)
+    for controllerType, controllers in pairs(self.externalControllers) do
+        for _, controller in ipairs(controllers) do
+            if controller.onUCILayerChange then
+                local success, err = pcall(function()
+                    controller:onUCILayerChange(layerChangeInfo)
+                end)
+                if not success then
+                    print("Warning: Failed to notify " .. tostring(controllerType) .. " controller: " .. tostring(err))
+                end
+            end
+        end
+    end
+ end
+ 
+ function UCIController:registerExternalController(controller, controllerType)
+    if not self.externalControllers[controllerType] then
+        self.externalControllers[controllerType] = {}
+    end
+    table.insert(self.externalControllers[controllerType], controller)
+    print("Registered external controller: " .. tostring(controllerType))
+ end
+ 
+ function UCIController:getVideoSwitcherStatus()
+    if self.videoSwitcher then
+        return self.videoSwitcher:getStatus()
+    end
+    return { enabled = false, switcherType = "None", componentValid = false }
+ end
+ 
+ function UCIController:updateVideoSwitcherMapping(newMapping)
+    if self.videoSwitcher then
+        self.videoSwitcher:updateMapping(newMapping)
+        return true
+    end
+    return false
+ end
+ 
+ -- Factory function
+ local function createUCIControllerWithErrorHandling(targetPageName, defaultRoutingLayer, defaultActiveLayer, hiddenNavIndices, hiddenHelpIndices)
+    local pageNames = {
+        targetPageName,
+        targetPageName:gsub("%s+", " "),
+        targetPageName:gsub("%s+", ""),
+        targetPageName:gsub("%(", ""):gsub("%)", ""),
+        targetPageName:gsub("%s+", "-"):gsub("%(", ""):gsub("%)", "")
+    }
+    
+    print("=== Testing UCI Page Names ===")
+    for _, pageName in ipairs(pageNames) do
+        print("Attempting page name: " .. pageName)
+    end
+    print("=== End Page Name Testing ===")
+    
+    local controller
+    for _, pageName in ipairs(pageNames) do
+        local success, result = pcall(function()
+            return UCIController.new(pageName, defaultRoutingLayer, defaultActiveLayer, hiddenNavIndices, hiddenHelpIndices)
+        end)
+        
+        if success then
+            controller = result
+            print("Successfully created UCI controller for page: " .. pageName)
+            break
+        else
+            print("Failed to create controller for page: " .. pageName)
+            print("Error: " .. tostring(result))
+        end
+    end
+    
+    if not controller then
+        print("ERROR: Could not create UCI controller for any page name variation of: " .. targetPageName)
+        print("Please verify the exact page name in your UCI system")
+    end
+    
+    return controller
+ end
+ 
+ -- Create the controller instance
+ myUCI = createUCIControllerWithErrorHandling(
+    Uci.Variables.txtUCIPageName.String,
+    tonumber(Uci.Variables.numDefaultRoutingLayer.Value) or 4,
+    tonumber(Uci.Variables.numDefaultActiveLayer.Value) or 8,
+    {},
+    {}
+ )
+ 
+ -- Optional: Connect to NV32RouterController if it exists
+ if myUCI and myNV32RouterController then
+    myUCI:registerExternalController(myNV32RouterController, "NV32Router")
+    print("NV32RouterController automatically connected to UCIController")
+    
+    myNV32RouterController:setUCIController(myUCI)
+    print("UCIController reference set in NV32RouterController")
+ end
+ 
+ -- Debug functions
+ function printVideoSwitcherStatus()
+    if myUCI then
+        local status = myUCI:getVideoSwitcherStatus()
+        print("=== Video Switcher Status ===")
+        print("Enabled: " .. tostring(status.enabled))
+        print("Type: " .. tostring(status.switcherType))
+        print("Component Valid: " .. tostring(status.componentValid))
+        if status.mapping then
+            print("Current Mapping:")
+            for uciButton, inputNumber in pairs(status.mapping) do
+                print("  " .. buttonNameCache[uciButton] .. " → Input " .. inputNumber)
+            end
+        end
+        print("=== End Video Switcher Status ===")
+    end
+ end
+ 
+ Timer.CallAfter(function()
+    printVideoSwitcherStatus()
+ end, 2)
+ 
+ print("=== UCIController Performance Optimized v2.3 ===")
+ print("✓ All original logic preserved")
+ print("✓ Performance optimizations applied")
+ print("✓ Complete warming/cooling functionality")
+ print("=== Initialization Complete ===")

@@ -1,8 +1,3 @@
---when btn is pressed
---set the varActiveLayer
---call a function to set the layers appropriately
---call a function to set the button feedback appropriately
---call a function to send debug info to debug window
 -- Constants --
 kLayer_Room = 1
 kLayer_Displays = 2
@@ -14,16 +9,27 @@ function funcUpdateLegends()
   Controls.btnNavRoom.Legend = Uci.Variables.navBtnRoomLegend.String
   Controls.btnNavDisplays.Legend = Uci.Variables.navBtnDisplaysLegend.String
   Controls.btnNavCameras.Legend = Uci.Variables.navBtnCamerasLegend.String
+  Controls.btnCam01Sel.Legend = Uci.Variables.btnCam01SelLegend.String
+  Controls.btnCam02Sel.Legend = Uci.Variables.btnCam02SelLegend.String
 end
 
 function funcShowCameraSublayer()
   if Controls.pinLEDUSB.Boolean then 
-  Uci.SetLayerVisibility( "classUCI", "C2_USB_Connected", true , "fade" )
-  Uci.SetLayerVisibility( "classUCI", "C3_USB_Connected_NOT", false , "none" )
+    Uci.SetLayerVisibility("classUCI", "C2_USB_Connected", true, "fade")
+    Uci.SetLayerVisibility("classUCI", "C3_USB_Connected_NOT", false, "none")
   else
-  Uci.SetLayerVisibility( "classUCI", "C2_USB_Connected", false , "none" )
-  Uci.SetLayerVisibility( "classUCI", "C3_USB_Connected_NOT", true , "fade" )
-  end --if
+    Uci.SetLayerVisibility("classUCI", "C2_USB_Connected", false, "none")
+    Uci.SetLayerVisibility("classUCI", "C3_USB_Connected_NOT", true, "fade")
+  end
+
+  for i, layer in ipairs(cameraLayers) do
+    local btn = camButtons[i]
+    if btn and btn.Boolean then
+      Uci.SetLayerVisibility("classUCI", layer, true, "fade")
+    else
+      Uci.SetLayerVisibility("classUCI", layer, false, "none")
+    end
+  end
 end
 --turn off ALL layers --turn on the layer of varActiveLayer
 function  funcShowLayer()
@@ -32,6 +38,8 @@ function  funcShowLayer()
   Uci.SetLayerVisibility( "classUCI", "C1_Cameras", false , "none" )
   Uci.SetLayerVisibility( "classUCI", "C2_USB_Connected", false , "none" )
   Uci.SetLayerVisibility( "classUCI", "C3_USB_Connected_NOT", false , "none" )
+  Uci.SetLayerVisibility( "classUCI", "C4_Camera_01_Presets", false , "none" )
+  Uci.SetLayerVisibility( "classUCI", "C5_Camera_02_Presets", false , "none" )
   Uci.SetLayerVisibility( "classUCI", "Y1_Base Controls", true , "fade" )
   Uci.SetLayerVisibility( "classUCI", "Z1_BG", true , "fade" )
 
@@ -40,7 +48,6 @@ function  funcShowLayer()
   elseif varActiveLayer == kLayer_Displays then 
     Uci.SetLayerVisibility( "classUCI", "B1_Displays", true , "fade" )
   elseif varActiveLayer == kLayer_Cameras then
-    Uci.SetLayerVisibility( "classUCI", "C1_Cameras", true , "fade" )
     funcShowCameraSublayer()
   end --if
 end
@@ -99,18 +106,47 @@ Controls.pinLEDUSB.EventHandler = function (ctl)
   funcDebugger()
 end
 
--------------------------------------------------------------------------------------------------------------------------------------
-
-Uci.Variables.navBtnRoomLegend.EventHandler = function ()
-  funcUpdateLegends()
+function setupCameraButtons()
+  -- Table of camera selection buttons
+  camButtons = {
+    Controls.btnCam01Sel,
+    Controls.btnCam02Sel
+  }
+  -- Table of camera preset layer names (expand as needed)
+  cameraLayers = {
+    [1] = "C4_Camera_01_Presets",
+    [2] = "C5_Camera_02_Presets"
+  }
+  -- Generalized camera selection function
+  function selectCamera(index)
+    for i, btn in ipairs(camButtons) do
+      btn.Boolean = (i == index)
+    end
+    funcShowCameraSublayer()
+  end
+  -- Assign event handlers using the generalized function
+  for i, btn in ipairs(camButtons) do
+    btn.EventHandler = function ()
+      selectCamera(i)
+    end
+  end
 end
 
-Uci.Variables.navBtnDisplaysLegend.EventHandler = function ()
-  funcUpdateLegends()
-end
+-- Call after 500ms to ensure controls are available
+Timer.CallAfter(setupCameraButtons, 500)
 
-Uci.Variables.navBtnCamerasLegend.EventHandler = function ()
-  funcUpdateLegends()
+-- Update UCI Legends
+
+local legendVars = {
+  Uci.Variables.navBtnRoomLegend,
+  Uci.Variables.navBtnDisplaysLegend,
+  Uci.Variables.navBtnCamerasLegend,
+  Uci.Variables.btnCam01SelLegend,
+  Uci.Variables.btnCam02SelLegend
+}
+
+for _, var in ipairs(legendVars) do
+  var.EventHandler = funcUpdateLegends
 end
 -------------------------------------------------------------------------------------------------------------------------------------
 

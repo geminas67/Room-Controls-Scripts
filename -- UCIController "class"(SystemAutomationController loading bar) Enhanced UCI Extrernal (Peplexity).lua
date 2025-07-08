@@ -605,17 +605,22 @@ end
 
 -- Add layer transition validation
 function UCIController:validateLayerTransition(fromLayer, toLayer)
-    -- Add validation logic to prevent invalid transitions
+    local mainLayers = {
+        self.kLayerAlarm, self.kLayerRoomControls, self.kLayerLaptop, self.kLayerPC,
+        self.kLayerWireless, self.kLayerRouting, self.kLayerDialer, self.kLayerStreamMusic
+    }
+
     local validTransitions = {
         [self.kLayerStart] = {self.kLayerAlarm, self.kLayerWarming, self.kLayerCooling},
         [self.kLayerWarming] = {self.kLayerAlarm, self.kLayerLaptop, self.kLayerPC, self.kLayerWireless, self.kLayerRouting, self.kLayerDialer, self.kLayerStreamMusic},
         [self.kLayerCooling] = {self.kLayerAlarm, self.kLayerStart},
-        [self.kLayerRoomControls] = {self.kLayerAlarm, self.kLayerPC, self.kLayerWireless, self.kLayerRouting, self.kLayerDialer, self.kLayerStreamMusic},
-        [self.kLayerPC] = {self.kLayerAlarm, self.kLayerRoomControls, self.kLayerLaptop, self.kLayerWireless, self.kLayerRouting, self.kLayerDialer, self.kLayerStreamMusic},
-        [self.kLayerWireless] = {self.kLayerAlarm, self.kLayerRoomControls, self.kLayerLaptop, self.kLayerPC, self.kLayerRouting, self.kLayerDialer, self.kLayerStreamMusic},
-        [self.kLayerRouting] = {self.kLayerAlarm, self.kLayerRoomControls, self.kLayerLaptop, self.kLayerPC, self.kLayerWireless, self.kLayerDialer, self.kLayerStreamMusic},
-        [self.kLayerDialer] = {self.kLayerAlarm, self.kLayerRoomControls, self.kLayerLaptop, self.kLayerPC, self.kLayerWireless, self.kLayerRouting, self.kLayerStreamMusic},
-        [self.kLayerStreamMusic] = {self.kLayerAlarm, self.kLayerRoomControls, self.kLayerLaptop, self.kLayerPC, self.kLayerWireless, self.kLayerRouting, self.kLayerDialer}
+        [self.kLayerRoomControls] = mainLayers,
+        [self.kLayerPC] = mainLayers,
+        [self.kLayerLaptop] = mainLayers,
+        [self.kLayerWireless] = mainLayers,
+        [self.kLayerRouting] = mainLayers,
+        [self.kLayerDialer] = mainLayers,
+        [self.kLayerStreamMusic] = mainLayers,
     }
     
     if not validTransitions[fromLayer] then
