@@ -424,31 +424,9 @@ function UCIController:hideBaseLayers()
     self:updateLayerVisibility({"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}, false, "none")
 end
 
--- Call Active Popup with Pulsing Timer
 function UCIController:callActivePopup()
     local callActiveState = safeControl("pinCallActive", "Boolean") or false
-    -- Stop existing pulse timer if it exists
-    if self.callActivePulseTimer then
-        self.callActivePulseTimer:Stop()
-        self.callActivePulseTimer = nil
-    end
-    -- Define durations for visible and hidden states (in seconds)
-    local durations = { [true] = 3, [false] = 2 }
-    -- Helper function for pulsing
-    local function pulse(visible)
-        self:updateLayerVisibility({"I01-CallActive"}, visible, "fade")
-        self.callActivePulseTimer = Timer.New()
-        self.callActivePulseTimer.EventHandler = function()
-            pulse(not visible)
-        end
-        self.callActivePulseTimer:Start(durations[visible])
-    end
-
-    if callActiveState then
-        pulse(true) -- Start with visible for 3 seconds
-    else
-        self:updateLayerVisibility({"I01-CallActive"}, false, "none")
-    end
+    self:updateLayerVisibility({"I01-CallActive"}, callActiveState, callActiveState and "fade" or "none")
 end
 
 function UCIController:showPresetSavedSublayer()
@@ -995,11 +973,6 @@ function UCIController:showLayer()
     if self.timeoutTimer then
         self.timeoutTimer:Stop()
         self.timeoutTimer = nil
-    end
-    
-    if self.callActivePulseTimer then
-        self.callActivePulseTimer:Stop()
-        self.callActivePulseTimer = nil
     end
     
     -- Cleanup video switcher integration
