@@ -424,9 +424,31 @@ function UCIController:hideBaseLayers()
     self:updateLayerVisibility({"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}, false, "none")
 end
 
+-- Call Active Popup with Pulsing Timer
 function UCIController:callActivePopup()
     local callActiveState = safeControl("pinCallActive", "Boolean") or false
-    self:updateLayerVisibility({"I01-CallActive"}, callActiveState, callActiveState and "fade" or "none")
+
+    -- Stop existing pulse timer if it exists
+    if self.callActivePulseTimer then
+        self.callActivePulseTimer:Stop()
+        self.callActivePulseTimer = nil
+    end
+
+    -- Helper function for pulsing
+    local function pulse(visible, duration)
+        self:updateLayerVisibility({"I01-CallActive"}, visible, "fade")
+        self.callActivePulseTimer = Timer.New()
+        self.callActivePulseTimer.EventHandler = function()
+            pulse(not visible, visible and 2 or 3)
+        end
+        self.callActivePulseTimer:Start(duration)
+    end
+
+    if callActiveState then
+        pulse(true, 3) -- Start with visible for 3s (60%)
+    else
+        self:updateLayerVisibility({"I01-CallActive"}, false, "none")
+    end
 end
 
 function UCIController:showPresetSavedSublayer()
@@ -815,18 +837,18 @@ function UCIController:showLayer()
  -- Helper method to get layer name
  function UCIController:getLayerName(layerNumber)
     local layerNames = {
-        [self.kLayerAlarm] = "Alarm",
-        [self.kLayerIncomingCall] = "Incoming Call",
-        [self.kLayerStart] = "Start",
-        [self.kLayerWarming] = "Warming",
-        [self.kLayerCooling] = "Cooling",
-        [self.kLayerRoomControls] = "Room Controls",
-        [self.kLayerPC] = "PC",
-        [self.kLayerLaptop] = "Laptop",
-        [self.kLayerWireless] = "Wireless",
-        [self.kLayerRouting] = "Routing",
-        [self.kLayerDialer] = "Dialer",
-        [self.kLayerStreamMusic] = "Stream Music"
+        [self.kLayerAlarm]          = "Alarm",
+        [self.kLayerIncomingCall]   = "Incoming Call",
+        [self.kLayerStart]          = "Start",
+        [self.kLayerWarming]        = "Warming",
+        [self.kLayerCooling]        = "Cooling",
+        [self.kLayerRoomControls]   = "Room Controls",
+        [self.kLayerPC]             = "PC",
+        [self.kLayerLaptop]         = "Laptop",
+        [self.kLayerWireless]       = "Wireless",
+        [self.kLayerRouting]        = "Routing",
+        [self.kLayerDialer]         = "Dialer",
+        [self.kLayerStreamMusic]    = "Stream Music"
     }
     return layerNames[layerNumber] or "Unknown"
  end
@@ -973,6 +995,11 @@ function UCIController:showLayer()
     if self.timeoutTimer then
         self.timeoutTimer:Stop()
         self.timeoutTimer = nil
+    end
+    
+    if self.callActivePulseTimer then
+        self.callActivePulseTimer:Stop()
+        self.callActivePulseTimer = nil
     end
     
     -- Cleanup video switcher integration
