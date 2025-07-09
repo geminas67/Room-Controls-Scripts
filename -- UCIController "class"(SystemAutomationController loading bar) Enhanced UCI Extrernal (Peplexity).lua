@@ -6,8 +6,7 @@
     Firmware Req: 10.0
     Notes:
     - This script is a modified version of the UCIController class that adds enhanced error handling and validation for required controls.
-    - It also adds a check for the Room Controls component and a fallback method if the component is not found.
-    - It also adds a check for the System Automation component and a fallback method if the component is not found.
+    - It also adds a check for the System Automation (Room Controls) component and a fallback method if the component is not found.
     - NEW: Universal video switcher integration supporting NV32, Extron DXP, and other video switchers
     - PERFORMANCE: Optimized string concatenation with caching for high-frequency operations
 --]]
@@ -1321,18 +1320,18 @@ end
 -- Helper method to get layer name
 function UCIController:getLayerName(layerNumber)
     local layerNames = {
-        [self.kLayerAlarm] = "Alarm",
-        [self.kLayerIncomingCall] = "Incoming Call",
-        [self.kLayerStart] = "Start",
-        [self.kLayerWarming] = "Warming",
-        [self.kLayerCooling] = "Cooling",
-        [self.kLayerRoomControls] = "Room Controls",
-        [self.kLayerPC] = "PC",
-        [self.kLayerLaptop] = "Laptop",
-        [self.kLayerWireless] = "Wireless",
-        [self.kLayerRouting] = "Routing",
-        [self.kLayerDialer] = "Dialer",
-        [self.kLayerStreamMusic] = "Stream Music"
+        [self.kLayerAlarm]          = "Alarm",
+        [self.kLayerIncomingCall]   = "Incoming Call",
+        [self.kLayerStart]          = "Start",
+        [self.kLayerWarming]        = "Warming",
+        [self.kLayerCooling]        = "Cooling",
+        [self.kLayerRoomControls]   = "Room Controls",
+        [self.kLayerPC]             = "PC",
+        [self.kLayerLaptop]         = "Laptop",
+        [self.kLayerWireless]       = "Wireless",
+        [self.kLayerRouting]        = "Routing",
+        [self.kLayerDialer]         = "Dialer",
+        [self.kLayerStreamMusic]    = "Stream Music"
     }
     return layerNames[layerNumber] or "Unknown"
 end

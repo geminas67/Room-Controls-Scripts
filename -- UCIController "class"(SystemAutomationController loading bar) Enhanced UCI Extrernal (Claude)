@@ -237,15 +237,15 @@ function UCIController.new(uciPage, defaultRoutingLayer, defaultActiveLayer, hid
     self.layerStates = {}
     
     -- Instance properties
-    self.uciPage = uciPage
-    self.varActiveLayer = defaultActiveLayer or 3
+    self.uciPage            = uciPage
+    self.varActiveLayer     = defaultActiveLayer or 3
     self.defaultActiveLayer = defaultActiveLayer or 8
-    self.isAnimating = false
-    self.loadingTimer = nil
-    self.timeoutTimer = nil
-    self.hiddenNavIndices = hiddenNavIndices or {}
-    self.hiddenHelpIndices = hiddenHelpIndices or {}
-    self.isInitialized = false
+    self.isAnimating        = false
+    self.loadingTimer       = nil
+    self.timeoutTimer       = nil
+    self.hiddenNavIndices   = hiddenNavIndices or {}
+    self.hiddenHelpIndices  = hiddenHelpIndices or {}
+    self.isInitialized      = false
     
     -- External controller registration
     self.externalControllers = {}
@@ -254,18 +254,18 @@ function UCIController.new(uciPage, defaultRoutingLayer, defaultActiveLayer, hid
     self.videoSwitcher = VideoSwitcherIntegration.new()
     
     -- Layer constants
-    self.kLayerAlarm = 1
+    self.kLayerAlarm        = 1
     self.kLayerIncomingCall = 2
-    self.kLayerStart = 3
-    self.kLayerWarming = 4
-    self.kLayerCooling = 5
+    self.kLayerStart        = 3
+    self.kLayerWarming      = 4
+    self.kLayerCooling      = 5
     self.kLayerRoomControls = 6
-    self.kLayerPC = 7
-    self.kLayerLaptop = 8
-    self.kLayerWireless = 9
-    self.kLayerRouting = 10
-    self.kLayerDialer = 11
-    self.kLayerStreamMusic = 12
+    self.kLayerPC           = 7
+    self.kLayerLaptop       = 8
+    self.kLayerWireless     = 9
+    self.kLayerRouting      = 10
+    self.kLayerDialer       = 11
+    self.kLayerStreamMusic  = 12
     
     -- Room Automation Component Reference
     self.roomControlsComponent = nil
@@ -1008,7 +1008,7 @@ function UCIController:showLayer()
     print("UCI Controller cleaned up for " .. self.uciPage)
  end
  
- -- All Event Handlers (COMPLETE ORIGINAL LOGIC)
+ -- Event Handlers
  function UCIController:registerEventHandlers()
     -- Nav Buttons
     for i, ctl in ipairs(self.arrbtnNavs) do
@@ -1194,7 +1194,7 @@ function UCIController:showLayer()
     if pinLEDHDMI02Active then
         pinLEDHDMI02Active.EventHandler = function(ctl)
             if ctl.Boolean then
-                self.varActiveLayer = self.kLayerPC      
+                self.varActiveLayer = self.kLayerPC   
             end
             self:showLayer()
             self:interlock()
