@@ -1,6 +1,6 @@
 ## **Objective:**
 
-Refactor the following Lua code to make it significantly faster and more responsive, with a focus on event-driven operations like button presses and component state changes.
+Refactor the following Lua code to make it faster and more responsive, with a focus on event-driven operations like button presses and component state changes.
 
 **Guidelines for Refactoring:**
 
@@ -33,11 +33,10 @@ Refactor the following Lua code to make it significantly faster and more respons
     - Use clear comments and consistent naming conventions.
 
 9.	Prefer Combo Boxes for Component Selection:
-
-- Where users need to select between multiple components (e.g., devices, channels, options), use Combo Boxes (dropdowns) instead of multiple buttons or manual entry.
-- Ensure Combo Box selections trigger immediate, efficient updates to the UI and system state.
-- Only use Combo Boxes where it improves clarity, reduces UI clutter, or streamlines selection logic.
+    - Where users need to select between multiple components (e.g., devices, channels, options), use Combo Boxes (dropdowns) instead of multiple buttons or manual entry.
+    - Ensure Combo Box selections trigger immediate, efficient updates to the UI and system state.
+    - Only use Combo Boxes where it improves clarity, reduces UI clutter, or streamlines selection logic.
 10.	Dynamically Pull Component Types:
-- Use `Component.GetComponents()` to dynamically retrieve available component types. Run through all components in one loop.
-- Populate Combo Boxes or selection lists with the results of `Component.GetComponents()` to ensure the UI always reflects the current system state.
-- Avoid hard-coding component types; always use dynamic queries for flexibility and maintainability.
+    - Use `Component.GetComponents()` to dynamically retrieve available component types. Run through all components in one loop.
+    - Populate Combo Boxes or selection lists with the results of `Component.GetComponents()` to ensure the UI always reflects the current system state.
+    - Avoid hard-coding component types; always use dynamic queries for flexibility and maintainability.

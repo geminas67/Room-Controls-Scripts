@@ -1,0 +1,23 @@
+{
+  "name": "zoom-visualizer",
+  "version": "1.0.0",
+  "description": "Local Zoom Visualizer for testing room control configurations",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "serve": "node server.js"
+  },
+  "keywords": [
+    "zoom",
+    "visualizer",
+    "room-controls",
+    "q-sys"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {},
+  "engines": {
+    "node": ">=14.0.0"
+  }
+} 

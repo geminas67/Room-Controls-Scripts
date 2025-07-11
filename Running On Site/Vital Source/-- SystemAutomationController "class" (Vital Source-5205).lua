@@ -327,7 +327,7 @@ function SystemAutomationController:initPowerModule()
             
             self.audioModule.setVolume(self.config.defaultVolume) -- Sets all gains
             self.audioModule.setMute(false)
-            self.audioModule.setPrivacy(true)
+            -- self.audioModule.setPrivacy(true)
             -- self.videoModule.setPrivacy(false) -- setPrivacy for Video during Startup, this is handled on Hook State since the room uses ACPR
             self.displayModule.powerAll(true)
             self:publishNotification()
@@ -342,9 +342,9 @@ function SystemAutomationController:initPowerModule()
             self.timers.cooldown:Start(self.config.cooldownTime)
             self.powerModule.setSystemPowerFB(false)
             
-            self.audioModule.setPrivacy(true)
+            -- self.audioModule.setPrivacy(true)
             self.audioModule.setMute(true)
-            self.videoModule.setPrivacy(true)
+            -- self.videoModule.setPrivacy(true)
             self.displayModule.powerAll(false)
             self:endCalls()
             self:publishNotification()

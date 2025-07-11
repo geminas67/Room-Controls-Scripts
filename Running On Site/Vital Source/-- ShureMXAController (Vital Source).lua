@@ -30,7 +30,7 @@ function ShureMXAController.new(config)
     -- Instance properties
     self.debugging = config and config.debugging or true
     self.clearString = "[Clear]"
-
+    
     --Component type definitions
     self.componentTypes = {
         callSync = "call_sync",
@@ -49,6 +49,7 @@ function ShureMXAController.new(config)
     -- State tracking
     self.state = {
         audioPrivacy = false,
+        videoPrivacy = false
     }
     
     -- Configuration
@@ -142,15 +143,15 @@ function ShureMXAController:setRoomControlsComponent()
         local this = self  -- Capture self for use in handlers
 
         -- System Power Handler
-        self.components.roomControls["ledSystemPower"].EventHandler = function(ctl)
-            if ctl.Boolean then
-                this:debugPrint("System Power On")
-            else
-                this:debugPrint("System Power Off")
-                self.mxaModule.setMute(true)
-                self.mxaModule.setLED(false)
-            end
-        end
+        -- self.components.roomControls["ledSystemPower"].EventHandler = function(ctl)
+        --     if ctl.Boolean then
+        --         this:debugPrint("System Power On")
+        --     else
+        --         this:debugPrint("System Power Off")
+        --         self.mxaModule.setMute(true)
+        --         self.mxaModule.setLED(false)
+        --     end
+        -- end
 
         -- Fire Alarm Handler
         self.components.roomControls["ledFireAlarm"].EventHandler = function(ctl)
@@ -251,7 +252,7 @@ function ShureMXAController:checkStatus()
     Controls.txtStatus.Value = 0
 end
 
---------** Component Discovery **--------
+--------** Component Name Discovery **--------
 function ShureMXAController:getComponentNames()
     local namesTable = {
         RoomControlsNames = {},
@@ -285,6 +286,7 @@ end
 
 --------** Event Handler Registration **--------
 function ShureMXAController:registerEventHandlers()
+
     Controls.btnMXAMute.EventHandler = function(ctl)
         self.mxaModule.setMute(ctl.Boolean)
     end
@@ -366,13 +368,8 @@ local function createShureMXAController(config)
 end
 
 --------** Instance Creation **--------
+-- Create the main MXA controller instance
 myMXAController = createShureMXAController()
-
-if myMXAController then
-    print("Shure MXA Controller created successfully!")
-else
-    print("ERROR: Failed to create Shure MXA Controller!")
-end
 
 --------** Usage Examples **--------
 --[[
@@ -380,6 +377,9 @@ end
 
 -- Set audio privacy
 myMXAController.callSyncModule.setMute(true)
+
+-- Set video privacy
+myMXAController.videoBridgeModule.setPrivacy(true)
 
 -- Control MXA LEDs
 myMXAController.mxaModule.setLED(true)

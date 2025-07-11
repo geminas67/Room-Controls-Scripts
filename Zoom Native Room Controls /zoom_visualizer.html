@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zoom Visualizer - Local</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: #1a1a1a;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .content {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 0;
+            min-height: 600px;
+        }
+
+        .sidebar {
+            background: #f8f9fa;
+            padding: 20px;
+            border-right: 1px solid #e9ecef;
+        }
+
+        .main-area {
+            padding: 20px;
+        }
+
+        .upload-section {
+            margin-bottom: 30px;
+        }
+
+        .upload-area {
+            border: 2px dashed #dee2e6;
+            border-radius: 8px;
+            padding: 40px 20px;
+            text-align: center;
+            background: white;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .upload-area:hover {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+
+        .upload-area.dragover {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            color: #6c757d;
+            margin-bottom: 10px;
+        }
+
+        .upload-text {
+            color: #6c757d;
+            font-size: 14px;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .visualizer {
+            background: #2d3748;
+            border-radius: 8px;
+            padding: 20px;
+            color: white;
+            min-height: 400px;
+        }
+
+        .room-display {
+            background: #4a5568;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .room-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #e2e8f0;
+        }
+
+        .control-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .control-item {
+            background: #718096;
+            border-radius: 6px;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .control-item:hover {
+            background: #805ad5;
+            transform: translateY(-2px);
+        }
+
+        .control-item.active {
+            background: #38a169;
+        }
+
+        .control-name {
+            font-size: 12px;
+            font-weight: 500;
+            margin-bottom: 5px;
+        }
+
+        .control-value {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .status-bar {
+            background: #2d3748;
+            padding: 10px 20px;
+            border-top: 1px solid #4a5568;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #48bb78;
+        }
+
+        .status-dot.offline {
+            background: #f56565;
+        }
+
+        .json-viewer {
+            background: #1a202c;
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 12px;
+            color: #e2e8f0;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .config-section {
+            margin-bottom: 20px;
+        }
+
+        .config-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #2d3748;
+        }
+
+        .config-item {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 8px;
+        }
+
+        .config-label {
+            font-weight: 500;
+            color: #4a5568;
+            margin-bottom: 5px;
+        }
+
+        .config-value {
+            color: #2d3748;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        .error-message {
+            background: #fed7d7;
+            color: #c53030;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+
+        .success-message {
+            background: #c6f6d5;
+            color: #2f855a;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎥 Zoom Visualizer - Local</h1>
+        </div>
+        
+        <div class="content">
+            <div class="sidebar">
+                <div class="upload-section">
+                    <div class="upload-area" id="uploadArea">
+                        <div class="upload-icon">📁</div>
+                        <div class="upload-text">
+                            <strong>Drop your JSON config here</strong><br>
+                            or click to browse
+                        </div>
+                        <input type="file" id="fileInput" class="file-input" accept=".json">
+                    </div>
+                </div>
+
+                <div class="config-section">
+                    <div class="config-title">📋 Configuration</div>
+                    <div id="configDisplay"></div>
+                </div>
+
+                <div class="config-section">
+                    <div class="config-title">🔧 JSON Viewer</div>
+                    <div class="json-viewer" id="jsonViewer">
+                        <em>Upload a JSON file to see the configuration...</em>
+                    </div>
+                </div>
+            </div>
+
+            <div class="main-area">
+                <div class="visualizer">
+                    <div class="room-display" id="roomDisplay">
+                        <div class="room-title">🏢 Room Controls</div>
+                        <div class="control-grid" id="controlGrid">
+                            <div class="control-item">
+                                <div class="control-name">System Power</div>
+                                <div class="control-value">OFF</div>
+                            </div>
+                            <div class="control-item">
+                                <div class="control-name">Display Power</div>
+                                <div class="control-value">OFF</div>
+                            </div>
+                            <div class="control-item">
+                                <div class="control-name">Camera</div>
+                                <div class="control-value">Front</div>
+                            </div>
+                            <div class="control-item">
+                                <div class="control-name">Preset</div>
+                                <div class="control-value">Home</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="status-bar">
+                        <div class="status-indicator">
+                            <div class="status-dot" id="statusDot"></div>
+                            <span id="statusText">Ready</span>
+                        </div>
+                        <div id="connectionInfo">No file loaded</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class ZoomVisualizer {
+            constructor() {
+                this.config = null;
+                this.currentState = {};
+                this.init();
+            }
+
+            init() {
+                this.setupEventListeners();
+                this.loadSampleConfig();
+            }
+
+            setupEventListeners() {
+                const uploadArea = document.getElementById('uploadArea');
+                const fileInput = document.getElementById('fileInput');
+
+                uploadArea.addEventListener('click', () => fileInput.click());
+                uploadArea.addEventListener('dragover', this.handleDragOver.bind(this));
+                uploadArea.addEventListener('drop', this.handleDrop.bind(this));
+                fileInput.addEventListener('change', this.handleFileSelect.bind(this));
+            }
+
+            handleDragOver(e) {
+                e.preventDefault();
+                e.currentTarget.classList.add('dragover');
+            }
+
+            handleDrop(e) {
+                e.preventDefault();
+                e.currentTarget.classList.remove('dragover');
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    this.loadFile(files[0]);
+                }
+            }
+
+            handleFileSelect(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    this.loadFile(file);
+                }
+            }
+
+            loadFile(file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const config = JSON.parse(e.target.result);
+                        this.loadConfig(config);
+                        this.showMessage('Configuration loaded successfully!', 'success');
+                    } catch (error) {
+                        this.showMessage('Error parsing JSON file: ' + error.message, 'error');
+                    }
+                };
+                reader.readAsText(file);
+            }
+
+            loadSampleConfig() {
+                // Load the sample config from your UNC Giles file
+                const sampleConfig = {
+                    "adapters": [
+                        {
+                            "model": "GenericNetworkAdapter",
+                            "ip": "tcp://172.31.94.13:1702",
+                            "ports": [
+                                {
+                                    "id": "qsys_core",
+                                    "name": "Sycamore",
+                                    "methods": [
+                                        {
+                                            "id": "system_power",
+                                            "name": "System Power",
+                                            "command": "ct SYSTEM_POWER_BTN_%\r\n",
+                                            "params": [
+                                                {"id": "on", "name": "On", "value": "ON"},
+                                                {"id": "off", "name": "Off", "value": "OFF"}
+                                            ],
+                                            "type": "actions"
+                                        },
+                                        {
+                                            "id": "display_power",
+                                            "name": "Display Power",
+                                            "command": "ct DISPLAY_POWER_BTN_%\r\n",
+                                            "params": [
+                                                {"id": "display_on", "name": "On", "value": "ON"},
+                                                {"id": "display_off", "name": "Off", "value": "OFF"}
+                                            ],
+                                            "type": "actions"
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "model": "GenericNetworkAdapter",
+                            "ip": "tcp://172.31.94.13:1702",
+                            "ports": [
+                                {
+                                    "id": "camera",
+                                    "name": "Camera",
+                                    "methods": [
+                                        {
+                                            "id": "camera_select",
+                                            "name": "Camera Select",
+                                            "command": "ct SEL_CAM_%\r\n",
+                                            "params": [
+                                                {"id": "front", "name": "Front", "value": "FRONT"},
+                                                {"id": "rear", "name": "Rear", "value": "REAR"}
+                                            ],
+                                            "type": "actions"
+                                        },
+                                        {
+                                            "id": "camera_presets",
+                                            "name": "Presets",
+                                            "command": "ct CAM_PRESET_LOAD_%\r\n",
+                                            "params": [
+                                                {"id": "cam_home", "name": "Home", "value": "01"},
+                                                {"id": "cam_left", "name": "Left", "value": "02"},
+                                                {"id": "cam_right", "name": "Right", "value": "03"},
+                                                {"id": "cam_wide", "name": "Wide", "value": "04"}
+                                            ],
+                                            "type": "actions"
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ],
+                    "styles": [
+                        "qsys_core.icon=icon_rack_equipment",
+                        "qsys_core.system_power.icon=icon_power",
+                        "qsys_core.system_power.invisible=true",
+                        "qsys_core.display_power.icon=icon_tv",
+                        "camera.main_method=camera_select",
+                        "camera.icon=icon_projector"
+                    ],
+                    "rules": {
+                        "zr_zoom_app_opened": ["qsys_core.system_power.system_on"],
+                        "zr_zoom_app_closed": ["qsys_core.system_power.system_off"]
+                    }
+                };
+                
+                this.loadConfig(sampleConfig);
+                this.showMessage('Sample configuration loaded (UNC Giles - Sycamore)', 'success');
+            }
+
+            loadConfig(config) {
+                this.config = config;
+                this.currentState = this.initializeState();
+                this.renderConfig();
+                this.renderVisualizer();
+                this.updateStatus();
+            }
+
+            initializeState() {
+                const state = {};
+                if (this.config && this.config.adapters) {
+                    this.config.adapters.forEach(adapter => {
+                        adapter.ports.forEach(port => {
+                            port.methods.forEach(method => {
+                                if (method.params && method.params.length > 0) {
+                                    state[method.id] = method.params[0].value;
+                                }
+                            });
+                        });
+                    });
+                }
+                return state;
+            }
+
+            renderConfig() {
+                const configDisplay = document.getElementById('configDisplay');
+                const jsonViewer = document.getElementById('jsonViewer');
+
+                // Render configuration summary
+                let configHTML = '';
+                if (this.config) {
+                    configHTML += `
+                        <div class="config-item">
+                            <div class="config-label">Adapters</div>
+                            <div class="config-value">${this.config.adapters.length}</div>
+                        </div>
+                        <div class="config-item">
+                            <div class="config-label">Total Ports</div>
+                            <div class="config-value">${this.config.adapters.reduce((sum, adapter) => sum + adapter.ports.length, 0)}</div>
+                        </div>
+                        <div class="config-item">
+                            <div class="config-label">Total Methods</div>
+                            <div class="config-value">${this.config.adapters.reduce((sum, adapter) => 
+                                sum + adapter.ports.reduce((portSum, port) => portSum + port.methods.length, 0), 0)}</div>
+                        </div>
+                        <div class="config-item">
+                            <div class="config-label">Rules</div>
+                            <div class="config-value">${Object.keys(this.config.rules || {}).length}</div>
+                        </div>
+                    `;
+                }
+                configDisplay.innerHTML = configHTML;
+
+                // Render JSON viewer
+                jsonViewer.innerHTML = `<pre>${JSON.stringify(this.config, null, 2)}</pre>`;
+            }
+
+            renderVisualizer() {
+                const controlGrid = document.getElementById('controlGrid');
+                let controlsHTML = '';
+
+                if (this.config && this.config.adapters) {
+                    this.config.adapters.forEach(adapter => {
+                        adapter.ports.forEach(port => {
+                            port.methods.forEach(method => {
+                                if (method.params && method.params.length > 0) {
+                                    const currentValue = this.currentState[method.id] || method.params[0].value;
+                                    const currentParam = method.params.find(p => p.value === currentValue);
+                                    
+                                    controlsHTML += `
+                                        <div class="control-item" onclick="visualizer.toggleControl('${method.id}')">
+                                            <div class="control-name">${method.name}</div>
+                                            <div class="control-value">${currentParam ? currentParam.name : currentValue}</div>
+                                        </div>
+                                    `;
+                                }
+                            });
+                        });
+                    });
+                }
+
+                controlGrid.innerHTML = controlsHTML;
+            }
+
+            toggleControl(methodId) {
+                if (!this.config) return;
+
+                // Find the method and its parameters
+                let method = null;
+                let currentIndex = 0;
+
+                this.config.adapters.forEach(adapter => {
+                    adapter.ports.forEach(port => {
+                        port.methods.forEach(m => {
+                            if (m.id === methodId) {
+                                method = m;
+                                const currentValue = this.currentState[methodId];
+                                currentIndex = method.params.findIndex(p => p.value === currentValue);
+                            }
+                        });
+                    });
+                });
+
+                if (method && method.params) {
+                    // Cycle through parameters
+                    const nextIndex = (currentIndex + 1) % method.params.length;
+                    const nextParam = method.params[nextIndex];
+                    this.currentState[methodId] = nextParam.value;
+                    
+                    this.renderVisualizer();
+                    this.updateStatus();
+                }
+            }
+
+            updateStatus() {
+                const statusDot = document.getElementById('statusDot');
+                const statusText = document.getElementById('statusText');
+                const connectionInfo = document.getElementById('connectionInfo');
+
+                if (this.config) {
+                    statusDot.classList.remove('offline');
+                    statusText.textContent = 'Connected';
+                    connectionInfo.textContent = `${this.config.adapters.length} adapter(s) configured`;
+                } else {
+                    statusDot.classList.add('offline');
+                    statusText.textContent = 'Disconnected';
+                    connectionInfo.textContent = 'No configuration loaded';
+                }
+            }
+
+            showMessage(message, type) {
+                const existingMessage = document.querySelector('.error-message, .success-message');
+                if (existingMessage) {
+                    existingMessage.remove();
+                }
+
+                const messageDiv = document.createElement('div');
+                messageDiv.className = type === 'error' ? 'error-message' : 'success-message';
+                messageDiv.textContent = message;
+
+                const sidebar = document.querySelector('.sidebar');
+                sidebar.insertBefore(messageDiv, sidebar.firstChild);
+
+                setTimeout(() => {
+                    messageDiv.remove();
+                }, 5000);
+            }
+        }
+
+        // Initialize the visualizer
+        const visualizer = new ZoomVisualizer();
+    </script>
+</body>
+</html> 

@@ -25,7 +25,7 @@ function SystemAutomationController.new(roomName, config)
     self.componentTypes = {
         callSync = "call_sync",
         videoBridge = "usb_uvc",
-        displays = "%PLUGIN%_78a74df3-40bf-447b-a714-f564ebae238a_%FP%_bec481a6666b76b5249bbd12046c3920", -- Generic Display Plugin
+        displays = "%PLUGIN%_C76AD0FA-D707-4bb4-991E-D70D77AC1FC4_%FP%_b1533bca5f02f791538ad7a9a5ed9903", -- Sony Bravia Display Plugin
         gains = "gain",
         systemMute = "system_mute",
         camACPR = "%PLUGIN%_648260e3-c166-4b00-98ba-ba16ksnza4a63b0_%FP%_a4d2263b4380c424e16eebb67084f355",
@@ -265,7 +265,7 @@ function SystemAutomationController:initDisplayModule()
         powerAll = function(state)
             for i, display in pairs(self.components.displays) do
                 if display then
-                    local control = state and "PowerOnTrigger" or "PowerOffTrigger"
+                    local control = state and "PowerOn" or "PowerOff"
                     self:safeComponentAccess(display, control, "trigger")
                 end
             end
@@ -274,7 +274,7 @@ function SystemAutomationController:initDisplayModule()
         powerSingle = function(index, state)
             local display = self.components.displays[index]
             if display then
-                local control = state and "PowerOnTrigger" or "PowerOffTrigger"
+                local control = state and "PowerOn" or "PowerOff"
                 self:safeComponentAccess(display, control, "trigger")
             end
         end
