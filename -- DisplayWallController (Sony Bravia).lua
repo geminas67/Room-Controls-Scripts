@@ -29,13 +29,6 @@ local displayControls = {
     wallPosition = "WallPosition"
 }
 
--- Timer Configuration (easily changeable)
-local timerConfig = {
-    warmupTime = 7,      -- Seconds for displays to warm up
-    cooldownTime = 5,     -- Seconds for displays to cool down
-    displaysMax = 9       -- Maximum number of displays supported
-}
-
 -- Validate required controls exist
 local function validateControls()
     if not Controls.txtStatus or not Controls.devDisplays then
@@ -44,6 +37,8 @@ local function validateControls()
     end
     return true
 end
+
+
 
 --------** Class Definition **--------
 SonyBraviaDisplayWallController = {}
@@ -58,14 +53,14 @@ function SonyBraviaDisplayWallController.new(roomName, config)
     self.clearString = "[Clear]"
 
     self.componentTypes = {
-        displays = "%PLUGIN%_C76AD0FA-D707-4bb4-991E-D70D77AC1FC4_%FP%_b1533bca5f02f791538ad7a9a5ed9903",  -- Sony Bravia Display Wall
+        displays = "%PLUGIN%_C76AD0FA-D707-4bb4-991E-D70D77AC1FC4_%FP%_b1533bca5f02f791538ad7a9a5ed9903",  -- Sony Bravia Display
         roomControls = "device_controller_script" -- Will be filtered to only those starting with "compRoomControls"
     }
     
     -- Component storage
     self.components = {
-        displays = {}, -- Array for multiple displays
-        compRoomControls = nil, -- Room controls component
+        displays = {},
+        compRoomControls = nil,
         invalid = {}
     }
     
@@ -80,7 +75,7 @@ function SonyBraviaDisplayWallController.new(roomName, config)
     
     -- Configuration
     self.config = {
-        maxDisplays = config and config.maxDisplays or timerConfig.displaysMax,
+        maxDisplays = config and config.maxDisplays or 9, -- Maximum number of displays supported
         defaultInput = "HDMI1",
         displayWallModes = {"Single", "2x2", "3x3", "4x4", "Custom"},
         inputChoices = {"HDMI1", "HDMI2", "DisplayPort", "USB-C"}
@@ -98,10 +93,83 @@ function SonyBraviaDisplayWallController.new(roomName, config)
         cooldown = Timer.New()
     }
     
+    -- Timer Configuration (instance-specific, dynamically updated from room controls component)
+    self.timerConfig = {
+        warmupTime = 7,  -- Default fallback values
+        cooldownTime = 5
+    }
+    
     -- Initialize modules
     self:initDisplayModule()
     self:initPowerModule()
+    
+    -- Initialize timer configuration
+    self:updateTimerConfigFromComponent()
     return self
+end
+
+--------** Dynamic Timer Configuration **--------
+function SonyBraviaDisplayWallController:updateTimerConfigFromComponent()
+    -- Default fallback values
+    local defaultWarmupTime = 7
+    local defaultCooldownTime = 5
+    
+    if self.components.compRoomControls then
+        local success, result = pcall(function()
+            -- Try to get warmup time from room controls component
+            if self.components.compRoomControls["warmupTime"] then
+                local warmupTime = self.components.compRoomControls["warmupTime"].Value
+                if warmupTime and warmupTime > 0 then
+                    self.timerConfig.warmupTime = warmupTime
+                    self:debugPrint("Updated warmup time from component: " .. warmupTime .. " seconds")
+                else
+                    self.timerConfig.warmupTime = defaultWarmupTime
+                    self:debugPrint("Using default warmup time: " .. defaultWarmupTime .. " seconds")
+                end
+            else
+                self.timerConfig.warmupTime = defaultWarmupTime
+                self:debugPrint("Using default warmup time: " .. defaultWarmupTime .. " seconds")
+            end
+            
+            -- Try to get cooldown time from room controls component
+            if self.components.compRoomControls["cooldownTime"] then
+                local cooldownTime = self.components.compRoomControls["cooldownTime"].Value
+                if cooldownTime and cooldownTime > 0 then
+                    self.timerConfig.cooldownTime = cooldownTime
+                    self:debugPrint("Updated cooldown time from component: " .. cooldownTime .. " seconds")
+                else
+                    self.timerConfig.cooldownTime = defaultCooldownTime
+                    self:debugPrint("Using default cooldown time: " .. defaultCooldownTime .. " seconds")
+                end
+            else
+                self.timerConfig.cooldownTime = defaultCooldownTime
+                self:debugPrint("Using default cooldown time: " .. defaultCooldownTime .. " seconds")
+            end
+        end)
+        
+        if not success then
+            self:debugPrint("Warning: Failed to update timer config from component: " .. tostring(result))
+            -- Set fallback values on error
+            self.timerConfig.warmupTime = defaultWarmupTime
+            self.timerConfig.cooldownTime = defaultCooldownTime
+        end
+    else
+        -- No room controls component available, use defaults
+        self.timerConfig.warmupTime = defaultWarmupTime
+        self.timerConfig.cooldownTime = defaultCooldownTime
+        self:debugPrint("No room controls component available, using default timing values")
+    end
+end
+
+function SonyBraviaDisplayWallController:getTimerConfig(isWarmup)
+    -- Update timer config from component first
+    self:updateTimerConfigFromComponent()
+    
+    if isWarmup then
+        return self.timerConfig.warmupTime
+    else
+        return self.timerConfig.cooldownTime
+    end
 end
 
 --------** Debug Helper **--------
@@ -293,25 +361,24 @@ function SonyBraviaDisplayWallController:initPowerModule()
     local selfRef = self
     self.powerModule = {
         enableDisablePowerControls = function(state)
-            -- Enable/disable all power controls using arrays
-            local powerControls = {"btnDisplayPowerOn", "btnDisplayPowerOff", "btnDisplayPowerSingle"}
-            for _, controlName in ipairs(powerControls) do
+            -- Consolidated power controls array
+            local allPowerControls = {
+                "btnDisplayPowerOn", "btnDisplayPowerOff", "btnDisplayPowerSingle",
+                "btnDisplayPowerAll", "btnDisplayInputAll", "btnDisplayWallConfig"
+            }
+            
+            for _, controlName in ipairs(allPowerControls) do
                 if Controls[controlName] then
-                    for i, btn in ipairs(Controls[controlName]) do
-                        btn.IsDisabled = not state
+                    if type(Controls[controlName]) == "table" then
+                        -- Handle array controls (btnDisplayPowerOn, btnDisplayPowerOff, btnDisplayPowerSingle)
+                        for i, btn in ipairs(Controls[controlName]) do
+                            btn.IsDisabled = not state
+                        end
+                    else
+                        -- Handle single controls (btnDisplayPowerAll, btnDisplayInputAll, btnDisplayWallConfig)
+                        Controls[controlName].IsDisabled = not state
                     end
                 end
-            end
-            -- Enable/disable global power controls
-            if Controls.btnDisplayPowerAll then
-                Controls.btnDisplayPowerAll.IsDisabled = not state
-            end
-            -- Enable/disable input controls during power operations
-            if Controls.btnDisplayInputAll then
-                Controls.btnDisplayInputAll.IsDisabled = not state
-            end
-            if Controls.btnDisplayWallConfig then
-                Controls.btnDisplayWallConfig.IsDisabled = not state
             end
         end,
         
@@ -369,25 +436,33 @@ function SonyBraviaDisplayWallController:initPowerModule()
         powerOnDisplay = function(index)
             selfRef:debugPrint("Powering on display " .. index)
             selfRef.displayModule.powerSingle(index, true)
-            -- Individual display operations don't disable all power controls
+            -- Disable individual display power controls during warmup
+            selfRef.powerModule.enableDisablePowerControlIndex(index, false)
             selfRef.state.isWarming = true
             if Controls.ledDisplayWarming then
                 Controls.ledDisplayWarming.Boolean = true
             end
-            selfRef.timers.warmup:Start(timerConfig.warmupTime)
-            selfRef.powerModule.setDisplayPowerFB(true)
+            selfRef.timers.warmup:Start(selfRef:getTimerConfig(true))
+            -- Update power feedback for this specific display
+            if Controls.btnDisplayPowerSingle and Controls.btnDisplayPowerSingle[index] then
+                Controls.btnDisplayPowerSingle[index].Boolean = true
+            end
         end,
         
         powerOffDisplay = function(index)
             selfRef:debugPrint("Powering off display " .. index)
             selfRef.displayModule.powerSingle(index, false)
-            -- Individual display operations don't disable all power controls
+            -- Disable individual display power controls during cooldown
+            selfRef.powerModule.enableDisablePowerControlIndex(index, false)
             selfRef.state.isCooling = true
             if Controls.ledDisplayCooling then
                 Controls.ledDisplayCooling.Boolean = true
             end
-            selfRef.timers.cooldown:Start(timerConfig.cooldownTime)
-            selfRef.powerModule.setDisplayPowerFB(false)
+            selfRef.timers.cooldown:Start(selfRef:getTimerConfig(false))
+            -- Update power feedback for this specific display
+            if Controls.btnDisplayPowerSingle and Controls.btnDisplayPowerSingle[index] then
+                Controls.btnDisplayPowerSingle[index].Boolean = false
+            end
         end,
         
         powerOnAll = function()
@@ -398,7 +473,7 @@ function SonyBraviaDisplayWallController:initPowerModule()
             if Controls.ledDisplayWarming then
                 Controls.ledDisplayWarming.Boolean = true
             end
-            selfRef.timers.warmup:Start(timerConfig.warmupTime)
+            selfRef.timers.warmup:Start(selfRef:getTimerConfig(true))
             selfRef.powerModule.setDisplayPowerFB(true)
         end,
         
@@ -410,26 +485,25 @@ function SonyBraviaDisplayWallController:initPowerModule()
             if Controls.ledDisplayCooling then
                 Controls.ledDisplayCooling.Boolean = true
             end
-            selfRef.timers.cooldown:Start(timerConfig.cooldownTime)
+            selfRef.timers.cooldown:Start(selfRef:getTimerConfig(false))
             selfRef.powerModule.setDisplayPowerFB(false)
-        end,
-        
-        enableDisableIndexPowerControl = function(index, controlType, state)
-            local controlMap = {
-                powerOn = "btnDisplayPowerOn",
-                powerOff = "btnDisplayPowerOff", 
-                powerSingle = "btnDisplayPowerSingle"
-            }
-            local controlName = controlMap[controlType]
-            if controlName and Controls[controlName] and Controls[controlName][index] then
-                Controls[controlName][index].IsDisabled = not state
-            end
         end,
         
         refreshPowerFeedback = function()
             -- Manual refresh of power feedback from displays
             selfRef:debugPrint("Manually refreshing power feedback from displays")
             selfRef.powerModule.updatePowerFeedbackFromDisplays()
+        end,
+        
+        enableDisablePowerControlIndex = function(index, state)
+            -- Consolidated array of individual display power controls
+            local individualPowerControls = {"btnDisplayPowerOn", "btnDisplayPowerOff", "btnDisplayPowerSingle"}
+            
+            for _, controlName in ipairs(individualPowerControls) do
+                if Controls[controlName] and Controls[controlName][index] then
+                    Controls[controlName][index].IsDisabled = not state
+                end
+            end
         end
     }
 end
@@ -499,6 +573,10 @@ end
 
 function SonyBraviaDisplayWallController:setRoomControlsComponent()
     self.components.compRoomControls = self:setComponent(Controls.compRoomControls, "Room Controls")
+    -- Update timer configuration from room controls component
+    if self.components.compRoomControls then
+        self:updateTimerConfigFromComponent()
+    end
 end
 
 function SonyBraviaDisplayWallController:setDisplayComponent(index)
@@ -615,6 +693,9 @@ function SonyBraviaDisplayWallController:updateRoomNameFromComponent()
                 self:debugPrint("Room name updated to: "..newRoomName)
             end
         end
+        
+        -- Also update timer configuration when room controls component is available
+        self:updateTimerConfigFromComponent()
     end
 end
 
@@ -622,13 +703,31 @@ end
 function SonyBraviaDisplayWallController:registerTimerHandlers()
     self.timers.warmup.EventHandler = function()
         self:debugPrint("Warmup Period Has Ended")
+        -- Re-enable all power controls (both global and individual)
         self.powerModule.enableDisablePowerControls(true)
+        -- Re-enable individual display power controls for all displays
+        for i = 1, self.config.maxDisplays do
+            self.powerModule.enableDisablePowerControlIndex(i, true)
+        end
+        self.state.isWarming = false
+        if Controls.ledDisplayWarming then
+            Controls.ledDisplayWarming.Boolean = false
+        end
         self.timers.warmup:Stop()
     end
 
     self.timers.cooldown.EventHandler = function()
         self:debugPrint("Cooldown Period Has Ended")
+        -- Re-enable all power controls (both global and individual)
         self.powerModule.enableDisablePowerControls(true)
+        -- Re-enable individual display power controls for all displays
+        for i = 1, self.config.maxDisplays do
+            self.powerModule.enableDisablePowerControlIndex(i, true)
+        end
+        self.state.isCooling = false
+        if Controls.ledDisplayCooling then
+            Controls.ledDisplayCooling.Boolean = false
+        end
         self.timers.cooldown:Stop()
     end
 end
@@ -740,6 +839,9 @@ function SonyBraviaDisplayWallController:funcInit()
     
     -- Update power feedback based on current display status
     self.powerModule.updatePowerFeedbackFromDisplays()
+    
+    -- Update timer configuration from room controls component
+    self:updateTimerConfigFromComponent()
     
     self:debugPrint("Sony Bravia DisplayWallController Initialized with " .. 
                    self.displayModule.getDisplayCount() .. " displays")

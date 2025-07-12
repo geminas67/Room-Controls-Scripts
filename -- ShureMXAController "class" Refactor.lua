@@ -37,8 +37,10 @@ function ShureMXAController.new(roomName, config)
     }
     -- Direct component references for faster access
     self.components = {
-        callSync = nil, roomControls = nil,
-        mxaDevices = {}, invalid = {}
+        callSync = nil, 
+        roomControls = nil,
+        mxaDevices = {}, 
+        invalid = {}
     }
     
     -- State tracking

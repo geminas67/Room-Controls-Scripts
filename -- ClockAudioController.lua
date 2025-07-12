@@ -56,17 +56,25 @@ function ClockAudioCDTMicController.new(roomName, config)
     self.roomName = roomName or "ClockAudio CDT"
     self.debugging = (config and config.debugging) or false
     self.clearString = "[Clear]"
+
+    -- Component type definitions
+    self.componentTypes = {
+        callSync = "call_sync",
+        micBoxes = "%PLUGIN%_91b57fdec7bd41fb9b9741210ad2a1f3_%FP%_6bb184f66fd3a12efe1844e433fc11c3",
+        micMixer = "mixer",
+        roomControls = "device_controller_script"
+    }
     
     -- Direct component references for speed
     self.components = {
         callSync = nil,
-        micBoxes = {}, -- Pre-allocated array
+        micBoxes = {},
         micMixer = nil,
         roomControls = nil,
         invalid = {} -- Track invalid components
     }
     
-    -- Consolidated state management
+    -- State tracking
     self.state = {
         globalMute = false,
         offHook = false,
@@ -76,7 +84,7 @@ function ClockAudioCDTMicController.new(roomName, config)
         testMode = false -- Test mode state
     }
     
-    -- Optimized configuration
+    -- Configuration
     self.config = {
         ledDelay = 0.1, -- Reduced for responsiveness
         initDelay = 0.2, -- Faster initialization
@@ -84,7 +92,7 @@ function ClockAudioCDTMicController.new(roomName, config)
         brightnessDelay = 2.0 -- LED brightness delay
     }
     
-    -- Initialize optimized modules
+    -- Initialize modules
     self:initLEDModule()
     self:initMicModule()
     self:initTestModule() -- Add test module
@@ -92,10 +100,10 @@ function ClockAudioCDTMicController.new(roomName, config)
     return self
 end
 
---------** Debug (Only When Needed) **--------
+--------** Debug Helper **--------
 function ClockAudioCDTMicController:debugPrint(str)
     if self.debugging then 
-        print("["..self.roomName.."] "..str) 
+        print("["..self.roomName.." CDT] "..str) 
     end
 end
 
@@ -420,13 +428,13 @@ function ClockAudioCDTMicController:getComponentNames()
     }
 
     for _, component in pairs(Component.GetComponents()) do
-        if component.Type == "call_sync" then
+        if component.Type == self.componentTypes.callSync then
             table.insert(namesTable.CallSyncNames, component.Name)
-        elseif component.Type == "%PLUGIN%_91b57fdec7bd41fb9b9741210ad2a1f3_%FP%_6bb184f66fd3a12efe1844e433fc11c3" then
+        elseif component.Type == self.componentTypes.micBoxes then
             table.insert(namesTable.MicBoxNames, component.Name)
-        elseif component.Type == "device_controller_script" and component.Name:match("^compRoomControls") then
+        elseif component.Type == self.componentTypes.roomControls and component.Name:match("^compRoomControls") then
             table.insert(namesTable.RoomControlsNames, component.Name)
-        elseif component.Type == "mixer" then
+        elseif component.Type == self.componentTypes.micMixer then
             table.insert(namesTable.MicMixerNames, component.Name)
         end
     end

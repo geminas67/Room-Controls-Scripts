@@ -29,13 +29,6 @@ local vDisplayControls = {
     wallPosition = "WallPosition"
 }
 
--- Timer Configuration (easily changeable)
-local timerConfig = {
-    warmupTime = 7,      -- Seconds for displays to warm up
-    cooldownTime = 5,     -- Seconds for displays to cool down
-    displaysMax = 9       -- Maximum number of displays supported
-}
-
 -- Validate required controls exist
 local function validateControls()
     if not Controls.txtStatus or not Controls.devDisplays then
@@ -44,6 +37,8 @@ local function validateControls()
     end
     return true
 end
+
+
 
 --------** Class Definition **--------
 LGDisplayWallController = {}
@@ -58,14 +53,14 @@ function LGDisplayWallController.new(roomName, config)
     self.clearString = "[Clear]"
 
     self.componentTypes = {
-        displays = "%PLUGIN%_e9ef4a50-ba74-4653-a22e-a58c02839313_%FP%_c7165c3b15ead5f69821d69583f73c8b",
+        displays = "%PLUGIN%_e9ef4a50-ba74-4653-a22e-a58c02839313_%FP%_c7165c3b15ead5f69821d69583f73c8b", -- LG Display
         roomControls = "device_controller_script" -- Will be filtered to only those starting with "compRoomControls"
     }
     
     -- Component storage
     self.components = {
-        displays = {}, -- Array for multiple displays
-        compRoomControls = nil, -- Room controls component
+        displays = {},
+        compRoomControls = nil,
         invalid = {}
     }
     
@@ -80,7 +75,7 @@ function LGDisplayWallController.new(roomName, config)
     
     -- Configuration
     self.config = {
-        maxDisplays = config and config.maxDisplays or timerConfig.displaysMax,
+        maxDisplays = config and config.maxDisplays or 9, -- Maximum number of displays supported
         defaultInput = "HDMI1",
         displayWallModes = {"Single", "2x2", "3x3", "4x4", "Custom"},
         inputChoices = {"HDMI1", "HDMI2", "DisplayPort", "USB-C"}
@@ -98,10 +93,83 @@ function LGDisplayWallController.new(roomName, config)
         cooldown = Timer.New()
     }
     
+    -- Timer Configuration (instance-specific, dynamically updated from room controls component)
+    self.timerConfig = {
+        warmupTime = 7,  -- Default fallback values
+        cooldownTime = 5
+    }
+    
     -- Initialize modules
     self:initDisplayModule()
     self:initPowerModule()
+    
+    -- Initialize timer configuration
+    self:updateTimerConfigFromComponent()
     return self
+end
+
+--------** Dynamic Timer Configuration **--------
+function LGDisplayWallController:updateTimerConfigFromComponent()
+    -- Default fallback values
+    local defaultWarmupTime = 7
+    local defaultCooldownTime = 5
+    
+    if self.components.compRoomControls then
+        local success, result = pcall(function()
+            -- Try to get warmup time from room controls component
+            if self.components.compRoomControls["warmupTime"] then
+                local warmupTime = self.components.compRoomControls["warmupTime"].Value
+                if warmupTime and warmupTime > 0 then
+                    self.timerConfig.warmupTime = warmupTime
+                    self:debugPrint("Updated warmup time from component: " .. warmupTime .. " seconds")
+                else
+                    self.timerConfig.warmupTime = defaultWarmupTime
+                    self:debugPrint("Using default warmup time: " .. defaultWarmupTime .. " seconds")
+                end
+            else
+                self.timerConfig.warmupTime = defaultWarmupTime
+                self:debugPrint("Using default warmup time: " .. defaultWarmupTime .. " seconds")
+            end
+            
+            -- Try to get cooldown time from room controls component
+            if self.components.compRoomControls["cooldownTime"] then
+                local cooldownTime = self.components.compRoomControls["cooldownTime"].Value
+                if cooldownTime and cooldownTime > 0 then
+                    self.timerConfig.cooldownTime = cooldownTime
+                    self:debugPrint("Updated cooldown time from component: " .. cooldownTime .. " seconds")
+                else
+                    self.timerConfig.cooldownTime = defaultCooldownTime
+                    self:debugPrint("Using default cooldown time: " .. defaultCooldownTime .. " seconds")
+                end
+            else
+                self.timerConfig.cooldownTime = defaultCooldownTime
+                self:debugPrint("Using default cooldown time: " .. defaultCooldownTime .. " seconds")
+            end
+        end)
+        
+        if not success then
+            self:debugPrint("Warning: Failed to update timer config from component: " .. tostring(result))
+            -- Set fallback values on error
+            self.timerConfig.warmupTime = defaultWarmupTime
+            self.timerConfig.cooldownTime = defaultCooldownTime
+        end
+    else
+        -- No room controls component available, use defaults
+        self.timerConfig.warmupTime = defaultWarmupTime
+        self.timerConfig.cooldownTime = defaultCooldownTime
+        self:debugPrint("No room controls component available, using default timing values")
+    end
+end
+
+function LGDisplayWallController:getTimerConfig(isWarmup)
+    -- Update timer config from component first
+    self:updateTimerConfigFromComponent()
+    
+    if isWarmup then
+        return self.timerConfig.warmupTime
+    else
+        return self.timerConfig.cooldownTime
+    end
 end
 
 --------** Debug Helper **--------
@@ -374,7 +442,7 @@ function LGDisplayWallController:initPowerModule()
             if Controls.ledDisplayWarming then
                 Controls.ledDisplayWarming.Boolean = true
             end
-            selfRef.timers.warmup:Start(timerConfig.warmupTime)
+            selfRef.timers.warmup:Start(selfRef:getTimerConfig(true))
             selfRef.powerModule.setDisplayPowerFB(true)
         end,
         
@@ -386,7 +454,7 @@ function LGDisplayWallController:initPowerModule()
             if Controls.ledDisplayCooling then
                 Controls.ledDisplayCooling.Boolean = true
             end
-            selfRef.timers.cooldown:Start(timerConfig.cooldownTime)
+            selfRef.timers.cooldown:Start(selfRef:getTimerConfig(false))
             selfRef.powerModule.setDisplayPowerFB(false)
         end,
         
@@ -398,7 +466,7 @@ function LGDisplayWallController:initPowerModule()
             if Controls.ledDisplayWarming then
                 Controls.ledDisplayWarming.Boolean = true
             end
-            selfRef.timers.warmup:Start(timerConfig.warmupTime)
+            selfRef.timers.warmup:Start(selfRef:getTimerConfig(true))
             selfRef.powerModule.setDisplayPowerFB(true)
         end,
         
@@ -410,7 +478,7 @@ function LGDisplayWallController:initPowerModule()
             if Controls.ledDisplayCooling then
                 Controls.ledDisplayCooling.Boolean = true
             end
-            selfRef.timers.cooldown:Start(timerConfig.cooldownTime)
+            selfRef.timers.cooldown:Start(selfRef:getTimerConfig(false))
             selfRef.powerModule.setDisplayPowerFB(false)
         end,
         
@@ -499,6 +567,10 @@ end
 
 function LGDisplayWallController:setRoomControlsComponent()
     self.components.compRoomControls = self:setComponent(Controls.compRoomControls, "Room Controls")
+    -- Update timer configuration from room controls component
+    if self.components.compRoomControls then
+        self:updateTimerConfigFromComponent()
+    end
 end
 
 function LGDisplayWallController:setDisplayComponent(index)
@@ -615,6 +687,9 @@ function LGDisplayWallController:updateRoomNameFromComponent()
                 self:debugPrint("Room name updated to: "..newRoomName)
             end
         end
+        
+        -- Also update timer configuration when room controls component is available
+        self:updateTimerConfigFromComponent()
     end
 end
 
@@ -748,6 +823,9 @@ function LGDisplayWallController:funcInit()
     
     -- Update power feedback based on current display status
     self.powerModule.updatePowerFeedbackFromDisplays()
+    
+    -- Update timer configuration from room controls component
+    self:updateTimerConfigFromComponent()
     
     self:debugPrint("LG DisplayWallController Initialized with " .. 
                    self.displayModule.getDisplayCount() .. " displays")

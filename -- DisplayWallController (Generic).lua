@@ -9,32 +9,27 @@
 ]]--
 
 -- Display Control Configuration (easily changeable for different manufacturers)
-local vDisplayControls = {
+local displayControls = {
     -- Power Controls
-    vPowerOn = "PowerOnTrigger",
-    vPowerOff = "PowerOffTrigger", 
-    vPowerStatus = "PowerStatus",
+    powerOn = "PowerOnTrigger",
+    powerOff = "PowerOffTrigger", 
+    powerStatus = "PowerStatus",
     
     -- Input Controls (Option 1: ComboBox method)
-    vInputSelectComboBox = "InputSelectComboBox",
-    vInputStatusLED = "InputStatus",
+    inputSelectComboBox = "InputSelectComboBox",
+    inputStatusLED = "InputStatus",
     
     -- Input Controls (Option 2: Button method)
-    vInputSelectButtons = "Input",
-    vInputNames = "InputNames ",
-    vCurrentInput = "CurrentInput ",
+    inputSelectButtons = "Input",
+    inputNames = "InputNames ",
+    currentInput = "CurrentInput ",
     
     -- Wall Configuration
-    vWallMode = "WallMode",
-    vWallPosition = "WallPosition"
+    wallMode = "WallMode",
+    wallPosition = "WallPosition"
 }
 
--- Timer Configuration (easily changeable)
-local vTimerConfig = {
-    vWarmupTime = 7,      -- Seconds for displays to warm up
-    vCooldownTime = 5,     -- Seconds for displays to cool down
-    vMaxDisplays = 9       -- Maximum number of displays supported
-}
+
 
 -- Validate required controls exist
 local function validateControls()
@@ -46,11 +41,11 @@ local function validateControls()
 end
 
 --------** Class Definition **--------
-LGDisplayWallController = {}
-LGDisplayWallController.__index = LGDisplayWallController
+GenericDisplayWallController = {}
+GenericDisplayWallController.__index = GenericDisplayWallController
 
-function LGDisplayWallController.new(roomName, config)
-    local self = setmetatable({}, LGDisplayWallController)
+function GenericDisplayWallController.new(roomName, config)
+    local self = setmetatable({}, GenericDisplayWallController)
     
     -- Instance properties
     self.roomName = roomName or "Default Room"
@@ -73,12 +68,14 @@ function LGDisplayWallController.new(roomName, config)
     self.state = {
         displayWallMode = "Single", -- Single, 2x2, 3x3, etc.
         lastInput = "HDMI1",
-        powerState = false
+        powerState = false,
+        isWarming = false,
+        isCooling = false
     }
     
     -- Configuration
     self.config = {
-        maxDisplays = config and config.maxDisplays or vTimerConfig.vMaxDisplays,
+        maxDisplays = config and config.maxDisplays or 9,
         defaultInput = "HDMI1",
         displayWallModes = {"Single", "2x2", "3x3", "4x4", "Custom"},
         inputChoices = {"HDMI1", "HDMI2", "DisplayPort", "USB-C"}
@@ -96,19 +93,92 @@ function LGDisplayWallController.new(roomName, config)
         cooldown = Timer.New()
     }
     
+    -- Timer Configuration (instance-specific, dynamically updated from room controls component)
+    self.timerConfig = {
+        warmupTime = 7,  -- Default fallback values
+        cooldownTime = 5
+    }
+    
     -- Initialize modules
     self:initDisplayModule()
     self:initPowerModule()
+
+    -- Initialize timer configuration
+    self:updateTimerConfigFromComponent()
     return self
 end
 
+--------** Dynamic Timer Configuration **--------   
+function GenericDisplayWallController:updateTimerConfigFromComponent()
+    -- Default fallback values
+    local defaultWarmupTime = 7
+    local defaultCooldownTime = 5
+    
+    if self.components.compRoomControls then
+        local success, result = pcall(function()
+            -- Try to get warmup time from room controls component
+            if self.components.compRoomControls["warmupTime"] then
+                local warmupTime = self.components.compRoomControls["warmupTime"].Value
+                if warmupTime and warmupTime > 0 then
+                    self.timerConfig.warmupTime = warmupTime
+                    self:debugPrint("Updated warmup time from component: " .. warmupTime .. " seconds")
+                else
+                    self.timerConfig.warmupTime = defaultWarmupTime
+                    self:debugPrint("Using default warmup time: " .. defaultWarmupTime .. " seconds")
+                end
+            else
+                self.timerConfig.warmupTime = defaultWarmupTime
+                self:debugPrint("Using default warmup time: " .. defaultWarmupTime .. " seconds")
+            end
+            
+            -- Try to get cooldown time from room controls component
+            if self.components.compRoomControls["cooldownTime"] then
+                local cooldownTime = self.components.compRoomControls["cooldownTime"].Value
+                if cooldownTime and cooldownTime > 0 then
+                    self.timerConfig.cooldownTime = cooldownTime
+                    self:debugPrint("Updated cooldown time from component: " .. cooldownTime .. " seconds")
+                else
+                    self.timerConfig.cooldownTime = defaultCooldownTime
+                    self:debugPrint("Using default cooldown time: " .. defaultCooldownTime .. " seconds")
+                end
+            else
+                self.timerConfig.cooldownTime = defaultCooldownTime
+                self:debugPrint("Using default cooldown time: " .. defaultCooldownTime .. " seconds")
+            end
+        end)
+
+        if not success then
+            self:debugPrint("Warning:  Failed to update timer config from component: " .. tostring(result))
+            -- Set fallback values on error
+            self.timerConfig.warmupTime = defaultWarmupTime
+            self.timerConfig.cooldownTime = defaultCooldownTime
+        end
+    else
+        -- No room controls component available, use defaults
+        self.timerConfig.warmupTime = defaultWarmupTime
+        self.timerConfig.cooldownTime = defaultCooldownTime
+        self:debugPrint("No room controls component available, using default timing values")
+    end
+end
+
+function GenericDisplayWallController:getTimerConfig(isWarmup)
+    -- Update timer config from component first
+    self:updateTimerConfigFromComponent()
+    
+    if isWarmup then
+        return self.timerConfig.warmupTime
+    else
+        return self.timerConfig.cooldownTime
+    end
+end
+
 --------** Debug Helper **--------
-function LGDisplayWallController:debugPrint(str)
+function GenericDisplayWallController:debugPrint(str)
     if self.debugging then print("["..self.roomName.." Debug] "..str) end
 end
 
 --------** Input Button Mapping **--------
-function LGDisplayWallController:getInputButtonNumber(input)
+function GenericDisplayWallController:getInputButtonNumber(input)
     local normalizedInput = input:gsub("USB%-C", "USB_C")
     local buttonNumber = self.inputButtonMap[normalizedInput]
     if not buttonNumber then
@@ -118,7 +188,7 @@ function LGDisplayWallController:getInputButtonNumber(input)
 end
 
 --------** Safe Component Access **--------
-function LGDisplayWallController:safeComponentAccess(component, control, action, value)
+function GenericDisplayWallController:safeComponentAccess(component, control, action, value)
     local success, result = pcall(function()
         if component and component[control] then
             if action == "set" then
@@ -152,14 +222,14 @@ function LGDisplayWallController:safeComponentAccess(component, control, action,
 end
 
 --------** Display Module **--------
-function LGDisplayWallController:initDisplayModule()
+function GenericDisplayWallController:initDisplayModule()
     local selfRef = self
     self.displayModule = {
         powerAll = function(state)
             selfRef:debugPrint("Powering all displays: " .. tostring(state))
             for i, display in pairs(selfRef.components.displays) do
                 if display then
-                    local control = state and vDisplayControls.vPowerOn or vDisplayControls.vPowerOff
+                    local control = state and displayControls.powerOn or displayControls.powerOff
                     selfRef:safeComponentAccess(display, control, "trigger")
                 end
             end
@@ -172,7 +242,7 @@ function LGDisplayWallController:initDisplayModule()
         powerSingle = function(index, state)
             local display = selfRef.components.displays[index]
             if display then
-                local control = state and vDisplayControls.vPowerOn or vDisplayControls.vPowerOff
+                local control = state and displayControls.powerOn or displayControls.powerOff
                 selfRef:safeComponentAccess(display, control, "trigger")
                 selfRef:debugPrint("Display " .. index .. " power: " .. tostring(state))
             end
@@ -183,13 +253,13 @@ function LGDisplayWallController:initDisplayModule()
             for i, display in pairs(selfRef.components.displays) do
                 if display then
                     -- Try Option 1: InputSelectComboBox (if available)
-                    if display[vDisplayControls.vInputSelectComboBox] then
-                        selfRef:safeComponentAccess(display, vDisplayControls.vInputSelectComboBox, "setString", input)
+                    if display[displayControls.inputSelectComboBox] then
+                        selfRef:safeComponentAccess(display, displayControls.inputSelectComboBox, "setString", input)
                     else
                         -- Fallback to Option 2: InputSelectButtons
                         local buttonNumber = selfRef:getInputButtonNumber(input)
                         if buttonNumber then
-                            local buttonName = vDisplayControls.vInputSelectButtons .. buttonNumber .. "Trigger"
+                            local buttonName = displayControls.inputSelectButtons .. buttonNumber .. "Trigger"
                             selfRef:safeComponentAccess(display, buttonName, "trigger")
                         end
                     end
@@ -205,14 +275,14 @@ function LGDisplayWallController:initDisplayModule()
             local display = selfRef.components.displays[index]
             if display then
                 -- Try Option 1: InputSelectComboBox (if available)
-                if display[vDisplayControls.vInputSelectComboBox] then
-                    selfRef:safeComponentAccess(display, vDisplayControls.vInputSelectComboBox, "setString", input)
+                if display[displayControls.inputSelectComboBox] then
+                    selfRef:safeComponentAccess(display, displayControls.inputSelectComboBox, "setString", input)
                     selfRef:debugPrint("Display " .. index .. " input: " .. input .. " (via ComboBox)")
                 else
                     -- Fallback to Option 2: InputSelectButtons
                     local buttonNumber = selfRef:getInputButtonNumber(input)
                     if buttonNumber then
-                        local buttonName = vDisplayControls.vInputSelectButtons .. buttonNumber .. "Trigger"
+                        local buttonName = displayControls.inputSelectButtons .. buttonNumber .. "Trigger"
                         selfRef:safeComponentAccess(display, buttonName, "trigger")
                         selfRef:debugPrint("Display " .. index .. " input: " .. input .. " (button " .. buttonNumber .. ")")
                     end
@@ -233,20 +303,20 @@ function LGDisplayWallController:initDisplayModule()
             if not display then return nil end
             
             -- Try Option 1: InputSelectComboBox
-            if display[vDisplayControls.vInputSelectComboBox] then
-                return selfRef:safeComponentAccess(display, vDisplayControls.vInputSelectComboBox, "getString")
+            if display[displayControls.inputSelectComboBox] then
+                return selfRef:safeComponentAccess(display, displayControls.inputSelectComboBox, "getString")
             end
             
             -- Option 2: Check CurrentInput 1-10 LEDs to find active input
             for i = 1, 10 do
-                local currentInputControl = display[vDisplayControls.vCurrentInput .. i]
+                local currentInputControl = display[displayControls.currentInput .. i]
                 if currentInputControl then
-                    local isActive = selfRef:safeComponentAccess(display, vDisplayControls.vCurrentInput .. i, "get")
+                    local isActive = selfRef:safeComponentAccess(display, displayControls.currentInput .. i, "get")
                     if isActive then
                         -- Get the input name from InputNames
-                        local inputNameControl = display[vDisplayControls.vInputNames .. i]
+                        local inputNameControl = display[displayControls.inputNames .. i]
                         if inputNameControl then
-                            return selfRef:safeComponentAccess(display, vDisplayControls.vInputNames .. i, "getString")
+                            return selfRef:safeComponentAccess(display, displayControls.inputNames .. i, "getString")
                         else
                             return "Input " .. i
                         end
@@ -266,15 +336,15 @@ function LGDisplayWallController:initDisplayModule()
             if maxDisplays > 0 then
                 for i = 1, maxDisplays do
                     if selfRef.components.displays[i] then
-                        selfRef:safeComponentAccess(selfRef.components.displays[i], vDisplayControls.vWallMode, "setString", mode)
-                        selfRef:safeComponentAccess(selfRef.components.displays[i], vDisplayControls.vWallPosition, "setString", "Position" .. i)
+                        selfRef:safeComponentAccess(selfRef.components.displays[i], displayControls.wallMode, "setString", mode)
+                        selfRef:safeComponentAccess(selfRef.components.displays[i], displayControls.wallPosition, "setString", "Position" .. i)
                     end
                 end
             else
                 -- Single mode - disable wall mode
                 for i, display in pairs(selfRef.components.displays) do
                     if display then
-                        selfRef:safeComponentAccess(display, vDisplayControls.vWallMode, "setString", "Single")
+                        selfRef:safeComponentAccess(display, displayControls.wallMode, "setString", "Single")
                     end
                 end
             end
@@ -287,7 +357,7 @@ function LGDisplayWallController:initDisplayModule()
 end
 
 --------** Power Module **--------
-function LGDisplayWallController:initPowerModule()
+function GenericDisplayWallController:initPowerModule()
     local selfRef = self
     self.powerModule = {
         enableDisablePowerControls = function(state)
@@ -310,28 +380,28 @@ function LGDisplayWallController:initPowerModule()
             selfRef:debugPrint("Powering on display " .. index)
             selfRef.displayModule.powerSingle(index, true)
             selfRef.powerModule.enableDisableIndexPowerControl(index, "powerOn", false)
-            selfRef.timers.warmup:Start(vTimerConfig.vWarmupTime)
+            selfRef.timers.warmup:Start(selfRef.timerConfig.warmupTime)
         end,
         
         powerOffDisplay = function(index)
             selfRef:debugPrint("Powering off display " .. index)
             selfRef.displayModule.powerSingle(index, false)
             selfRef.powerModule.enableDisableIndexPowerControl(index, "powerOff", false)
-            selfRef.timers.cooldown:Start(vTimerConfig.vCooldownTime)
+            selfRef.timers.cooldown:Start(selfRef.timerConfig.cooldownTime)
         end,
         
         powerOnAll = function()
             selfRef:debugPrint("Powering on all displays")
             selfRef.displayModule.powerAll(true)
             selfRef.powerModule.enableDisablePowerControls(false)
-            selfRef.timers.warmup:Start(vTimerConfig.vWarmupTime)
+            selfRef.timers.warmup:Start(selfRef.timerConfig.warmupTime)
         end,
         
         powerOffAll = function()
             selfRef:debugPrint("Powering off all displays")
             selfRef.displayModule.powerAll(false)
             selfRef.powerModule.enableDisablePowerControls(false)
-            selfRef.timers.cooldown:Start(vTimerConfig.vCooldownTime)
+            selfRef.timers.cooldown:Start(selfRef.timerConfig.cooldownTime)
         end,
         
         enableDisableIndexPowerControl = function(index, controlType, state)
@@ -349,7 +419,7 @@ function LGDisplayWallController:initPowerModule()
 end
 
 --------** Component Management **--------
-function LGDisplayWallController:setComponent(ctrl, componentType)
+function GenericDisplayWallController:setComponent(ctrl, componentType)
     local componentName = ctrl and ctrl.String or nil
     if not componentName or componentName == "" or componentName == self.clearString then
         if ctrl then ctrl.Color = "white" end
@@ -369,17 +439,17 @@ function LGDisplayWallController:setComponent(ctrl, componentType)
     end
 end
 
-function LGDisplayWallController:setComponentInvalid(componentType)
+function GenericDisplayWallController:setComponentInvalid(componentType)
     self.components.invalid[componentType] = true
     self:checkStatus()
 end
 
-function LGDisplayWallController:setComponentValid(componentType)
+function GenericDisplayWallController:setComponentValid(componentType)
     self.components.invalid[componentType] = false
     self:checkStatus()
 end
 
-function LGDisplayWallController:checkStatus()
+function GenericDisplayWallController:checkStatus()
     for _, v in pairs(self.components.invalid) do
         if v == true then
             if Controls.txtStatus then
@@ -396,7 +466,7 @@ function LGDisplayWallController:checkStatus()
 end
 
 --------** Component Setup **--------
-function LGDisplayWallController:setupDisplayComponents()
+function GenericDisplayWallController:setupDisplayComponents()
     if not Controls.devDisplays then 
         self:debugPrint("No Controls.devDisplays found")
         return 
@@ -411,11 +481,11 @@ function LGDisplayWallController:setupDisplayComponents()
     end
 end
 
-function LGDisplayWallController:setRoomControlsComponent()
+function GenericDisplayWallController:setRoomControlsComponent()
     self.components.compRoomControls = self:setComponent(Controls.compRoomControls, "Room Controls")
 end
 
-function LGDisplayWallController:setDisplayComponent(index)
+function GenericDisplayWallController:setDisplayComponent(index)
     if not Controls.devDisplays or not Controls.devDisplays[index] then
         self:debugPrint("Display control " .. index .. " not found")
         return
@@ -433,31 +503,31 @@ function LGDisplayWallController:setDisplayComponent(index)
 end
 
 --------** Component Event Setup **--------
-function LGDisplayWallController:setupDisplayEvents(index)
+function GenericDisplayWallController:setupDisplayEvents(index)
     local display = self.components.displays[index]
     if not display then return end
     
     -- Set up power status monitoring
-    if display[vDisplayControls.vPowerStatus] then
-        display[vDisplayControls.vPowerStatus].EventHandler = function()
-            local powerState = self:safeComponentAccess(display, vDisplayControls.vPowerStatus, "get")
+    if display[displayControls.powerStatus] then
+        display[displayControls.powerStatus].EventHandler = function()
+            local powerState = self:safeComponentAccess(display, displayControls.powerStatus, "get")
             local componentName = Controls.devDisplays and Controls.devDisplays[index] and Controls.devDisplays[index].String or "Unknown"
             self:debugPrint("Display " .. componentName .. " power status: " .. tostring(powerState))
         end
     end
     
     -- Set up input status monitoring (Option 1: InputSelectComboBox + InputStatus LED)
-    if display[vDisplayControls.vInputSelectComboBox] then
-        display[vDisplayControls.vInputSelectComboBox].EventHandler = function()
-            local currentInput = self:safeComponentAccess(display, vDisplayControls.vInputSelectComboBox, "getString")
+    if display[displayControls.inputSelectComboBox] then
+        display[displayControls.inputSelectComboBox].EventHandler = function()
+            local currentInput = self:safeComponentAccess(display, displayControls.inputSelectComboBox, "getString")
             local componentName = Controls.devDisplays and Controls.devDisplays[index] and Controls.devDisplays[index].String or "Unknown"
             self:debugPrint("Display " .. componentName .. " current input: " .. tostring(currentInput))
         end
     end
     
-    if display[vDisplayControls.vInputStatusLED] then
-        display[vDisplayControls.vInputStatusLED].EventHandler = function()
-            local inputActive = self:safeComponentAccess(display, vDisplayControls.vInputStatusLED, "get")
+    if display[displayControls.inputStatusLED] then
+        display[displayControls.inputStatusLED].EventHandler = function()
+            local inputActive = self:safeComponentAccess(display, displayControls.inputStatusLED, "get")
             local componentName = Controls.devDisplays and Controls.devDisplays[index] and Controls.devDisplays[index].String or "Unknown"
             self:debugPrint("Display " .. componentName .. " input active: " .. tostring(inputActive))
         end
@@ -465,10 +535,10 @@ function LGDisplayWallController:setupDisplayEvents(index)
     
     -- Set up input status monitoring (Option 2: CurrentInput 1-10 LEDs)
     for i = 1, 10 do
-        local currentInputControl = display[vDisplayControls.vCurrentInput .. i]
+        local currentInputControl = display[displayControls.currentInput .. i]
         if currentInputControl then
             currentInputControl.EventHandler = function()
-                local inputActive = self:safeComponentAccess(display, vDisplayControls.vCurrentInput .. i, "get")
+                local inputActive = self:safeComponentAccess(display, displayControls.currentInput .. i, "get")
                 local componentName = Controls.devDisplays and Controls.devDisplays[index] and Controls.devDisplays[index].String or "Unknown"
                 self:debugPrint("Display " .. componentName .. " input " .. i .. " active: " .. tostring(inputActive))
             end
@@ -477,7 +547,7 @@ function LGDisplayWallController:setupDisplayEvents(index)
 end
 
 --------** Dynamic Component Discovery **--------
-function LGDisplayWallController:getComponentNames()
+function GenericDisplayWallController:getComponentNames()
     local namesTable = {
         DisplayNames = {},
         RoomControlsNames = {},
@@ -514,7 +584,7 @@ function LGDisplayWallController:getComponentNames()
 end
 
 --------** Room Name Management **--------
-function LGDisplayWallController:updateRoomNameFromComponent()
+function GenericDisplayWallController:updateRoomNameFromComponent()
     if self.components.compRoomControls then
         local roomNameControl = self.components.compRoomControls["roomName"]
         if roomNameControl and roomNameControl.String and roomNameControl.String ~= "" then
@@ -528,7 +598,7 @@ function LGDisplayWallController:updateRoomNameFromComponent()
 end
 
 --------** Timer Event Handlers **--------
-function LGDisplayWallController:registerTimerHandlers()
+function GenericDisplayWallController:registerTimerHandlers()
     self.timers.warmup.EventHandler = function()
         self:debugPrint("Warmup Period Has Ended")
         self.powerModule.enableDisablePowerControls(true)
@@ -543,7 +613,7 @@ function LGDisplayWallController:registerTimerHandlers()
 end
 
 --------** Streamlined Event Handler Registration **--------
-function LGDisplayWallController:registerEventHandlers()
+function GenericDisplayWallController:registerEventHandlers()
     -- Room controls component handler
     if Controls.compRoomControls then
         Controls.compRoomControls.EventHandler = function()
@@ -629,8 +699,8 @@ function LGDisplayWallController:registerEventHandlers()
 end
 
 --------** Initialization **--------
-function LGDisplayWallController:funcInit()
-    self:debugPrint("Starting LG DisplayWallController initialization...")
+function GenericDisplayWallController:funcInit()
+    self:debugPrint("Starting Generic DisplayWallController initialization...")
     
     -- Discover and populate component choices
     self:getComponentNames()
@@ -650,12 +720,12 @@ function LGDisplayWallController:funcInit()
         Controls.txtDisplayWallMode.String = self.state.displayWallMode
     end
     
-    self:debugPrint("LG DisplayWallController Initialized with " .. 
+    self:debugPrint("Generic DisplayWallController Initialized with " .. 
                    self.displayModule.getDisplayCount() .. " displays")
 end
 
 --------** Cleanup **--------
-function LGDisplayWallController:cleanup()
+function GenericDisplayWallController:cleanup()
     -- Clear event handlers for displays
     for i, display in pairs(self.components.displays) do
         if display then
@@ -679,15 +749,15 @@ function LGDisplayWallController:cleanup()
 end
 
 --------** Factory Function **--------
-local function createLGDisplayWallController(roomName, config)
-    print("Creating LG DisplayWallController for: "..tostring(roomName))
+local function createGenericDisplayWallController(roomName, config)
+    print("Creating Generic DisplayWallController for: "..tostring(roomName))
     local success, controller = pcall(function()
-        local instance = LGDisplayWallController.new(roomName, config)
+        local instance = GenericDisplayWallController.new(roomName, config)
         instance:funcInit()
         return instance
     end)
     if success then
-        print("Successfully created LG DisplayWallController for "..roomName)
+        print("Successfully created Generic DisplayWallController for "..roomName)
         return controller
     else
         print("Failed to create controller for "..roomName..": "..tostring(controller))
@@ -720,14 +790,14 @@ local function getRoomNameFromComponent()
     end
     
     -- Final fallback to default room name
-    return "[LG Display Wall]"
+    return "[Generic Display Wall]"
 end
 
 local roomName = getRoomNameFromComponent()
-myLGDisplayWallController = createLGDisplayWallController(roomName)
+myGenericDisplayWallController = createGenericDisplayWallController(roomName)
 
-if myLGDisplayWallController then
-    print("LG DisplayWallController created successfully!")
+if myGenericDisplayWallController then
+    print("Generic DisplayWallController created successfully!")
 else
-    print("ERROR: Failed to create LG DisplayWallController!")
+    print("ERROR: Failed to create Generic DisplayWallController!")
 end 

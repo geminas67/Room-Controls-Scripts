@@ -303,7 +303,7 @@ function SystemAutomationController:initMotionModule()
                     self:debugPrint("Starting Motion Off Timer")
                     self.state.motionTimeoutActive = true
                     Controls.ledMotionTimeoutActive.Boolean = true
-                    self.timers.motion:Start(Controls.MotionTimeout.Value)
+                    self.timers.motion:Start(Controls.motionTimeout.Value)
                 end
             end
         end
@@ -889,11 +889,11 @@ function SystemAutomationController:setupConfigSelection()
 
     -- Define control mappings with array support
     local controlMappings = {
-        { control = "WarmupTime", config = "warmupTime", isArray = false },
-        { control = "CooldownTime", config = "cooldownTime", isArray = false },
-        { control = "MotionTimeout", config = "motionTimeout", isArray = false },
-        { control = "MotionGracePeriod", config = "gracePeriod", isArray = false },
-        { control = "DefaultVolume", config = "defaultVolume", isArray = true, index = 1 }
+        { control = "warmupTime", config = "warmupTime", isArray = false },
+        { control = "cooldownTime", config = "cooldownTime", isArray = false },
+        { control = "motionTimeout", config = "motionTimeout", isArray = false },
+        { control = "motionGracePeriod", config = "gracePeriod", isArray = false },
+        { control = "defaultVolume", config = "defaultVolume", isArray = true, index = 1 }
     }
 
     -- Function to update control values based on selected configuration
@@ -971,11 +971,11 @@ local function createSystemController(roomName, roomType)
         },
         ["User Defined"] = {
             debugging = true,
-            warmupTime = Controls.WarmupTime.Value,
-            cooldownTime = Controls.CooldownTime.Value,
-            motionTimeout = Controls.MotionTimeout.Value,
-            gracePeriod = Controls.MotionGracePeriod.Value,
-            defaultVolume = Controls.DefaultVolume[1].Value
+            warmupTime = Controls.warmupTime.Value,
+            cooldownTime = Controls.cooldownTime.Value,
+            motionTimeout = Controls.motionTimeout.Value,
+            gracePeriod = Controls.motionGracePeriod.Value,
+            defaultVolume = Controls.defaultVolume[1].Value
         }
     }
 
