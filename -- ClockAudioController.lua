@@ -1,58 +1,25 @@
 --[[
-  ClockAudioCDTMicController - High-Performance Q-SYS Control Script
-  Author: Performance Optimized Version
-  Date: 2025-01-27
-  Version: 3.1
-  Description: Ultra-responsive ClockAudio CDT microphone controller with optimized event handling and test mode
+  ClockAudioCDTMicController - Q-SYS Control Script for ClockAudio CDT 100
+  Author: Nikolas Smith
+  Date: 2025-07-13
+  Version: 1.0
+  Description: ClockAudio CDT microphone controller with optimized event handling
 ]]--
 
--- Global control cache for fastest access
-local controlCache = {
+local controls = {
     compMicBox = Controls.compMicBox,
     compMicMixer = Controls.compMicMixer,   
     compCallSync = Controls.compCallSync,
     compRoomControls = Controls.compRoomControls,
     txtStatus = Controls.txtStatus,
-    -- Test control for hook state emulation
-    btnTestHookState = Controls.btnTestHookState
 }
 
--- Validate required controls exist
-local function validateControls()
-    local missingControls = {}
-    
-    if not controlCache.compMicBox then
-        table.insert(missingControls, "compMicBox")
-    end
-    
-    if not controlCache.compMicMixer then
-        table.insert(missingControls, "compMicMixer")
-    end
-    
-    if not controlCache.compCallSync then
-        table.insert(missingControls, "compCallSync")
-    end
-    
-    if not controlCache.compRoomControls then
-        table.insert(missingControls, "compRoomControls")
-    end
-    
-    if #missingControls > 0 then
-        print("ERROR: Missing required controls: " .. table.concat(missingControls, ", "))
-        return false
-    end
-    
-    return true
-end
-
---------** Class Definition **--------
+--------** Class Constructor **--------
 ClockAudioCDTMicController = {}
 ClockAudioCDTMicController.__index = ClockAudioCDTMicController
 
 function ClockAudioCDTMicController.new(roomName, config)
     local self = setmetatable({}, ClockAudioCDTMicController)
-    
-    -- Core properties
     self.roomName = roomName or "ClockAudio CDT"
     self.debugging = (config and config.debugging) or false
     self.clearString = "[Clear]"
@@ -71,31 +38,28 @@ function ClockAudioCDTMicController.new(roomName, config)
         micBoxes = {},
         micMixer = nil,
         roomControls = nil,
-        invalid = {} -- Track invalid components
+        invalid = {}
     }
     
     -- State tracking
     self.state = {
         globalMute = false,
         offHook = false,
-        privacyEnabled = false,
+        audioPrivacy = false,
         systemPower = true,
-        fireAlarm = false,
-        testMode = false -- Test mode state
+        fireAlarm = false
     }
     
     -- Configuration
     self.config = {
-        ledDelay = 0.1, -- Reduced for responsiveness
-        initDelay = 0.2, -- Faster initialization
-        toggleInterval = 1.0, -- LED toggle speed
-        brightnessDelay = 2.0 -- LED brightness delay
+        toggleInterval = 1.0
     }
-    
+
+    -- Store controls reference for better performance
+    self.controls = controls    
+
     -- Initialize modules
-    self:initLEDModule()
-    self:initMicModule()
-    self:initTestModule() -- Add test module
+    self:initCDTModule()
     
     return self
 end
@@ -113,25 +77,35 @@ function ClockAudioCDTMicController:setComponent(controlRef, componentName)
         if controlRef then controlRef.Color = "white" end
         self:setComponentValid(componentName)
         return nil
-    elseif #Component.GetControls(Component.New(controlRef.String)) < 1 then
+    end
+    
+    -- Try to create the component first
+    local component = Component.New(controlRef.String)
+    if not component then
         if controlRef then
             controlRef.String = "[Invalid Component Selected]"
             controlRef.Color = "pink"
         end
         self:setComponentInvalid(componentName)
         return nil
-    else
-        if controlRef then controlRef.Color = "white" end
-        self:setComponentValid(componentName)
-        local component = Component.New(controlRef.String)
-        if component then
-            self:debugPrint("Connected to "..componentName)
-            return component
-        else
-            self:debugPrint("Failed to connect to "..componentName)
-            return nil
-        end
     end
+    
+    -- Check if component has controls (more reliable validation)
+    local controls = Component.GetControls(component)
+    if not controls or #controls < 1 then
+        if controlRef then
+            controlRef.String = "[Invalid Component Selected]"
+            controlRef.Color = "pink"
+        end
+        self:setComponentInvalid(componentName)
+        return nil
+    end
+    
+    -- Component is valid
+    if controlRef then controlRef.Color = "white" end
+    self:setComponentValid(componentName)
+    self:debugPrint("Connected to "..componentName)
+    return component
 end
 
 function ClockAudioCDTMicController:setComponentInvalid(componentType)
@@ -147,178 +121,74 @@ end
 function ClockAudioCDTMicController:checkStatus()
     for _, v in pairs(self.components.invalid) do
         if v == true then
-            if controlCache.txtStatus then
-                controlCache.txtStatus.String = "Invalid Components"
-                controlCache.txtStatus.Value = 1
+            if controls.txtStatus then
+                controls.txtStatus.String = "Invalid Components"
+                controls.txtStatus.Value = 1
             end
             return
         end
     end
-    if controlCache.txtStatus then
-        controlCache.txtStatus.String = "OK"
-        controlCache.txtStatus.Value = 0
+    if controls.txtStatus then
+        controls.txtStatus.String = "OK"
+        controls.txtStatus.Value = 0
     end
 end
 
 function ClockAudioCDTMicController:setupComponents()
     -- Batch component setup for speed
-    self.components.roomControls = self:setComponent(controlCache.compRoomControls, "Room Controls")
-    self.components.callSync = self:setComponent(controlCache.compCallSync, "Call Sync")
-    self.components.micMixer = self:setComponent(controlCache.compMicMixer, "Mic Mixer")
+    self.components.roomControls = self:setComponent(controls.compRoomControls, "Room Controls")
+    self.components.callSync = self:setComponent(controls.compCallSync, "Call Sync")
+    self.components.micMixer = self:setComponent(controls.compMicMixer, "Mic Mixer")
     
     -- Setup mic boxes in batch
     for i = 1, 4 do
-        if controlCache.compMicBox[i] then
-            self.components.micBoxes[i] = self:setComponent(controlCache.compMicBox[i], "MicBox"..string.format("%02d", i))
+        if controls.compMicBox[i] then
+            self.components.micBoxes[i] = self:setComponent(controls.compMicBox[i], "MicBox"..string.format("%02d", i))
         end
     end
 end
 
---------** LED Module **--------
-function ClockAudioCDTMicController:initLEDModule()
+--------** CDT Module **--------
+function ClockAudioCDTMicController:initCDTModule()
     local selfRef = self
-    self.ledModule = {
-        -- Batch LED state updates for maximum performance
-        setBatchLEDState = function(color, state, brightness)
-            brightness = brightness or (state and 1 or 0)
-            for i = 1, 4 do
-                local box = selfRef.components.micBoxes[i]
-                if box then
-                    box['Global'..color..'State'].Boolean = state
-                    box['Global'..color..'Brightness'].Position = brightness
-                end
-            end
-        end,
-        
-        -- Direct LED control without function overhead
-        setGlobalLEDs = function(red, green)
-            for i = 1, 4 do
-                local box = selfRef.components.micBoxes[i]
-                if box then
-                    -- Direct property assignments
-                    box.GlobalRedState.Boolean = red
-                    box.GlobalGreenState.Boolean = green
-                    box.GlobalRedBrightness.Position = red and 1 or 0
-                    box.GlobalGreenBrightness.Position = green and 1 or 0
-                end
-            end
-        end,
-        
-        -- Optimized individual LED control
-        setIndividualLED = function(boxIndex, ledIndex, isActive, isRed)
-            local box = selfRef.components.micBoxes[boxIndex]
-            if not box then return end
-            
-            local color = isRed and "Red" or "Green"
-            local altColor = isRed and "Green" or "Red"
-            
-            -- Direct assignments for speed
-            box[color..'State '..ledIndex].Boolean = isActive
-            box[color..'Brightness '..ledIndex].Position = isActive and 1 or 0
-            box[altColor..'State '..ledIndex].Boolean = false
-            box[altColor..'Brightness '..ledIndex].Position = 0
-        end,
-        
-        -- Single-call LED update for all mic states
-        updateAllMicLEDs = function()
-            for boxIndex = 1, 4 do
-                local box = selfRef.components.micBoxes[boxIndex]
-                if box then
-                    local maxLeds = (boxIndex == 1 or boxIndex == 4) and 3 or 4
-                    for ledIndex = 1, maxLeds do
-                        local buttonState = box['ButtonState '..(ledIndex * 2 + 4)].Boolean
-                        if buttonState then
-                            local isRed = selfRef.state.globalMute
-                            selfRef.ledModule.setIndividualLED(boxIndex, ledIndex, true, isRed)
-                        else
-                            -- Turn off both colors directly
-                            box['RedState '..ledIndex].Boolean = false
-                            box['GreenState '..ledIndex].Boolean = false
-                            box['RedBrightness '..ledIndex].Position = 0
-                            box['GreenBrightness '..ledIndex].Position = 0
-                        end
-                    end
-                end
-            end
-        end,
-        
-        -- Batch LED updates for performance
-        updateAllLEDs = function()
-            Timer.CallAfter(function()
-                for boxIndex = 1, 4 do
-                    local box = selfRef.components.micBoxes[boxIndex]
-                    if box then
-                        local maxLeds = (boxIndex == 1 or boxIndex == 4) and 3 or 4
-                        for ledIndex = 1, maxLeds do
-                            local buttonState = box['ButtonState '..(ledIndex * 2 + 4)].Boolean
-                            if not buttonState then
-                                box['GreenBrightness '..ledIndex].Position = 0
-                                box['RedBrightness '..ledIndex].Position = 0
-                            end
-                        end
-                    end
-                end
-            end, selfRef.config.brightnessDelay)
-        end
-    }
-end
-
---------** CDT Mic Module **--------
-function ClockAudioCDTMicController:initMicModule()
-    local selfRef = self
-    self.micModule = {
-        -- Direct mic toggle with immediate response
+    self.cdtModule = {
         toggleMic = function(boxIndex, ledIndex, mixerInput)
             local box = selfRef.components.micBoxes[boxIndex]
             local mixer = selfRef.components.micMixer
             if not box or not mixer then return end
             
-            local isActive = box['ButtonState '..(ledIndex * 2 + 4)].Boolean
+            local buttonState = box['ButtonState '..(ledIndex * 2 + 4)]
+            if not buttonState then return end
             
-            -- Direct mixer control - no function calls
+            local isActive = buttonState.Boolean
             mixer['input.'..mixerInput..'.mute'].Boolean = not isActive
             
-            -- Immediate LED feedback
-            if isActive then
-                local isRed = selfRef.state.globalMute
-                box[(isRed and "Red" or "Green")..'State '..ledIndex].Boolean = true
-                box[(isRed and "Red" or "Green")..'Brightness '..ledIndex].Position = 1
-                box[(isRed and "Green" or "Red")..'State '..ledIndex].Boolean = false
-                box[(isRed and "Green" or "Red")..'Brightness '..ledIndex].Position = 0
-            else
-                box['RedState '..ledIndex].Boolean = false
-                box['GreenState '..ledIndex].Boolean = false
-                box['RedBrightness '..ledIndex].Position = 0
-                box['GreenBrightness '..ledIndex].Position = 0
-            end
+            -- Update the individual LED brightness controls
+            selfRef.cdtModule.updateIndividualLEDs()
+            
+            -- Update privacy button disabled state based on toggle button state
+            selfRef.cdtModule.updatePrivacyButtonStates(boxIndex)
         end,
         
-        -- Optimized global mute with single LED update
         setGlobalMute = function(muteState)
             selfRef.state.globalMute = muteState
-            
-            -- Update HID directly
             if selfRef.components.callSync then
                 selfRef.components.callSync['mute'].Boolean = muteState
             end
-            
-            -- Single LED update call
+            -- Update individual LED brightness controls when off-hook
             if selfRef.state.offHook then
-                selfRef.ledModule.setGlobalLEDs(muteState, not muteState)
+                selfRef.cdtModule.updateIndividualLEDs()
             end
-            
-            -- Update individual mic LEDs
-            selfRef.ledModule.updateAllMicLEDs()
         end,
         
-        -- Direct hook state management
         setHookState = function(hookState)
             selfRef.state.offHook = hookState
             if hookState then
-                local showRed = selfRef.state.globalMute
-                selfRef.ledModule.setGlobalLEDs(showRed, not showRed)
+                -- Update individual LED brightness controls when going on-hook
+                selfRef.cdtModule.updateIndividualLEDs()
             else
-                selfRef.ledModule.setGlobalLEDs(false, false)
+                -- Turn off all individual brightness inputs when going off-hook
+                selfRef.cdtModule.turnOffAllLEDs()
             end
         end,
         
@@ -327,95 +197,106 @@ function ClockAudioCDTMicController:initMicModule()
         ledState = false,
         
         startLEDToggle = function()
-            selfRef.micModule.ledToggleTimer:Start(selfRef.config.toggleInterval)
+            selfRef.cdtModule.ledToggleTimer:Start(selfRef.config.toggleInterval)
         end,
         
         stopLEDToggle = function()
-            selfRef.micModule.ledToggleTimer:Stop()
+            selfRef.cdtModule.ledToggleTimer:Stop()
         end,
         
         setLED = function(state)
-            selfRef.micModule.ledState = state
-            selfRef.ledModule.setGlobalLEDs(false, state)
+            selfRef.cdtModule.ledState = state
+            local greenValue = state and 1 or 0
+            for i = 1, 4 do
+                local box = selfRef.components.micBoxes[i]
+                if box then
+                    for ledIndex = 1, 4 do
+                        local redBrightnessInput = box['RedBrightnessInput '..ledIndex]
+                        local greenBrightnessInput = box['GreenBrightnessInput '..ledIndex]
+                        
+                        if redBrightnessInput then redBrightnessInput.Position = 0 end
+                        if greenBrightnessInput then greenBrightnessInput.Position = greenValue end
+                    end
+                end
+            end
         end,
-        
-        -- Set mute state (alias for setGlobalMute for compatibility)
-        setMute = function(muteState)
-            selfRef.micModule.setGlobalMute(muteState)
-        end
-    }
-    
-    -- Set up LED toggle timer
-    self.micModule.ledToggleTimer.EventHandler = function()
-        self.micModule.ledState = not self.micModule.ledState
-        self.micModule.setLED(self.micModule.ledState)
-    end
-end
-
---------** Test Module - Hook State Emulation **--------
-function ClockAudioCDTMicController:initTestModule()
-    local selfRef = self
-    self.testModule = {
-        -- Emulated hook state only
-        emulatedHookState = false,
-        
-        -- Toggle hook state for testing
-        toggleHookState = function()
-            selfRef.testModule.emulatedHookState = not selfRef.testModule.emulatedHookState
-            selfRef:debugPrint("Test Mode: Hook State = " .. tostring(selfRef.testModule.emulatedHookState))
+        updateIndividualLEDs = function()
+            if not selfRef.state.offHook then return end
             
-            -- Update mic module with emulated hook state
-            selfRef.micModule.setHookState(selfRef.testModule.emulatedHookState)
+            for boxIndex = 1, 4 do
+                local box = selfRef.components.micBoxes[boxIndex]
+                if box then
+                    -- Individual LED control: ButtonState 6,8,10,12 control RedBrightnessInput 1,2,3,4
+                    -- These are toggle buttons for individual microphone control
+                    local buttons = {6, 8, 10, 12}
+                    for i = 1, 4 do
+                        local buttonState = box['ButtonState '..buttons[i]]
+                        local redInput = box['RedBrightnessInput '..i]
+                        local greenInput = box['GreenBrightnessInput '..i]
+                        
+                        if buttonState and redInput and greenInput then
+                            if not buttonState.Boolean then
+                                redInput.Position = 0
+                                greenInput.Position = 0
+                            else
+                                if selfRef.state.globalMute then
+                                    redInput.Position = 1
+                                    greenInput.Position = 0
+                                else
+                                    redInput.Position = 0
+                                    greenInput.Position = 1
+                                end
+                            end
+                        end
+                    end
+                end
+            end
         end,
         
-        -- Enable test mode
-        enableTestMode = function()
-            selfRef.state.testMode = true
-            selfRef:debugPrint("Hook State Test Mode Enabled")
+        turnOffAllLEDs = function()
+            for i = 1, 4 do
+                local box = selfRef.components.micBoxes[i]
+                if box then
+                    for ledIndex = 1, 4 do
+                        local redBrightnessInput = box['RedBrightnessInput '..ledIndex]
+                        local greenBrightnessInput = box['GreenBrightnessInput '..ledIndex]
+                        
+                        if redBrightnessInput then redBrightnessInput.Position = 0 end
+                        if greenBrightnessInput then greenBrightnessInput.Position = 0 end
+                    end
+                end
+            end
+        end,
+        
+        updatePrivacyButtonStates = function(boxIndex)
+            local box = selfRef.components.micBoxes[boxIndex]
+            if not box then return end
             
-            -- Register test control event handlers
-            selfRef:registerTestControlHandlers()
-        end,
-        
-        -- Disable test mode
-        disableTestMode = function()
-            selfRef.state.testMode = false
-            selfRef:debugPrint("Hook State Test Mode Disabled")
+            -- Map of toggle buttons to privacy buttons
+            local buttonMap = {
+                {toggle = 6, privacy = 1},
+                {toggle = 8, privacy = 2},
+                {toggle = 10, privacy = 3},
+                {toggle = 12, privacy = 4}
+            }
             
-            -- Clear test control event handlers
-            selfRef:clearTestControlHandlers()
-        end,
-        
-        -- Get current hook state
-        getHookState = function()
-            return selfRef.testModule.emulatedHookState
-        end
-    }
-end
-
---------** Test Control Event Handlers **--------
-function ClockAudioCDTMicController:registerTestControlHandlers()
-    local selfRef = self
-    
-    -- Hook state test button
-    if controlCache.btnTestHookState then
-        controlCache.btnTestHookState.EventHandler = function(ctl)
-            if ctl.Boolean then
-                selfRef.testModule.toggleHookState()
+            for _, mapping in ipairs(buttonMap) do
+                local toggleButton = box['ButtonState '..mapping.toggle]
+                local privacyButton = box['ButtonState '..mapping.privacy]
+                
+                if toggleButton and privacyButton then
+                    -- Enable privacy button if toggle button is active, disable if not
+                    privacyButton.IsDisabled = not toggleButton.Boolean
+                    selfRef:debugPrint("Box"..boxIndex.." Privacy Button "..mapping.privacy.." "..(toggleButton.Boolean and "enabled" or "disabled"))
+                end
             end
         end
+    }
+    -- Set up LED toggle timer event handler
+    self.cdtModule.ledToggleTimer.EventHandler = function()
+        self.cdtModule.ledState = not self.cdtModule.ledState
+        self.cdtModule.setLED(self.cdtModule.ledState)
     end
-    
-    self:debugPrint("Hook state test control handler registered")
-end
-
-function ClockAudioCDTMicController:clearTestControlHandlers()
-    -- Clear hook state test control event handler
-    if controlCache.btnTestHookState then
-        controlCache.btnTestHookState.EventHandler = nil
-    end
-    
-    self:debugPrint("Hook state test control handler cleared")
 end
 
 --------** Component Name Discovery **--------
@@ -444,11 +325,11 @@ function ClockAudioCDTMicController:getComponentNames()
         table.insert(nameList, self.clearString)
     end
     
-    controlCache.compRoomControls.Choices = namesTable.RoomControlsNames
-    controlCache.compCallSync.Choices = namesTable.CallSyncNames
-    controlCache.compMicMixer.Choices = namesTable.MicMixerNames
+    controls.compRoomControls.Choices = namesTable.RoomControlsNames
+    controls.compCallSync.Choices = namesTable.CallSyncNames
+    controls.compMicMixer.Choices = namesTable.MicMixerNames
     
-    for i, control in ipairs(controlCache.compMicBox) do
+    for i, control in ipairs(controls.compMicBox) do
         control.Choices = namesTable.MicBoxNames
     end
 end
@@ -465,7 +346,7 @@ function ClockAudioCDTMicController:registerEventHandlers()
                 selfRef.state.systemPower = ctl.Boolean
                 if not ctl.Boolean then
                     selfRef.state.globalMute = true
-                    selfRef.ledModule.setGlobalLEDs(false, false)
+                    selfRef.cdtModule.setHookState(false)
                 end
             end
         end
@@ -476,13 +357,13 @@ function ClockAudioCDTMicController:registerEventHandlers()
             fireControl.EventHandler = function(ctl)
                 selfRef.state.fireAlarm = ctl.Boolean
                 if ctl.Boolean then
-                    selfRef.micModule.startLEDToggle()
+                    selfRef.cdtModule.startLEDToggle()
                     selfRef.state.globalMute = true
-                    selfRef.ledModule.setGlobalLEDs(false, false)
+                    selfRef.cdtModule.setHookState(false)
                 else
-                    selfRef.micModule.stopLEDToggle()
+                    selfRef.cdtModule.stopLEDToggle()
                     if selfRef.state.offHook then
-                        selfRef.ledModule.setGlobalLEDs(false, true)
+                        selfRef.cdtModule.setHookState(true)
                     end
                 end
             end
@@ -494,14 +375,14 @@ function ClockAudioCDTMicController:registerEventHandlers()
         local offHookControl = self.components.callSync["off.hook"]
         if offHookControl then
             offHookControl.EventHandler = function(ctl)
-                selfRef.micModule.setHookState(ctl.Boolean)
+                selfRef.cdtModule.setHookState(ctl.Boolean)
             end
         end
         
         local muteControl = self.components.callSync["mute"]
         if muteControl then
             muteControl.EventHandler = function(ctl)
-                selfRef.micModule.setGlobalMute(ctl.Boolean)
+                selfRef.cdtModule.setGlobalMute(ctl.Boolean)
             end
         end
     end
@@ -509,6 +390,17 @@ function ClockAudioCDTMicController:registerEventHandlers()
     -- Mic button handlers
     self:registerMicHandlers()
     self:registerPrivacyButtonHandlers()
+    
+    -- Test button handlers for emulation
+    self:registerTestButtonHandlers()
+end
+
+--------** Test Button Registration **--------
+function ClockAudioCDTMicController:registerTestButtonHandlers()
+    -- This method is intentionally empty - test buttons are handled through
+    -- the emulation functions like setMicBoxButtonState, pulseMicBoxButton, etc.
+    -- No actual test button handlers are needed for the ClockAudio CDT implementation
+    self:debugPrint("Test button handlers registered (no physical test buttons)")
 end
 
 --------** Table-Driven Mic Button Registration **--------
@@ -532,7 +424,7 @@ function ClockAudioCDTMicController:registerMicHandlers()
                     -- Direct closure for maximum speed
                     local boxIdx, ledIdx, mixerIdx = config.box, btn[2], btn[3]
                     buttonControl.EventHandler = function()
-                        selfRef.micModule.toggleMic(boxIdx, ledIdx, mixerIdx)
+                        selfRef.cdtModule.toggleMic(boxIdx, ledIdx, mixerIdx)
                     end
                 end
             end
@@ -544,6 +436,8 @@ end
 function ClockAudioCDTMicController:registerPrivacyButtonHandlers()
     local selfRef = self
     
+    -- Privacy buttons: ButtonState 1-4 on each box toggle global mute
+    -- These are momentary buttons that provide toggle behavior for privacy
     local privacyConfigs = {
         {box = 1, buttons = {1, 2, 3}},
         {box = 2, buttons = {1, 2, 3, 4}},
@@ -558,47 +452,29 @@ function ClockAudioCDTMicController:registerPrivacyButtonHandlers()
                 local privacyButton = box['ButtonState '..buttonNum]
                 
                 if privacyButton then
-                    privacyButton.EventHandler = function()
-                        local callSync = selfRef.components.callSync
-                        if callSync and callSync["mute"] then
-                            -- Toggle mute state directly
-                            callSync["mute"].Boolean = not callSync["mute"].Boolean
+                    privacyButton.EventHandler = function(ctl)
+                        -- Only respond to button press (true) events, not release (false) events
+                        -- AND only if the button is not disabled
+                        if ctl.Boolean and not ctl.IsDisabled then
+                            local callSync = selfRef.components.callSync
+                            if callSync and callSync["mute"] then
+                                -- Toggle mute state directly
+                                callSync["mute"].Boolean = not callSync["mute"].Boolean
+                                selfRef:debugPrint("Privacy button "..buttonNum.." on box "..config.box.." toggled mute to "..tostring(callSync["mute"].Boolean))
+                                
+                                -- Update LED states to reflect the new privacy state
+                                if selfRef.state.offHook then
+                                    selfRef.cdtModule.updateIndividualLEDs()
+                                end
+                            end
+                        elseif ctl.Boolean and ctl.IsDisabled then
+                            selfRef:debugPrint("Privacy button "..buttonNum.." on box "..config.box.." is disabled - ignoring press")
                         end
                     end
                 end
             end
         end
     end
-end
-
---------** Test Mode Management **--------
-function ClockAudioCDTMicController:enableTestModeIfNoCallSync()
-    -- Check if call sync component is available
-    if not self.components.callSync then
-        self:debugPrint("No Call Sync component found - enabling hook state test mode")
-        self.testModule.enableTestMode()
-        
-        -- Set initial hook state (start on-hook)
-        self.testModule.emulatedHookState = false
-        
-        -- Initialize mic module with test hook state
-        self.micModule.setHookState(self.testModule.emulatedHookState)
-        
-        self:debugPrint("Hook state test mode ready - use btnTestHookState to toggle")
-    else
-        self:debugPrint("Call Sync component found - hook state test mode not needed")
-    end
-end
-
-function ClockAudioCDTMicController:isTestModeActive()
-    return self.state.testMode
-end
-
-function ClockAudioCDTMicController:getHookState()
-    if self.testModule then
-        return self.testModule.getHookState()
-    end
-    return nil
 end
 
 --------** Initialization **--------
@@ -612,13 +488,39 @@ function ClockAudioCDTMicController:funcInit()
     self:setupComponents()
     self:registerEventHandlers()
     
-    -- Enable test mode for hook state emulation if needed
-    self:enableTestModeIfNoCallSync()
+    -- Initialize LED states based on current call sync state
+    self:initializeLEDStates()
     
-    -- Update LED states after initialization
-    self.ledModule.updateAllLEDs()
+    -- Initialize privacy button states based on toggle button states
+    for i = 1, 4 do
+        if self.components.micBoxes[i] then
+            self.cdtModule.updatePrivacyButtonStates(i)
+        end
+    end
     
     self:debugPrint("Initialization completed with "..self:getMicBoxCount().." mic boxes")
+end
+
+function ClockAudioCDTMicController:initializeLEDStates()
+    if not self.components.callSync then return end
+    
+    -- Get current call sync state
+    local offHookControl = self.components.callSync["off.hook"]
+    local muteControl = self.components.callSync["mute"]
+    
+    if offHookControl and muteControl then
+        self.state.offHook = offHookControl.Boolean
+        self.state.globalMute = muteControl.Boolean
+        
+        -- Set individual LED states based on current call sync state
+        if self.state.offHook then
+            -- Update individual LED brightness controls
+            self.cdtModule.updateIndividualLEDs()
+        else
+            -- When not off-hook, turn off all individual LEDs
+            self.cdtModule.turnOffAllLEDs()
+        end
+    end
 end
 
 --------** Utility Functions **--------
@@ -630,18 +532,234 @@ function ClockAudioCDTMicController:getMicBoxCount()
     return count
 end
 
+--------** Emulation/Testing Functions **--------
+function ClockAudioCDTMicController:setMicBoxButtonState(boxIndex, buttonNumber, state)
+    -- Set individual button state for testing/emulation
+    -- boxIndex: 1-4 (which mic box)
+    -- buttonNumber: 1-12 (which button on the box)
+    -- state: true/false (button state)
+    
+    if boxIndex < 1 or boxIndex > 4 then
+        self:debugPrint("Invalid box index: "..tostring(boxIndex).." (must be 1-4)")
+        return false
+    end
+    
+    if buttonNumber < 1 or buttonNumber > 12 then
+        self:debugPrint("Invalid button number: "..tostring(buttonNumber).." (must be 1-12)")
+        return false
+    end
+    
+    local box = self.components.micBoxes[boxIndex]
+    if not box then
+        self:debugPrint("Mic box "..boxIndex.." not found")
+        return false
+    end
+    
+    local buttonControl = box['ButtonState '..buttonNumber]
+    if not buttonControl then
+        self:debugPrint("Button "..buttonNumber.." not found on box "..boxIndex)
+        return false
+    end
+    
+    buttonControl.Boolean = state
+    self:debugPrint("Set Box"..string.format("%02d", boxIndex).." ButtonState "..buttonNumber.." to "..tostring(state))
+    return true
+end
+
+function ClockAudioCDTMicController:pulseMicBoxButton(boxIndex, buttonNumber, pulseDuration)
+    -- Pulse a button (momentary press) for testing/emulation
+    -- boxIndex: 1-4 (which mic box)
+    -- buttonNumber: 1-12 (which button on the box)
+    -- pulseDuration: duration in seconds (optional, defaults to 0.1)
+    
+    pulseDuration = pulseDuration or 0.2
+    
+    if boxIndex < 1 or boxIndex > 4 then
+        self:debugPrint("Invalid box index: "..tostring(boxIndex).." (must be 1-4)")
+        return false
+    end
+    
+    if buttonNumber < 1 or buttonNumber > 12 then
+        self:debugPrint("Invalid button number: "..tostring(buttonNumber).." (must be 1-12)")
+        return false
+    end
+    
+    local box = self.components.micBoxes[boxIndex]
+    if not box then
+        self:debugPrint("Mic box "..boxIndex.." not found")
+        return false
+    end
+    
+    local buttonControl = box['ButtonState '..buttonNumber]
+    if not buttonControl then
+        self:debugPrint("Button "..buttonNumber.." not found on box "..boxIndex)
+        return false
+    end
+    
+    -- Press the button
+    buttonControl.Boolean = true
+    self:debugPrint("Pulsing Box"..string.format("%02d", boxIndex).." ButtonState "..buttonNumber.." for "..pulseDuration.."s")
+    
+    -- Create a timer to release the button after the pulse duration
+    local pulseTimer = Timer.New()
+    local selfRef = self  -- Capture self reference for timer callback
+    pulseTimer.EventHandler = function()
+        buttonControl.Boolean = false
+        selfRef:debugPrint("Released Box"..string.format("%02d", boxIndex).." ButtonState "..buttonNumber)
+        pulseTimer:Stop()
+    end
+    
+    pulseTimer:Start(pulseDuration)
+    return true
+end
+
+function ClockAudioCDTMicController:setMicBoxLEDState(boxIndex, ledNumber, color, state)
+    -- Set individual LED state for testing/emulation
+    -- boxIndex: 1-4 (which mic box)
+    -- ledNumber: 1-4 (which LED on the box)
+    -- color: "Red" or "Green"
+    -- state: true/false (LED state)
+    
+    if boxIndex < 1 or boxIndex > 4 then
+        self:debugPrint("Invalid box index: "..tostring(boxIndex).." (must be 1-4)")
+        return false
+    end
+    
+    if ledNumber < 1 or ledNumber > 4 then
+        self:debugPrint("Invalid LED number: "..tostring(ledNumber).." (must be 1-4)")
+        return false
+    end
+    
+    if color ~= "Red" and color ~= "Green" then
+        self:debugPrint("Invalid color: "..tostring(color).." (must be 'Red' or 'Green')")
+        return false
+    end
+    
+    local box = self.components.micBoxes[boxIndex]
+    if not box then
+        self:debugPrint("Mic box "..boxIndex.." not found")
+        return false
+    end
+    
+    local ledStateControl = box[color..'State '..ledNumber]
+    local ledBrightnessControl = box[color..'Brightness '..ledNumber]
+    
+    if not ledStateControl or not ledBrightnessControl then
+        self:debugPrint("LED "..color.." "..ledNumber.." not found on box "..boxIndex)
+        return false
+    end
+    
+    ledStateControl.Boolean = state
+    ledBrightnessControl.Position = state and 1 or 0
+    self:debugPrint("Set Box"..string.format("%02d", boxIndex).." "..color.."State "..ledNumber.." to "..tostring(state))
+    return true
+end
+
+function ClockAudioCDTMicController:setMicBoxGlobalLED(boxIndex, color, state)
+    -- Set global LED state for testing/emulation (DEPRECATED - using individual controls only)
+    -- boxIndex: 1-4 (which mic box)
+    -- color: "Red" or "Green"
+    -- state: true/false (LED state)
+    
+    if boxIndex < 1 or boxIndex > 4 then
+        self:debugPrint("Invalid box index: "..tostring(boxIndex).." (must be 1-4)")
+        return false
+    end
+    
+    if color ~= "Red" and color ~= "Green" then
+        self:debugPrint("Invalid color: "..tostring(color).." (must be 'Red' or 'Green')")
+        return false
+    end
+    
+    local box = self.components.micBoxes[boxIndex]
+    if not box then
+        self:debugPrint("Mic box "..boxIndex.." not found")
+        return false
+    end
+    
+    -- Set all individual LEDs of the specified color for this box
+    for ledIndex = 1, 4 do
+        local brightnessInput = box[color..'BrightnessInput '..ledIndex]
+        if brightnessInput then
+            brightnessInput.Position = state and 1 or 0
+        end
+    end
+    
+    self:debugPrint("Set Box"..string.format("%02d", boxIndex).." all "..color.." individual LEDs to "..tostring(state))
+    return true
+end
+
+-- Convenience functions for common testing scenarios
+function ClockAudioCDTMicController:testMicBox1()
+    -- Test Box01 specific functions
+    self:setMicBoxButtonState(1, 1, true)   -- Set ButtonState 1 to True (Momentary)
+    self:setMicBoxButtonState(1, 6, true)   -- Set ButtonState 6 to True (Toggle)
+    self:debugPrint("Tested Box01 button states")
+end
+
+function ClockAudioCDTMicController:testMicBox2()
+    -- Test Box02 specific functions
+    self:setMicBoxButtonState(2, 1, true)   -- Set ButtonState 1 to True (Momentary)
+    self:setMicBoxButtonState(2, 6, true)   -- Set ButtonState 6 to True (Toggle)
+    self:debugPrint("Tested Box02 button states")
+end
+
+function ClockAudioCDTMicController:testMicBox3()
+    -- Test Box03 specific functions
+    self:setMicBoxButtonState(3, 1, true)   -- Set ButtonState 1 to True (Momentary)
+    self:setMicBoxButtonState(3, 6, true)   -- Set ButtonState 6 to True (Toggle)
+    self:debugPrint("Tested Box03 button states")
+end
+
+function ClockAudioCDTMicController:testMicBox4()
+    -- Test Box04 specific functions
+    self:setMicBoxButtonState(4, 1, true)   -- Set ButtonState 1 to True (Momentary)
+    self:setMicBoxButtonState(4, 6, true)   -- Set ButtonState 6 to True (Toggle)
+    self:debugPrint("Tested Box04 button states")
+end
+
+function ClockAudioCDTMicController:testAllBoxes()
+    -- Test all boxes with different patterns
+    for boxIndex = 1, 4 do
+        -- Test buttons 1 and 6 on each box
+        self:setMicBoxButtonState(boxIndex, 1, true)
+        self:setMicBoxButtonState(boxIndex, 6, true)
+        
+        -- Test LEDs with alternating colors
+        for ledNumber = 1, 4 do
+            local color = (ledNumber % 2 == 0) and "Green" or "Red"
+            self:setMicBoxLEDState(boxIndex, ledNumber, color, true)
+        end
+        
+        -- Test individual LEDs (replacing global LED tests)
+        for ledNumber = 1, 4 do
+            self:setMicBoxLEDState(boxIndex, ledNumber, "Red", true)
+            self:setMicBoxLEDState(boxIndex, ledNumber, "Green", true)
+        end
+    end
+    self:debugPrint("Tested all boxes with comprehensive patterns")
+end
+
+function ClockAudioCDTMicController:clearAllLEDs()
+    -- Clear all LEDs on all boxes
+    for boxIndex = 1, 4 do
+        for ledNumber = 1, 4 do
+            self:setMicBoxLEDState(boxIndex, ledNumber, "Red", false)
+            self:setMicBoxLEDState(boxIndex, ledNumber, "Green", false)
+        end
+    end
+    self:debugPrint("Cleared all LEDs on all boxes")
+end
+
 --------** Cleanup **--------
 function ClockAudioCDTMicController:cleanup()
     -- Stop timers
-    if self.micModule.ledToggleTimer then
-        self.micModule.stopLEDToggle()
-        self.micModule.ledToggleTimer.EventHandler = nil
+    if self.cdtModule and self.cdtModule.ledToggleTimer then
+        self.cdtModule.stopLEDToggle()
+        self.cdtModule.ledToggleTimer.EventHandler = nil
     end
     
-    -- Clear test mode if active
-    if self.testModule then
-        self.testModule.disableTestMode()
-    end
+
     
     -- Clear handlers in batch
     local handlersToClean = {
@@ -701,11 +819,6 @@ local function createClockAudioCDTMicController(roomName, config)
 end
 
 --------** Instance Creation **--------
--- Validate controls before creating instance
-if not validateControls() then
-    print("ERROR: Required controls are missing. Please check your Q-SYS design.")
-    return
-end
 
 -- Create controller instance with a temporary room name
 local tempRoomName = "[ClockAudio CDT]"
@@ -728,3 +841,9 @@ if myClockAudioCDTMicController then
 else
     print("ERROR: Failed to create ClockAudioCDTMicController!")
 end
+
+-- Test Privacy buttons (CDT Touch Switch State) (uncomment to test button pulsing)
+myClockAudioCDTMicController:pulseMicBoxButton(1, 1)
+
+-- Test (CDT Reed Switch State) Switch on Mic Box 1 (set to 'pressed' state)
+myClockAudioCDTMicController:setMicBoxButtonState(1, 6, false)
