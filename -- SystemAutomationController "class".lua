@@ -603,19 +603,19 @@ function SystemAutomationController:getComponentNames()
         MuteNames = {},
     }
 
-    for i, v in pairs(Component.GetComponents()) do
-        if v.Type == self.componentTypes.callSync then
-            table.insert(namesTable.CallSyncNames, v.Name)
-        elseif v.Type == self.componentTypes.videoBridge then
-            table.insert(namesTable.VideoBridgeNames, v.Name)
-        elseif v.Type == self.componentTypes.displays then
-            table.insert(namesTable.DisplayNames, v.Name)
-        elseif v.Type == self.componentTypes.gains then
-            table.insert(namesTable.GainNames, v.Name)
-        elseif v.Type == self.componentTypes.systemMute then
-            table.insert(namesTable.MuteNames, v.Name)
-        elseif v.Type == self.componentTypes.camACPR then
-            table.insert(namesTable.CamACPRNames, v.Name)
+    for i, comp in pairs(Component.GetComponents()) do
+        if comp.Type == self.componentTypes.callSync then
+            table.insert(namesTable.CallSyncNames, comp.Name)
+        elseif comp.Type == self.componentTypes.videoBridge then
+            table.insert(namesTable.VideoBridgeNames, comp.Name)
+        elseif comp.Type == self.componentTypes.displays then
+            table.insert(namesTable.DisplayNames, comp.Name)
+        elseif comp.Type == self.componentTypes.gains then
+            table.insert(namesTable.GainNames, comp.Name)
+        elseif comp.Type == self.componentTypes.systemMute then
+            table.insert(namesTable.MuteNames, comp.Name)
+        elseif comp.Type == self.componentTypes.camACPR then
+            table.insert(namesTable.CamACPRNames, comp.Name)
         end       
     end
 

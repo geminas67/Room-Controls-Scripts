@@ -259,31 +259,41 @@ function NV32RouterController:checkStatus()
 end
 
 --------** Component Name Discovery **--------
-function NV32RouterController:populateNV32Choices()
-    local names = {}
-    for _, comp in pairs(Component.GetComponents()) do
+function NV32RouterController:discoverComponents()
+    local components = Component.GetComponents()
+    local discovered = {
+        nv32Names = {},
+        roomControlsNames = {}
+    }
+    
+    for _, comp in pairs(components) do
         if comp.Type == self.componentTypes.nv32Router then
-            table.insert(names, comp.Name)
+            table.insert(discovered.nv32Names, comp.Name)
+        elseif comp.Type == self.componentTypes.roomControls and string.match(comp.Name, "^compRoomControls") then
+            table.insert(discovered.roomControlsNames, comp.Name)
         end
     end
-    table.sort(names)
-    table.insert(names, self.clearString)
-    self.controls.devNV32.Choices = names
-end
-
-function NV32RouterController:populateRoomControlsChoices()
-    local names = {}
-    for _, comp in pairs(Component.GetComponents()) do
-        if comp.Type == self.componentTypes.roomControls and string.match(comp.Name, "^compRoomControls") then
-            table.insert(names, comp.Name)
-        end
-    end
-    table.sort(names)
-    table.insert(names, self.clearString)
-    self.controls.compRoomControls.Choices = names
+    
+    return discovered
 end
 
 --------** Component Setup **--------
+function NV32RouterController:setupComponents()
+    local discovered = self:discoverComponents()
+    
+    -- Setup NV32 Router
+    if #discovered.nv32Names > 0 then
+        self.nv32Router = Component.New(discovered.nv32Names[1])
+        self:debugPrint("NV32 Router set: " .. discovered.nv32Names[1]) 
+    end
+    
+    -- Setup Room Controls
+    if #discovered.roomControlsNames > 0 then
+        self.roomControls = Component.New(discovered.roomControlsNames[1])
+        self:debugPrint("Room Controls set: " .. discovered.roomControlsNames[1])
+    end
+end
+
 function NV32RouterController:setNV32RouterComponent()
     -- Clean up old event handlers if switching devices
     if self.nv32Router then
@@ -400,8 +410,7 @@ end
 
 --------** Initialization **--------
 function NV32RouterController:funcInit()
-    self:populateNV32Choices()
-    self:populateRoomControlsChoices()
+    self:setupComponents()
     self:setNV32RouterComponent()
     self:setRoomControlsComponent()
     
@@ -482,9 +491,9 @@ Usage:
 UCI Integration:
 - The controller now automatically monitors UCI navigation buttons (btnNav07, btnNav08, btnNav09)
 - When these buttons are active, it automatically switches the NV32 input accordingly:
-  * btnNav07.Boolean = true → switches to HDMI2 (Graphic2)
-  * btnNav08.Boolean = true → switches to HDMI1 (Graphic1)  
-  * btnNav09.Boolean = true → switches to HDMI3 (Graphic3)
+  * btnNav07.Boolean = true → switches to HDMI2 (HDMI2)
+  * btnNav08.Boolean = true → switches to HDMI1 (HDMI1)  
+  * btnNav09.Boolean = true → switches to HDMI3 (HDMI3)
 - You can also manually set the UCI controller reference using: myNV32RouterController:setUCIController(myUCI)
 - UCI integration can be enabled/disabled using enableUCIIntegration() and disableUCIIntegration()
 ]]--

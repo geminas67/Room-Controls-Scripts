@@ -1,16 +1,15 @@
 --[[
-  Extron DXP Matrix Routing Controller - Refactored
-  Author: Nikolas Smith, Q-SYS (Refactored)
+  Extron DXP Matrix Routing Controller - Simplified
+  Author: Nikolas Smith, Q-SYS (Simplified)
   2025-01-27
   Firmware Req: 10.0.0
-  Version: 2.0
+  Version: 2.1
 
-  Performance-optimized class-based implementation with UCI integration
-  - Eliminates redundant function calls and timers
+  Simplified class-based implementation matching NV32RouterController pattern
   - Direct routing and state management
   - UCI integration for automatic input switching
+  - Essential auto-switching functionality
   - Component discovery using Component.GetComponents()
-  - CallSync integration
 ]]--
 
 -- Define control references
@@ -110,7 +109,8 @@ function ExtronDXPMatrixController.new()
     self.systemPowered = false
     self.systemWarming = true
     
-    -- Initialize
+    -- Setup event handlers and initialize
+    self:registerEventHandlers()
     self:funcInit()
     
     return self
@@ -121,110 +121,6 @@ function ExtronDXPMatrixController:debugPrint(str)
     if self.debugging then
         print("[Extron DXP Debug] " .. str)
     end
-end
-
---------** Helper Methods **--------
-function ExtronDXPMatrixController:setDestinationButtonProperties(buttonIndex, color, legend, isDisabled)
-    if self.controls.btnDestination[buttonIndex] then
-        self.controls.btnDestination[buttonIndex].Color = color
-        self.controls.btnDestination[buttonIndex].Legend = legend
-        self.controls.btnDestination[buttonIndex].IsDisabled = isDisabled
-    end
-end
-
---------** Component Discovery **--------
-function ExtronDXPMatrixController:discoverComponents()
-    local components = Component.GetComponents()
-    local discovered = {
-        ExtronDXPNames = {},
-        CallSyncNames = {},
-        ClickShareNames = {},
-        RoomControlsNames = {}
-    }
-    
-    -- Search for required components
-    for _, comp in pairs(components) do
-        if comp.Type == self.componentTypes.extronRouter then
-            table.insert(discovered.ExtronDXPNames, comp.Name)
-        elseif comp.Type == self.componentTypes.callSync then
-            table.insert(discovered.CallSyncNames, comp.Name)
-        elseif comp.Type == self.componentTypes.ClickShare then
-            table.insert(discovered.ClickShareNames, comp.Name)
-        elseif comp.Type == self.componentTypes.roomControls and string.match(comp.Name, "^compRoomControls") then
-            table.insert(discovered.RoomControlsNames, comp.Name)
-        end
-    end
-    
-    -- Debug: Report found/not found status
-    self:debugPrint("Component Discovery Results:")
-    self:debugPrint("  Extron DXP Router: " .. (#discovered.ExtronDXPNames > 0 and "✓ Found (" .. discovered.ExtronDXPNames[1] .. ")" or "✗ Not Found"))
-    self:debugPrint("  CallSync: " .. (#discovered.CallSyncNames > 0 and "✓ Found (" .. discovered.CallSyncNames[1] .. ")" or "✗ Not Found"))
-    self:debugPrint("  ClickShare: " .. (#discovered.ClickShareNames > 0 and "✓ Found (" .. discovered.ClickShareNames[1] .. ")" or "✗ Not Found"))
-    self:debugPrint("  Room Controls: " .. (#discovered.RoomControlsNames > 0 and "✓ Found (" .. discovered.RoomControlsNames[1] .. ")" or "✗ Not Found"))
-    
-    return discovered
-end
-
---------** Populate Combo Box Controls **--------
-function ExtronDXPMatrixController:populateComboBoxes()
-    local discovered = self:discoverComponents()
-    local populatedCount = 0
-    
-    -- Helper function to populate a combo box if it exists
-    local function populateComboBox(controlName, choices, clearString)
-        if Controls[controlName] then
-            local choicesList = {}
-            for _, choice in ipairs(choices) do
-                table.insert(choicesList, choice)
-            end
-            table.sort(choicesList)
-            if clearString then
-                table.insert(choicesList, clearString)
-            end
-            Controls[controlName].Choices = choicesList
-            populatedCount = populatedCount + 1
-        end
-    end
-    
-    -- Populate available combo boxes
-    populateComboBox("compExtronDXPMatrix", discovered.ExtronDXPNames, self.clearString)
-    populateComboBox("compCallSync", discovered.CallSyncNames, self.clearString)
-    populateComboBox("compClickShare", discovered.ClickShareNames, self.clearString)
-    populateComboBox("compRoomControls", discovered.RoomControlsNames, self.clearString)
-    
-    -- Also check for any other potential combo box controls
-    local potentialControls = {
-        "compExtronDXP", "compExtron", "compRouter", "compMatrix",
-        "compVideoRouter", "compVideoSwitcher", "compSwitcher"
-    }
-    
-    for _, controlName in ipairs(potentialControls) do
-        if Controls[controlName] then
-            populateComboBox(controlName, discovered.ExtronDXPNames, self.clearString)
-        end
-    end
-    
-    self:debugPrint("Combo Box Population: " .. populatedCount .. " controls populated")
-end
-
---------** Component Setup **--------
-function ExtronDXPMatrixController:setupComponents()
-    local discovered = self:discoverComponents()
-    
-    -- Setup Extron DXP Router
-    if #discovered.ExtronDXPNames > 0 then
-        self.extronRouter = Component.New(discovered.ExtronDXPNames[1])
-        self:debugPrint("Extron DXP Router set: " .. discovered.ExtronDXPNames[1])
-    end
-    
-    -- Setup Room Controls
-    if #discovered.RoomControlsNames > 0 then
-        self.roomControls = Component.New(discovered.RoomControlsNames[1])
-        self:debugPrint("Room Controls set: " .. discovered.RoomControlsNames[1])
-    end
-    
-    -- Setup other components
-    self.uciLayerSelector = Component.New('BDRM-UCI Layer Selector')
 end
 
 --------** UCI Integration Methods **--------
@@ -334,15 +230,157 @@ function ExtronDXPMatrixController:onUCILayerChange(layerChangeInfo)
     end
 end
 
+--------** Component Management **--------
+function ExtronDXPMatrixController:setComponent(ctrl, componentType)
+    self:debugPrint("Setting Component: " .. componentType)
+    local componentName = ctrl.String
+    
+    if componentName == "" then
+        self:debugPrint("No " .. componentType .. " Component Selected")
+        ctrl.Color = "white"
+        self:setComponentValid(componentType)
+        return nil
+    elseif componentName == self.clearString then
+        self:debugPrint(componentType .. ": Component Cleared")
+        ctrl.String = ""
+        ctrl.Color = "white"
+        self:setComponentValid(componentType)
+        return nil
+    elseif #Component.GetControls(Component.New(componentName)) < 1 then
+        self:debugPrint(componentType .. " Component " .. componentName .. " is Invalid")
+        ctrl.String = "[Invalid Component Selected]"
+        ctrl.Color = "pink"
+        self:setComponentInvalid(componentType)
+        return nil
+    else
+        self:debugPrint("Setting " .. componentType .. " Component: {" .. ctrl.String .. "}")
+        ctrl.Color = "white"
+        self:setComponentValid(componentType)
+        return Component.New(componentName)
+    end
+end
+
+function ExtronDXPMatrixController:setComponentInvalid(componentType)
+    self.invalidComponents[componentType] = true
+    self:checkStatus()
+end
+
+function ExtronDXPMatrixController:setComponentValid(componentType)
+    self.invalidComponents[componentType] = false
+    self:checkStatus()
+end
+
+function ExtronDXPMatrixController:checkStatus()
+    for i, v in pairs(self.invalidComponents) do
+        if v == true then
+            self.controls.txtDestination.String = "Invalid Components"
+            self.controls.txtDestination.Value = 1
+            return
+        end
+    end
+    self.controls.txtDestination.String = "OK"
+    self.controls.txtDestination.Value = 0
+end
+
+--------** Component Name Discovery **--------
+function ExtronDXPMatrixController:discoverComponents()
+    local components = Component.GetComponents()
+    local discovered = {
+        extronDXPNames = {},
+        callSyncNames = {},
+        clickShareNames = {},
+        roomControlsNames = {}
+    }
+    
+    for _, comp in pairs(components) do
+        if comp.Type == self.componentTypes.extronRouter then
+            table.insert(discovered.extronDXPNames, comp.Name)
+        elseif comp.Type == self.componentTypes.callSync then
+            table.insert(discovered.callSyncNames, comp.Name)
+        elseif comp.Type == self.componentTypes.ClickShare then
+            table.insert(discovered.clickShareNames, comp.Name)
+        elseif comp.Type == self.componentTypes.roomControls and string.match(comp.Name, "^compRoomControls") then
+            table.insert(discovered.roomControlsNames, comp.Name)
+        end
+    end
+    
+    return discovered
+end
+
+--------** Component Setup **--------
+function ExtronDXPMatrixController:setupComponents()
+    local discovered = self:discoverComponents()
+    
+    -- Setup Extron DXP Router
+    if #discovered.extronDXPNames > 0 then
+        self.extronRouter = Component.New(discovered.extronDXPNames[1])
+        self:debugPrint("Extron DXP Router set: " .. discovered.extronDXPNames[1])
+    end
+    
+    -- Setup CallSync
+    if #discovered.callSyncNames > 0 then
+        self.callSync = Component.New(discovered.callSyncNames[1])
+        self:debugPrint("CallSync set: " .. discovered.callSyncNames[1])
+    end
+    
+    -- Setup ClickShare
+    if #discovered.clickShareNames > 0 then
+        self.ClickShare = Component.New(discovered.clickShareNames[1])
+        self:debugPrint("ClickShare set: " .. discovered.clickShareNames[1])
+    end
+    
+    -- Setup Room Controls
+    if #discovered.roomControlsNames > 0 then
+        self.roomControls = Component.New(discovered.roomControlsNames[1])
+        self:debugPrint("Room Controls set: " .. discovered.roomControlsNames[1])
+    end
+    
+    -- Setup UCI Layer Selector
+    self.uciLayerSelector = Component.New('BDRM-UCI Layer Selector')
+end
+
+function ExtronDXPMatrixController:setExtronDXPComponent()
+    self.extronRouter = self:setComponent(Controls.compExtronDXPMatrix, "Extron DXP Matrix")
+end
+
+function ExtronDXPMatrixController:setCallSyncComponent()
+    self.callSync = self:setComponent(Controls.compCallSync, "CallSync")
+end
+
+function ExtronDXPMatrixController:setClickShareComponent()
+    self.ClickShare = self:setComponent(Controls.compClickShare, "ClickShare")
+end
+
+function ExtronDXPMatrixController:setRoomControlsComponent()
+    self.roomControls = self:setComponent(Controls.compRoomControls, "Room Controls")
+    if self.roomControls ~= nil then
+        -- Add event handlers for system power and warming
+        local this = self  -- Capture self for use in handlers
+
+        self.roomControls["ledSystemPower"].EventHandler = function(ctl)
+            this.systemPowered = ctl.Boolean
+            this:debugPrint("System power state: " .. tostring(this.systemPowered))
+            if this.systemPowered then
+                this:checkAutoSwitch()
+            end
+        end
+        
+        self.roomControls["ledSystemWarming"].EventHandler = function(ctl)
+            this.systemWarming = ctl.Boolean
+            this:debugPrint("System warming state: " .. tostring(this.systemWarming))
+            if not this.systemWarming and this.systemPowered then
+                this:checkAutoSwitch()
+            end
+        end
+    end
+end
+
 --------** Routing Methods **--------
 function ExtronDXPMatrixController:setSource(input)
     if not self.extronRouter then return end
     
     self.currentSource = input
     self:debugPrint("Setting source to input " .. input)
-    
-    -- Clear all destination feedback before updating
-    self:clearAllDestinationFeedback()
     
     -- Update all active destinations
     for output, active in pairs(self.currentDestinations) do
@@ -392,21 +430,10 @@ function ExtronDXPMatrixController:clearAllDestinations()
     for i = 1, 5 do
         self.controls.btnDestination[i].Boolean = false
     end
-    
-    -- Clear all source destination feedback buttons
-    self:clearAllDestinationFeedback()
-end
-
-function ExtronDXPMatrixController:clearAllDestinationFeedback()
-    -- Clear all destination feedback buttons for all sources
-    for i = 1, 4 do
-        self.controls.btnDestination[i].Boolean = false
-    end
 end
 
 function ExtronDXPMatrixController:updateDestinationFeedback()
     -- Update destination feedback based on current source and destinations
-    -- All sources (including No Source) use the same destination feedback buttons
     for i = 1, 4 do
         local isActive = self.currentDestinations[i] or false
         -- Use the appropriate destination feedback button based on current source
@@ -476,28 +503,6 @@ function ExtronDXPMatrixController:checkAutoSwitch()
 end
 
 function ExtronDXPMatrixController:setupAutoSwitchMonitoring()
-    -- Monitor system power state
-    if self.roomControls then
-        self.roomControls["ledSystemPower"].EventHandler = function(ctl)
-            self.systemPowered = ctl.Boolean
-            self:debugPrint("System power state: " .. tostring(self.systemPowered))
-            if self.systemPowered then
-                self:checkAutoSwitch()
-            end
-        end
-    end
-    
-    -- Monitor system warming state
-    if self.roomControls then
-        self.roomControls["ledSystemWarming"].EventHandler = function(ctl)
-            self.systemWarming = ctl.Boolean
-            self:debugPrint("System warming state: " .. tostring(self.systemWarming))
-            if not self.systemWarming and self.systemPowered then
-                self:checkAutoSwitch()
-            end
-        end
-    end
-    
     -- Monitor CallSync off-hook state
     if self.callSync then
         self.callSync["off.hook"].EventHandler = function(ctl)
@@ -677,19 +682,15 @@ end
 --------** Initialization **--------
 function ExtronDXPMatrixController:funcInit()
     self:setupComponents()
-    
-    -- Populate combo boxes with discovered components
-    self:populateComboBoxes()
+    self:setExtronDXPComponent()
+    self:setCallSyncComponent()
+    self:setClickShareComponent()
+    self:setRoomControlsComponent()
     
     -- Set default selection to No Source       
     if self.extronRouter then
         self:setSource(self.inputs.NoSource)
     end
-    
-    self:debugPrint("Initializing Extron DXP Controller")
-    
-    -- Register event handlers (includes UCI button monitoring)
-    self:registerEventHandlers()
     
     -- Setup auto-switching
     self:setupAutoSwitchMonitoring()
@@ -716,87 +717,6 @@ function ExtronDXPMatrixController:cleanup()
     
     self:debugPrint("Cleanup completed")
 end
-
---------** Public Interface **--------
-function ExtronDXPMatrixController:getStatus()
-    local status = {
-        systemPowered = self.systemPowered,
-        systemWarming = self.systemWarming,
-        currentSource = self.currentSource,
-        currentDestinations = self.currentDestinations,
-        componentsValid = (self.extronRouter ~= nil and self.roomControls ~= nil),
-        uciIntegrationEnabled = self.uciIntegrationEnabled,
-        uciControllerConnected = (self.uciController ~= nil),
-        uciMonitorActive = (self.uciMonitorTimer ~= nil)
-    }
-    return status
-end
-
-function ExtronDXPMatrixController:getUCIStatus()
-    local uciStatus = {
-        integrationEnabled = self.uciIntegrationEnabled,
-        controllerConnected = (self.uciController ~= nil),
-        monitorActive = (self.uciMonitorTimer ~= nil),
-        lastLayer = self.lastUCILayer,
-        layerMapping = self.uciLayerToInput
-    }
-    return uciStatus
-end
-
-function ExtronDXPMatrixController:refreshComponentDiscovery()
-    self:debugPrint("Manually refreshing component discovery...")
-    local discovered = self:discoverComponents()
-    self:populateComboBoxes()
-    return discovered
-end
-
-function ExtronDXPMatrixController:getComponentDiscoveryStatus()
-    local discovered = self:discoverComponents()
-    return {
-        totalComponents = #Component.GetComponents(),
-        extronDXPCount = #discovered.ExtronDXPNames,
-        callSyncCount = #discovered.CallSyncNames,
-        clickShareCount = #discovered.ClickShareNames,
-        roomControlsCount = #discovered.RoomControlsNames,
-        discoveredComponents = discovered
-    }
-end
-
-function ExtronDXPMatrixController:getComboBoxStatus()
-    local comboBoxStatus = {}
-    
-    -- Check for common combo box controls
-    local comboBoxControls = {
-        "compExtronDXPMatrix", "compCallSync", "compClickShare", "compRoomControls",
-        "compExtronDXP", "compExtron", "compRouter", "compMatrix",
-        "compVideoRouter", "compVideoSwitcher", "compSwitcher"
-    }
-    
-    for _, controlName in ipairs(comboBoxControls) do
-        if Controls[controlName] then
-            local choices = Controls[controlName].Choices or {}
-            comboBoxStatus[controlName] = {
-                exists = true,
-                choiceCount = #choices,
-                choices = choices
-            }
-        else
-            comboBoxStatus[controlName] = {
-                exists = false,
-                choiceCount = 0,
-                choices = {}
-            }
-        end
-    end
-    
-    return comboBoxStatus
-end
-
--- Create and return the controller instance
-local extronDXPController = ExtronDXPMatrixController.new()
-
--- Export for external access
-_G.ExtronDXPMatrixController = extronDXPController
 
 --------** Factory Function **--------
 local function createExtronDXPMatrixController(config)
@@ -838,18 +758,12 @@ UCI Layer to Input Mapping:
   - Layer 8 (btnNav08) → LaptopFront (input 4)  
   - Layer 9 (btnNav09) → ClickShare (input 1)
 
-Usage Examples:
-  - Manual UCI controller connection: myExtronDXPMatrixController:setUCIController(myUCI)
-  - Enable/disable integration: myExtronDXPMatrixController:enableUCIIntegration()
-  - Get UCI status: myExtronDXPMatrixController:getUCIStatus()
-  - Cleanup: myExtronDXPMatrixController:cleanup()
-
 Auto-switching Integration:
   - Monitors system power and warming states
   - Integrates with CallSync off-hook detection
   - Extron signal presence monitoring
   - Priority-based source selection
 
-This implementation now matches the working NV32RouterController UCI integration pattern
-for maximum compatibility and reliability.
+This simplified implementation matches the NV32RouterController pattern
+while maintaining essential auto-switching functionality.
 ]]-- 
