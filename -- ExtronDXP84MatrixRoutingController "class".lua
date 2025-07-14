@@ -16,9 +16,10 @@
 local controls = {
     txtDestination = Controls.txtDestination,
     btnVideoSource = Controls.btnVideoSource,
-    btnAVMute = Controls.btnAVMute,
     btnDestination = Controls.btnDestination,
+    ledSourceRouted = Controls.ledSourceRouted,
     ledExtronSignalPresence = Controls.ledExtronSignalPresence,
+    btnAVMute = Controls.btnAVMute,
     btnNav07 = Controls['btnNav07'],
     btnNav08 = Controls['btnNav08'],
     btnNav09 = Controls['btnNav09'],
@@ -36,9 +37,6 @@ function ExtronDXPMatrixController.new()
     self.debugging = true
     self.clearString = "[Clear]"
     self.invalidComponents = {}
-    self.lastInput = {} -- Store the last input for each output
-    self.preFireAlarmInput = {}
-    self.fireAlarmActive = false
     
     -- UCI Integration properties
     self.uciController = nil
@@ -63,7 +61,7 @@ function ExtronDXPMatrixController.new()
     
     -- UCI Layer to Input mapping (matching NV32RouterController pattern)
     self.uciLayerToInput = {
-        [7] = self.inputs.TeamsPC,    -- btnNav07.Boolean = PC (TeamsPC)
+        [7] = self.inputs.TeamsPC,     -- btnNav07.Boolean = PC (TeamsPC)
         [8] = self.inputs.LaptopFront, -- btnNav08.Boolean = Laptop (LaptopFront)
         [9] = self.inputs.ClickShare,  -- btnNav09.Boolean = WPres (ClickShare)
     }
@@ -104,8 +102,6 @@ function ExtronDXPMatrixController.new()
     self.callSync = nil
     self.ClickShare = nil
     -- Current state
-    self.currentSource = nil
-    self.currentDestinations = {}
     self.systemPowered = false
     self.systemWarming = true
     
@@ -232,6 +228,11 @@ end
 
 --------** Component Management **--------
 function ExtronDXPMatrixController:setComponent(ctrl, componentType)
+    if not ctrl then
+        self:debugPrint("Control for " .. componentType .. " is nil!")
+        self:setComponentInvalid(componentType)
+        return nil
+    end
     self:debugPrint("Setting Component: " .. componentType)
     local componentName = ctrl.String
     
@@ -376,77 +377,50 @@ function ExtronDXPMatrixController:setRoomControlsComponent()
 end
 
 --------** Routing Methods **--------
-function ExtronDXPMatrixController:setSource(input)
+function ExtronDXPMatrixController:setRoute(input, output)
     if not self.extronRouter then return end
     
-    self.currentSource = input
-    self:debugPrint("Setting source to input " .. input)
-    
-    -- Update all active destinations
-    for output, active in pairs(self.currentDestinations) do
-        if active then
-            self.extronRouter['output_' .. output].String = tostring(input)
-        end
-    end
+    self.extronRouter['output_' .. output].String = tostring(input)
+    self:debugPrint("Set Output " .. output .. " to Input " .. input)
     
     -- Update destination feedback
+    if self.controls.ledSourceRouted and self.controls.ledSourceRouted[output] then
+        self.controls.ledSourceRouted[output].Boolean = true
+    end
+
     self:updateDestinationFeedback()
-    
-    -- Update text destination
     self:updateDestinationText()
 end
 
-function ExtronDXPMatrixController:setDestination(output, active)
+function ExtronDXPMatrixController:clearRoute(output)
     if not self.extronRouter then return end
     
-    self.currentDestinations[output] = active
-    
-    if active then
-        -- Route current source to this destination
-        if self.currentSource then
-            self.extronRouter['output_' .. output].String = tostring(self.currentSource)
-        end
-    else
-        -- Clear this destination
-        self.extronRouter['output_' .. output].String = '0'
-    end
+    self.extronRouter['output_' .. output].String = '0'
+    self:debugPrint("Cleared Output " .. output)
     
     -- Update destination feedback
+    if self.controls.ledSourceRouted and self.controls.ledSourceRouted[output] then
+        self.controls.ledSourceRouted[output].Boolean = false
+    end
+
     self:updateDestinationFeedback()
-    
-    -- Update text destination
     self:updateDestinationText()
 end
 
-function ExtronDXPMatrixController:clearAllDestinations()
+function ExtronDXPMatrixController:clearAllRoutes()
     for output = 1, 4 do
-        self.currentDestinations[output] = false
-        if self.extronRouter then
-            self.extronRouter['output_' .. output].String = '0'
-        end
-    end
-    
-    -- Clear all destination feedback
-    for i = 1, 5 do
-        self.controls.btnDestination[i].Boolean = false
+        self:clearRoute(output)
     end
 end
 
 function ExtronDXPMatrixController:updateDestinationFeedback()
-    -- Update destination feedback based on current source and destinations
+    -- Update destination feedback based on current router state
     for i = 1, 4 do
-        local isActive = self.currentDestinations[i] or false
-        -- Use the appropriate destination feedback button based on current source
-        if self.currentSource == self.inputs.ClickShare then
-            self.controls.btnDestination[i].Boolean = isActive
-        elseif self.currentSource == self.inputs.TeamsPC then
-            self.controls.btnDestination[i].Boolean = isActive
-        elseif self.currentSource == self.inputs.LaptopFront then
-            self.controls.btnDestination[i].Boolean = isActive
-        elseif self.currentSource == self.inputs.LaptopRear then
-            self.controls.btnDestination[i].Boolean = isActive
-        elseif self.currentSource == self.inputs.NoSource then
-            self.controls.btnDestination[i].Boolean = isActive
+        local currentInput = tonumber(self.extronRouter['output_' .. i].String) or 0
+        local isActive = currentInput > 0
+        -- Remove toggle feedback for btnDestination
+        if self.controls.ledSourceRouted and self.controls.ledSourceRouted[i] then
+            self.controls.ledSourceRouted[i].Boolean = isActive
         end
     end
 end
@@ -459,28 +433,36 @@ function ExtronDXPMatrixController:updateDestinationText()
         [4] = "Rear Right"
     }
     
-    local activeCount = 0
-    local activeDestinations = {}
+    local sourceNames = {
+        [1] = "ClickShare",
+        [2] = "TeamsPC",
+        [4] = "LaptopFront",
+        [5] = "LaptopRear",
+        [0] = "NoSource"
+    }
     
-    for output, active in pairs(self.currentDestinations) do
-        if active then
+    local activeRoutes = {}
+    local activeCount = 0
+    
+    for output = 1, 4 do
+        local currentInput = tonumber(self.extronRouter['output_' .. output].String) or 0
+        if currentInput > 0 then
             activeCount = activeCount + 1
-            table.insert(activeDestinations, destinationNames[output])
+            local sourceName = sourceNames[currentInput] or "Unknown"
+            table.insert(activeRoutes, sourceName .. " → " .. destinationNames[output])
         end
     end
     
     if activeCount == 0 then
         self.controls.txtDestination.String = ""
-    elseif activeCount == 1 then
-        self.controls.txtDestination.String = activeDestinations[1]
     elseif activeCount == 4 then
-        self.controls.txtDestination.String = "All Displays"
+        self.controls.txtDestination.String = "All Displays Active"
         -- Clear text after 3 seconds
         Timer.CallAfter(function()
             self.controls.txtDestination.String = ""
         end, 3)
     else
-        self.controls.txtDestination.String = table.concat(activeDestinations, ", ")
+        self.controls.txtDestination.String = table.concat(activeRoutes, ", ")
     end
 end
 
@@ -493,9 +475,27 @@ function ExtronDXPMatrixController:checkAutoSwitch()
     -- Check sources in priority order
     for _, source in ipairs(self.sourcePriority) do
         if source.checkFunc() then
-            if self.currentSource ~= source.input then
-                self:debugPrint("Auto-switching to " .. source.name)
-                self:setSource(source.input)
+            -- Check if any outputs are currently active
+            local hasActiveOutputs = false
+            for output = 1, 4 do
+                local currentInput = tonumber(self.extronRouter['output_' .. output].String) or 0
+                if currentInput > 0 then
+                    hasActiveOutputs = true
+                    break
+                end
+            end
+            
+            -- If no outputs are active, activate the first one
+            if not hasActiveOutputs then
+                self:setRoute(source.input, 1)
+            else
+                -- Update all active outputs to the new source
+                for output = 1, 4 do
+                    local currentInput = tonumber(self.extronRouter['output_' .. output].String) or 0
+                    if currentInput > 0 then
+                        self:setRoute(source.input, output)
+                    end
+                end
             end
             return
         end
@@ -535,122 +535,84 @@ function ExtronDXPMatrixController:registerEventHandlers()
         return
     end
     
-    -- ClickShare destination selectors
+    -- Source selection buttons (interlocking)
     for i = 1, 5 do
         if self.controls.btnVideoSource[i] then
-            self.controls.btnVideoSource[i].EventHandler = function()
-                self:clearAllDestinations()
-                if i <= 4 then
-                    self:setDestination(i, true)
-                    self:setSource(self.inputs.ClickShare)
-                else
-                    -- All displays
-                    for output = 1, 4 do
-                        self:setDestination(output, true)
+            self.controls.btnVideoSource[i].EventHandler = function(ctl)
+                if ctl.Boolean then
+                    -- Deselect all other sources
+                    for j = 1, 5 do
+                        if j ~= i and self.controls.btnVideoSource[j] then
+                            self.controls.btnVideoSource[j].Boolean = false
+                        end
                     end
-                    self:setSource(self.inputs.ClickShare)
-                    if self.controls.btnDestination and self.controls.btnDestination[1] then
-                        self.controls.btnDestination[1].Boolean = true
+                    -- Get the input for this source
+                    local sourceInput = nil
+                    if i == 1 then
+                        sourceInput = self.inputs.ClickShare
+                    elseif i == 2 then
+                        sourceInput = self.inputs.TeamsPC
+                    elseif i == 3 then
+                        sourceInput = self.inputs.LaptopFront
+                    elseif i == 4 then
+                        sourceInput = self.inputs.LaptopRear
+                    elseif i == 5 then
+                        sourceInput = self.inputs.NoSource
+                    end
+                    if sourceInput then
+                        -- Route the source to all destinations that are currently routed (feedback only)
+                        for dest = 1, 4 do
+                            local isActive = false
+                            if self.controls.ledSourceRouted and self.controls.ledSourceRouted[dest] then
+                                isActive = self.controls.ledSourceRouted[dest].Boolean
+                            end
+                            if isActive then
+                                self:setRoute(sourceInput, dest)
+                            end
+                        end
+                        -- Handle Teams PC button properties based on source
+                        if i == 2 then
+                            self:setDestinationButtonProperties(2, '#ff6666', 'N/A', true)
+                            self:setDestinationButtonProperties(4, '#ff6666', 'N/A', true)
+                        else
+                            self:setDestinationButtonProperties(2, 'white', '', false)
+                            self:setDestinationButtonProperties(4, 'white', '', false)
+                        end
                     end
                 end
             end
         end
     end
-    
-    -- Teams PC destination selectors
-    for i = 1, 5 do
-        if self.controls.btnVideoSource[i] then
-            self.controls.btnVideoSource[i].EventHandler = function()
-                self:clearAllDestinations()
-                if i == 1 then
-                    -- Front displays
-                    self:setDestination(1, true)
-                    self:setDestination(2, true)
-                    self:setSource(self.inputs.TeamsPC)
-                elseif i == 3 then
-                    -- Rear displays
-                    self:setDestination(3, true)
-                    self:setDestination(4, true)
-                    self:setSource(self.inputs.TeamsPC)
-                elseif i == 5 then
-                    -- All displays
-                    for output = 1, 4 do
-                        self:setDestination(output, true)
+    -- Destination selection buttons (Trigger logic)
+    for i = 1, 4 do
+        if self.controls.btnDestination[i] then
+            self.controls.btnDestination[i].EventHandler = function(ctl)
+                -- Get the currently selected source
+                local selectedSource = nil
+                for src = 1, 5 do
+                    if self.controls.btnVideoSource[src] and self.controls.btnVideoSource[src].Boolean then
+                        if src == 1 then
+                            selectedSource = self.inputs.ClickShare
+                        elseif src == 2 then
+                            selectedSource = self.inputs.TeamsPC
+                        elseif src == 3 then
+                            selectedSource = self.inputs.LaptopFront
+                        elseif src == 4 then
+                            selectedSource = self.inputs.LaptopRear
+                        elseif src == 5 then
+                            selectedSource = self.inputs.NoSource
+                        end
+                        break
                     end
-                    self:setSource(self.inputs.TeamsPC)
-                    if self.controls.btnDestination and self.controls.btnDestination[2] then
-                        self.controls.btnDestination[2].Boolean = true
-                    end
+                end
+                -- On trigger, always route selected source to this destination
+                if selectedSource then
+                    self:setRoute(selectedSource, i)
                 end
             end
         end
     end
-    
-    -- Laptop Front destination selectors
-    for i = 1, 5 do
-        if self.controls.btnVideoSource[i] then
-            self.controls.btnVideoSource[i].EventHandler = function()
-                self:clearAllDestinations()
-                if i <= 4 then
-                    self:setDestination(i, true)
-                    self:setSource(self.inputs.LaptopFront)
-                else
-                    -- All displays
-                    for output = 1, 4 do
-                        self:setDestination(output, true)
-                    end
-                    self:setSource(self.inputs.LaptopFront)
-                    if self.controls.btnDestination and self.controls.btnDestination[3] then
-                        self.controls.btnDestination[3].Boolean = true
-                    end
-                end
-            end
-        end
-    end
-    
-    -- Laptop Rear destination selectors
-    for i = 1, 5 do
-        if self.controls.btnVideoSource[i] then
-            self.controls.btnVideoSource[i].EventHandler = function()
-                self:clearAllDestinations()
-                if i <= 4 then
-                    self:setDestination(i, true)
-                    self:setSource(self.inputs.LaptopRear)
-                else
-                    -- All displays
-                    for output = 1, 4 do
-                        self:setDestination(output, true)
-                    end
-                    self:setSource(self.inputs.LaptopRear)
-                    if self.controls.btnDestination and self.controls.btnDestination[4] then
-                        self.controls.btnDestination[4].Boolean = true
-                    end
-                end
-            end
-        end
-    end
-    
-    -- No Source destination selectors
-    for i = 1, 5 do
-        if self.controls.btnVideoSource[i] then
-            self.controls.btnVideoSource[i].EventHandler = function()
-                self:clearAllDestinations()
-                if i <= 4 then
-                    self:setDestination(i, true)
-                    self:setSource(self.inputs.NoSource)
-                else
-                    -- All displays
-                    for output = 1, 4 do
-                        self:setDestination(output, true)
-                    end
-                    self:setSource(self.inputs.NoSource)
-                    if self.controls.btnDestination and self.controls.btnDestination[5] then
-                        self.controls.btnDestination[5].Boolean = true
-                    end
-                end
-            end
-        end
-    end
+    -- Remove "All Displays" toggle logic for btnDestination[5]
     
     -- Extron DXP Signal Presence handlers
     if self.controls.ledExtronSignalPresence then
@@ -665,18 +627,31 @@ function ExtronDXPMatrixController:registerEventHandlers()
         end
     end
     
-    -- UCI Layer Selector (disable Teams PC buttons for Mon-02 and Mon-04)
-    if self.uciLayerSelector then
-        self.uciLayerSelector['selector'].EventHandler = function(ctl)
-            self:setDestinationButtonProperties(2, '#ff6666', 'N/A', true)
-            self:setDestinationButtonProperties(4, '#ff6666', 'N/A', true)
-        end
-    end
+    -- Re-enable Teams PC buttons when other sources are selected (not TeamsPC)
+    -- This is handled in the main source selection logic above
     
     -- Set up direct UCI button monitoring (matching NV32RouterController pattern)
     self:setupDirectUCIButtonMonitoring()
     
     self:debugPrint("Event handlers registered successfully")
+end
+
+-- Helper method for setting destination button properties
+function ExtronDXPMatrixController:setDestinationButtonProperties(output, color, text, disabled)
+    if self.controls.btnDestination[output] then
+        -- Set button color
+        self.controls.btnDestination[output].Color = color
+        
+        -- Set button text if provided
+        if text and text ~= "" then
+            self.controls.btnDestination[output].String = text
+        end
+        
+        -- Set button disabled state
+        self.controls.btnDestination[output].Disabled = disabled
+        
+        self:debugPrint("Set destination button " .. output .. " properties: color=" .. color .. ", text=" .. text .. ", disabled=" .. tostring(disabled))
+    end
 end
 
 --------** Initialization **--------
@@ -686,11 +661,6 @@ function ExtronDXPMatrixController:funcInit()
     self:setCallSyncComponent()
     self:setClickShareComponent()
     self:setRoomControlsComponent()
-    
-    -- Set default selection to No Source       
-    if self.extronRouter then
-        self:setSource(self.inputs.NoSource)
-    end
     
     -- Setup auto-switching
     self:setupAutoSwitchMonitoring()
