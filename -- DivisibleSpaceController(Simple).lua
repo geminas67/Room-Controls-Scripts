@@ -1,9 +1,9 @@
 --[[ 
   Divisible Space Controller - Modular Parent Room Selection
-  Author: Nikolas Smith, Q-SYS
+  Author: Nikolas Smith
   2025-07-02
   Firmware Req: 10.0.0
-  Version: 2.5 (Parent Room Selection Version)
+  Version: 1.0 (Parent Room Selection Version)
 ]]--
 
 --------** Simple Room Controller Factory **--------

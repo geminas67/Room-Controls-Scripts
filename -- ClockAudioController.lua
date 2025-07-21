@@ -313,7 +313,7 @@ function ClockAudioCDTMicController:getComponentNames()
             table.insert(namesTable.CallSyncNames, component.Name)
         elseif component.Type == self.componentTypes.micBoxes then
             table.insert(namesTable.MicBoxNames, component.Name)
-        elseif component.Type == self.componentTypes.roomControls and component.Name:match("^compRoomControls") then
+        elseif component.Type == self.componentTypes.roomControls and string.match(component.Name, "^compRoomControls") then
             table.insert(namesTable.RoomControlsNames, component.Name)
         elseif component.Type == self.componentTypes.micMixer then
             table.insert(namesTable.MicMixerNames, component.Name)

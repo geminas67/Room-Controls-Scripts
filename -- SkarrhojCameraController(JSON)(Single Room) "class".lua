@@ -609,6 +609,10 @@ function SingleRoomCameraController:registerEventHandlers()
             else
                 self:safeComponentAccess(self.components.camACPR, "TrackingBypass", "set", false)
             end
+            -- Send Button14.press command if skaarhojPTZController exists
+            if self.components.skaarhojPTZController then
+                self:safeComponentAccess(self.components.skaarhojPTZController, "Button14.press", "set", true)
+            end
         end
         -- Set initial state on startup
         if Controls.btnProductionMode.Boolean then

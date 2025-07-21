@@ -23,9 +23,9 @@ local Notifications = Notifications
 local Timer = Timer
 
 -- Control groups for batch operations
-local IncomingCallCtrls = {Controls.Btn_CallAccept, Controls.Btn_CallReject}
-local OffHookCallCtrls = {Controls.Btn_Disconnect}
-local HelpRequestCtrls = {Controls.Combo_HelpMessage}
+local IncomingCallCtrls = {Controls.btnCallAccept, Controls.btnCallReject}
+local OffHookCallCtrls = {Controls.btnDisconnect}
+local HelpRequestCtrls = {Controls.msgHelp}
 local SourceButtons = {}
 local SourceTexts = {}
 
@@ -83,7 +83,7 @@ local function RoomNotesHandler(name, notes)
         end
         
         if data.HelpRequests then
-            Controls.Combo_HelpMessage.Choices = data.HelpRequests
+            Controls.msgHelp.Choices = data.HelpRequests
         end
         
     elseif notificationType == "Volume" then
@@ -147,7 +147,7 @@ local function RoomNotesHandler(name, notes)
             -- Direct help state reset
             Controls.Btn_HelpRequestOn.Boolean = false
             Controls.Btn_HelpRequestOff.Boolean = true
-            Controls.Combo_HelpMessage.String = HelpPrompt
+            Controls.msgHelp.String = HelpPrompt
             for _, ctrl in ipairs(HelpRequestCtrls) do
                 ctrl.IsInvisible = true
             end
@@ -241,15 +241,15 @@ Controls.Btn_VolumePrivacy.EventHandler = function(ctl)
 end
 
 -- Direct call controls
-Controls.Btn_CallAccept.EventHandler = function()
+Controls.btnCallAccept.EventHandler = function()
     PublishPanelNotification("call_accept")
 end
 
-Controls.Btn_CallReject.EventHandler = function()
+Controls.btnCallReject.EventHandler = function()
     PublishPanelNotification("call_decline")
 end
 
-Controls.Btn_Disconnect.EventHandler = function()
+Controls.btnDisconnect.EventHandler = function()
     PublishPanelNotification("call_decline")
 end
 
@@ -257,19 +257,19 @@ end
 Controls.Btn_HelpRequestOn.EventHandler = function()
     Controls.Btn_HelpRequestOn.Boolean = true
     Controls.Btn_HelpRequestOff.Boolean = false
-    Controls.Combo_HelpMessage.IsInvisible = false
+    Controls.msgHelp.IsInvisible = false
     PublishPanelNotification("help_request_true")
 end
 
 Controls.Btn_HelpRequestOff.EventHandler = function()
     Controls.Btn_HelpRequestOn.Boolean = false
     Controls.Btn_HelpRequestOff.Boolean = true
-    Controls.Combo_HelpMessage.IsInvisible = true
-    Controls.Combo_HelpMessage.String = HelpPrompt
+    Controls.msgHelp.IsInvisible = true
+    Controls.msgHelp.String = HelpPrompt
     PublishPanelNotification("help_request_false")
 end
 
-Controls.Combo_HelpMessage.EventHandler = function(ctl)
+Controls.msgHelp.EventHandler = function(ctl)
     PublishPanelNotification("help_request_msg_" .. ctl.String)
 end
 
@@ -300,8 +300,8 @@ InitTimer.EventHandler = function()
     
     Controls.Btn_HelpRequestOn.Boolean = false
     Controls.Btn_HelpRequestOff.Boolean = true
-    Controls.Combo_HelpMessage.IsInvisible = true
-    Controls.Combo_HelpMessage.String = HelpPrompt
+    Controls.msgHelp.IsInvisible = true
+    Controls.msgHelp.String = HelpPrompt
     
     HideSuccessLayer()
     

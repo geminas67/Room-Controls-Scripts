@@ -909,6 +909,10 @@ function SkaarhojCameraController:funcInit()
                     self:safeComponentAccess(acpr, "TrackingBypass", "set", state)
                 end
             end
+            -- Send Button14.press command if skaarhojPTZController exists
+            if self.components.skaarhojPTZController then
+                self:safeComponentAccess(self.components.skaarhojPTZController, "Button14.press", "set", true)
+            end
         end
         -- Set initial state
         Controls.btnProductionMode.EventHandler()

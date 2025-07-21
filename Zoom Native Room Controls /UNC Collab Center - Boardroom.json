@@ -1,127 +1,81 @@
 {
     "adapters": [
-        {
-            "model": "GenericNetworkAdapter",
-            "ip": "tcp://152.19.231.28:1702",
-            "ports": [
-                {
-                    "id": "qsys_core",
-                    "name": "Sycamore",
-                    "methods": [
-                        {
-                            "id": "system_power",
-                            "name": "System Power",
-                            "command": "ct SYSTEM_POWER_BTN_%\r\n",
-                            "params": [
-                                {
-                                    "id": "on",
-                                    "name": "On",
-                                    "value": "ON"
-                                },
-                                {
-                                    "id": "off",
-                                    "name": "Off",
-                                    "value": "OFF"
-                                }
-                            ],
-                            "type": "actions"
-                        },
-                        {
-                            "id": "display_power",
-                            "name": "Display Power",
-                            "command": "ct DISPLAY_POWER_BTN_%\r\n",
-                            "params": [
-                                {
-                                    "id": "display_on",
-                                    "name": "On",
-                                    "value": "ON"
-                                },
-                                {
-                                    "id": "display_off",
-                                    "name": "Off",
-                                    "value": "OFF"
-                                }
-                            ],
-                            "type": "actions"
-                        }
-                    ]
-                }
+      {
+        "model": "GenericNetworkAdapter",
+        "ip": "udp://152.19.231.28:5000",
+        "ports": [
+          {
+            "id": "display",
+            "name": "Room Controls",
+            "methods": [
+              {
+                "id": "tv power",
+                "name": "TV Power",
+                "command": "TV Power,%",
+                "params": [
+                  {
+                    "id": "on",
+                    "name": "On",
+                    "value": "On"
+                  },
+                  {
+                    "id": "off",
+                    "name": "Off",
+                    "value": "Off"
+                  }
+                ],
+                "type": "actions"
+              },
+              {
+                "id": "volume",
+                "name": "Volume",
+                "command": "Volume,%",
+                "params": [
+                  {
+                    "id": "down",
+                    "name": "Down",
+                    "value": "Down"
+                  },
+                  {
+                    "id": "up",
+                    "name": "Up",
+                    "value": "Up"
+                  },
+                  {
+                    "id": "mute",
+                    "name": "Mute",
+                    "value": "Mute"
+                  }
+                ],
+                "type": "actions"
+              },
+              {
+                "id": "source",
+                "name": "Source",
+                "command": "Source,%",
+                "params": [
+                  {
+                    "id": "zoom room",
+                    "name": "Zoom Room",
+                    "value": "Zoom Room"
+                  },
+                  {
+                    "id": "appletv",
+                    "name": "AppleTV",
+                    "value": "AppleTV"
+                  }
+                ],
+               "type": "actions"
+              }
             ]
-        },
-        {
-            "model": "GenericNetworkAdapter",
-            "ip": "tcp://172.31.94.13:1702",
-            "ports": [
-                {
-                    "id": "camera",
-                    "name": "Camera",
-                    "methods": [
-                        {
-                            "id": "camera_select",
-                            "name": "Camera Select",
-                            "command": "ct SEL_CAM_%\r\n",
-                            "params": [
-                                {
-                                    "id": "front",
-                                    "name": "Front",
-                                    "value": "FRONT"
-                                },
-                                {
-                                    "id": "rear",
-                                    "name": "Rear",
-                                    "value": "REAR"
-                                }
-                            ],
-                            "type": "actions"
-                        },
-                        {
-                            "id": "camera_presets",
-                            "name": "Presets",
-                            "command": "ct CAM_PRESET_LOAD_%\r\n",
-                            "params": [
-                                {
-                                    "id": "cam_home",
-                                    "name": "Home",
-                                    "value": "01"
-                                },
-                                {
-                                    "id": "cam_left",
-                                    "name": "Left",
-                                    "value": "02"
-                                },
-                                {
-                                    "id": "cam_right",
-                                    "name": "Right",
-                                    "value": "03"
-                                },
-                                {
-                                    "id": "cam_wide",
-                                    "name": "Wide",
-                                    "value": "04"
-                                }
-                            ],
-                            "type": "actions"
-                        }
-                    ]
-                }
-            ]
-        }
+          }
+        ]
+      }
     ],
     "styles": [
-        "qsys_core.icon=icon_rack_equipment",
-        "qsys_core.system_power.icon=icon_power",
-        "qsys_core.system_power.invisible=true",
-        "qsys_core.display_power.icon=icon_tv",
-        "camera.main_method=camera_select",
-        "camera.icon=icon_projector"
+      "display.icon=icon_tv",
+      "volume.volume.down.icon=icon_down",
+      "volume.volume.up.icon=icon_up"
     ],
-    "rules": 
-    {
-        "zr_zoom_app_opened": [
-            "qsys_core.system_power.system_on"
-        ],
-        "zr_zoom_app_closed": [
-            "qsys_core.system_power.system_off"
-        ]
-    }
-}
+    "rules": {}
+  }

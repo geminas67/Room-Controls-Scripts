@@ -283,7 +283,7 @@ function ExtronDXPMatrixController:checkStatus()
     self.controls.txtDestination.Value = 0
 end
 
---------** Component Name Discovery **--------
+--------** Component Discovery **--------
 function ExtronDXPMatrixController:discoverComponents()
     local components = Component.GetComponents()
     local discovered = {

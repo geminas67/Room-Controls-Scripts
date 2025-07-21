@@ -10,10 +10,10 @@
 
 -- Define control references
 local controls = {
-    compAudioRouter = Controls.compAudioRouter,
-    btnAudioSource = Controls.btnAudioSource,
-    txtStatus = Controls.txtStatus,
-    compRoomControls = Controls.compRoomControls, -- Room Controls component
+    compAudioRouter  = Controls.compAudioRouter,
+    btnAudioSource   = Controls.btnAudioSource,
+    txtStatus        = Controls.txtStatus,
+    compRoomControls = Controls.compRoomControls,
 }
 
 -- AudioRouterController class
@@ -32,33 +32,32 @@ function AudioRouterController.new(config)
     
     -- Input/Output mapping
     self.inputs = {
-        XLR01 = 1,
-        XLR02 = 2,
-        DMP01 = 3,
-        DMP02 = 4,
-        DMP03 = 5,
-        XLR03 = 6,
-        XLR04 = 7,
-        XLR05 = 8,
-        NONE = 9
+        xlr01 = 1,
+        xlr02 = 2,
+        dmp01 = 3,
+        dmp02 = 4,
+        dmp03 = 5,
+        xlr03 = 6,
+        xlr04 = 7,
+        xlr05 = 8,
+        none  = 9,
     }
     
     self.outputs = {
-        OUTPUT01 = 1
+        output01 = 1
     }
     -- Component type definitions
     self.componentTypes = {
-        audioRouter = "router_with_output",
-        roomControls =  (comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls"))
+        audioRouter  = "router_with_output",
+        roomControls =  "device_controller_script"
     }
     
     -- Component storage
-    self.audioRouter = nil
+    self.audioRouter  = nil
     self.roomControls = nil
-    self.lastInput = {} -- Store the last input for each output
+    self.lastInput    = {}    
     -- Store controls reference
     self.controls = controls
-    
     -- Setup event handlers and initialize
     self:registerEventHandlers()
     self:funcInit()
@@ -134,7 +133,7 @@ function AudioRouterController:discoverComponents()
     for i, v in pairs(Component.GetComponents()) do
         if v.Type == self.componentTypes.audioRouter then
             table.insert(audioRouterNames, v.Name)
-        elseif v.Type == self.componentTypes.roomControls then
+        elseif v.Type == self.componentTypes.roomControls and string.match(v.Name, "^compRoomControls") then
             table.insert(roomControlsNames, v.Name)
         end
     end
