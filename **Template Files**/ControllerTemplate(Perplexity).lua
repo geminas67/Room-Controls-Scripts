@@ -346,11 +346,11 @@ end
 function MotionModule:cleanup() end
 function MotionModule:debug(str) self.controller:debugPrint("[Motion] "..str) end
 
--------------------[ SystemAutomationController (The Orchestrator) ]-------------------
+--- SystemAutomationController (The Orchestrator) ---------
 SystemAutomationController = {}
 SystemAutomationController.__index = SystemAutomationController
 
--------------------[ Static / Class Properties ]-------------------
+--** static/class properties
 SystemAutomationController.clearString = "[Clear]"
 SystemAutomationController.componentTypes = {
     callSync = "call_sync",
@@ -577,7 +577,7 @@ end
 
 ------------------[ Component Discovery / Selection ]------------------
 function SystemAutomationController:getComponentNames()
-    local compType = SystemAutomationController.componentTypes
+    local ct = SystemAutomationController.componentTypes
     local namesTable = {
         CallSyncNames = {},
         VideoBridgeNames = {},
@@ -587,17 +587,17 @@ function SystemAutomationController:getComponentNames()
         MuteNames = {},
     }
     for _, comp in pairs(Component.GetComponents()) do
-        if comp.Type == compType.callSync then
+        if comp.Type == ct.callSync then
             table.insert(namesTable.CallSyncNames, comp.Name)
-        elseif comp.Type == compType.videoBridge then
+        elseif comp.Type == ct.videoBridge then
             table.insert(namesTable.VideoBridgeNames, comp.Name)
-        elseif comp.Type == compType.displays then
+        elseif comp.Type == ct.displays then
             table.insert(namesTable.DisplayNames, comp.Name)
-        elseif comp.Type == compType.gains then
+        elseif comp.Type == ct.gains then
             table.insert(namesTable.GainNames, comp.Name)
-        elseif comp.Type == compType.systemMute then
+        elseif comp.Type == ct.systemMute then
             table.insert(namesTable.MuteNames, comp.Name)
-        elseif comp.Type == compType.camACPR then
+        elseif comp.Type == ct.camACPR then
             table.insert(namesTable.CamACPRNames, comp.Name)
         end
     end
