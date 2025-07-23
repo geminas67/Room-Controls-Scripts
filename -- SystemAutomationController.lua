@@ -979,8 +979,7 @@ local function createSystemController(roomName, roomType)
         }
     }
 
-    local roomConfig = defaultConfigs[roomType] or defaultConfigs["Default"]
-    
+    local roomConfig = defaultConfigs[roomType] or defaultConfigs["Default"]    
     local success, controller = pcall(function()
         local instance = SystemAutomationController.new(roomName, roomConfig)
         instance.defaultConfigs = defaultConfigs

@@ -1,9 +1,9 @@
 --[[
-  Planar DisplayWallController - Q-SYS Control Script for Planar Display Wall
+  Sony Bravia DisplayWallController - Q-SYS Control Script for Sony Bravia Display Wall
   Author: Nikolas Smith, Q-SYS
-  Date: 2025-07-06
-  Version: 1.3
-  Description: Controls Planar Display Wall components with power management,
+  Date: 2025-07-22
+  Version: 1.4
+  Description: Controls Sony Bravia Display Wall components with power management,
   input switching, and display wall configuration. 
   Integrates with SystemAutomationController.
 ]]--
@@ -11,175 +11,127 @@
 -- Display Control Configuration (easily changeable for different manufacturers)
 local displayControls = {
     -- Power Controls
-    powerOn     = "PowerOn",
-    powerOff    = "PowerOff", 
-    powerIsOn   = "PowerIsOn",
-    powerIsOff  = "PowerIsOff",
-    
-     --[[
-    Input Controls (Option 1: ComboBox method) 
-    vInputSelectComboBox = "InputSelectComboBox",
-    vInputStatusLED = "InputStatus",
-    ]]--
-    
+    displayPowerOn     = "PowerOn",
+    displayPowerOff    = "PowerOff", 
+    displayPowerStatus = "PowerStatus",
+    -- Input Controls (Option 1: ComboBox method)
+    inputSelectComboBox = "InputCombo",
+    inputStatusLED      = "InputStatus",
     -- Input Controls (Option 2: Button method)
-    inputSelectButtons = "VideoInputs ",
-    inputNames = "InputNames ",
-    currentInput = "CurrentInput ",
-    
+    inputSelectButtons = "VideoInputs",
+    inputNames   = "VideoInputNames",
+    currentInput = "VideoInput",   
     -- Wall Configuration
-    wallMode = "WallMode",
+    wallMode     = "WallMode",
     wallPosition = "WallPosition"
 }
 
--- Validate required controls exist
+-- Validate required controls exist (flat)
 local function validateControls()
-    if not Controls.txtStatus or not Controls.devDisplays then
-        print("ERROR: Missing required controls. Please check your Q-SYS design.")
+    if not Controls.txtStatus then
+        print("ERROR: Missing Controls.txtStatus. Please check your Q-SYS design.")
+        return false
+    end
+    if not Controls.devDisplays then
+        print("ERROR: Missing Controls.devDisplays. Please check your Q-SYS design.")
         return false
     end
     return true
 end
 
 --------** Class Definition **--------
-PlanarDisplayWallController = {}
-PlanarDisplayWallController.__index = PlanarDisplayWallController
+SonyBraviaDisplayWallController = {}
+SonyBraviaDisplayWallController.__index = SonyBraviaDisplayWallController
 
-function PlanarDisplayWallController.new(roomName, config)
-    local self = setmetatable({}, PlanarDisplayWallController)
-    
-    -- Instance properties
-    self.roomName = roomName or "Default Room"
-    self.debugging = (config and config.debugging) or true
+function SonyBraviaDisplayWallController.new(roomName, config)
+    local self = setmetatable({}, SonyBraviaDisplayWallController)
+    self.roomName    = roomName or "Default Room"
+    self.debugging   = (config and config.debugging) or true
     self.clearString = "[Clear]"
 
     self.componentTypes = {
-        displays = "%PLUGIN%_404F4311-A38D-4891-AF61-709B8F48A6E1_%FP%_77008e895ac50ad 1242e3dee981c5e4", -- Planar Display
+        displays     = "%PLUGIN%_C76AD0FA-D707-4bb4-991E-D70D77AC1FC4_%FP%_b1533bca5f02f791538ad7a9a5ed9903",  -- Sony Bravia Display
         roomControls = "device_controller_script" -- Will be filtered to only those starting with "compRoomControls"
     }
-    
-    -- Component storage
     self.components = {
         displays = {},
         compRoomControls = nil,
         invalid = {}
     }
-    
-    -- State tracking
     self.state = {
-        displayWallMode = "Single", -- Single, 2x2, 3x3, etc.
+        displayWallMode = "Single",
         lastInput = "HDMI1",
         powerState = false,
         isWarming = false,
         isCooling = false
     }
-    
-    -- Configuration
     self.config = {
-        maxDisplays = config and config.maxDisplays or 9, -- Maximum number of displays supported
+        maxDisplays = config and config.maxDisplays or 9,
         defaultInput = "HDMI1",
         displayWallModes = {"Single", "2x2", "3x3", "4x4", "Custom"},
         inputChoices = {"HDMI1", "HDMI2", "DisplayPort", "USB-C"}
     }
-    
-    -- Input to button mapping
     self.inputButtonMap = {
-        HDMI1 = 1, HDMI2 = 2, DisplayPort = 3, USB_C = 4,
-        DVI = 5, VGA = 6, Component = 7, Composite = 8, S_Video = 9, RF = 10
+        HDMI1       = 1, 
+        HDMI2       = 2, 
+        DisplayPort = 3, 
+        USB_C       = 4,
+        DVI         = 5, 
+        VGA         = 6, 
+        Component   = 7, 
+        Composite   = 8, 
+        S_Video     = 9, 
+        RF          = 10
     }
-    
-    -- Timers
     self.timers = {
-        warmup = Timer.New(),
+        warmup   = Timer.New(),
         cooldown = Timer.New()
     }
-    
-    -- Timer Configuration (instance-specific, dynamically updated from room controls component)
     self.timerConfig = {
-        warmupTime = 7,  -- Default fallback values
+        warmupTime = 7,
         cooldownTime = 5
     }
-    
-    -- Initialize modules
+
     self:initDisplayModule()
     self:initPowerModule()
-    
-    -- Initialize timer configuration
     self:updateTimerConfigFromComponent()
     return self
 end
 
 --------** Dynamic Timer Configuration **--------
-function PlanarDisplayWallController:updateTimerConfigFromComponent()
-    -- Default fallback values
-    local defaultWarmupTime = 7
-    local defaultCooldownTime = 5
-    
-    if self.components.compRoomControls then
-        local success, result = pcall(function()
-            -- Try to get warmup time from room controls component
-            if self.components.compRoomControls["warmupTime"] then
-                local warmupTime = self.components.compRoomControls["warmupTime"].Value
-                if warmupTime and warmupTime > 0 then
-                    self.timerConfig.warmupTime = warmupTime
-                    self:debugPrint("Updated warmup time from component: " .. warmupTime .. " seconds")
-                else
-                    self.timerConfig.warmupTime = defaultWarmupTime
-                    self:debugPrint("Using default warmup time: " .. defaultWarmupTime .. " seconds")
-                end
-            else
-                self.timerConfig.warmupTime = defaultWarmupTime
-                self:debugPrint("Using default warmup time: " .. defaultWarmupTime .. " seconds")
-            end
-            
-            -- Try to get cooldown time from room controls component
-            if self.components.compRoomControls["cooldownTime"] then
-                local cooldownTime = self.components.compRoomControls["cooldownTime"].Value
-                if cooldownTime and cooldownTime > 0 then
-                    self.timerConfig.cooldownTime = cooldownTime
-                    self:debugPrint("Updated cooldown time from component: " .. cooldownTime .. " seconds")
-                else
-                    self.timerConfig.cooldownTime = defaultCooldownTime
-                    self:debugPrint("Using default cooldown time: " .. defaultCooldownTime .. " seconds")
-                end
-            else
-                self.timerConfig.cooldownTime = defaultCooldownTime
-                self:debugPrint("Using default cooldown time: " .. defaultCooldownTime .. " seconds")
-            end
-        end)
-        
-        if not success then
-            self:debugPrint("Warning: Failed to update timer config from component: " .. tostring(result))
-            -- Set fallback values on error
-            self.timerConfig.warmupTime = defaultWarmupTime
-            self.timerConfig.cooldownTime = defaultCooldownTime
-        end
-    else
-        -- No room controls component available, use defaults
+function SonyBraviaDisplayWallController:updateTimerConfigFromComponent()
+    local defaultWarmupTime, defaultCooldownTime = 7, 5
+    local comp = self.components.compRoomControls
+
+    if not comp then
         self.timerConfig.warmupTime = defaultWarmupTime
         self.timerConfig.cooldownTime = defaultCooldownTime
         self:debugPrint("No room controls component available, using default timing values")
+        return
     end
+
+    local warmupTime = comp.warmupTime and comp.warmupTime.Value or nil
+    self.timerConfig.warmupTime = (warmupTime and warmupTime > 0) and warmupTime or defaultWarmupTime
+    self:debugPrint("Warmup time: " .. self.timerConfig.warmupTime .. " seconds")
+
+    local cooldownTime = comp.cooldownTime and comp.cooldownTime.Value or nil
+    self.timerConfig.cooldownTime = (cooldownTime and cooldownTime > 0) and cooldownTime or defaultCooldownTime
+    self:debugPrint("Cooldown time: " .. self.timerConfig.cooldownTime .. " seconds")
 end
 
-function PlanarDisplayWallController:getTimerConfig(isWarmup)
-    -- Update timer config from component first
+function SonyBraviaDisplayWallController:getTimerConfig(isWarmup)
     self:updateTimerConfigFromComponent()
-    
-    if isWarmup then
-        return self.timerConfig.warmupTime
-    else
-        return self.timerConfig.cooldownTime
-    end
+    return isWarmup and self.timerConfig.warmupTime or self.timerConfig.cooldownTime
 end
 
 --------** Debug Helper **--------
-function PlanarDisplayWallController:debugPrint(str)
+function SonyBraviaDisplayWallController:debugPrint(str)
     if self.debugging then print("["..self.roomName.." Debug] "..str) end
 end
 
 --------** Input Button Mapping **--------
-function PlanarDisplayWallController:getInputButtonNumber(input)
+function SonyBraviaDisplayWallController:getInputButtonNumber(input)
+    -- Normalize common alternate spellings/labels
     local normalizedInput = input:gsub("USB%-C", "USB_C")
     local buttonNumber = self.inputButtonMap[normalizedInput]
     if not buttonNumber then
@@ -189,7 +141,7 @@ function PlanarDisplayWallController:getInputButtonNumber(input)
 end
 
 --------** Safe Component Access **--------
-function PlanarDisplayWallController:safeComponentAccess(component, control, action, value)
+function SonyBraviaDisplayWallController:safeComponentAccess(component, control, action, value)
     local success, result = pcall(function()
         if component and component[control] then
             if action == "set" then
@@ -214,7 +166,6 @@ function PlanarDisplayWallController:safeComponentAccess(component, control, act
         end
         return false
     end)
-    
     if not success then
         self:debugPrint("Component access error: " .. tostring(result))
         return false
@@ -223,14 +174,14 @@ function PlanarDisplayWallController:safeComponentAccess(component, control, act
 end
 
 --------** Display Module **--------
-function PlanarDisplayWallController:initDisplayModule()
+function SonyBraviaDisplayWallController:initDisplayModule()
     local selfRef = self
     self.displayModule = {
         powerAll = function(state)
             selfRef:debugPrint("Powering all displays: " .. tostring(state))
             for i, display in pairs(selfRef.components.displays) do
                 if display then
-                    local control = state and displayControls.powerOn or displayControls.powerOff
+                    local control = state and displayControls.displayPowerOn or displayControls.displayPowerOff
                     selfRef:safeComponentAccess(display, control, "trigger")
                 end
             end
@@ -239,58 +190,49 @@ function PlanarDisplayWallController:initDisplayModule()
                 Controls.ledDisplayPower.Boolean = state
             end
         end,
-        
         powerSingle = function(index, state)
             local display = selfRef.components.displays[index]
             if display then
-                local control = state and displayControls.powerOn or displayControls.powerOff
+                local control = state and displayControls.displayPowerOn or displayControls.displayPowerOff
                 selfRef:safeComponentAccess(display, control, "trigger")
                 selfRef:debugPrint("Display " .. index .. " power: " .. tostring(state))
             end
         end,
-        
         setInputAll = function(input)
             selfRef:debugPrint("Setting all displays to input: " .. input)
             for i, display in pairs(selfRef.components.displays) do
-                if display then
-                    -- Try Option 1: InputSelectComboBox (if available)
-                    if display[displayControls.vInputSelectComboBox] then
-                        selfRef:safeComponentAccess(display, displayControls.vInputSelectComboBox, "setString", input)
-                    else
-                        -- Fallback to Option 2: InputSelectButtons
-                        local buttonNumber = selfRef:getInputButtonNumber(input)
-                        if buttonNumber then
-                            local buttonName = displayControls.inputSelectButtons .. buttonNumber
-                            selfRef:safeComponentAccess(display, buttonName, "trigger")
-                        end
+                if not display then goto continue end
+                if display[displayControls.inputSelectComboBox] then
+                    selfRef:safeComponentAccess(display, displayControls.inputSelectComboBox, "setString", input)
+                else
+                    local buttonNumber = selfRef:getInputButtonNumber(input)
+                    if buttonNumber then
+                        local buttonName = displayControls.inputSelectButtons .. buttonNumber
+                        selfRef:safeComponentAccess(display, buttonName, "trigger")
                     end
                 end
+                ::continue::
             end
             selfRef.state.lastInput = input
             if Controls.ledDisplayInput then
                 Controls.ledDisplayInput.String = input
             end
         end,
-        
         setInputSingle = function(index, input)
             local display = selfRef.components.displays[index]
-            if display then
-                -- Try Option 1: InputSelectComboBox (if available)
-                if display[displayControls.vInputSelectComboBox] then
-                    selfRef:safeComponentAccess(display, displayControls.vInputSelectComboBox, "setString", input)
-                    selfRef:debugPrint("Display " .. index .. " input: " .. input .. " (via ComboBox)")
-                else
-                    -- Fallback to Option 2: InputSelectButtons
-                    local buttonNumber = selfRef:getInputButtonNumber(input)
-                    if buttonNumber then
-                        local buttonName = displayControls.inputSelectButtons .. buttonNumber
-                        selfRef:safeComponentAccess(display, buttonName, "trigger")
-                        selfRef:debugPrint("Display " .. index .. " input: " .. input .. " (button " .. buttonNumber .. ")")
-                    end
-                end
+            if not display then return end
+            if display[displayControls.inputSelectComboBox] then
+                selfRef:safeComponentAccess(display, displayControls.inputSelectComboBox, "setString", input)
+                selfRef:debugPrint("Display " .. index .. " input: " .. input .. " (via ComboBox)")
+                return
+            end
+            local buttonNumber = selfRef:getInputButtonNumber(input)
+            if buttonNumber then
+                local buttonName = displayControls.inputSelectButtons .. buttonNumber
+                selfRef:safeComponentAccess(display, buttonName, "trigger")
+                selfRef:debugPrint("Display " .. index .. " input: " .. input .. " (button " .. buttonNumber .. ")")
             end
         end,
-        
         getDisplayCount = function()
             local count = 0
             for _, display in pairs(selfRef.components.displays) do
@@ -298,41 +240,26 @@ function PlanarDisplayWallController:initDisplayModule()
             end
             return count
         end,
-        
         getCurrentInput = function(displayIndex)
             local display = selfRef.components.displays[displayIndex]
             if not display then return nil end
-            
-            -- Try Option 1: InputSelectComboBox
-            if display[displayControls.vInputSelectComboBox] then
-                return selfRef:safeComponentAccess(display, displayControls.vInputSelectComboBox, "getString")
+            if display[displayControls.inputSelectComboBox] then
+                return selfRef:safeComponentAccess(display, displayControls.inputSelectComboBox, "getString")
             end
-            
-            -- Option 2: Check CurrentInput 1-10 LEDs to find active input
             for i = 1, 10 do
                 local currentInputControl = display[displayControls.currentInput .. i]
-                if currentInputControl then
-                    local isActive = selfRef:safeComponentAccess(display, displayControls.currentInput .. i, "get")
-                    if isActive then
-                        -- Get the input name from InputNames
-                        local inputNameControl = display[displayControls.inputNames .. i]
-                        if inputNameControl then
-                            return selfRef:safeComponentAccess(display, displayControls.inputNames .. i, "getString")
-                        else
-                            return "Input " .. i
-                        end
-                    end
+                if currentInputControl and selfRef:safeComponentAccess(display, displayControls.currentInput .. i, "get") then
+                    local inputNameControl = display[displayControls.inputNames .. i]
+                    return inputNameControl
+                        and selfRef:safeComponentAccess(display, displayControls.inputNames .. i, "getString")
+                        or ("Input " .. i)
                 end
             end
-            
             return nil
         end,
-        
         configureDisplayWall = function(mode)
             selfRef:debugPrint("Configuring display wall mode: " .. mode)
             selfRef.state.displayWallMode = mode
-            
-            -- Configure display wall based on mode
             local maxDisplays = (mode == "2x2" and 4) or (mode == "3x3" and 9) or 0
             if maxDisplays > 0 then
                 for i = 1, maxDisplays do
@@ -342,14 +269,12 @@ function PlanarDisplayWallController:initDisplayModule()
                     end
                 end
             else
-                -- Single mode - disable wall mode
                 for i, display in pairs(selfRef.components.displays) do
                     if display then
                         selfRef:safeComponentAccess(display, displayControls.wallMode, "setString", "Single")
                     end
                 end
             end
-            
             if Controls.ledDisplayWallMode then
                 Controls.ledDisplayWallMode.String = mode
             end
@@ -357,97 +282,51 @@ function PlanarDisplayWallController:initDisplayModule()
     }
 end
 
---------** Power Status Helper **--------
-function PlanarDisplayWallController:getPowerStatus(display)
-    if not display then return nil end
-    
-            -- Check for new dual-control structure first
-        if display[displayControls.powerIsOn] and display[displayControls.powerIsOff] then
-            local powerIsOn = self:safeComponentAccess(display, displayControls.powerIsOn, "get")
-            local powerIsOff = self:safeComponentAccess(display, displayControls.powerIsOff, "get")
-        
-        -- Return the power state (PowerIsOn takes precedence if both are true)
-        if powerIsOn then return true
-        elseif powerIsOff then return false
-        else return nil -- Neither is true, status unknown
-        end
-    end
-    
-            -- Fallback to old single control if it exists
-        if display["PowerStatus"] then
-            return self:safeComponentAccess(display, "PowerStatus", "get")
-        end
-    
-    return nil
-end
-
---------** Power Module **--------
-function PlanarDisplayWallController:initPowerModule()
+--------** Power Module  **--------
+function SonyBraviaDisplayWallController:initPowerModule()
     local selfRef = self
     self.powerModule = {
         enableDisablePowerControls = function(state)
-            -- Consolidated power controls array
             local allPowerControls = {
                 "btnDisplayPowerOn", "btnDisplayPowerOff", "btnDisplayPowerSingle",
                 "btnDisplayPowerAll", "btnDisplayInputAll", "btnDisplayWallConfig"
             }
-            
             for _, controlName in ipairs(allPowerControls) do
                 if Controls[controlName] then
                     if type(Controls[controlName]) == "table" then
-                        -- Handle array controls (btnDisplayPowerOn, btnDisplayPowerOff, btnDisplayPowerSingle)
                         for i, btn in ipairs(Controls[controlName]) do
                             btn.IsDisabled = not state
                         end
                     else
-                        -- Handle single controls (btnDisplayPowerAll, btnDisplayInputAll, btnDisplayWallConfig)
                         Controls[controlName].IsDisabled = not state
                     end
                 end
             end
         end,
-        
         setDisplayPowerFB = function(state)
-            -- Update feedback controls to reflect power state
-            if Controls.ledDisplayPower then
-                Controls.ledDisplayPower.Boolean = state
-            end
-            if Controls.btnDisplayPowerAll then
-                Controls.btnDisplayPowerAll.Boolean = state
-            end
+            if Controls.ledDisplayPower then Controls.ledDisplayPower.Boolean = state end
+            if Controls.btnDisplayPowerAll then Controls.btnDisplayPowerAll.Boolean = state end
         end,
-        
         updatePowerFeedbackFromDisplays = function()
-            -- Update power feedback based on actual display power status
-            local allPoweredOn = true
-            local anyPoweredOn = false
-            local poweredOnCount = 0
-            local totalDisplays = 0
-            
+            local allPoweredOn, anyPoweredOn, poweredOnCount, totalDisplays = true, false, 0, 0
             for i, display in pairs(selfRef.components.displays) do
                 if display then
                     totalDisplays = totalDisplays + 1
-                    local powerStatus = selfRef:getPowerStatus(display)
+                    local powerStatus = selfRef:safeComponentAccess(display, displayControls.displayPowerStatus, "get")
                     if powerStatus then
                         poweredOnCount = poweredOnCount + 1
                         anyPoweredOn = true
-                        
-                        -- Update individual display power feedback
                         if Controls.btnDisplayPowerSingle and Controls.btnDisplayPowerSingle[i] then
                             Controls.btnDisplayPowerSingle[i].Boolean = powerStatus
                         end
                     else
                         allPoweredOn = false
-                        
-                        -- Update individual display power feedback
                         if Controls.btnDisplayPowerSingle and Controls.btnDisplayPowerSingle[i] then
                             Controls.btnDisplayPowerSingle[i].Boolean = false
                         end
                     end
                 end
             end
-            
-            -- Update global power feedback
             if totalDisplays > 0 then
                 local globalPowerState = allPoweredOn
                 selfRef.powerModule.setDisplayPowerFB(globalPowerState)
@@ -457,73 +336,52 @@ function PlanarDisplayWallController:initPowerModule()
                                  ", Powered count: " .. poweredOnCount .. "/" .. totalDisplays)
             end
         end,
-        
         powerOnDisplay = function(index)
             selfRef:debugPrint("Powering on display " .. index)
             selfRef.displayModule.powerSingle(index, true)
-            -- Disable individual display power controls during warmup
             selfRef.powerModule.enableDisablePowerControlIndex(index, false)
             selfRef.state.isWarming = true
-            if Controls.ledDisplayWarming then
-                Controls.ledDisplayWarming.Boolean = true
-            end
+            if Controls.ledDisplayWarming then Controls.ledDisplayWarming.Boolean = true end
             selfRef.timers.warmup:Start(selfRef:getTimerConfig(true))
-            -- Update power feedback for this specific display
             if Controls.btnDisplayPowerSingle and Controls.btnDisplayPowerSingle[index] then
                 Controls.btnDisplayPowerSingle[index].Boolean = true
             end
         end,
-        
         powerOffDisplay = function(index)
             selfRef:debugPrint("Powering off display " .. index)
             selfRef.displayModule.powerSingle(index, false)
-            -- Disable individual display power controls during cooldown
             selfRef.powerModule.enableDisablePowerControlIndex(index, false)
             selfRef.state.isCooling = true
-            if Controls.ledDisplayCooling then
-                Controls.ledDisplayCooling.Boolean = true
-            end
+            if Controls.ledDisplayCooling then Controls.ledDisplayCooling.Boolean = true end
             selfRef.timers.cooldown:Start(selfRef:getTimerConfig(false))
-            -- Update power feedback for this specific display
             if Controls.btnDisplayPowerSingle and Controls.btnDisplayPowerSingle[index] then
                 Controls.btnDisplayPowerSingle[index].Boolean = false
             end
         end,
-        
         powerOnAll = function()
             selfRef:debugPrint("Powering on all displays")
             selfRef.displayModule.powerAll(true)
             selfRef.powerModule.enableDisablePowerControls(false)
             selfRef.state.isWarming = true
-            if Controls.ledDisplayWarming then
-                Controls.ledDisplayWarming.Boolean = true
-            end
+            if Controls.ledDisplayWarming then Controls.ledDisplayWarming.Boolean = true end
             selfRef.timers.warmup:Start(selfRef:getTimerConfig(true))
             selfRef.powerModule.setDisplayPowerFB(true)
         end,
-        
         powerOffAll = function()
             selfRef:debugPrint("Powering off all displays")
             selfRef.displayModule.powerAll(false)
             selfRef.powerModule.enableDisablePowerControls(false)
             selfRef.state.isCooling = true
-            if Controls.ledDisplayCooling then
-                Controls.ledDisplayCooling.Boolean = true
-            end
+            if Controls.ledDisplayCooling then Controls.ledDisplayCooling.Boolean = true end
             selfRef.timers.cooldown:Start(selfRef:getTimerConfig(false))
             selfRef.powerModule.setDisplayPowerFB(false)
         end,
-        
         refreshPowerFeedback = function()
-            -- Manual refresh of power feedback from displays
             selfRef:debugPrint("Manually refreshing power feedback from displays")
             selfRef.powerModule.updatePowerFeedbackFromDisplays()
         end,
-        
         enableDisablePowerControlIndex = function(index, state)
-            -- Consolidated array of individual display power controls
             local individualPowerControls = {"btnDisplayPowerOn", "btnDisplayPowerOff", "btnDisplayPowerSingle"}
-            
             for _, controlName in ipairs(individualPowerControls) do
                 if Controls[controlName] and Controls[controlName][index] then
                     Controls[controlName][index].IsDisabled = not state
@@ -534,37 +392,37 @@ function PlanarDisplayWallController:initPowerModule()
 end
 
 --------** Component Management **--------
-function PlanarDisplayWallController:setComponent(ctrl, componentType)
+function SonyBraviaDisplayWallController:setComponent(ctrl, componentType)
     local componentName = ctrl and ctrl.String or nil
     if not componentName or componentName == "" or componentName == self.clearString then
         if ctrl then ctrl.Color = "white" end
         self:setComponentValid(componentType)
         return nil
-    elseif #Component.GetControls(Component.New(componentName)) < 1 then
+    end
+    if #Component.GetControls(Component.New(componentName)) < 1 then
         if ctrl then
             ctrl.String = "[Invalid Component Selected]"
             ctrl.Color = "pink"
         end
         self:setComponentInvalid(componentType)
         return nil
-    else
-        if ctrl then ctrl.Color = "white" end
-        self:setComponentValid(componentType)
-        return Component.New(componentName)
     end
+    if ctrl then ctrl.Color = "white" end
+    self:setComponentValid(componentType)
+    return Component.New(componentName)
 end
 
-function PlanarDisplayWallController:setComponentInvalid(componentType)
+function SonyBraviaDisplayWallController:setComponentInvalid(componentType)
     self.components.invalid[componentType] = true
     self:checkStatus()
 end
 
-function PlanarDisplayWallController:setComponentValid(componentType)
+function SonyBraviaDisplayWallController:setComponentValid(componentType)
     self.components.invalid[componentType] = false
     self:checkStatus()
 end
 
-function PlanarDisplayWallController:checkStatus()
+function SonyBraviaDisplayWallController:checkStatus()
     for _, v in pairs(self.components.invalid) do
         if v == true then
             if Controls.txtStatus then
@@ -581,12 +439,11 @@ function PlanarDisplayWallController:checkStatus()
 end
 
 --------** Component Setup **--------
-function PlanarDisplayWallController:setupDisplayComponents()
+function SonyBraviaDisplayWallController:setupDisplayComponents()
     if not Controls.devDisplays then 
         self:debugPrint("No Controls.devDisplays found")
         return 
     end
-    
     self:debugPrint("Setting up " .. #Controls.devDisplays .. " display components")
     for i, displaySelector in ipairs(Controls.devDisplays) do
         if displaySelector then
@@ -596,7 +453,7 @@ function PlanarDisplayWallController:setupDisplayComponents()
     end
 end
 
-function PlanarDisplayWallController:setRoomControlsComponent()
+function SonyBraviaDisplayWallController:setRoomControlsComponent()
     self.components.compRoomControls = self:setComponent(Controls.compRoomControls, "Room Controls")
     -- Update timer configuration from room controls component
     if self.components.compRoomControls then
@@ -604,65 +461,49 @@ function PlanarDisplayWallController:setRoomControlsComponent()
     end
 end
 
-function PlanarDisplayWallController:setDisplayComponent(index)
+function SonyBraviaDisplayWallController:setDisplayComponent(index)
     if not Controls.devDisplays or not Controls.devDisplays[index] then
         self:debugPrint("Display control " .. index .. " not found")
         return
     end
-    
     local componentType = "Display [" .. index .. "]"
     self.components.displays[index] = self:setComponent(Controls.devDisplays[index], componentType)
-    
-    if self.components.displays[index] then
-        self:debugPrint("Successfully set up display component " .. index)
-        self:setupDisplayEvents(index)
-        -- Update power feedback to reflect new display status
-        self.powerModule.updatePowerFeedbackFromDisplays()
-    else
+    if not self.components.displays[index] then
         self:debugPrint("Failed to set up display component " .. index)
+        return
     end
+    self:debugPrint("Successfully set up display component " .. index)
+    self:setupDisplayEvents(index)
+    self.powerModule.updatePowerFeedbackFromDisplays()
 end
 
 --------** Component Event Setup **--------
-function PlanarDisplayWallController:setupDisplayEvents(index)
+function SonyBraviaDisplayWallController:setupDisplayEvents(index)
     local display = self.components.displays[index]
     if not display then return end
-    
-    -- Set up power status monitoring (new dual-control structure)
-    if display[displayControls.powerIsOn] then
-        display[displayControls.powerIsOn].EventHandler = function()
-            local powerIsOn = self:safeComponentAccess(display, displayControls.powerIsOn, "get")
+
+    if display[displayControls.displayPowerStatus] then
+        display[displayControls.displayPowerStatus].EventHandler = function()
+            local powerState = self:safeComponentAccess(display, displayControls.displayPowerStatus, "get")
             local componentName = Controls.devDisplays and Controls.devDisplays[index] and Controls.devDisplays[index].String or "Unknown"
-            self:debugPrint("Display " .. componentName .. " power is ON: " .. tostring(powerIsOn))
+            self:debugPrint("Display " .. componentName .. " power status: " .. tostring(powerState))
+            self.powerModule.updatePowerFeedbackFromDisplays()
         end
     end
-    
-    if display[displayControls.powerIsOff] then
-        display[displayControls.powerIsOff].EventHandler = function()
-            local powerIsOff = self:safeComponentAccess(display, displayControls.powerIsOff, "get")
-            local componentName = Controls.devDisplays and Controls.devDisplays[index] and Controls.devDisplays[index].String or "Unknown"
-            self:debugPrint("Display " .. componentName .. " power is OFF: " .. tostring(powerIsOff))
-        end
-    end
-    
-    -- Set up input status monitoring (Option 1: InputSelectComboBox + InputStatus LED)
-    if display[displayControls.vInputSelectComboBox] then
-        display[displayControls.vInputSelectComboBox].EventHandler = function()
-            local currentInput = self:safeComponentAccess(display, displayControls.vInputSelectComboBox, "getString")
+    if display[displayControls.inputSelectComboBox] then
+        display[displayControls.inputSelectComboBox].EventHandler = function()
+            local currentInput = self:safeComponentAccess(display, displayControls.inputSelectComboBox, "getString")
             local componentName = Controls.devDisplays and Controls.devDisplays[index] and Controls.devDisplays[index].String or "Unknown"
             self:debugPrint("Display " .. componentName .. " current input: " .. tostring(currentInput))
         end
     end
-    
-    if display[displayControls.vInputStatusLED] then
-        display[displayControls.vInputStatusLED].EventHandler = function()
-            local inputActive = self:safeComponentAccess(display, displayControls.vInputStatusLED, "get")
+    if display[displayControls.inputStatusLED] then
+        display[displayControls.inputStatusLED].EventHandler = function()
+            local inputActive = self:safeComponentAccess(display, displayControls.inputStatusLED, "get")
             local componentName = Controls.devDisplays and Controls.devDisplays[index] and Controls.devDisplays[index].String or "Unknown"
             self:debugPrint("Display " .. componentName .. " input active: " .. tostring(inputActive))
         end
     end
-    
-    -- Set up input status monitoring (Option 2: CurrentInput 1-10 LEDs)
     for i = 1, 10 do
         local currentInputControl = display[displayControls.currentInput .. i]
         if currentInputControl then
@@ -676,29 +517,22 @@ function PlanarDisplayWallController:setupDisplayEvents(index)
 end
 
 --------** Dynamic Component Discovery **--------
-function PlanarDisplayWallController:getComponentNames()
+function SonyBraviaDisplayWallController:getComponentNames()
     local namesTable = {
         DisplayNames = {},
         RoomControlsNames = {},
     }
-
-    -- Dynamic component discovery - single pass through all components
     for _, comp in pairs(Component.GetComponents()) do
-        -- Look for Planar Display components (dynamic discovery)
         if comp.Type == self.componentTypes.displays then
             table.insert(namesTable.DisplayNames, comp.Name)
         elseif comp.Type == self.componentTypes.roomControls and string.match(comp.Name, "^compRoomControls") then
             table.insert(namesTable.RoomControlsNames, comp.Name)
         end
     end
-
-    -- Sort and add clear option
     for _, list in pairs(namesTable) do
         table.sort(list)
         table.insert(list, self.clearString)
     end
-
-    -- Direct assignment to controls
     if Controls.devDisplays then
         for i, _ in ipairs(Controls.devDisplays) do
             Controls.devDisplays[i].Choices = namesTable.DisplayNames
@@ -706,14 +540,13 @@ function PlanarDisplayWallController:getComponentNames()
         self:debugPrint("Set choices for " .. #Controls.devDisplays .. " display controls")
         self:debugPrint("Found " .. #namesTable.DisplayNames .. " display components")
     end
-    
     if Controls.compRoomControls then
         Controls.compRoomControls.Choices = namesTable.RoomControlsNames
     end
 end
 
 --------** Room Name Management **--------
-function PlanarDisplayWallController:updateRoomNameFromComponent()
+function SonyBraviaDisplayWallController:updateRoomNameFromComponent()
     if self.components.compRoomControls then
         local roomNameControl = self.components.compRoomControls["roomName"]
         if roomNameControl and roomNameControl.String and roomNameControl.String ~= "" then
@@ -723,81 +556,57 @@ function PlanarDisplayWallController:updateRoomNameFromComponent()
                 self:debugPrint("Room name updated to: "..newRoomName)
             end
         end
-        
-        -- Also update timer configuration when room controls component is available
         self:updateTimerConfigFromComponent()
     end
 end
 
 --------** Timer Event Handlers **--------
-function PlanarDisplayWallController:registerTimerHandlers()
+function SonyBraviaDisplayWallController:registerTimerHandlers()
     self.timers.warmup.EventHandler = function()
         self:debugPrint("Warmup Period Has Ended")
-        -- Re-enable all power controls (both global and individual)
         self.powerModule.enableDisablePowerControls(true)
-        -- Re-enable individual display power controls for all displays
         for i = 1, self.config.maxDisplays do
             self.powerModule.enableDisablePowerControlIndex(i, true)
         end
         self.state.isWarming = false
-        if Controls.ledDisplayWarming then
-            Controls.ledDisplayWarming.Boolean = false
-        end
+        if Controls.ledDisplayWarming then Controls.ledDisplayWarming.Boolean = false end
         self.timers.warmup:Stop()
     end
-
     self.timers.cooldown.EventHandler = function()
         self:debugPrint("Cooldown Period Has Ended")
-        -- Re-enable all power controls (both global and individual)
         self.powerModule.enableDisablePowerControls(true)
-        -- Re-enable individual display power controls for all displays
         for i = 1, self.config.maxDisplays do
             self.powerModule.enableDisablePowerControlIndex(i, true)
         end
         self.state.isCooling = false
-        if Controls.ledDisplayCooling then
-            Controls.ledDisplayCooling.Boolean = false
-        end
+        if Controls.ledDisplayCooling then Controls.ledDisplayCooling.Boolean = false end
         self.timers.cooldown:Stop()
     end
 end
 
---------** Streamlined Event Handler Registration **--------
-function PlanarDisplayWallController:registerEventHandlers()
-    -- Room controls component handler
+--------** Event Handler Registration **--------
+function SonyBraviaDisplayWallController:registerEventHandlers()
     if Controls.compRoomControls then
         Controls.compRoomControls.EventHandler = function()
             self:setRoomControlsComponent()
         end
     end
-    
-    -- Global power control - direct event handling
     if Controls.btnDisplayPowerAll then
         Controls.btnDisplayPowerAll.EventHandler = function(ctl)
-            if ctl.Boolean then
-                self.powerModule.powerOnAll()
-            else
-                self.powerModule.powerOffAll()
-            end
+            if ctl.Boolean then self.powerModule.powerOnAll()
+            else self.powerModule.powerOffAll() end
         end
     end
-    
-    -- Individual display power controls - streamlined array handling
     local powerControlTypes = {
         {name = "btnDisplayPowerOn", action = "powerOn", toggleState = true},
         {name = "btnDisplayPowerOff", action = "powerOff", toggleState = false},
         {name = "btnDisplayPowerSingle", action = "powerSingle", toggleState = nil}
     }
-    
     for _, controlType in ipairs(powerControlTypes) do
         if Controls[controlType.name] then
             for i, btn in ipairs(Controls[controlType.name]) do
                 self:debugPrint("Found " .. controlType.name .. "[" .. i .. "]")
                 btn.EventHandler = function(ctl)
-                    -- Direct control disabling
-                    self.powerModule.enableDisableIndexPowerControl(i, controlType.action, false)
-                    
-                    -- Direct power operations based on control type
                     if controlType.action == "powerSingle" then
                         if ctl.Boolean then
                             self.powerModule.powerOnDisplay(i)
@@ -810,8 +619,6 @@ function PlanarDisplayWallController:registerEventHandlers()
                         else
                             self.powerModule.powerOffDisplay(i)
                         end
-                        
-                        -- Direct UI state update
                         if Controls.btnDisplayPowerSingle and Controls.btnDisplayPowerSingle[i] then
                             Controls.btnDisplayPowerSingle[i].Boolean = controlType.toggleState
                         end
@@ -820,23 +627,17 @@ function PlanarDisplayWallController:registerEventHandlers()
             end
         end
     end
-    
-    -- Display input controls - direct event handling
     if Controls.btnDisplayInputAll then
         Controls.btnDisplayInputAll.EventHandler = function()
             self.displayModule.setInputAll(self.config.defaultInput)
         end
     end
-    
-    -- Display wall configuration - direct event handling
     if Controls.btnDisplayWallConfig then
         Controls.btnDisplayWallConfig.EventHandler = function()
             local mode = Controls.txtDisplayWallMode and Controls.txtDisplayWallMode.String or "Single"
             self.displayModule.configureDisplayWall(mode)
         end
     end
-    
-    -- Display component handlers - direct event handling
     if Controls.devDisplays then
         for i, displaySelector in ipairs(Controls.devDisplays) do
             if displaySelector then
@@ -849,74 +650,46 @@ function PlanarDisplayWallController:registerEventHandlers()
 end
 
 --------** Initialization **--------
-function PlanarDisplayWallController:funcInit()
-    self:debugPrint("Starting Planar DisplayWallController initialization...")
-    
-    -- Discover and populate component choices
+function SonyBraviaDisplayWallController:funcInit()
+    self:debugPrint("Starting Sony Bravia DisplayWallController initialization...")
     self:getComponentNames()
-    
-    -- Setup components and event handlers
     self:setRoomControlsComponent()
     self:setupDisplayComponents()
     self:registerEventHandlers()
     self:registerTimerHandlers()
-    
-    -- Update room name from component
     self:updateRoomNameFromComponent()
-    
-    -- Set initial display wall mode
     if Controls.txtDisplayWallMode then
         Controls.txtDisplayWallMode.Choices = self.config.displayWallModes
         Controls.txtDisplayWallMode.String = self.state.displayWallMode
     end
-    
-    -- Update power feedback based on current display status
     self.powerModule.updatePowerFeedbackFromDisplays()
-    
-    -- Update timer configuration from room controls component
     self:updateTimerConfigFromComponent()
-    
-    self:debugPrint("Planar DisplayWallController Initialized with " .. 
-                   self.displayModule.getDisplayCount() .. " displays")
+    self:debugPrint("Sony Bravia DisplayWallController Initialized with "..
+        self.displayModule.getDisplayCount() .. " displays")
 end
 
 --------** Cleanup **--------
-function PlanarDisplayWallController:cleanup()
-    -- Clear event handlers for displays
+function SonyBraviaDisplayWallController:cleanup()
     for i, display in pairs(self.components.displays) do
         if display then
-            if display[displayControls.powerIsOn] then
-                display[displayControls.powerIsOn].EventHandler = nil
-            end
-            if display[displayControls.powerIsOff] then
-                display[displayControls.powerIsOff].EventHandler = nil
-            end
-            if display["InputStatus"] then
-                display["InputStatus"].EventHandler = nil
-            end
+            if display["PowerStatus"] then display["PowerStatus"].EventHandler = nil end
+            if display["InputStatus"] then display["InputStatus"].EventHandler = nil end
         end
     end
-    
-    -- Reset component references
-    self.components = {
-        displays = {},
-        compRoomControls = nil,
-        invalid = {}
-    }
-    
+    self.components = { displays = {}, compRoomControls = nil, invalid = {} }
     if self.debugging then self:debugPrint("Cleanup completed") end
 end
 
 --------** Factory Function **--------
-local function createPlanarDisplayWallController(roomName, config)
-    print("Creating Planar DisplayWallController for: "..tostring(roomName))
+local function createSonyBraviaDisplayWallController(roomName, config)
+    print("Creating Sony Bravia DisplayWallController for: "..tostring(roomName))
     local success, controller = pcall(function()
-        local instance = PlanarDisplayWallController.new(roomName, config)
+        local instance = SonyBraviaDisplayWallController.new(roomName, config)
         instance:funcInit()
         return instance
     end)
     if success then
-        print("Successfully created Planar DisplayWallController for "..roomName)
+        print("Successfully created Sony Bravia DisplayWallController for "..roomName)
         return controller
     else
         print("Failed to create controller for "..roomName..": "..tostring(controller))
@@ -925,14 +698,9 @@ local function createPlanarDisplayWallController(roomName, config)
 end
 
 --------** Instance Creation **--------
--- Validate controls before creating instance
-if not validateControls() then
-    return
-end
+if not validateControls() then return end
 
--- Get room name from room controls component or fallback to control
 local function getRoomNameFromComponent()
-    -- First try to get from the room controls component if it's already set
     if Controls.compRoomControls and Controls.compRoomControls.String ~= "" and Controls.compRoomControls.String ~= "[Clear]" then
         local roomControlsComponent = Component.New(Controls.compRoomControls.String)
         if roomControlsComponent and roomControlsComponent["roomName"] then
@@ -942,21 +710,17 @@ local function getRoomNameFromComponent()
             end
         end
     end
-    
-    -- Fallback to roomName control (if it exists)
     if Controls.roomName and Controls.roomName.String and Controls.roomName.String ~= "" then
         return "["..Controls.roomName.String.."]"
     end
-    
-    -- Final fallback to default room name
-    return "[Planar Display Wall]"
+    return "[Sony Bravia Display Wall]"
 end
 
 local roomName = getRoomNameFromComponent()
-myPlanarDisplayWallController = createPlanarDisplayWallController(roomName)
+mySonyBraviaDisplayWallController = createSonyBraviaDisplayWallController(roomName)
 
-if myPlanarDisplayWallController then
-    print("Planar DisplayWallController created successfully!")
+if mySonyBraviaDisplayWallController then
+    print("Sony Bravia DisplayWallController created successfully!")
 else
-    print("ERROR: Failed to create Planar DisplayWallController!")
-end 
+    print("ERROR: Failed to create Sony Bravia DisplayWallController!")
+end

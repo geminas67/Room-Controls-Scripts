@@ -11,24 +11,20 @@
 -- Display Control Configuration (easily changeable for different manufacturers)
 local displayControls = {
     -- Power Controls
-    displayPowerOn = "PowerOn",
-    displayPowerOff = "PowerOff", 
+    displayPowerOn     = "PowerOn",
+    displayPowerOff    = "PowerOff", 
     displayPowerStatus = "PowerStatus",
-    
     -- Input Controls (Option 1: ComboBox method)
     inputSelectComboBox = "InputCombo",
-    inputStatusLED = "InputStatus",
-    
+    inputStatusLED      = "InputStatus",
     -- Input Controls (Option 2: Button method)
     inputSelectButtons = "VideoInputs",
-    inputNames = "VideoInputNames",
-    currentInput = "VideoInput",
-    
+    inputNames   = "VideoInputNames",
+    currentInput = "VideoInput",   
     -- Wall Configuration
-    wallMode = "WallMode",
+    wallMode     = "WallMode",
     wallPosition = "WallPosition"
 }
-
 -- Validate required controls exist
 local function validateControls()
     if not Controls.txtStatus or not Controls.devDisplays then
@@ -38,8 +34,6 @@ local function validateControls()
     return true
 end
 
-
-
 --------** Class Definition **--------
 SonyBraviaDisplayWallController = {}
 SonyBraviaDisplayWallController.__index = SonyBraviaDisplayWallController
@@ -48,22 +42,20 @@ function SonyBraviaDisplayWallController.new(roomName, config)
     local self = setmetatable({}, SonyBraviaDisplayWallController)
     
     -- Instance properties
-    self.roomName = roomName or "Default Room"
-    self.debugging = (config and config.debugging) or true
+    self.roomName    = roomName or "Default Room"
+    self.debugging   = (config and config.debugging) or true
     self.clearString = "[Clear]"
 
     self.componentTypes = {
-        displays = "%PLUGIN%_C76AD0FA-D707-4bb4-991E-D70D77AC1FC4_%FP%_b1533bca5f02f791538ad7a9a5ed9903",  -- Sony Bravia Display
+        displays     = "%PLUGIN%_C76AD0FA-D707-4bb4-991E-D70D77AC1FC4_%FP%_b1533bca5f02f791538ad7a9a5ed9903",  -- Sony Bravia Display
         roomControls = "device_controller_script" -- Will be filtered to only those starting with "compRoomControls"
     }
-    
     -- Component storage
     self.components = {
         displays = {},
         compRoomControls = nil,
         invalid = {}
     }
-    
     -- State tracking
     self.state = {
         displayWallMode = "Single", -- Single, 2x2, 3x3, etc.
@@ -72,7 +64,6 @@ function SonyBraviaDisplayWallController.new(roomName, config)
         isWarming = false,
         isCooling = false
     }
-    
     -- Configuration
     self.config = {
         maxDisplays = config and config.maxDisplays or 9, -- Maximum number of displays supported
@@ -80,29 +71,32 @@ function SonyBraviaDisplayWallController.new(roomName, config)
         displayWallModes = {"Single", "2x2", "3x3", "4x4", "Custom"},
         inputChoices = {"HDMI1", "HDMI2", "DisplayPort", "USB-C"}
     }
-    
     -- Input to button mapping
     self.inputButtonMap = {
-        HDMI1 = 1, HDMI2 = 2, DisplayPort = 3, USB_C = 4,
-        DVI = 5, VGA = 6, Component = 7, Composite = 8, S_Video = 9, RF = 10
+        HDMI1       = 1, 
+        HDMI2       = 2, 
+        DisplayPort = 3, 
+        USB_C       = 4,
+        DVI         = 5, 
+        VGA         = 6, 
+        Component   = 7, 
+        Composite   = 8, 
+        S_Video     = 9, 
+        RF          = 10
     }
-    
     -- Timers
     self.timers = {
-        warmup = Timer.New(),
+        warmup   = Timer.New(),
         cooldown = Timer.New()
     }
-    
     -- Timer Configuration (instance-specific, dynamically updated from room controls component)
     self.timerConfig = {
         warmupTime = 7,  -- Default fallback values
         cooldownTime = 5
     }
-    
     -- Initialize modules
     self:initDisplayModule()
     self:initPowerModule()
-    
     -- Initialize timer configuration
     self:updateTimerConfigFromComponent()
     return self
@@ -237,8 +231,7 @@ function SonyBraviaDisplayWallController:initDisplayModule()
             if Controls.ledDisplayPower then
                 Controls.ledDisplayPower.Boolean = state
             end
-        end,
-        
+        end,        
         powerSingle = function(index, state)
             local display = selfRef.components.displays[index]
             if display then
@@ -247,7 +240,7 @@ function SonyBraviaDisplayWallController:initDisplayModule()
                 selfRef:debugPrint("Display " .. index .. " power: " .. tostring(state))
             end
         end,
-        
+        -- Input Controls (Option 1: ComboBox method)
         setInputAll = function(input)
             selfRef:debugPrint("Setting all displays to input: " .. input)
             for i, display in pairs(selfRef.components.displays) do
@@ -270,7 +263,7 @@ function SonyBraviaDisplayWallController:initDisplayModule()
                 Controls.ledDisplayInput.String = input
             end
         end,
-        
+        -- Input Controls (Option 2: Button method)
         setInputSingle = function(index, input)
             local display = selfRef.components.displays[index]
             if display then
@@ -651,7 +644,6 @@ function SonyBraviaDisplayWallController:getComponentNames()
         DisplayNames = {},
         RoomControlsNames = {},
     }
-
     -- Dynamic component discovery - single pass through all components
     for _, comp in pairs(Component.GetComponents()) do
         -- Look for Sony Bravia Display components (dynamic discovery)
@@ -661,13 +653,11 @@ function SonyBraviaDisplayWallController:getComponentNames()
             table.insert(namesTable.RoomControlsNames, comp.Name)
         end
     end
-
     -- Sort and add clear option
     for _, list in pairs(namesTable) do
         table.sort(list)
         table.insert(list, self.clearString)
     end
-
     -- Direct assignment to controls
     if Controls.devDisplays then
         for i, _ in ipairs(Controls.devDisplays) do
@@ -675,8 +665,7 @@ function SonyBraviaDisplayWallController:getComponentNames()
         end
         self:debugPrint("Set choices for " .. #Controls.devDisplays .. " display controls")
         self:debugPrint("Found " .. #namesTable.DisplayNames .. " display components")
-    end
-    
+    end    
     if Controls.compRoomControls then
         Controls.compRoomControls.Choices = namesTable.RoomControlsNames
     end
@@ -692,8 +681,7 @@ function SonyBraviaDisplayWallController:updateRoomNameFromComponent()
                 self.roomName = newRoomName
                 self:debugPrint("Room name updated to: "..newRoomName)
             end
-        end
-        
+        end        
         -- Also update timer configuration when room controls component is available
         self:updateTimerConfigFromComponent()
     end

@@ -111,7 +111,7 @@ end
 --------** Dynamic Timer Configuration **--------
 function LGDisplayWallController:updateTimerConfigFromComponent()
     -- Default fallback values
-    local defaultWarmupTime = 7
+    local defaultWarmupTime     = 7
     local defaultCooldownTime = 5
     
     if self.components.compRoomControls then

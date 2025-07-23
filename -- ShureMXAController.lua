@@ -1,9 +1,9 @@
 --[[ 
   Shure MXA Controls - Class-based Implementation
   Author: Nikolas Smith, Q-SYS (Refactored)
-  2025-06-18
+  2025-07-22
   Firmware Req: 10.0.0
-  Version: 1.0
+  Version: 1.1
   
   Refactored to follow class-based pattern for modularity and reusability
   Maintains all existing MXA functionality including LED and mute control
@@ -12,11 +12,11 @@
 
 -- Define control references
 local controls = {
-    devMXAs = Controls.devMXAs,
-    btnMXAMute = Controls.btnMXAMute,
+    devMXAs     = Controls.devMXAs,
+    btnMXAMute  = Controls.btnMXAMute,
     compRoomControls = Controls.compRoomControls,
-    compCallSync = Controls.compCallSync,
-    txtStatus = Controls.txtStatus,
+    compCallSync     = Controls.compCallSync,
+    txtStatus        = Controls.txtStatus,
 }
 
 -- ShureMXAController class
