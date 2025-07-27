@@ -154,11 +154,9 @@ function ClockAudioCDTMicController:initCDTModule()
             if not buttonState then return end
             
             local isActive = buttonState.Boolean
-            mixer['input.'..mixerInput..'.mute'].Boolean = not isActive
-            
+            mixer['input.'..mixerInput..'.mute'].Boolean = not isActive            
             -- Update the individual LED brightness controls
-            selfRef.cdtModule.updateIndividualLEDs()
-            
+            selfRef.cdtModule.updateIndividualLEDs()            
             -- Update privacy button disabled state based on toggle button state
             selfRef.cdtModule.updatePrivacyButtonStates(boxIndex)
         end,
@@ -183,8 +181,7 @@ function ClockAudioCDTMicController:initCDTModule()
                 -- Turn off all individual brightness inputs when going off-hook
                 selfRef.cdtModule.turnOffAllLEDs()
             end
-        end,
-        
+        end,        
         -- LED toggle
         ledToggleTimer = Timer.New(),
         ledState = false,            
@@ -241,7 +238,8 @@ function ClockAudioCDTMicController:initCDTModule()
                 
                 ::continue::
             end
-        end,        
+        end,
+        
         turnOffAllLEDs = function()
             for i = 1, 4 do
                 local box = selfRef.components.micBoxes[i]
@@ -256,6 +254,7 @@ function ClockAudioCDTMicController:initCDTModule()
                 end
             end
         end,        
+        
         updatePrivacyButtonStates = function(boxIndex)
             local box = selfRef.components.micBoxes[boxIndex]
             if not box then return end            
@@ -365,26 +364,20 @@ function ClockAudioCDTMicController:registerEventHandlers()
                 selfRef.cdtModule.setGlobalMute(ctl.Boolean)
             end
         end
-    end
-    
+    end    
     self:registerMicHandlers()
     self:registerPrivacyButtonHandlers()
 end
 
-
-
 -----------------[ Table-Driven Mic Button Registration ]-------------------
 function ClockAudioCDTMicController:registerMicHandlers()
-    local selfRef = self
-    
-    -- Button configuration table for direct registration
+    local selfRef = self    
     local buttonConfigs = {
         {box = 1, buttons = {{6,1,1}, {8,2,2}, {10,3,3}}},
         {box = 2, buttons = {{6,1,4}, {8,2,5}, {10,3,6}, {12,4,7}}},
         {box = 3, buttons = {{6,1,8}, {8,2,9}, {10,3,10}, {12,4,11}}},
         {box = 4, buttons = {{6,1,12}, {8,2,13}, {10,3,14}}}
-    }
-    
+    }    
     for _, config in ipairs(buttonConfigs) do
         local box = self.components.micBoxes[config.box]
         if not box then goto continue end
@@ -393,23 +386,19 @@ function ClockAudioCDTMicController:registerMicHandlers()
             local buttonControl = box['ButtonState '..btn[1]]
             if not buttonControl then goto continue end
             
-            -- Direct closure for maximum speed
             local boxIdx, ledIdx, mixerIdx = config.box, btn[2], btn[3]
             buttonControl.EventHandler = function()
                 selfRef.cdtModule.toggleMic(boxIdx, ledIdx, mixerIdx)
-            end
-            
+            end            
             ::continue::
-        end
-        
+        end        
         ::continue::
     end
 end
 
 -----------------[ Privacy Button Registration ]-------------------
 function ClockAudioCDTMicController:registerPrivacyButtonHandlers()
-    local selfRef = self
-    
+    local selfRef = self    
     -- Privacy buttons: ButtonState 1-4 on each box toggle global mute
     -- These are momentary buttons that provide toggle behavior for privacy
     local privacyConfigs = {
@@ -418,7 +407,6 @@ function ClockAudioCDTMicController:registerPrivacyButtonHandlers()
         {box = 3, buttons = {1, 2, 3, 4}},
         {box = 4, buttons = {1, 2, 3}}
     }
-    
     for _, config in ipairs(privacyConfigs) do
         local box = self.components.micBoxes[config.box]
         if not box then goto continue end
@@ -435,23 +423,19 @@ function ClockAudioCDTMicController:registerPrivacyButtonHandlers()
                 if ctl.IsDisabled then
                     selfRef:debugPrint("Privacy button "..buttonNum.." on box "..config.box.." is disabled - ignoring press")
                     return
-                end
-                
+                end            
                 -- Handle valid button press
                 local callSync = selfRef.components.callSync
-                if not callSync or not callSync["mute"] then return end
-                
+                if not callSync or not callSync["mute"] then return end                
                 -- Toggle mute state directly
                 callSync["mute"].Boolean = not callSync["mute"].Boolean
-                selfRef:debugPrint("Privacy button "..buttonNum.." on box "..config.box.." toggled mute to "..tostring(callSync["mute"].Boolean))
-                
+                selfRef:debugPrint("Privacy button "..buttonNum.." on box "..config.box.." toggled mute to "..tostring(callSync["mute"].Boolean))                
                 -- Update LED states to reflect the new privacy state
                 if selfRef.state.offHook then
                     selfRef.cdtModule.updateIndividualLEDs()
                 end
             end
-        end
-        
+        end        
         ::continue::
     end
 end
@@ -476,33 +460,22 @@ function ClockAudioCDTMicController:funcInit()
         if not box then goto continue end
         
         self.cdtModule.updatePrivacyButtonStates(i)
-        
+
         ::continue::
-    end
-    
+    end    
     self:debugPrint("Initialization completed with "..self:getMicBoxCount().." mic boxes")
 end
 
 function ClockAudioCDTMicController:initializeLEDStates()
-    -- Early return if call sync not available
-    if not self.components.callSync then return end
-    
-    -- Get current call sync state
+    if not self.components.callSync then return end    
     local offHookControl = self.components.callSync["off.hook"]
     local muteControl = self.components.callSync["mute"]
-    
-    -- Early return if controls not available
-    if not (offHookControl and muteControl) then return end
-    
+    if not (offHookControl and muteControl) then return end    
     self.state.offHook = offHookControl.Boolean
     self.state.globalMute = muteControl.Boolean
-    
-    -- Set individual LED states based on current call sync state
     if self.state.offHook then
-        -- Update individual LED brightness controls
         self.cdtModule.updateIndividualLEDs()
     else
-        -- When not off-hook, turn off all individual LEDs
         self.cdtModule.turnOffAllLEDs()
     end
 end
@@ -570,12 +543,10 @@ function ClockAudioCDTMicController:pulseMicBoxButton(boxIndex, buttonNumber, pu
     if not buttonControl then
         self:debugPrint("Button "..buttonNumber.." not found on box "..boxIndex)
         return false
-    end
-    
+    end    
     -- Press the button
     buttonControl.Boolean = true
-    self:debugPrint("Pulsing Box"..string.format("%02d", boxIndex).." ButtonState "..buttonNumber.." for "..pulseDuration.."s")
-    
+    self:debugPrint("Pulsing Box"..string.format("%02d", boxIndex).." ButtonState "..buttonNumber.." for "..pulseDuration.."s")    
     -- Create a timer to release the button after the pulse duration
     local pulseTimer = Timer.New()
     local selfRef = self  -- Capture self reference for timer callback
