@@ -9,7 +9,7 @@
     Debugging and config are standardized.
 ]]
 
---------** Control References **--------
+-------------------[ Control References ]-------------------
 local controls = {
     roomName = Controls.roomName,
     txtStatus = Controls.txtStatus,
@@ -350,7 +350,7 @@ function MotionModule:debug(str) self.controller:debugPrint("[Motion] "..str) en
 SystemAutomationController = {}
 SystemAutomationController.__index = SystemAutomationController
 
--------------------[ Static / Class Properties ]-------------------
+-----------------[ Static / Class Properties ]-------------------
 SystemAutomationController.clearString = "[Clear]"
 SystemAutomationController.componentTypes = {
     callSync = "call_sync",

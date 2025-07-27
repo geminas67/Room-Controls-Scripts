@@ -10,7 +10,7 @@
   Enhanced with modular architecture for better maintainability
 ]]--
 
--- Define control references for better performance
+-------------------[ Control References ]-------------------
 local controls = {
     devMXAs = Controls.devMXAs,
     btnMXAMute = Controls.btnMXAMute,
@@ -19,7 +19,7 @@ local controls = {
     txtStatus = Controls.txtStatus,
 }
 
---------** Class Constructor **--------
+-----------------[ Class Constructor ]-------------------
 ShureMXAController = {}
 ShureMXAController.__index = ShureMXAController
 
@@ -29,21 +29,17 @@ function ShureMXAController.new(roomName, config)
     self.debugging = (config and config.debugging) or true
     self.clearString = "[Clear]"
 
-    -- Component type definitions
     self.componentTypes = {
         callSync = "call_sync",
         mxaDevices = "%PLUGIN%_984f65d4-443f-406d-9742-3cb4027ff81c_%FP%_1257aeeea0835196bee126b4dccce889",
         roomControls = "device_controller_script"
     }
-    -- Direct component references for faster access
     self.components = {
         callSync = nil, 
         roomControls = nil,
         mxaDevices = {}, 
         invalid = {}
     }
-    
-    -- State tracking
     self.state = {
         audioPrivacy = false,
         systemPower = false, 
@@ -51,21 +47,14 @@ function ShureMXAController.new(roomName, config)
         ledState = false, 
         muteState = false
     }
-    
     self.config = {
         ledBrightness = (config and config.ledBrightness) or 5,
         ledOff = (config and config.ledOff) or 0,
         controlColors = { white = 'White', pink = 'Pink', off = 'Off' },
         ledToggleInterval = 1.5
     }
-    
-    -- Store controls reference for better performance
     self.controls = controls
-    
-    -- Initialize modules
     self:initMXAModule()
-    
-    -- Pre-allocate timer for LED toggle
     self.ledToggleTimer = Timer.New()
     self.ledToggleTimer.EventHandler = function()
         self.state.ledState = not self.state.ledState
@@ -75,12 +64,12 @@ function ShureMXAController.new(roomName, config)
     return self
 end
 
---------** Debug Helper **--------
+-----------------[ Debug Helper ]-------------------
 function ShureMXAController:debugPrint(str)
     if self.debugging then print("["..self.roomName.." MXA] "..str) end
 end
 
---------** MXA Module (Enhanced Modular Approach) **--------
+-----------------[ MXA Module (Enhanced Modular Approach) ]-------------------
 function ShureMXAController:initMXAModule()
     self.mxaModule = {
         setComponent = function(idx)
@@ -93,8 +82,8 @@ function ShureMXAController:initMXAModule()
         setAllLEDs = function(state)
             local value = state and self.config.ledBrightness or self.config.ledOff
             for _, device in pairs(self.components.mxaDevices) do
-                if device and device.bright then
-                    device.bright.Value = value
+                if device then
+                    self:safeComponentAccess(device, "bright", "setValue", value)
                 end
             end
         end,
@@ -102,8 +91,8 @@ function ShureMXAController:initMXAModule()
         setAllMute = function(state)
             self.state.muteState = state
             for _, device in pairs(self.components.mxaDevices) do
-                if device and device.muteall then
-                    device.muteall.Boolean = state
+                if device then
+                    self:safeComponentAccess(device, "muteall", "set", state)
                 end
             end
         end,
@@ -128,32 +117,46 @@ function ShureMXAController:initMXAModule()
     }
 end
 
---------** Component Access **--------
-function ShureMXAController:setComponentDirect(component, control, value)
-    if component and component[control] then
-        component[control].Value = value
-        return true
+-----------------[ Safe Component Access ]-------------------
+function ShureMXAController:safeComponentAccess(component, control, action, value)
+    local success, result = pcall(function()
+        if component and component[control] then
+            if action == "set" then
+                component[control].Boolean = value
+                return true
+            elseif action == "setPosition" then
+                component[control].Position = value
+                return true
+            elseif action == "setString" then
+                component[control].String = value
+                return true
+            elseif action == "setValue" then
+                component[control].Value = value
+                return true
+            elseif action == "trigger" then
+                component[control]:Trigger()
+                return true
+            elseif action == "get" then
+                return component[control].Boolean
+            elseif action == "getPosition" then
+                return component[control].Position
+            elseif action == "getString" then
+                return component[control].String
+            elseif action == "getValue" then
+                return component[control].Value
+            end
+        end
+        return false
+    end)
+    
+    if not success then
+        self:debugPrint("Component access error: " .. tostring(result))
+        return false
     end
-    return false
+    return result
 end
 
-function ShureMXAController:setComponentBoolean(component, control, value)
-    if component and component[control] then
-        component[control].Boolean = value
-        return true
-    end
-    return false
-end
-
-function ShureMXAController:triggerComponent(component, control)
-    if component and component[control] then
-        component[control]:Trigger()
-        return true
-    end
-    return false
-end
-
---------** Privacy Control **--------
+-----------------[ Privacy Control ]-------------------
 function ShureMXAController:setAudioPrivacy(state)
     self.state.audioPrivacy = state
     self.mxaModule.setAllMute(state)
@@ -164,7 +167,7 @@ function ShureMXAController:getPrivacyState()
     return self.state.audioPrivacy
 end
 
---------** System Control **--------
+-----------------[ System Control ]-------------------
 function ShureMXAController:setFireAlarm(state)
     self.state.fireAlarm = state
     if state then
@@ -189,7 +192,7 @@ function ShureMXAController:setFireAlarm(state)
     end
 end
 
---------** Call Sync Control **--------
+-----------------[ Call Sync Control ]-------------------
 function ShureMXAController:setHookState(state)
     if self.debugging then self:debugPrint("Call Sync Hook: "..tostring(state)) end
     self.mxaModule.setAllLEDs(state)
@@ -202,12 +205,12 @@ end
 
 function ShureMXAController:endCall()
     if self.components.callSync then
-        self:triggerComponent(self.components.callSync, "end.call")
+        self:safeComponentAccess(self.components.callSync, "end.call", "trigger")
         if self.debugging then self:debugPrint("End call triggered") end
     end
 end
 
---------** Component Management **--------
+-----------------[ Component Management ]-------------------
 function ShureMXAController:setComponent(ctrl, componentType)
     if not ctrl then
         if self.debugging then self:debugPrint("Control is nil for: " .. componentType) end
@@ -261,7 +264,7 @@ function ShureMXAController:updateStatus()
     end
 end
 
---------** Component Setup (Enhanced with Modular Approach) **--------
+-----------------[ Component Setup (Enhanced with Modular Approach) ]-------------------
 function ShureMXAController:setupCallSyncComponent()
     if Controls.compCallSync then
         self.components.callSync = self:setComponent(Controls.compCallSync, "Call Sync")
@@ -294,7 +297,7 @@ function ShureMXAController:setupComponents()
     self:setupMXAComponents()
 end
 
---------** Event Handlers **--------
+-----------------[ Event Handlers ]-------------------
 function ShureMXAController:registerCallSyncEventHandlers()
     local callSync = self.components.callSync
     if not callSync then return end
@@ -366,20 +369,17 @@ function ShureMXAController:registerEventHandlers()
             self.mxaModule.setAllMute(ctl.Boolean) 
         end
     end
-
     -- Component change handlers using global Controls table
     if Controls.compRoomControls then
         Controls.compRoomControls.EventHandler = function() 
             self:setupRoomControlsComponent()
         end
     end
-
     if Controls.compCallSync then
         Controls.compCallSync.EventHandler = function() 
             self:setupCallSyncComponent()
         end
     end
-
     -- MXA device handlers using global Controls table
     if Controls.devMXAs then
         for i, _ in ipairs(Controls.devMXAs) do
@@ -390,7 +390,7 @@ function ShureMXAController:registerEventHandlers()
     end
 end
 
---------** Component Discovery **--------
+-----------------[ Component Discovery ]-------------------
 function ShureMXAController:getComponentNames()
     local namesTable = {
         RoomControlsNames = {}, 
@@ -432,7 +432,7 @@ function ShureMXAController:getComponentNames()
     end
 end
 
---------** System Initialization **--------
+-----------------[ System Initialization ]-------------------
 function ShureMXAController:performSystemInitialization()
     if self.debugging then self:debugPrint("System initialization") end
     self.mxaModule.setAllMute(true)
@@ -440,7 +440,7 @@ function ShureMXAController:performSystemInitialization()
     if self.debugging then self:debugPrint("System initialization completed") end
 end
 
---------** Initialization **--------
+-----------------[ Initialization ]-------------------
 function ShureMXAController:funcInit()
     if self.debugging then self:debugPrint("Starting initialization...") end
     
@@ -455,7 +455,7 @@ function ShureMXAController:funcInit()
     end
 end
 
---------** Cleanup **--------
+-----------------[ Cleanup ]-------------------
 function ShureMXAController:cleanup()
     -- Stop timer first
     self.ledToggleTimer:Stop()
@@ -499,7 +499,7 @@ function ShureMXAController:cleanup()
     if self.debugging then self:debugPrint("Cleanup completed") end
 end
 
---------** Factory Function **--------
+-----------------[ Factory Function ]-------------------
 local function createShureMXAController(roomName, config)
     print("Creating Shure MXA Controller for: "..tostring(roomName))
     local success, controller = pcall(function()
@@ -517,7 +517,7 @@ local function createShureMXAController(roomName, config)
     end
 end
 
---------** Instance Creation **--------
+-----------------[ Instance Creation ]-------------------
 local formattedRoomName = "[Shure MXA Controller]"
 myMXAController = createShureMXAController(formattedRoomName)
 
@@ -527,7 +527,7 @@ else
     print("ERROR: Failed to create Shure MXA Controller!")
 end
 
---------** Usage Examples **--------
+-----------------[ Usage Examples ]-------------------
 --[[
 
 -- Direct MXA control (fastest path)
