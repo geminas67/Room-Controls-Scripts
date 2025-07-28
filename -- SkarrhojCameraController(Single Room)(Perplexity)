@@ -393,7 +393,7 @@ local function createSingleRoomController(name, config)
     end
 end
 
--- ENTRY POINT
+-- Entry Point
 if not Controls.roomName then
     print("🚨 ERROR: Missing Controls.roomName")
     return

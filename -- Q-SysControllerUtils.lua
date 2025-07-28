@@ -4,7 +4,7 @@
 
 local QSysControllerUtils = {}
 
----------- Safe Component Accessors (convenience methods) ----------
+------------------[ Safe Component Access (convenience methods) ]-------------------
 local accessorMap = {
     setComponentBoolean = "set",
     setComponentProperty = "setString",
@@ -17,7 +17,7 @@ local accessorMap = {
     triggerComponent     = "trigger",
 }
 
---- Call to add convenience methods to any table/self
+-- Call to add convenience methods to any table/self
 function QSysControllerUtils.injectAccessors(target, customMap)
     local map = customMap or accessorMap
     for name, action in pairs(map) do
@@ -56,7 +56,7 @@ function QSysControllerUtils:safeComponentAccess(component, control, action, val
     return result
 end
 
----------- Component Management & Status ----------
+------------------[ Component Management & Status ]------------------
 function QSysControllerUtils:setComponent(ctrl, componentType, clearString)
     if not ctrl or ctrl.String == "" or ctrl.String == (clearString or "[Clear]") then
         ctrl.Color = "white"
@@ -96,12 +96,12 @@ function QSysControllerUtils:checkStatus()
     Controls.txtStatus.Value = 0
 end
 
----------- Debug Logging ----------
+------------------[ Debug Logging ]------------------
 function QSysControllerUtils:debugPrint(str)
     if self.debugging then print("["..(self.roomName or "Controller").." Debug] "..str) end
 end
 
----------- Batch Initializer ----------
+------------------[ Batch Initializer ]------------------
 function QSysControllerUtils:runInitializers(initializerArray)
     for i, func in ipairs(initializerArray) do
         local ok, err = pcall(func)
