@@ -380,9 +380,9 @@ end
 local function createSingleRoomController(name, config)
     print("🎥 Initializing controller for: " .. name)
     local ok, instance = pcall(function()
-        local ctrl = SkaarhojPTZControllerSingleRoom.new(name, config)
-        ctrl:funcInit()
-        return ctrl
+        local controller = SkaarhojPTZControllerSingleRoom.new(name, config)
+        controller:funcInit()
+        return controller
     end)
 
     if ok then

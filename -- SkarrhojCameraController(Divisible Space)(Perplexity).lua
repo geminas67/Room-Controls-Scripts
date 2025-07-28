@@ -147,13 +147,13 @@ function SkaarhojPTZControllerMultiRoom:recalibratePTZ()
         end
     end
     
-    self:runDelayed(self.config.recalibrationDelay, function()
-        for _, camera in ipairs(cameras) do
-            if camera then 
-                self:setComponentBoolean(camera, "ptz.recalibrate", false) 
-            end
-        end
-    end)
+    -- self:runDelayed(self.config.recalibrationDelay, function()
+    --     for _, camera in ipairs(cameras) do
+    --         if camera then 
+    --             self:setComponentBoolean(camera, "ptz.recalibrate", false) 
+    --         end
+    --     end
+    -- end)
 end
 
 function SkaarhojPTZControllerMultiRoom:getCameraCount()
@@ -459,7 +459,6 @@ end
 
 function SkaarhojPTZControllerMultiRoom:setSkaarhojPTZComponent()
     self.components.skaarhojPTZController = self:setComponent(Controls.compdevSkaarhojPTZ, "Skaarhoj PTZ Controller")
-    self:registerPTZButtonHandlers()
 end
 
 function SkaarhojPTZControllerMultiRoom:setCamRouterComponent()
@@ -806,19 +805,20 @@ function SkaarhojPTZControllerMultiRoom:funcInit()
 end
 
 -----------------[ Controller Factory Function ]-------------------
-local function createDivisibleSpaceController(config)
-    print("Creating Divisible Space Camera Controller...")
-    local success, controller = pcall(function()
-        local instance = SkaarhojPTZControllerMultiRoom.new(config)
-        instance:funcInit()
-        return instance
+
+local function createDivisibleSpaceController(name, config)
+    print("🎥 Initializing controller for: " .. name)
+    local ok, instance = pcall(function()
+        local controller = SkaarhojPTZControllerMultiRoom.new(config)
+        controller:funcInit()
+        return controller
     end)
     
-    if success then
-        print("Successfully created Divisible Space Camera Controller")
-        return controller
+    if ok then
+        print("✅ Controller ready: " .. name)
+        return instance
     else
-        print("Failed to create controller: "..tostring(controller))
+        print("❌ Failed to create controller: " .. tostring(instance))
         return nil
     end
 end
@@ -830,10 +830,4 @@ if not Controls.roomName then
 end
 
 local formattedName = "[" .. Controls.roomName.String .. "]"
-myDivisibleSpaceController = createDivisibleSpaceController(formattedName)
-
-if myDivisibleSpaceController then
-    print("Divisible Space Camera Controller created successfully!")
-else
-    print("ERROR: Failed to create Divisible Space Camera Controller!")
-end 
+myDivisibleSpaceController = createDivisibleSpaceController(formattedName, defaultConfig)
