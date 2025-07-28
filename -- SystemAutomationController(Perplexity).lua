@@ -833,7 +833,14 @@ function SystemAutomationController:setupConfigSelection()
         if not conf then return end
         local isUser = configType == "User Defined"
         for _, map in ipairs(mappings) do
-            local ctl = (map.array and controls[map.control][map.idx]) or controls[map.control]
+            local ctl = nil
+            if map.array then
+                if controls[map.control] and controls[map.control][map.idx] then
+                    ctl = controls[map.control][map.idx]
+                end
+            else
+                ctl = controls[map.control]
+            end
             if ctl then
                 ctl.Value = conf[map.config]
                 ctl.IsDisabled = not isUser
@@ -844,7 +851,14 @@ function SystemAutomationController:setupConfigSelection()
         updateControlValues(ctl.String)
     end
     for _, map in ipairs(mappings) do
-        local ctl = (map.array and controls[map.control][map.idx]) or controls[map.control]
+        local ctl = nil
+        if map.array then
+            if controls[map.control] and controls[map.control][map.idx] then
+                ctl = controls[map.control][map.idx]
+            end
+        else
+            ctl = controls[map.control]
+        end
         if ctl then
             ctl.EventHandler = function(val)
                 if controls.selDefaultConfigs.String == "User Defined" then
@@ -892,7 +906,7 @@ local function getDefaultConfig(roomType)
             cooldownTime = controls.cooldownTime and controls.cooldownTime.Value or 5,
             motionTimeout = controls.motionTimeout and controls.motionTimeout.Value or 300,
             gracePeriod = controls.motionGracePeriod and controls.motionGracePeriod.Value or 30,
-            defaultVolume = controls.defaultVolume and controls.defaultVolume[1] and controls.defaultVolume[1].Value or 0.7
+            defaultVolume = (controls.defaultVolume and controls.defaultVolume[1] and controls.defaultVolume[1].Value) or 0.7
         }
     end
     local defaults = {
