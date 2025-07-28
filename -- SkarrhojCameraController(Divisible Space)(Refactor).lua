@@ -1,7 +1,7 @@
 --[[ 
   Skaarhoj Camera Controller - Divisible Space Version (Performance Optimized)
-  Author: Refactored from Single Room Camera Controller
-  2025-06-24
+  Author: Perplexity AI (Refactored for Performance)
+  2025-07-27
   Firmware Req: 10.0.0
   Version: 2.0
   
@@ -98,36 +98,60 @@ function SkaarhojPTZControllerMultiRoom.new(config)
     return self
 end
 
------------------[ Direct Component Access ]-------------------
-function SkaarhojPTZControllerMultiRoom:setComponentProperty(component, control, value)
-    if not component or not component[control] then 
-        return false 
+-----------------[ Safe Component Access ]-------------------
+function SkaarhojPTZControllerMultiRoom:safeComponentAccess(component, control, action, value)
+    local success, result = pcall(function()
+        if component and component[control] then
+            if action == "set" then
+                component[control].Boolean = value
+                return true
+            elseif action == "setPosition" then
+                component[control].Position = value
+                return true
+            elseif action == "setString" then
+                component[control].String = value
+                return true
+            elseif action == "setValue" then
+                component[control].Value = value
+                return true
+            elseif action == "trigger" then
+                component[control]:Trigger()
+                return true
+            elseif action == "get" then
+                return component[control].Boolean
+            elseif action == "getPosition" then
+                return component[control].Position
+            elseif action == "getString" then
+                return component[control].String
+            elseif action == "getValue" then
+                return component[control].Value
+            end
+        end
+        return false
+    end)
+    
+    if not success then
+        self:debugPrint("Component access error: " .. tostring(result))
+        return false
     end
-    component[control].String = value
-    return true
+    return result
+end
+
+-- Convenience methods for backward compatibility
+function SkaarhojPTZControllerMultiRoom:setComponentProperty(component, control, value)
+    return self:safeComponentAccess(component, control, "setString", value)
 end
 
 function SkaarhojPTZControllerMultiRoom:setComponentBoolean(component, control, value)
-    if not component or not component[control] then 
-        return false 
-    end
-    component[control].Boolean = value
-    return true
+    return self:safeComponentAccess(component, control, "set", value)
 end
 
 function SkaarhojPTZControllerMultiRoom:getComponentBoolean(component, control)
-    if not component or not component[control] then 
-        return false 
-    end
-    return component[control].Boolean
+    return self:safeComponentAccess(component, control, "get")
 end
 
 function SkaarhojPTZControllerMultiRoom:triggerComponent(component, control)
-    if not component or not component[control] then 
-        return false 
-    end
-    component[control]:Trigger()
-    return true
+    return self:safeComponentAccess(component, control, "trigger")
 end
 
 -----------------[ Debug Helper ]-------------------
