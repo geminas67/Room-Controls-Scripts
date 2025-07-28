@@ -3,32 +3,53 @@
   Author: Perplexity AI (Refactored for Performance)
   2025-07-27
   Firmware Req: 10.0.0
-  Version: 2.0
-  
-  Performance Optimized Refactor:
-  - Streamlined event handlers with direct component access
-  - Reduced redundant state and UI updates
-  - Flattened control flow with early returns
-  - Consolidated initialization and error handling
-  - Optimized button press handling for faster response
-  - Enhanced error checking and validation
-  - Simplified module structure for better maintainability
-]]--
+  Requires: QSysControllerUtilities
+  Version: 2.1
+  ]]--
 
--- SkaarhojPTZControllerMultiRoom class
+-----------------[ Load Utility Module ]-------------------
+local QSysUtilities = require("QSysControllerUtilities")
+
+-----------------[ Class Definition ]-------------------
 SkaarhojPTZControllerMultiRoom = {}
 SkaarhojPTZControllerMultiRoom.__index = SkaarhojPTZControllerMultiRoom
 
+-----------------[ Global Config and Labels ]-------------------
+local defaultConfig = {
+    buttonColors = {
+        presetCalled = 'Blue',
+        presetNotCalled = 'White',
+        buttonOff = 'Off',
+        warmWhite = 'Warm White',
+        purple = 'Purple',
+        white = 'White',
+        red = 'Red'
+    },
+    defaultCameraRouterSettings = {
+        monitorA = '6',
+        monitorB = '6',
+        usbA = '6',
+        usbB = '6'
+    },
+    initializationDelay = 0.1,
+    recalibrationDelay = 1.0
+}
+
+local cameraLabels = {
+    ["1"] = "Cam01", -- Room A
+    ["2"] = "Cam02", -- Room B
+    ["3"] = "Cam03", -- Room A
+    ["4"] = "Cam04" -- Room B
+}
+
 -----------------[ Class Constructor ]-------------------
-function SkaarhojPTZControllerMultiRoom.new(config)
+function SkaarhojPTZControllerMultiRoom.new(roomName, config)
     local self = setmetatable({}, SkaarhojPTZControllerMultiRoom)
-    
-    -- Instance properties
-    self.roomName = "Divisible Space"
+    self.roomName = roomName or "Divisible Space"
     self.debugging = (config and config.debugging) or true
     self.clearString = "[Clear]"
 
-    -- Component type definitions
+    -- Device Component types (Q-SYS plugin IDs or types)
     self.componentTypes = {
         callSync = "call_sync",
         skaarhojPTZController = "%PLUGIN%_8a9d1632-c069-47d7-933c-cab299e75a5f_%FP%_fefe17b4f72c22b6bab67399fef8482d",
@@ -37,8 +58,7 @@ function SkaarhojPTZControllerMultiRoom.new(config)
         camACPR = "%PLUGIN%_648260e3-c166-4b00-98ba-ba16ksnza4a63b0_%FP%_a4d2263b4380c424e16eebb67084f355",
         roomControls = "device_controller_script"
     }
-    
-    -- Component storage
+
     self.components = {
         callSync = {}, -- Rm-A [1], Rm-B [2]
         skaarhojPTZController = nil, 
@@ -51,7 +71,6 @@ function SkaarhojPTZControllerMultiRoom.new(config)
         invalid = {}
     }
     
-    -- State tracking
     self.state = {
         combinedHookState = false,
         currentCameraSelection = 1,
@@ -65,103 +84,18 @@ function SkaarhojPTZControllerMultiRoom.new(config)
             roomBPCEnabled = false
         }
     }
-    
-    -- Configuration
-    self.config = {
-        buttonColors = {
-            presetCalled = 'Blue',
-            presetNotCalled = 'White',
-            buttonOff = 'Off',
-            warmWhite = 'Warm White',
-            purple = 'Purple',
-            white = 'White',
-            red = 'Red'
-        },
-        defaultCameraRouterSettings = {
-            monitorA = '6',
-            monitorB = '6',
-            usbA = '6',
-            usbB = '6'
-        },
-        initializationDelay = 0.1,
-        recalibrationDelay = 1.0
-    }
-    
-    -- Camera labels lookup
-    self.cameraLabels = {
-        ["1"] = "Cam01",
-        ["2"] = "Cam02", 
-        ["3"] = "Cam03",
-        ["4"] = "Cam04"
-    }
-    
+
+    self.config = config or defaultConfig
+    self.cameraLabels = cameraLabels
+
+    -- Inject shared utility methods (QSysControllerUtilities)
+    for k, v in pairs(QSysUtilities) do self[k] = v end
+    QSysUtilities.injectAccessors(self)
+
     return self
 end
 
------------------[ Safe Component Access ]-------------------
-function SkaarhojPTZControllerMultiRoom:safeComponentAccess(component, control, action, value)
-    local success, result = pcall(function()
-        if component and component[control] then
-            if action == "set" then
-                component[control].Boolean = value
-                return true
-            elseif action == "setPosition" then
-                component[control].Position = value
-                return true
-            elseif action == "setString" then
-                component[control].String = value
-                return true
-            elseif action == "setValue" then
-                component[control].Value = value
-                return true
-            elseif action == "trigger" then
-                component[control]:Trigger()
-                return true
-            elseif action == "get" then
-                return component[control].Boolean
-            elseif action == "getPosition" then
-                return component[control].Position
-            elseif action == "getString" then
-                return component[control].String
-            elseif action == "getValue" then
-                return component[control].Value
-            end
-        end
-        return false
-    end)
-    
-    if not success then
-        self:debugPrint("Component access error: " .. tostring(result))
-        return false
-    end
-    return result
-end
-
--- Convenience methods for backward compatibility
-function SkaarhojPTZControllerMultiRoom:setComponentProperty(component, control, value)
-    return self:safeComponentAccess(component, control, "setString", value)
-end
-
-function SkaarhojPTZControllerMultiRoom:setComponentBoolean(component, control, value)
-    return self:safeComponentAccess(component, control, "set", value)
-end
-
-function SkaarhojPTZControllerMultiRoom:getComponentBoolean(component, control)
-    return self:safeComponentAccess(component, control, "get")
-end
-
-function SkaarhojPTZControllerMultiRoom:triggerComponent(component, control)
-    return self:safeComponentAccess(component, control, "trigger")
-end
-
------------------[ Debug Helper ]-------------------
-function SkaarhojPTZControllerMultiRoom:debugPrint(str)
-    if self.debugging then 
-        print("["..self.roomName.." Camera Debug] "..str) 
-    end
-end
-
------------------[ Camera Operations ]-------------------
+-----------------[ Camera Logic ]-------------------
 function SkaarhojPTZControllerMultiRoom:setPrivacy(room, state)
     local cameras = {}
     
@@ -207,21 +141,19 @@ end
 function SkaarhojPTZControllerMultiRoom:recalibratePTZ()
     local cameras = {self.components.devCams[1], self.components.devCams[3], self.components.devCams[2], self.components.devCams[4]}
     
-    -- Start recalibration
     for _, camera in ipairs(cameras) do
         if camera then 
             self:triggerComponent(camera, "ptz.recalibrate") 
         end
     end
     
-    -- Stop recalibration after delay
-    Timer.CallAfter(function()
+    self:runDelayed(self.config.recalibrationDelay, function()
         for _, camera in ipairs(cameras) do
             if camera then 
                 self:setComponentBoolean(camera, "ptz.recalibrate", false) 
             end
         end
-    end, self.config.recalibrationDelay)
+    end)
 end
 
 function SkaarhojPTZControllerMultiRoom:getCameraCount()
@@ -240,7 +172,7 @@ function SkaarhojPTZControllerMultiRoom:updatePrivacyButton()
     self:setComponentProperty(self.components.skaarhojPTZController, "Button6.color", color)
 end
 
------------------[ Routing Operations ]-------------------
+-----------------[ Router Operations ]-------------------
 function SkaarhojPTZControllerMultiRoom:setRouterOutput(outputNumber, cameraNumber)
     self:setComponentProperty(self.components.camRouter, "select."..outputNumber, tostring(cameraNumber))
 end
@@ -280,14 +212,14 @@ end
 function SkaarhojPTZControllerMultiRoom:handleCombinedRouting()
     if self:getComponentBoolean(self.components.callSync[1], "off.hook") then
         self:disableRoomBPC()
-        Timer.CallAfter(function()
+        self:runDelayed(self.config.initializationDelay, function()
             self:enableRoomAPC()
-        end, self.config.initializationDelay)
+        end)
     elseif self:getComponentBoolean(self.components.callSync[2], "off.hook") then
         self:disableRoomAPC()
-        Timer.CallAfter(function()
+        self:runDelayed(self.config.initializationDelay, function()
             self:enableRoomBPC()
-        end, self.config.initializationDelay)
+        end)
     end
 end
 
@@ -301,26 +233,22 @@ function SkaarhojPTZControllerMultiRoom:handleRoomBRouting()
     self:enableRoomBPC()
 end
 
------------------[ PTZ Operations ]-------------------
-function SkaarhojPTZControllerMultiRoom:setButtonProperties(buttonNumber, headerText, screenText, controlLink, color)
+-----------------[ PTZ Controller Operations ]-------------------
+function SkaarhojPTZControllerMultiRoom:setMultipleButtonProperties(buttonNum, props)
     local base = self.components.skaarhojPTZController
-    if not base then 
-        self:debugPrint("PTZ Controller not found")
-        return 
+    if not base then return end
+    for key, value in pairs(props) do
+        self:setComponentProperty(base, "Button" .. buttonNum .. "." .. key, value)
     end
-    
-    if headerText then 
-        self:setComponentProperty(base, "Button"..buttonNumber..".headerText", headerText)
-    end
-    if screenText then 
-        self:setComponentProperty(base, "Button"..buttonNumber..".screenText", screenText)
-    end
-    if controlLink then 
-        self:setComponentProperty(base, "Button"..buttonNumber..".controlLink", controlLink)
-    end
-    if color then 
-        self:setComponentProperty(base, "Button"..buttonNumber..".color", color)
-    end
+end
+
+function SkaarhojPTZControllerMultiRoom:setButtonProperties(buttonNumber, headerText, screenText, controlLink, color)
+    local props = {}
+    if headerText  then props.headerText = headerText end
+    if screenText  then props.screenText = screenText end
+    if controlLink then props.controlLink = controlLink end
+    if color       then props.color = color end
+    self:setMultipleButtonProperties(buttonNumber, props)
 end
 
 function SkaarhojPTZControllerMultiRoom:enableRoomAPC()
@@ -387,9 +315,9 @@ function SkaarhojPTZControllerMultiRoom:setCombinedHookState(state)
         self:disableRoomBPC()
         self:setComponentProperty(self.components.skaarhojPTZController, "Button9.controlLink", "None")
         self:setPrivacy("Combined", true)
-        Timer.CallAfter(function()
+        self:runDelayed(self.config.initializationDelay * 2, function()
             self:setComponentBoolean(self.components.camACPR[3], "TrackingBypass", true)
-        end, self.config.initializationDelay * 2)
+        end)
     end
 end
 
@@ -477,64 +405,31 @@ function SkaarhojPTZControllerMultiRoom:handleRoomBHookState(isOffHook)
     end
 end
 
------------------[ Component Management ]-------------------
-function SkaarhojPTZControllerMultiRoom:setComponent(ctrl, componentType)
-    if not ctrl then return nil end
-    
-    local componentName = ctrl.String
-    if componentName == "" or componentName == self.clearString then
-        ctrl.Color = "white"
-        self:setComponentValid(componentType)
-        return nil
-    end
-    
-    local component = Component.New(componentName)
-    if not component or #Component.GetControls(component) < 1 then
-        ctrl.String = "[Invalid Component Selected]"
-        ctrl.Color = "pink"
-        self:setComponentInvalid(componentType)
-        return nil
-    end
-    
-    ctrl.Color = "white"
-    self:setComponentValid(componentType)
-    return component
-end
-
-function SkaarhojPTZControllerMultiRoom:setComponentInvalid(componentType)
-    self.components.invalid[componentType] = true
-    self:checkStatus()
-end
-
-function SkaarhojPTZControllerMultiRoom:setComponentValid(componentType)
-    self.components.invalid[componentType] = false
-    self:checkStatus()
-end
-
-function SkaarhojPTZControllerMultiRoom:checkStatus()
-    for _, isInvalid in pairs(self.components.invalid) do
-        if isInvalid then
-            Controls.txtStatus.String = "Invalid Components"
-            Controls.txtStatus.Value = 1
-            return
-        end
-    end
-    Controls.txtStatus.String = "OK"
-    Controls.txtStatus.Value = 0
-end
-
 -----------------[ Component Setup ]-------------------
+function SkaarhojPTZControllerMultiRoom:setDevCamComponent(idx)
+    if not Controls.compdevCams or not Controls.compdevCams[idx] then return end
+    
+    local cameraLabels = {[1] = "Cam01", [2] = "Cam02", [3] = "Cam03", [4] = "Cam04"}
+    self.components.devCams[idx] = self:setComponent(Controls.compdevCams[idx], cameraLabels[idx])
+end
+
 function SkaarhojPTZControllerMultiRoom:setupComponents()
-    self:setCallSyncComponent()
-    self:setSkaarhojPTZComponent()
-    self:setCamRouterComponent()
-    self:setCamACPRComponent()
-    self:setCompRoomControlsComponent()
-    if Controls.compdevCams then
-        for i = 1, 4 do 
-            self:setDevCamComponent(i) 
+    local steps = {
+        function() self:setCallSyncComponent() end,
+        function() self:setSkaarhojPTZComponent() end,
+        function() self:setCamRouterComponent() end,
+        function() self:setCamACPRComponent() end,
+        function() self:setCompRoomControlsComponent() end,
+        function()
+            if Controls.compdevCams then
+                for i = 1, 4 do 
+                    self:setDevCamComponent(i) 
+                end
+            end
         end
-    end
+    }
+    self:runInitializers(steps)
+    self:registerComponentEventHandlers()
 end
 
 function SkaarhojPTZControllerMultiRoom:setCallSyncComponent()
@@ -564,72 +459,11 @@ end
 
 function SkaarhojPTZControllerMultiRoom:setSkaarhojPTZComponent()
     self.components.skaarhojPTZController = self:setComponent(Controls.compdevSkaarhojPTZ, "Skaarhoj PTZ Controller")
-    self:registerSkaarhojComponentButtonHandlers()
-end
-
-function SkaarhojPTZControllerMultiRoom:registerSkaarhojComponentButtonHandlers()
-    local ptz = self.components.skaarhojPTZController
-    if not ptz then return end
-    
-    -- Camera selection buttons (1-4)
-    for i = 1, 4 do
-        local btn = ptz["Button"..i..".press"]
-        if btn then
-            btn.EventHandler = function()
-                self:setComponentProperty(ptz, "Button"..i..".headerText", "Active")
-                if self.components.camRouter then
-                    local camIndex = tostring(i)
-                    self.components.camRouter["select.1"].String = camIndex
-                    self.components.camRouter["select.2"].String = camIndex
-                end
-                -- Visual feedback for all buttons
-                for j = 1, 4 do
-                    self:setButtonActive(j, j == i)
-                end
-            end
-        end
-    end
-    
-    -- Room A PC button (Button8)
-    local btn8 = ptz["Button8.press"]
-    if btn8 then
-        btn8.EventHandler = function()
-            if self.components.callSync[1] and self:getComponentBoolean(self.components.callSync[1], "off.hook") then
-                local currentCam = self.components.camRouter["select.1"].String
-                self.components.camRouter["select.3"].String = currentCam
-                local selectedText = ptz["Button"..currentCam..".screenText"]
-                if selectedText then
-                    self:setComponentProperty(ptz, "Button8.screenText", selectedText.String)
-                end
-            end
-        end
-    end
-    
-    -- Room B PC button (Button9)
-    local btn9 = ptz["Button9.press"]
-    if btn9 then
-        btn9.EventHandler = function()
-            if self.components.callSync[2] and self:getComponentBoolean(self.components.callSync[2], "off.hook") then
-                local currentCam = self.components.camRouter["select.2"].String
-                self.components.camRouter["select.4"].String = currentCam
-                local selectedText = ptz["Button"..currentCam..".screenText"]
-                if selectedText then
-                    self:setComponentProperty(ptz, "Button9.screenText", selectedText.String)
-                end
-            end
-        end
-    end
+    self:registerPTZButtonHandlers()
 end
 
 function SkaarhojPTZControllerMultiRoom:setCamRouterComponent()
     self.components.camRouter = self:setComponent(Controls.compcamRouter, "Camera Router")
-end
-
-function SkaarhojPTZControllerMultiRoom:setDevCamComponent(idx)
-    if not Controls.compdevCams or not Controls.compdevCams[idx] then return end
-    
-    local cameraLabels = {[1] = "Cam01", [2] = "Cam02", [3] = "Cam03", [4] = "Cam04"}
-    self.components.devCams[idx] = self:setComponent(Controls.compdevCams[idx], cameraLabels[idx])
 end
 
 function SkaarhojPTZControllerMultiRoom:setCamACPRComponent()
@@ -659,6 +493,132 @@ function SkaarhojPTZControllerMultiRoom:setCompRoomControlsComponent()
     end
 end
 
+-----------------[ Event Handler Setup ]-------------------
+function SkaarhojPTZControllerMultiRoom:registerComponentEventHandlers()
+    local cs = self.components.callSync
+    local ptz = self.components.skaarhojPTZController
+    local room = self.components.compRoomControls
+
+    if ptz then
+        self:registerPTZButtonHandlers()
+        self:initializeCameraLabels()
+    end
+
+    if room and room[1] and room[1]["ledSystemPower"] then
+        local led = room[1]["ledSystemPower"]
+        led.EventHandler = function()
+            if not self:getComponentBoolean(room[1], "ledSystemPower") then
+                Controls.btnProductionMode.Boolean = false
+                self:handleSystemPowerOff()
+            end
+        end
+    end
+end
+
+function SkaarhojPTZControllerMultiRoom:registerPTZButtonHandlers()
+    local ptz = self.components.skaarhojPTZController
+    if not ptz then return end
+
+    -- Camera selection buttons (1-4)
+    for i = 1, 4 do
+        local btn = ptz["Button"..i..".press"]
+        if btn then
+            btn.EventHandler = function()
+                self:handleCameraSelection(i)
+            end
+        end
+    end
+    
+    -- Room A PC button (Button8)
+    local btn8 = ptz["Button8.press"]
+    if btn8 then
+        btn8.EventHandler = function()
+            self:handlePCSend("A")
+        end
+    end
+    
+    -- Room B PC button (Button9)
+    local btn9 = ptz["Button9.press"]
+    if btn9 then
+        btn9.EventHandler = function()
+            self:handlePCSend("B")
+        end
+    end
+end
+
+function SkaarhojPTZControllerMultiRoom:initializeCameraLabels()
+    local ptz = self.components.skaarhojPTZController
+    if not ptz then return end
+    for i = 1, 4 do
+        self:setCameraLabel(i, i)
+    end
+end
+
+-----------------[ Logic Handlers ]-------------------
+function SkaarhojPTZControllerMultiRoom:handleCameraSelection(index)
+    local ptz = self.components.skaarhojPTZController
+    local router = self.components.camRouter
+    if not ptz or not router then return end
+
+    local camNum = tostring(index)
+    self:setComponentProperty(router, "select.1", camNum)
+    self:setComponentProperty(router, "select.2", camNum)
+    self:setComponentProperty(ptz, "Button" .. index .. ".headerText", "Active")
+
+    for i = 1, 4 do 
+        self:setButtonActive(i, i == index) 
+    end
+end
+
+function SkaarhojPTZControllerMultiRoom:handlePCSend(room)
+    local ptz = self.components.skaarhojPTZController
+    local router = self.components.camRouter
+    local callSync = self.components.callSync[room == "A" and 1 or 2]
+    if not ptz or not router or not callSync then return end
+    if not self:getComponentBoolean(callSync, "off.hook") then return end
+
+    local currentCam = self:getComponentProperty(router, "select." .. (room == "A" and "1" or "2"))
+    if currentCam then
+        local usbOutput = room == "A" and "3" or "4"
+        self:setComponentProperty(router, "select." .. usbOutput, currentCam)
+        local label = ptz["Button" .. currentCam .. ".screenText"]
+        if label then
+            local buttonNum = room == "A" and "8" or "9"
+            self:setComponentProperty(ptz, "Button" .. buttonNum .. ".screenText", label.String)
+        end
+    end
+end
+
+function SkaarhojPTZControllerMultiRoom:handleSystemPowerOff()
+    self:debugPrint("System power off - Production mode set to false")
+    for i, acpr in ipairs(self.components.camACPR) do
+        if acpr then 
+            self:setComponentBoolean(acpr, "TrackingBypass", true) 
+        end
+    end
+    if self.components.skaarhojPTZController then 
+        self:setComponentBoolean(self.components.skaarhojPTZController, "Disable", true) 
+    end
+end
+
+function SkaarhojPTZControllerMultiRoom:handleProductionModeChange()
+    local ptz = self.components.skaarhojPTZController
+    if ptz then
+        self:setComponentBoolean(ptz, "Disable", not Controls.btnProductionMode.Boolean)
+        self:setComponentBoolean(ptz, "Button14.press", true) -- Send All Home
+    end
+    
+    for i, acpr in ipairs(self.components.camACPR) do
+        if acpr then
+            local on = Controls.btnProductionMode.Boolean
+            local hook = self.state.combinedHookState
+            local bypass = on or not hook
+            self:setComponentBoolean(acpr, "TrackingBypass", bypass)
+            self:debugPrint("Production mode: " .. tostring(on) .. ", Off hook: " .. tostring(hook))
+        end
+    end
+end
+
 -----------------[ Room Name Management ]-------------------
 function SkaarhojPTZControllerMultiRoom:updateRoomName()
     if not self.components.compRoomControls or not self.components.compRoomControls[1] then return end
@@ -674,13 +634,12 @@ end
 function SkaarhojPTZControllerMultiRoom:performSystemInitialization()
     self:debugPrint("Performing system initialization")
     
-    -- Batch initialization tasks
     self:recalibratePTZ()
     self:clearRoomRoutes("A")
     self:clearRoomRoutes("B")
-    
-    Timer.CallAfter(function()
-        -- Check hook states and set initial privacy
+    self:initializeCameraLabels()
+
+    self:runDelayed(self.config.recalibrationDelay, function()
         local offHookA = self.components.callSync[1] and self:getComponentBoolean(self.components.callSync[1], "off.hook")
         local offHookB = self.components.callSync[2] and self:getComponentBoolean(self.components.callSync[2], "off.hook")
         
@@ -694,7 +653,7 @@ function SkaarhojPTZControllerMultiRoom:performSystemInitialization()
         end
         
         self:debugPrint("System initialization completed")
-    end, self.config.recalibrationDelay)
+    end)
 end
 
 -----------------[ Component Name Discovery ]-------------------
@@ -777,7 +736,7 @@ function SkaarhojPTZControllerMultiRoom:registerEventHandlers()
     if Controls.compdevSkaarhojPTZ then 
         Controls.compdevSkaarhojPTZ.EventHandler = function() 
             self:setSkaarhojPTZComponent() 
-            self:registerSkaarhojComponentButtonHandlers()
+            self:registerPTZButtonHandlers()
         end 
     end
     
@@ -817,16 +776,7 @@ function SkaarhojPTZControllerMultiRoom:registerEventHandlers()
     
     if Controls.btnProductionMode then
         Controls.btnProductionMode.EventHandler = function()
-            local state = Controls.btnProductionMode.Boolean
-            for i, acpr in ipairs(self.components.camACPR) do
-                if acpr then
-                    self:setComponentBoolean(acpr, "TrackingBypass", state)
-                end
-            end
-            if self.components.skaarhojPTZController then
-                self:setComponentBoolean(self.components.skaarhojPTZController, "Disable", not state)
-                self:setComponentBoolean(self.components.skaarhojPTZController, "Button14.press", true)
-            end
+            self:handleProductionModeChange()
         end
     end
 end
@@ -835,14 +785,14 @@ end
 function SkaarhojPTZControllerMultiRoom:funcInit()
     self:debugPrint("Starting Divisible Space Camera Controller initialization...")
     
-    -- Batch initialization
-    self:getComponentNames()
-    self:setupComponents()
-    self:updateRoomName()
-    self:registerEventHandlers()
-    self:performSystemInitialization()
-    
-    -- Apply initial hook states
+    self:runInitializers({
+        function() self:getComponentNames() end,
+        function() self:setupComponents() end,
+        function() self:updateRoomName() end,
+        function() self:registerEventHandlers() end,
+        function() self:performSystemInitialization() end
+    })
+
     if self.components.callSync[1] then
         local initialHookStateA = self:getComponentBoolean(self.components.callSync[1], "off.hook")
         self:handleRoomAHookState(initialHookStateA)
@@ -852,18 +802,10 @@ function SkaarhojPTZControllerMultiRoom:funcInit()
         self:handleRoomBHookState(initialHookStateB)
     end
     
-    -- Initialize camera labels
-    if self.components.skaarhojPTZController then
-        for i = 1, 4 do
-            self:setCameraLabel(i, i)
-        end
-        self:debugPrint("Camera labels initialized for buttons 1-4")
-    end
-    
     self:debugPrint("Divisible Space Camera Controller Initialized with "..self:getCameraCount().." cameras")
 end
 
------------------[ Factory Function ]-------------------
+-----------------[ Controller Factory Function ]-------------------
 local function createDivisibleSpaceController(config)
     print("Creating Divisible Space Camera Controller...")
     local success, controller = pcall(function()
@@ -881,8 +823,14 @@ local function createDivisibleSpaceController(config)
     end
 end
 
------------------[ Instance Creation ]-------------------
-myDivisibleSpaceController = createDivisibleSpaceController()
+-- Entry Point
+if not Controls.roomName then
+    print("🚨 ERROR: Missing Controls.roomName")
+    return
+end
+
+local formattedName = "[" .. Controls.roomName.String .. "]"
+myDivisibleSpaceController = createDivisibleSpaceController(formattedName)
 
 if myDivisibleSpaceController then
     print("Divisible Space Camera Controller created successfully!")

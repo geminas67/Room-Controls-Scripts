@@ -2,18 +2,19 @@
   Single Room Camera Controller - Lean + Util-powered
   Author: Nikolas Smith
   Created: 2025-07-28
-  Requires: QSysControllerUtils
+  Firmware Req: 10.0.0
+  Requires: QSysControllerUtilities
   Version: 1.0
 ]]--
 
--- Load utility module
-local QSysUtils = require("QSysControllerUtils")
+-----------------[ Load Utility Module ]-------------------
+local QSysUtilities = require("QSysControllerUtilities")
 
--- Class definition
+-----------------[ Class Definition ]-------------------
 SkaarhojPTZControllerSingleRoom = {}
 SkaarhojPTZControllerSingleRoom.__index = SkaarhojPTZControllerSingleRoom
 
--- Global config and labels
+-----------------[ Global Config and Labels ]-------------------
 local defaultConfig = {
     buttonColors = {
         presetCalled = 'Blue',
@@ -38,7 +39,7 @@ local cameraLabels = {
     ["1"]="Cam A", ["2"]="Cam D", ["3"]="Cam B", ["4"]="Cam C", ["5"]="Cam E"
 }
 
--- Constructor
+-----------------[ Class Constructor ]-------------------
 function SkaarhojPTZControllerSingleRoom.new(roomName, config)
     local self = setmetatable({}, SkaarhojPTZControllerSingleRoom)
     self.roomName = roomName or "Single Room"
@@ -74,14 +75,14 @@ function SkaarhojPTZControllerSingleRoom.new(roomName, config)
     self.config = config or defaultConfig
     self.cameraLabels = cameraLabels
 
-    -- Inject shared utility methods
-    for k, v in pairs(QSysUtils) do self[k] = v end
-    QSysUtils.injectAccessors(self)
+    -- Inject shared utility methods (QSysControllerUtilities)
+    for k, v in pairs(QSysUtilities) do self[k] = v end
+    QSysUtilities.injectAccessors(self)
 
     return self
 end
 
------------------[ Core Camera Logic ]-------------------
+-----------------[ Camera Logic ]-------------------
 
 function SkaarhojPTZControllerSingleRoom:setPrivacy(state)
     self.state.privacyState = state
