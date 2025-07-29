@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "../Styles"
+		},
+		{
+			"path": "../Modules"
 		}
 	],
 	"settings": {}

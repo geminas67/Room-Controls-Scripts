@@ -1,13 +1,17 @@
 --[[
     System Automation Controller (Refactored OOP, Modular, Modern Lua)
     Author: Nikolas Smith, Q-SYS
-    Version: 3.0 | Date: 2025-07-23
+    Version: 3.1 | Date: 2025-07-23
 
     Implements strict OOP / modular structure per Lua Refactoring Guidelines.
     Each logical area (audio, power, video, etc.) is its own class with methods.
     Controller is shallow, event registration is DRY, logic is delegated.
     Debugging and config are standardized.
+    Requires: QSysControllerUtilities
 ]]
+
+-------------------[ Load Utility Module ]-------------------
+local QSysUtilities = require("QSysControllerUtilities")
 
 -------------------[ Control References ]-------------------
 local controls = {
@@ -89,12 +93,12 @@ function AudioModule:setVolume(level, gainIndex)
     if gainIndex then
         local gain = self.controller:getGainComponent(gainIndex)
         if not gain then return end
-        self.controller:safeComponentAccess(gain, "gain", "setPosition", level)
+        self.controller:setComponentPosition(gain, "gain", level)
         self:updateVolumeVisuals(gainIndex)
     else
         for i, gain in pairs(self.controller.components.gains) do
             if gain then
-                self.controller:safeComponentAccess(gain, "gain", "setPosition", level)
+                self.controller:setComponentPosition(gain, "gain", level)
                 self:updateVolumeVisuals(i)
             end
         end
@@ -106,12 +110,12 @@ function AudioModule:setMute(state, gainIndex)
     if gainIndex then
         local gain = self.controller:getGainComponent(gainIndex)
         if not gain then return end
-        self.controller:safeComponentAccess(gain, "mute", "set", state)
+        self.controller:setComponentBoolean(gain, "mute", state)
         self:updateVolumeVisuals(gainIndex)
     else
         for i, gain in pairs(self.controller.components.gains) do
             if gain then
-                self.controller:safeComponentAccess(gain, "mute", "set", state)
+                self.controller:setComponentBoolean(gain, "mute", state)
                 self:updateVolumeVisuals(i)
             end
         end
@@ -121,7 +125,7 @@ end
 
 function AudioModule:setPrivacy(state)
     local callSync = self.controller.components.callSync
-    self.controller:safeComponentAccess(callSync, "mute", "set", state)
+    self.controller:setComponentBoolean(callSync, "mute", state)
     if controls.btnAudioPrivacy then controls.btnAudioPrivacy.Boolean = state end
     self.controller:publishNotification()
 end
@@ -129,7 +133,7 @@ end
 function AudioModule:setSystemMute(state)
     local systemMute = self.controller.components.systemMute
     if not systemMute then return end
-    self.controller:safeComponentAccess(systemMute, "mute", "set", state)
+    self.controller:setComponentBoolean(systemMute, "mute", state)
 end
 
 function AudioModule:setVolumeUpDown(direction, state, gainIndex)
@@ -137,14 +141,14 @@ function AudioModule:setVolumeUpDown(direction, state, gainIndex)
     if gainIndex then
         local gain = self.controller:getGainComponent(gainIndex)
         if not gain then return end
-        self.controller:safeComponentAccess(gain, control, "set", state)
-        if state then self.controller:safeComponentAccess(gain, "mute", "set", false) end
+        self.controller:setComponentBoolean(gain, control, state)
+        if state then self.controller:setComponentBoolean(gain, "mute", false) end
         self:updateVolumeVisuals(gainIndex)
     else
         for i, gain in pairs(self.controller.components.gains) do
             if gain then
-                self.controller:safeComponentAccess(gain, control, "set", state)
-                if state then self.controller:safeComponentAccess(gain, "mute", "set", false) end
+                self.controller:setComponentBoolean(gain, control, state)
+                if state then self.controller:setComponentBoolean(gain, "mute", false) end
                 self:updateVolumeVisuals(i)
             end
         end
@@ -161,13 +165,13 @@ end
 function AudioModule:getGainLevel(gainIndex)
     local gain = self.controller:getGainComponent(gainIndex)
     if not gain then return 0 end
-    return self.controller:safeComponentAccess(gain, "gain", "getPosition") or 0
+    return self.controller:getComponentPosition(gain, "gain") or 0
 end
 
 function AudioModule:getGainMute(gainIndex)
     local gain = self.controller:getGainComponent(gainIndex)
     if not gain then return false end
-    return self.controller:safeComponentAccess(gain, "mute", "get") or false
+    return self.controller:getComponentBoolean(gain, "mute") or false
 end
 
 function AudioModule:updateVolumeVisuals(gainIndex)
@@ -202,11 +206,11 @@ end
 
 function VideoModule:setPrivacy(state)
     local videoBridge = self.controller.components.videoBridge
-    self.controller:safeComponentAccess(videoBridge, "toggle.privacy", "set", state)
+    self.controller:setComponentBoolean(videoBridge, "toggle.privacy", state)
     if controls.btnVideoPrivacy then controls.btnVideoPrivacy.Boolean = state end
     local camACPR = self.controller.components.camACPR
     if camACPR then
-        self.controller:safeComponentAccess(camACPR, "TrackingBypass", "set", state)
+        self.controller:setComponentBoolean(camACPR, "TrackingBypass", state)
     end
     self.controller:publishNotification()
 end
@@ -214,7 +218,7 @@ end
 function VideoModule:getPrivacyState()
     local videoBridge = self.controller.components.videoBridge
     if not videoBridge then return false end
-    local state = self.controller:safeComponentAccess(videoBridge, "toggle.privacy", "get")
+    local state = self.controller:getComponentBoolean(videoBridge, "toggle.privacy")
     if controls.btnVideoPrivacy then controls.btnVideoPrivacy.Boolean = state end
     self.controller:publishNotification()
     return state
@@ -236,7 +240,7 @@ end
 function DisplayModule:powerAll(state)
     local trigger = state and "PowerOnTrigger" or "PowerOffTrigger"
     for _, display in pairs(self.controller.components.displays) do
-        if display then self.controller:safeComponentAccess(display, trigger, "trigger") end
+        if display then self.controller:triggerComponent(display, trigger) end
     end
 end
 
@@ -244,7 +248,7 @@ function DisplayModule:powerSingle(index, state)
     local display = self.controller:getDisplayComponent(index)
     if not display then return end
     local trigger = state and "PowerOnTrigger" or "PowerOffTrigger"
-    self.controller:safeComponentAccess(display, trigger, "trigger")
+    self.controller:triggerComponent(display, trigger)
 end
 
 function DisplayModule:cleanup() end
@@ -346,7 +350,7 @@ end
 function MotionModule:cleanup() end
 function MotionModule:debug(str) self.controller:debugPrint("[Motion] "..str) end
 
--------------------[ SystemAutomationController (The Orchestrator) ]-------------------
+-----------------[ SystemAutomationController (The Orchestrator) ]-------------------
 SystemAutomationController = {}
 SystemAutomationController.__index = SystemAutomationController
 
@@ -400,16 +404,15 @@ function SystemAutomationController.new(roomName, config, defaultConfigs)
     self.powerModule = PowerModule.new(self)
     self.motionModule = MotionModule.new(self)
 
+    -- Inject shared utility methods (QSysControllerUtilities)
+    for k, v in pairs(QSysUtilities) do self[k] = v end
+    QSysUtilities.injectAccessors(self)
+
     self:registerTimerHandlers()
     return self
 end
 
-------------------[ Debug Helper ]----------------------
-function SystemAutomationController:debugPrint(str)
-    if self.debugging then print("["..self.roomName.." Debug] "..str) end
-end
-
-------------------[ Component Utility Helpers ]---------------------
+----------------[ Component Utility Helpers ]---------------------
 function SystemAutomationController:getGainComponent(idx)
     return self.components.gains[idx]
 end
@@ -417,38 +420,7 @@ function SystemAutomationController:getDisplayComponent(idx)
     return self.components.displays[idx]
 end
 
-function SystemAutomationController:safeComponentAccess(component, control, action, value)
-    if not component or not component[control] then return false end
-    local success, result = pcall(function()
-        if action == "set" then
-            component[control].Boolean = value
-            return true
-        elseif action == "setPosition" then
-            component[control].Position = value
-            return true
-        elseif action == "setString" then
-            component[control].String = value
-            return true
-        elseif action == "trigger" then
-            component[control]:Trigger()
-            return true
-        elseif action == "get" then
-            return component[control].Boolean
-        elseif action == "getPosition" then
-            return component[control].Position
-        elseif action == "getString" then
-            return component[control].String
-        end
-        return false
-    end)
-    if not success then
-        self:debugPrint("Component access error: "..tostring(result))
-        return false
-    end
-    return result
-end
-
-------------------[ Event Handler: Registration ]----------------------
+----------------[ Event Handler: Registration ]----------------------
 function SystemAutomationController:registerEventHandlers()
     -- Power controls
     if controls.btnSystemOnOff then
@@ -542,7 +514,7 @@ function SystemAutomationController:registerEventHandlers()
         end
     end
 end
------------------[ Timer Handlers ]-----------------------
+----------------[ Timer Handlers ]-----------------------
 function SystemAutomationController:registerTimerHandlers()
     self.timers.motion.EventHandler = function()
         self:debugPrint("Motion Timeout")
@@ -575,7 +547,7 @@ function SystemAutomationController:registerTimerHandlers()
     end
 end
 
-------------------[ Component Discovery / Selection ]------------------
+----------------[ Component Discovery / Selection ]------------------
 function SystemAutomationController:getComponentNames()
     local compType = SystemAutomationController.componentTypes
     local namesTable = {
@@ -613,58 +585,7 @@ function SystemAutomationController:getComponentNames()
     if controls.devDisplays then for _, ctl in ipairs(controls.devDisplays) do ctl.Choices = namesTable.DisplayNames end end
 end
 
-----------------[ UI/Component Status Handling ]----------------
-function SystemAutomationController:setComponent(ctrl, componentType)
-    if not ctrl then return nil end
-    local componentName = ctrl.String
-    if componentName == "" then
-        ctrl.Color = "white"
-        self:setComponentValid(componentType)
-        return nil
-    end
-    if componentName == self.clearString then
-        ctrl.String = ""
-        ctrl.Color = "white"
-        self:setComponentValid(componentType)
-        return nil
-    end
-    local newComponent = Component.New(componentName)
-    if #Component.GetControls(newComponent) < 1 then
-        ctrl.String = "[Invalid Component Selected]"
-        ctrl.Color = "pink"
-        self:setComponentInvalid(componentType)
-        return nil
-    end
-    self:debugPrint("Setting " .. componentType .. ": {" .. componentName .. "}")
-    ctrl.Color = "white"
-    self:setComponentValid(componentType)
-    return newComponent
-end
-function SystemAutomationController:setComponentInvalid(componentType)
-    self.components.invalid[componentType] = true
-    self:checkStatus()
-end
-function SystemAutomationController:setComponentValid(componentType)
-    self.components.invalid[componentType] = false
-    self:checkStatus()
-end
-function SystemAutomationController:checkStatus()
-    for _, isInvalid in pairs(self.components.invalid) do
-        if isInvalid then
-            if controls.txtStatus then
-                controls.txtStatus.String = "Invalid Components"
-                controls.txtStatus.Value = 1
-            end
-            return
-        end
-    end
-    if controls.txtStatus then
-        controls.txtStatus.String = "OK"
-        controls.txtStatus.Value = 0
-    end
-end
-
-------[ Per-Component Setup/Assignment (wires events) ]------
+----------------[ Per-Component Setup/Assignment ]----------------
 function SystemAutomationController:setCallSyncComponent()
     self.components.callSync = self:setComponent(controls.compCallSync, "Call Sync")
     local callSync = self.components.callSync
@@ -698,7 +619,7 @@ function SystemAutomationController:setCamACPRComponent()
     if not camACPR then return end
     camACPR["TrackingBypass"].EventHandler = function() self:updateACPRTrackingBypass() end
     if self.components.callSync then
-        local callState = self:safeComponentAccess(self.components.callSync, "off.hook", "get")
+        local callState = self:getComponentBoolean(self.components.callSync, "off.hook")
         camACPR["TrackingBypass"].IsDisabled = not callState
     end
     camACPR["TrackingBypass"].Legend = " "
@@ -711,33 +632,33 @@ end
 function SystemAutomationController:callSyncCheckMute()
     local callSync = self.components.callSync
     if not callSync then return end
-    local state = self:safeComponentAccess(callSync, "mute", "get")
+    local state = self:getComponentBoolean(callSync, "mute")
     self:debugPrint("Call Sync Mute State: " .. tostring(state))
     if controls.btnAudioPrivacy then controls.btnAudioPrivacy.Boolean = state end
 end
 function SystemAutomationController:callSyncCheckConnection()
     local callSync = self.components.callSync
     if not callSync then return end
-    local state = self:safeComponentAccess(callSync, "off.hook", "get")
+    local state = self:getComponentBoolean(callSync, "off.hook")
     self:debugPrint("Call Connection State: " .. tostring(state))
     self:callSyncCheckMute()
     self.videoModule:setPrivacy(not state)
     if self.components.camACPR then
-        self:safeComponentAccess(self.components.camACPR, "TrackingBypass", "set", not state)
+        self:setComponentBoolean(self.components.camACPR, "TrackingBypass", not state)
         if self.components.camACPR["TrackingBypass"] then
             self.components.camACPR["TrackingBypass"].IsDisabled = not state
         end
     end
 end
 
-----------------[ Misc Volume Helpers ]-----------------
+----------------[ Misc Volume Helpers ]-------------------
 function SystemAutomationController:updateVolumeVisuals(idx)
     self.audioModule:updateVolumeVisuals(idx)
 end
 function SystemAutomationController:getVolumeLvl(idx)
     local gain = self:getGainComponent(idx)
     if not gain then return end
-    local level = self:safeComponentAccess(gain, "gain", "getPosition")
+    local level = self:getComponentPosition(gain, "gain")
     if controls.knbVolumeFader and controls.knbVolumeFader[idx] then
         controls.knbVolumeFader[idx].Position = level
     end
@@ -747,7 +668,7 @@ end
 function SystemAutomationController:getVolumeMute(idx)
     local gain = self:getGainComponent(idx)
     if not gain then return end
-    local state = self:safeComponentAccess(gain, "mute", "get")
+    local state = self:getComponentBoolean(gain, "mute")
     if controls.btnVolumeMute and controls.btnVolumeMute[idx] then
         controls.btnVolumeMute[idx].Boolean = state
     end
@@ -758,7 +679,7 @@ end
 function SystemAutomationController:updateACPRTrackingBypass()
     local camACPR = self.components.camACPR
     if not camACPR then return end
-    local state = self:safeComponentAccess(camACPR, "TrackingBypass", "get")
+    local state = self:getComponentBoolean(camACPR, "TrackingBypass")
     self:debugPrint("ACPR Tracking Bypass: "..tostring(state))
 end
 
@@ -766,10 +687,10 @@ function SystemAutomationController:endCalls()
     local callSync = self.components.callSync
     if not callSync then return end
     self:debugPrint("Ending Calls")
-    self:safeComponentAccess(callSync, "call.decline", "trigger")
+    self:triggerComponent(callSync, "call.decline")
 end
 
-----------------[ Fire Alarm ]-----------------
+----------------[ Fire Alarm ]----------------
 function SystemAutomationController:setFireAlarm(state)
     if state then
         self.audioModule:setSystemMute(true)
@@ -782,7 +703,7 @@ function SystemAutomationController:setFireAlarm(state)
     end
 end
 
-----------------[ Main State Publishing ]-----------------
+----------------[ Main State Publishing ]----------------
 function SystemAutomationController:publishNotification()
     local systemState = {
         RoomName = self.roomName,
@@ -871,8 +792,8 @@ function SystemAutomationController:setupConfigSelection()
     updateControlValues("Default")
 end
 
--------------------[ INIT ]--------------------------
-function SystemAutomationController:init()
+----------------[ Initialization ]--------------------------
+function SystemAutomationController:funcInit()
     self.powerModule:enableDisablePowerControls(true)
     self.videoModule:getPrivacyState()
     self:getComponentNames()
@@ -885,7 +806,7 @@ function SystemAutomationController:init()
     if controls.devDisplays then for i, _ in ipairs(controls.devDisplays) do self:setDisplayComponent(i) end end
     self:debugPrint("SystemAutomationController ready; "..self.audioModule:getGainCount().." gain controls detected.")
 end
--------------------[ CLEANUP ]--------------------------
+----------------[ Cleanup ]--------------------------
 function SystemAutomationController:cleanup()
     for _, timer in pairs(self.timers) do if timer then timer:Stop() end end
     self.audioModule:cleanup()
@@ -896,7 +817,7 @@ function SystemAutomationController:cleanup()
     self:debugPrint("Cleanup completed for " .. self.roomName)
 end
 
--------------------[ Factory ]--------------------------
+----------------[ Factory Function ]--------------------------
 local function getDefaultConfig(roomType)
     roomType = roomType or "Default"
     if roomType == "User Defined" then
@@ -931,7 +852,7 @@ local function createSystemController(roomName, roomType)
         local obj = SystemAutomationController.new(roomName, config, allConfigs)
         obj:registerEventHandlers()
         obj:setupConfigSelection()
-        obj:init()
+        obj:funcInit()
         return obj
     end)
     if success then
@@ -955,7 +876,7 @@ else
     print("ERROR: SystemAutomationController NOT created.")
 end
 
-----------------[ PUBLIC API ]--------------------------
+----------------[ Public API ]--------------------------
 --[[
 Public API:
     mySystemController.audioModule:setVolume(level, idx)
@@ -968,7 +889,7 @@ Public API:
     mySystemController.powerModule:powerOff()
 ]]
 
-----------------[ USAGE EXAMPLES ]----------------------
+----------------[ Usage Examples ]----------------------
 --[[
 -- Set volume on all
 mySystemController.audioModule:setVolume(0.8)

@@ -871,7 +871,7 @@ function SystemAutomationController:setupConfigSelection()
     updateControlValues("Default")
 end
 
--------------------[ INIT ]--------------------------
+----------------[ Initialization ]--------------------------
 function SystemAutomationController:init()
     self.powerModule:enableDisablePowerControls(true)
     self.videoModule:getPrivacyState()
@@ -885,7 +885,7 @@ function SystemAutomationController:init()
     if controls.devDisplays then for i, _ in ipairs(controls.devDisplays) do self:setDisplayComponent(i) end end
     self:debugPrint("SystemAutomationController ready; "..self.audioModule:getGainCount().." gain controls detected.")
 end
--------------------[ CLEANUP ]--------------------------
+----------------[ Cleanup ]--------------------------
 function SystemAutomationController:cleanup()
     for _, timer in pairs(self.timers) do if timer then timer:Stop() end end
     self.audioModule:cleanup()
@@ -896,7 +896,7 @@ function SystemAutomationController:cleanup()
     self:debugPrint("Cleanup completed for " .. self.roomName)
 end
 
--------------------[ Factory ]--------------------------
+----------------[ Factory ]--------------------------
 local function getDefaultConfig(roomType)
     roomType = roomType or "Default"
     if roomType == "User Defined" then
