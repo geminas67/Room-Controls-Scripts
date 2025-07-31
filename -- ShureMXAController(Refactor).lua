@@ -221,7 +221,7 @@ function ShureMXAController:setComponent(ctrl, componentType)
     
     if componentName == "" then
         self:setComponentValid(componentType)
-        ctrl.Color = "white"
+        ctrl.Color = self.config.controlColors.white
         return nil
     elseif componentName == self.clearString then
         ctrl.String = ""

@@ -22,10 +22,10 @@ local defaultConfig = {
         red = 'Red'
     },
     defaultCameraRouterSettings = {
-        monitorA = '6',
-        monitorB = '6',
-        usbA = '6',
-        usbB = '6'
+        monitorA = '5',
+        monitorB = '5',
+        usbA = '5',
+        usbB = '5'
     },
     initializationDelay = 0.1,
     recalibrationDelay = 1.0

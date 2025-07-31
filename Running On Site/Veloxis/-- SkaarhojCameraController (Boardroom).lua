@@ -55,10 +55,10 @@ function SkaarhojPTZControllerSingleRoom.new(roomName, config)
             red = 'Red'
         },
         defaultCameraRouterSettings = {
-            monitorA = '6',
-            monitorB = '6',
-            usbA = '6',
-            usbB = '6'
+            monitorA = '5',
+            monitorB = '5',
+            usbA = '5',
+            usbB = '5'
         },
         initializationDelay = 0.1,
         recalibrationDelay = 1.0
@@ -124,8 +124,11 @@ function SkaarhojPTZControllerSingleRoom:initCameraModule()
             self:updatePrivacyVisuals()
         end,
         setAutoFrame = function(state)
-            for _, cam in pairs(self.components.devCams) do
-                if cam then self:safeComponentAccess(cam, "autoframe.enable", "set", state) end
+            for i = 1, 4 do
+                if self.components.devCams[i] then
+                    local cam = self.components.devCams[i]
+                    self:safeComponentAccess(cam, "autoframe.enable", "set", state)
+                end
             end
         end,
         recalibratePTZ = function()
@@ -261,8 +264,8 @@ function SkaarhojPTZControllerSingleRoom:initHookStateModule()
             self.hookStateModule.setHookState(isOffHook)
             
             if not isOffHook then 
-                self.routingModule.setUSBRouteA('6')
-                self.routingModule.setUSBRouteB('6')
+                self.routingModule.setUSBRouteA(self.config.defaultCameraRouterSettings.usbA)
+                self.routingModule.setUSBRouteB(self.config.defaultCameraRouterSettings.usbB)
             end
             
             local ptz = self.components.skaarhojPTZController
