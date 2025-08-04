@@ -9,7 +9,7 @@
     Debugging and config are standardized.
 ]]
 
---------** Control References **--------
+-------------------[ Control References ]-------------------
 local controls = {
     roomName = Controls.roomName,
     txtStatus = Controls.txtStatus,
@@ -346,11 +346,11 @@ end
 function MotionModule:cleanup() end
 function MotionModule:debug(str) self.controller:debugPrint("[Motion] "..str) end
 
---- SystemAutomationController (The Orchestrator) ---------
+-------------------[ SystemAutomationController (The Orchestrator) ]-------------------
 SystemAutomationController = {}
 SystemAutomationController.__index = SystemAutomationController
 
---** static/class properties
+-----------------[ Static / Class Properties ]-------------------
 SystemAutomationController.clearString = "[Clear]"
 SystemAutomationController.componentTypes = {
     callSync = "call_sync",
@@ -577,7 +577,7 @@ end
 
 ------------------[ Component Discovery / Selection ]------------------
 function SystemAutomationController:getComponentNames()
-    local ct = SystemAutomationController.componentTypes
+    local compType = SystemAutomationController.componentTypes
     local namesTable = {
         CallSyncNames = {},
         VideoBridgeNames = {},
@@ -587,17 +587,17 @@ function SystemAutomationController:getComponentNames()
         MuteNames = {},
     }
     for _, comp in pairs(Component.GetComponents()) do
-        if comp.Type == ct.callSync then
+        if comp.Type == compType.callSync then
             table.insert(namesTable.CallSyncNames, comp.Name)
-        elseif comp.Type == ct.videoBridge then
+        elseif comp.Type == compType.videoBridge then
             table.insert(namesTable.VideoBridgeNames, comp.Name)
-        elseif comp.Type == ct.displays then
+        elseif comp.Type == compType.displays then
             table.insert(namesTable.DisplayNames, comp.Name)
-        elseif comp.Type == ct.gains then
+        elseif comp.Type == compType.gains then
             table.insert(namesTable.GainNames, comp.Name)
-        elseif comp.Type == ct.systemMute then
+        elseif comp.Type == compType.systemMute then
             table.insert(namesTable.MuteNames, comp.Name)
-        elseif comp.Type == ct.camACPR then
+        elseif comp.Type == compType.camACPR then
             table.insert(namesTable.CamACPRNames, comp.Name)
         end
     end
@@ -833,7 +833,14 @@ function SystemAutomationController:setupConfigSelection()
         if not conf then return end
         local isUser = configType == "User Defined"
         for _, map in ipairs(mappings) do
-            local ctl = (map.array and controls[map.control][map.idx]) or controls[map.control]
+            local ctl = nil
+            if map.array then
+                if controls[map.control] and controls[map.control][map.idx] then
+                    ctl = controls[map.control][map.idx]
+                end
+            else
+                ctl = controls[map.control]
+            end
             if ctl then
                 ctl.Value = conf[map.config]
                 ctl.IsDisabled = not isUser
@@ -844,7 +851,14 @@ function SystemAutomationController:setupConfigSelection()
         updateControlValues(ctl.String)
     end
     for _, map in ipairs(mappings) do
-        local ctl = (map.array and controls[map.control][map.idx]) or controls[map.control]
+        local ctl = nil
+        if map.array then
+            if controls[map.control] and controls[map.control][map.idx] then
+                ctl = controls[map.control][map.idx]
+            end
+        else
+            ctl = controls[map.control]
+        end
         if ctl then
             ctl.EventHandler = function(val)
                 if controls.selDefaultConfigs.String == "User Defined" then
@@ -857,7 +871,7 @@ function SystemAutomationController:setupConfigSelection()
     updateControlValues("Default")
 end
 
--------------------[ INIT ]--------------------------
+----------------[ Initialization ]--------------------------
 function SystemAutomationController:init()
     self.powerModule:enableDisablePowerControls(true)
     self.videoModule:getPrivacyState()
@@ -871,7 +885,7 @@ function SystemAutomationController:init()
     if controls.devDisplays then for i, _ in ipairs(controls.devDisplays) do self:setDisplayComponent(i) end end
     self:debugPrint("SystemAutomationController ready; "..self.audioModule:getGainCount().." gain controls detected.")
 end
--------------------[ CLEANUP ]--------------------------
+----------------[ Cleanup ]--------------------------
 function SystemAutomationController:cleanup()
     for _, timer in pairs(self.timers) do if timer then timer:Stop() end end
     self.audioModule:cleanup()
@@ -882,7 +896,7 @@ function SystemAutomationController:cleanup()
     self:debugPrint("Cleanup completed for " .. self.roomName)
 end
 
--------------------[ Factory ]--------------------------
+----------------[ Factory ]--------------------------
 local function getDefaultConfig(roomType)
     roomType = roomType or "Default"
     if roomType == "User Defined" then
@@ -892,7 +906,7 @@ local function getDefaultConfig(roomType)
             cooldownTime = controls.cooldownTime and controls.cooldownTime.Value or 5,
             motionTimeout = controls.motionTimeout and controls.motionTimeout.Value or 300,
             gracePeriod = controls.motionGracePeriod and controls.motionGracePeriod.Value or 30,
-            defaultVolume = controls.defaultVolume and controls.defaultVolume[1] and controls.defaultVolume[1].Value or 0.7
+            defaultVolume = (controls.defaultVolume and controls.defaultVolume[1] and controls.defaultVolume[1].Value) or 0.7
         }
     end
     local defaults = {
