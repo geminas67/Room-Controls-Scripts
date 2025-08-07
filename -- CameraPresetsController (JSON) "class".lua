@@ -19,7 +19,7 @@
 
 -- Define control references
 local controls = {
-    seldevCams = Controls.seldevCams,
+    devCams = Controls.devCams,
     btnCamPreset = Controls.btnCamPreset,
     ledPresetMatch = Controls.ledPresetMatch,
     ledPresetSaved = Controls.ledPresetSaved,
@@ -38,11 +38,10 @@ local presetTolerance = 0.1  -- Default tolerance value
 -- Required libraries
 rapidjson = require("rapidjson")
 
--- CameraPresetController class
+-----------------[ Class Constructor ]-------------------
 CameraPresetController = {}
 CameraPresetController.__index = CameraPresetController
 
---------** Class Constructor **--------
 function CameraPresetController.new(config)
     local self = setmetatable({}, CameraPresetController)
     
@@ -56,7 +55,6 @@ function CameraPresetController.new(config)
         routers = "video_router",
         roomControls = "device_controller_script"
     }
-    -- Component storage
     self.components = {
         cameras = {},
         presets = {},
@@ -64,20 +62,16 @@ function CameraPresetController.new(config)
         callSync = nil,
         videoBridge = nil,
         invalid = {},
-        routers = {},  -- New storage for video routers
+        routers = {},
     }
-    
-    -- State tracking
     self.state = {
         longPressed = {},
         countdownTimers = {},
         ledTimers = {},
-        combinedMode = true,  -- or false for divided
-        invalidComponents = {}  -- Track invalid components
+        combinedMode = true, -- or false for divided
+        invalidComponents = {}
     }
-    
-    -- Configuration
-    self.config = {
+        self.config = {
         holdTime = config and config.holdTime or 3.0,
         ledOnTime = config and config.ledOnTime or 2.5,
         presetTolerance = config and config.presetTolerance or presetTolerance,
@@ -85,20 +79,21 @@ function CameraPresetController.new(config)
         defaultCamera = config and config.defaultCamera or "devCam01",  -- Default to first camera
         defaultPreset = config and config.defaultPreset or 1  -- Default to preset 1
     }
-    
-    -- Initialize modules
+        self.componentColors = {
+            white = "white",
+            pink = "pink"
+    }
+
     self:initJSONModule()
     self:initCameraModule()
-    self:initRouterModule()  -- New router module initialization
-    
-    -- Setup event handlers and initialize
+    self:initRouterModule()
     self:registerEventHandlers()
     self:funcInit()
     
     return self
 end
 
---------** JSON Module **--------
+-----------------[ JSON Module ]-------------------
 function CameraPresetController:initJSONModule()
     self.jsonModule = {
         save = function()
@@ -123,7 +118,7 @@ function CameraPresetController:initJSONModule()
     }
 end
 
---------** Camera Module **--------
+-----------------[ Camera Module ]-------------------
 function CameraPresetController:initCameraModule()
     self.cameraModule = {
         discoverCameras = function()
@@ -166,7 +161,7 @@ function CameraPresetController:initCameraModule()
         end,
         
         updatePresetMatchLEDs = function()
-            local camName = Controls.seldevCams.String
+            local camName = Controls.devCams.String
             local currentPreset = ""
             local isMoving = false
             
@@ -191,7 +186,7 @@ function CameraPresetController:initCameraModule()
         end,
         
         savePreset = function(presetIndex)
-            local camName = Controls.seldevCams.String
+            local camName = Controls.devCams.String
             if camName ~= "" and self.components.cameras[camName] then
                 local oldPreset = self.components.presets[camName][presetIndex]
                 local newPreset = self.components.cameras[camName]["ptz.preset"].String
@@ -203,7 +198,7 @@ function CameraPresetController:initCameraModule()
         end,
         
         recallPreset = function(presetIndex)
-            local camName = Controls.seldevCams.String
+            local camName = Controls.devCams.String
             if camName ~= "" and self.components.cameras[camName] then
                 local preset = self.components.presets[camName][presetIndex]
                 self.components.cameras[camName]["ptz.preset"].String = preset
@@ -214,7 +209,7 @@ function CameraPresetController:initCameraModule()
     }
 end
 
---------** Call Sync Component **--------
+-----------------[ Call Sync ]-------------------
 function CameraPresetController:initCallSyncModule()
     self.callSyncModule = {
         setCallSyncComponent = function()
@@ -223,7 +218,7 @@ function CameraPresetController:initCallSyncModule()
     }
 end
 
---------** Video Bridge Component **--------
+-----------------[ Video Bridge ]-------------------
 function CameraPresetController:initVideoBridgeModule()
     self.videoBridgeModule = {
         setVideoBridgeComponent = function()
@@ -232,7 +227,7 @@ function CameraPresetController:initVideoBridgeModule()
     }
 end
 
---------** Router Module **--------
+-----------------[ Router ]-------------------
 function CameraPresetController:initRouterModule()
     self.routerModule = {
         discoverRouters = function()
@@ -292,7 +287,7 @@ function CameraPresetController:initRouterModule()
             -- Setup sync for all configured outputs
             for _, output in ipairs(self.config.routerOutputs) do
                 if router[output] then
-                    self.routerModule.syncCamChoiceWithRouter(router, output, Controls.seldevCams)
+                    self.routerModule.syncCamChoiceWithRouter(router, output, Controls.devCams)
                 else
                     self:debugPrint(string.format("Router output %s not found", output))
                 end
@@ -301,14 +296,14 @@ function CameraPresetController:initRouterModule()
     }
 end
 
---------** Debug Helper **--------
+-----------------[ Debug ]-------------------
 function CameraPresetController:debugPrint(str)
     if self.debugging then
         print("[Camera Presets Debug] " .. str)
     end
 end
 
---------** Preset Tolerance Helper **--------
+-----------------[ Preset Tolerance ]-------------------
 function CameraPresetController:comparePresetWithTolerance(currentPreset, savedPreset)
     -- If exact match, return true immediately
     if currentPreset == savedPreset then
@@ -365,31 +360,31 @@ function CameraPresetController:comparePresetWithTolerance(currentPreset, savedP
     return allMatch
 end
 
---------** Component Management **--------
+-----------------[ Component Management ]-------------------
 function CameraPresetController:setComponent(ctrl, componentType)
     self:debugPrint("Setting Component: " .. componentType)
     local componentName = ctrl.String
     
     if componentName == "" then
         self:debugPrint("No " .. componentType .. " Component Selected")
-        ctrl.Color = "white"
+        ctrl.Color = self.componentColors.white
         self:setComponentValid(componentType)
         return nil
     elseif componentName == self.clearString then
         self:debugPrint(componentType .. ": Component Cleared")
         ctrl.String = ""
-        ctrl.Color = "white"
+        ctrl.Color = self.componentColors.white
         self:setComponentValid(componentType)
         return nil
     elseif #Component.GetControls(Component.New(componentName)) < 1 then
         self:debugPrint(componentType .. " Component " .. componentName .. " is Invalid")
         ctrl.String = "[Invalid Component Selected]"
-        ctrl.Color = "pink"
+        ctrl.Color = self.componentColors.pink
         self:setComponentInvalid(componentType)
         return nil
     else
         self:debugPrint("Setting " .. componentType .. " Component: {" .. ctrl.String .. "}")
-        ctrl.Color = "white"
+        ctrl.Color = self.componentColors.white
         self:setComponentValid(componentType)
         return Component.New(componentName)
     end
@@ -420,7 +415,7 @@ end
 function CameraPresetController:populateRoomControlsChoices()
     local names = {}
     for _, comp in pairs(Component.GetComponents()) do
-        if comp.Type == "device_controller_script" and string.match(comp.Name, "^compRoomControls") then
+        if comp.Type == self.componentTypes.roomControls and string.match(comp.Name, "^compRoomControls") then
             table.insert(names, comp.Name)
         end
     end
@@ -429,10 +424,10 @@ function CameraPresetController:populateRoomControlsChoices()
     Controls.compRoomControls.Choices = names
 end
 
---------** Event Handler Registration **--------
+-----------------[ Event Handler Registration ]-------------------
 function CameraPresetController:registerEventHandlers()
     -- Camera selection handler
-    Controls.seldevCams.EventHandler = function()
+    Controls.devCams.EventHandler = function()
         self.cameraModule.updatePresetMatchLEDs()
     end
     
@@ -492,7 +487,7 @@ function CameraPresetController:registerEventHandlers()
     end
 end
 
---------** Initialization **--------
+-----------------[ Initialization ]-------------------
 function CameraPresetController:funcInit()
     -- Load saved presets
     self.jsonModule.load()
@@ -525,7 +520,7 @@ function CameraPresetController:funcInit()
     self.routerModule.setupRouterSync()
     
     -- Update UI
-    Controls.seldevCams.Choices = cameraNames
+    Controls.devCams.Choices = cameraNames
     Controls.txtJSONStorage.IsDisabled = true
     
     -- Set default camera selection
@@ -534,8 +529,8 @@ function CameraPresetController:funcInit()
         local defaultCameraFound = false
         for i, camName in ipairs(cameraNames) do
             if camName == self.config.defaultCamera then
-                Controls.seldevCams.String = camName
-                Controls.seldevCams.Value = i
+                Controls.devCams.String = camName
+                Controls.devCams.Value = i
                 defaultCameraFound = true
                 self:debugPrint("Set default camera: " .. camName)
                 break
@@ -544,13 +539,13 @@ function CameraPresetController:funcInit()
         
         -- If configured default not found, use first camera
         if not defaultCameraFound then
-            Controls.seldevCams.String = cameraNames[1]
-            Controls.seldevCams.Value = 1
+            Controls.devCams.String = cameraNames[1]
+            Controls.devCams.Value = 1
             self:debugPrint("Set fallback default camera: " .. cameraNames[1])
         end
         
         -- Recall default preset for the selected camera
-        local selectedCamera = Controls.seldevCams.String
+        local selectedCamera = Controls.devCams.String
         if selectedCamera ~= "" and self.components.cameras[selectedCamera] then
             local defaultPresetIndex = self.config.defaultPreset
             if self.components.presets[selectedCamera] and 
@@ -596,7 +591,7 @@ function CameraPresetController:funcInit()
     
 end
 
---------** Cleanup **--------
+-----------------[ Cleanup ]-------------------
 function CameraPresetController:cleanup()
     -- Stop all timers
     for i, timer in pairs(self.state.countdownTimers) do
@@ -619,7 +614,7 @@ function CameraPresetController:cleanup()
     self:debugPrint("Cleanup completed")
 end
 
---------** Factory Function **--------
+-----------------[ Factory ]-------------------
 local function createCameraPresetController(config)
     local defaultConfig = {
         debugging = true,
@@ -646,11 +641,11 @@ local function createCameraPresetController(config)
     end
 end
 
---------** Instance Creation **--------
+-----------------[ Instance Creation ]-------------------
 -- Create the main camera preset controller instance
 myCameraPresetController = createCameraPresetController()
 
---------** Usage Examples **--------
+-----------------[ Usage Examples ]-------------------
 --[[
 -- Example usage of the camera preset controller:
 
