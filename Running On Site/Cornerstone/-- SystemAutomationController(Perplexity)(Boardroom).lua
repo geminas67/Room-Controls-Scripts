@@ -1,7 +1,7 @@
 --[[
     System Automation Controller (Refactored OOP, Modular, Modern Lua)
     Author: Nikolas Smith, Q-SYS
-    Version: 3.0 | Date: 2025-08-26
+    Version: 3.0 | Date: 2025-07-26
 
     Implements strict OOP / modular structure per Lua Refactoring Guidelines.
     Each logical area (audio, power, video, etc.) is its own class with methods.
@@ -24,7 +24,9 @@ local controls = {
     cooldownTime = Controls.cooldownTime,
     motionTimeout = Controls.motionTimeout,
     motionGracePeriod = Controls.motionGracePeriod,
-    defaultVolume = Controls.defaultVolume,
+    defaultProgramVolume = Controls.defaultProgramVolume,
+    defaultMicVolume = Controls.defaultMicVolume,
+    defaultGainVolume = Controls.defaultGainVolume,
     btnSystemOnOff = Controls.btnSystemOnOff,
     btnSystemOn = Controls.btnSystemOn,
     btnSystemOff = Controls.btnSystemOff,
@@ -184,10 +186,7 @@ function AudioModule:updateVolumeVisuals(gainIndex)
     end
 end
 
-function AudioModule:cleanup()
-    -- nothing needed unless you wire events directly here
-end
-
+function AudioModule:cleanup() end
 function AudioModule:debug(str) self.controller:debugPrint("[Audio] "..str) end
 
 -------------------[ Video Module ]------------------------
@@ -201,9 +200,21 @@ function VideoModule.new(controller)
 end
 
 function VideoModule:setPrivacy(state, bridgeIndex)
-    local videoBridge = self.controller.components.videoBridge[bridgeIndex]
-    self.controller:safeComponentAccess(videoBridge, "toggle.privacy", "set", state)
-    if controls.btnVideoPrivacy then controls.btnVideoPrivacy.Boolean = state end
+    if bridgeIndex then
+        -- Set privacy for specific video bridge
+        local videoBridge = self.controller.components.videoBridge[bridgeIndex]
+        if not videoBridge then return end
+        self.controller:safeComponentAccess(videoBridge, "toggle.privacy", "set", state)
+        self.controller:videoBridgeCheckPrivacy(bridgeIndex)
+    else
+        -- Set privacy for all video bridges
+        for i, videoBridge in pairs(self.controller.components.videoBridge) do
+            if videoBridge then
+                self.controller:safeComponentAccess(videoBridge, "toggle.privacy", "set", state)
+                self.controller:videoBridgeCheckPrivacy(i)
+            end
+        end
+    end
     local camACPR = self.controller.components.camACPR
     if camACPR then
         self.controller:safeComponentAccess(camACPR, "TrackingBypass", "set", state)
@@ -212,12 +223,19 @@ function VideoModule:setPrivacy(state, bridgeIndex)
 end
 
 function VideoModule:getPrivacyState(bridgeIndex)
-    local videoBridge = bridgeIndex and self.controller.components.videoBridge[bridgeIndex] or self.controller.components.videoBridge[1]
+    bridgeIndex = bridgeIndex or 1  -- Default to primary bridge if not specified
+    local videoBridge = self.controller.components.videoBridge[bridgeIndex]
     if not videoBridge then return false end
     local state = self.controller:safeComponentAccess(videoBridge, "toggle.privacy", "get")
-    if controls.btnVideoPrivacy then controls.btnVideoPrivacy.Boolean = state end
+    -- Use the new controller-based feedback method
+    self.controller:videoBridgeCheckPrivacy(bridgeIndex)
     self.controller:publishNotification()
     return state
+end
+
+function VideoModule:updateVideoPrivacyButton()
+    -- Use the new controller-based feedback method for the primary bridge
+    self.controller:videoBridgeCheckPrivacy(1)
 end
 
 function VideoModule:cleanup() end
@@ -281,11 +299,11 @@ function PowerModule:powerOn()
     self.controller.state.isWarming = true
     if controls.ledSystemWarming then controls.ledSystemWarming.Boolean = true end
     self.controller.timers.warmup:Start(self.controller.config.warmupTime)
-    self:setSystemPowerFB(true)
-    self.controller.audioModule:setVolume(self.controller.config.defaultVolume)
+    self:setSystemPowerFB(true)    
+    self.controller:applyVolumeDefaults()
     self.controller.audioModule:setMute(false)
     self.controller.audioModule:setPrivacy(true)
-    self.controller.videoModule:setPrivacy(false)
+    self.controller.videoModule:setPrivacy(false, 1)
     self.controller.displayModule:powerAll(true)
     self.controller:publishNotification()
 end
@@ -411,12 +429,8 @@ function SystemAutomationController:debugPrint(str)
 end
 
 ------------------[ Component Utility Helpers ]---------------------
-function SystemAutomationController:getGainComponent(idx)
-    return self.components.gains[idx]
-end
-function SystemAutomationController:getDisplayComponent(idx)
-    return self.components.displays[idx]
-end
+function SystemAutomationController:getGainComponent(idx) return self.components.gains[idx] end
+function SystemAutomationController:getDisplayComponent(idx) return self.components.displays[idx] end
 
 function SystemAutomationController:safeComponentAccess(component, control, action, value)
     if not component or not component[control] then return false end
@@ -482,11 +496,10 @@ function SystemAutomationController:registerEventHandlers()
         end
     end
     if controls.btnVideoPrivacy then
-        controls.btnVideoPrivacy.EventHandler = function(ctl)
-            self.videoModule:setPrivacy(ctl.Boolean)
-        end
+        registerHandlers(getControlArray(controls.btnVideoPrivacy), function(i, ctl)
+            self.videoModule:setPrivacy(ctl.Boolean, i)
+        end)
     end
-
     -- Volume/knob/mute/up/down
     if controls.knbVolumeFader then
         registerHandlers(getControlArray(controls.knbVolumeFader), function(i, fader)
@@ -508,19 +521,22 @@ function SystemAutomationController:registerEventHandlers()
             self.audioModule:setVolumeUpDown("down", ctl.Boolean, i)
         end)
     end
-
     -- Motion detection
     if controls.ledMotionIn then
         controls.ledMotionIn.EventHandler = function()
             self.motionModule:checkMotion()
         end
     end
-
     -- Component dropdown selection/assignment
     if controls.compCallSync then controls.compCallSync.EventHandler = function() self:setCallSyncComponent() end end
-    if controls.compVideoBridge then controls.compVideoBridge.EventHandler = function() self:setVideoBridgeComponent() end end
     if controls.compSystemMute then controls.compSystemMute.EventHandler = function() self:setSystemMuteComponent() end end
     if controls.compACPR then controls.compACPR.EventHandler = function() self:setCamACPRComponent() end end
+
+    if controls.compVideoBridge then
+        for i, _ in ipairs(controls.compVideoBridge) do
+            controls.compVideoBridge[i].EventHandler = function() self:setVideoBridgeComponent(i) end
+        end
+    end
 
     if controls.compGains then
         for i, _ in ipairs(controls.compGains) do
@@ -533,7 +549,6 @@ function SystemAutomationController:registerEventHandlers()
         end
     end
 
-    -- Room name handler
     if controls.roomName then
         controls.roomName.EventHandler = function()
             local formattedRoomName = "[" .. controls.roomName.String .. "]"
@@ -543,6 +558,7 @@ function SystemAutomationController:registerEventHandlers()
         end
     end
 end
+
 -----------------[ Timer Handlers ]-----------------------
 function SystemAutomationController:registerTimerHandlers()
     self.timers.motion.EventHandler = function()
@@ -607,8 +623,7 @@ function SystemAutomationController:getComponentNames()
         table.insert(list, SystemAutomationController.clearString)
     end
     if controls.compCallSync then controls.compCallSync.Choices = namesTable.CallSyncNames end
-    -- if controls.compVideoBridge then controls.compVideoBridge.Choices = namesTable.VideoBridgeNames end
-    if controls.compVideoBridge then for _, ctl in ipairs(controls.compVideoBridge) do ctl.Choices = namesTable.VideoBridgeNames end end
+    if controls.compVideoBridge then for _, ctl in ipairs(controls.compVideoBridge) do ctl.Choices = namesTable.VideoBridgeNames end end    
     if controls.compSystemMute then controls.compSystemMute.Choices = namesTable.MuteNames end
     if controls.compACPR then controls.compACPR.Choices = namesTable.CamACPRNames end
     if controls.compGains then for _, ctl in ipairs(controls.compGains) do ctl.Choices = namesTable.GainNames end end
@@ -666,7 +681,7 @@ function SystemAutomationController:checkStatus()
     end
 end
 
-------[ Per-Component Setup/Assignment (wires events) ]------
+----------------[ Per-Component Setup/Assignment (wires events) ]----------------
 function SystemAutomationController:setCallSyncComponent()
     self.components.callSync = self:setComponent(controls.compCallSync, "Call Sync")
     local callSync = self.components.callSync
@@ -678,10 +693,10 @@ function SystemAutomationController:setVideoBridgeComponent(idx)
     if not controls.compVideoBridge or not controls.compVideoBridge[idx] then return end
     local label = idx == 1 and "Video Bridge [Main]" or "Video Bridge [" .. idx .. "]"
     self.components.videoBridge[idx] = self:setComponent(controls.compVideoBridge[idx], label)
-    local vb = self.components.videoBridge[idx]
-    if not vb then return end
-    vb["toggle.privacy"].EventHandler = function() self.videoModule:getPrivacyState(idx) end
-    self.videoModule:setPrivacy(false, idx)
+    local videoBridge = self.components.videoBridge[idx]
+    if not videoBridge then return end
+    videoBridge["toggle.privacy"].EventHandler = function() self:videoBridgeCheckPrivacy(idx) end
+    self:getVideoBridgePrivacy(idx)
 end
 function SystemAutomationController:setGainComponent(idx)
     if not controls.compGains or not controls.compGains[idx] then return end
@@ -714,6 +729,10 @@ function SystemAutomationController:setDisplayComponent(idx)
     self.components.displays[idx] = self:setComponent(controls.devDisplays[idx], "Display [" .. idx .. "]")
 end
 
+function SystemAutomationController:getVideoBridgePrivacy(idx)
+    self:videoBridgeCheckPrivacy(idx)
+end
+
 ----------------[ Call Sync Helpers ]-------------------
 function SystemAutomationController:callSyncCheckMute()
     local callSync = self.components.callSync
@@ -722,13 +741,39 @@ function SystemAutomationController:callSyncCheckMute()
     self:debugPrint("Call Sync Mute State: " .. tostring(state))
     if controls.btnAudioPrivacy then controls.btnAudioPrivacy.Boolean = state end
 end
+
+function SystemAutomationController:videoBridgeCheckPrivacy(idx)
+    idx = idx or 1 -- Default to primary bridge
+    local videoBridge = self.components.videoBridge[idx]
+    if not videoBridge then return end
+    local state = self:safeComponentAccess(videoBridge, "toggle.privacy", "get")
+    self:debugPrint("Video Bridge [" .. idx .. "] Privacy State: " .. tostring(state))
+    
+    -- Update the appropriate button based on whether it's an array or single button
+    if controls.btnVideoPrivacy then
+        if isArr(controls.btnVideoPrivacy) and controls.btnVideoPrivacy[idx] then
+            -- Multiple buttons - update the specific button for this bridge
+            controls.btnVideoPrivacy[idx].Boolean = state
+        elseif not isArr(controls.btnVideoPrivacy) then
+            -- Single button - update it (typically represents primary bridge)
+            controls.btnVideoPrivacy.Boolean = state
+        end
+    end
+end
+
 function SystemAutomationController:callSyncCheckConnection()
     local callSync = self.components.callSync
     if not callSync then return end
     local state = self:safeComponentAccess(callSync, "off.hook", "get")
     self:debugPrint("Call Connection State: " .. tostring(state))
     self:callSyncCheckMute()
-    if self.components.videoBridge then for i, _ in ipairs(self.components.videoBridge) do self.videoModule:setPrivacy(not state, i) end end    
+    if self.components.videoBridge then 
+        for i, _ in ipairs(self.components.videoBridge) do 
+            self.videoModule:setPrivacy(not state, i) 
+        end 
+        -- Update button feedback for primary video bridge
+        self:videoBridgeCheckPrivacy(1)
+    end    
     if self.components.camACPR then
         self:safeComponentAccess(self.components.camACPR, "TrackingBypass", "set", not state)
         if self.components.camACPR["TrackingBypass"] then
@@ -751,6 +796,7 @@ function SystemAutomationController:getVolumeLvl(idx)
     self:updateVolumeVisuals(idx)
     self:publishNotification()
 end
+
 function SystemAutomationController:getVolumeMute(idx)
     local gain = self:getGainComponent(idx)
     if not gain then return end
@@ -786,6 +832,51 @@ function SystemAutomationController:setFireAlarm(state)
     if controls.ledSystemPower and controls.ledSystemPower.Boolean then
         self.audioModule:setSystemMute(false)
         self.displayModule:powerAll(true)
+    end
+end
+
+----------------[ Volume Range Management ]-----------------
+function SystemAutomationController:applyVolumeDefaults()
+    if not self.config.volumeRanges then
+        self:debugPrint("No volumeRanges configured, using legacy volume assignment")
+        for i, gain in pairs(self.components.gains) do
+            if gain then
+                if i == 1 then
+                    self.audioModule:setVolume(self.config.defaultProgramVolume, i)
+                else
+                    self.audioModule:setVolume(self.config.defaultMicVolume, i)
+                end
+            end
+        end
+        return
+    end
+    local ranges = self.config.volumeRanges
+    self:debugPrint("Applying volume defaults using configured ranges")    
+    -- Apply program volume to specified indices (always index 1)
+    if ranges.programVolume then
+        for _, index in ipairs(ranges.programVolume) do
+            if self.components.gains[index] then
+                self.audioModule:setVolume(self.config.defaultProgramVolume, index)
+                self:debugPrint("Applied defaultProgramVolume ("..self.config.defaultProgramVolume..") to gain index "..index)
+            end
+        end
+    end    
+    -- Apply mic volume to specified range
+    if ranges.micVolume then
+        for _, index in ipairs(ranges.micVolume) do
+            if self.components.gains[index] then
+                self.audioModule:setVolume(self.config.defaultMicVolume, index)
+                self:debugPrint("Applied defaultMicVolume ("..self.config.defaultMicVolume..") to gain index "..index)
+            end
+        end
+    end    
+    if ranges.gainVolume then
+        for _, index in ipairs(ranges.gainVolume) do
+            if self.components.gains[index] then
+                self.audioModule:setVolume(self.config.defaultGainVolume, index)
+                self:debugPrint("Applied defaultGainVolume ("..self.config.defaultGainVolume..") to gain index "..index)
+            end
+        end
     end
 end
 
@@ -833,7 +924,9 @@ function SystemAutomationController:setupConfigSelection()
         { control = "cooldownTime", config = "cooldownTime" },
         { control = "motionTimeout", config = "motionTimeout" },
         { control = "motionGracePeriod", config = "gracePeriod" },
-        { control = "defaultVolume", config = "defaultVolume", array = true, idx = 1 }
+        { control = "defaultProgramVolume", config = "defaultProgramVolume" },
+        { control = "defaultMicVolume", config = "defaultMicVolume" },
+        { control = "defaultGainVolume", config = "defaultGainVolume" }
     }
     local function updateControlValues(configType)
         local conf = self.defaultConfigs[configType]
@@ -912,14 +1005,61 @@ local function getDefaultConfig(roomType)
             cooldownTime = controls.cooldownTime and controls.cooldownTime.Value or 5,
             motionTimeout = controls.motionTimeout and controls.motionTimeout.Value or 300,
             gracePeriod = controls.motionGracePeriod and controls.motionGracePeriod.Value or 30,
-            defaultVolume = (controls.defaultVolume and controls.defaultVolume[1] and controls.defaultVolume[1].Value) or 0.7
+            defaultProgramVolume = (controls.defaultProgramVolume and controls.defaultProgramVolume.Value) or 0.7,
+            defaultMicVolume = (controls.defaultMicVolume and controls.defaultMicVolume.Value) or 0.5,
+            defaultGainVolume = (controls.defaultGainVolume and controls.defaultGainVolume.Value) or 0.8,
+            volumeRanges = {
+                programVolume = { 1 },              -- Program volume always controls index 1
+                micVolume = { 2, 3, 4, 5, 6 },      -- Mic volume controls indices 2-6
+                gainVolume = { 7, 8, 9, 10 }        -- Gain volume controls indices 7-10
+            }
         }
     end
     local defaults = {
-        ["Conference Room"] =   { debugging = true,  warmupTime = 15, cooldownTime = 10, motionTimeout = 600, gracePeriod = 60,  defaultVolume = 0.7 },
-        ["Huddle Room"]     =   { debugging = false, warmupTime = 5,  cooldownTime = 3,  motionTimeout = 300, gracePeriod = 30,  defaultVolume = 0.6 },
-        ["Default"]         =   { debugging = true,  warmupTime = 10, cooldownTime = 5,  motionTimeout = 300, gracePeriod = 30,  defaultVolume = 0.7 },
-        ["Custom Room"]     =   { debugging = true,  warmupTime = 10, cooldownTime = 5,  motionTimeout = 300, gracePeriod = 30,  defaultVolume = 0.7 }
+        ["Conference Room"] = { 
+            debugging = true, warmupTime = 15, cooldownTime = 10, motionTimeout = 600, gracePeriod = 60, 
+            defaultProgramVolume = 0.7, 
+            defaultMicVolume = 0.5, 
+            defaultGainVolume = 0.8,
+            volumeRanges = {
+                programVolume = { 1 },              -- Program volume always controls index 1
+                micVolume = { 2, 3, 4, 5, 6, 7, 8 }, -- Conference rooms typically have more mics
+                gainVolume = { 9, 10, 11, 12 }      -- Additional gain controls for conference rooms
+            }
+        },
+        ["Huddle Room"] = { 
+            debugging = false, warmupTime = 5, cooldownTime = 3, motionTimeout = 300, gracePeriod = 30, 
+            defaultProgramVolume = 0.6, 
+            defaultMicVolume = 0.5, 
+            defaultGainVolume = 0.8,
+            volumeRanges = {
+                programVolume = { 1 },              -- Program volume always controls index 1
+                micVolume = { 2, 3 },               -- Huddle rooms typically have fewer mics
+                gainVolume = { 4, 5 }               -- Minimal additional gain controls
+            }
+        },
+        ["Default"] = { 
+            debugging = true, warmupTime = 10, cooldownTime = 5, motionTimeout = 300, gracePeriod = 30, 
+            defaultProgramVolume = 0.7, 
+            defaultMicVolume = 0.5, 
+            defaultGainVolume = 0.8,
+            volumeRanges = {
+                programVolume = { 1 },              -- Program volume always controls index 1
+                micVolume = { 2, 3, 4, 5 },         -- Standard mic range
+                gainVolume = { 6, 7, 8 }            -- Standard additional gain controls
+            }
+        },
+        ["Custom Room"] = { 
+            debugging = true, warmupTime = 10, cooldownTime = 5, motionTimeout = 300, gracePeriod = 30, 
+            defaultProgramVolume = 0.7, 
+            defaultMicVolume = 0.5, 
+            defaultGainVolume = 0.8,
+            volumeRanges = {
+                programVolume = { 1 },              -- Program volume always controls index 1
+                micVolume = { 2, 3, 4 },            -- Custom project mic range - EASILY MODIFIABLE PER PROJECT
+                gainVolume = { 5, 6, 7, 8, 9 }      -- Custom project gain range - EASILY MODIFIABLE PER PROJECT
+            }
+        }
     }
     return defaults[roomType] or defaults["Default"]
 end
