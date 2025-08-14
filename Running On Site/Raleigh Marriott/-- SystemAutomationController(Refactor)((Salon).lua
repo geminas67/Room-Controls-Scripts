@@ -486,6 +486,40 @@ function SystemAutomationController:getDefaultVolumeForType(type)
     return defaults[type] or self.config.defaultMicVolume
 end
 
+------------------[ Helper: Gain Type Assignments ]--------------------
+function SystemAutomationController:setGainTypeAssignments(roomType)
+    if not controls.typeGain then return end
+    
+    -- Use current room configuration if no roomType specified
+    roomType = roomType or (controls.selDefaultConfigs and controls.selDefaultConfigs.String) or "Default"
+    
+    local gainTypeAssignments = {
+        ["Huddle Room"] = { "Program", "Mic", "Mic", "Gain", "Gain" },
+        ["Conference Room"] = { "Program", "Mic", "Mic", "Mic", "Mic", "Mic", "Mic", "Mic", "Gain", "Gain", "Gain", "Gain" },
+        ["Custom Room"] = { "Program", "Mic", "Mic", "Mic", "Gain", "Gain", "Gain", "Gain", "Gain" },
+        ["Default"] = { "Program", "Mic", "Mic", "Mic", "Mic", "Gain", "Gain", "Gain" }
+    }
+    
+    local assignments = gainTypeAssignments[roomType] or gainTypeAssignments["Default"]
+    
+    for i, _ in ipairs(getControlArray(controls.typeGain)) do
+        if controls.typeGain[i] then
+            controls.typeGain[i].Choices = { "Program", "Mic", "Gain" }
+            if i <= #assignments then
+                controls.typeGain[i].String = assignments[i]
+            else
+                controls.typeGain[i].String = "Mic"  -- Default for extra indices
+            end
+            
+            if i == 1 then
+                controls.typeGain[i].IsDisabled = true
+            else
+                controls.typeGain[i].IsDisabled = false
+            end
+        end
+    end
+end
+
 ------------------[ Event Handler: Registration ]----------------------
 function SystemAutomationController:registerEventHandlers()
     if controls.btnSystemOnOff then
@@ -946,11 +980,46 @@ function SystemAutomationController:setupConfigSelection()
             local ctl = nil
             if map.array then
                 if controls[map.control] and controls[map.control][map.idx] then
-                    -- ... continued if further code added here
+                    ctl = controls[map.control][map.idx]
+                end
+            else
+                ctl = controls[map.control]
+            end
+            if ctl then
+                ctl.Value = conf[map.config]
+                ctl.IsDisabled = not isUser
+            end
+        end
+    end
+    
+    controls.selDefaultConfigs.EventHandler = function(ctl)
+        updateControlValues(ctl.String)
+        -- Update typeGain controls when room type changes
+        self:setGainTypeAssignments(ctl.String)
+        -- Reapply volume defaults with new gain type assignments
+        self:applyVolumeDefaults()
+    end
+    
+    for _, map in ipairs(mappings) do
+        local ctl = nil
+        if map.array then
+            if controls[map.control] and controls[map.control][map.idx] then
+                ctl = controls[map.control][map.idx]
+            end
+        else
+            ctl = controls[map.control]
+        end
+        if ctl then
+            ctl.EventHandler = function(val)
+                if controls.selDefaultConfigs.String == "User Defined" then
+                    self.defaultConfigs["User Defined"][map.config] = val.Value
                 end
             end
         end
     end
+    
+    controls.selDefaultConfigs.String = "Default"
+    updateControlValues("Default")
 end
 
 ----------------[ Initialization ]--------------------------
@@ -958,6 +1027,7 @@ function SystemAutomationController:init()
     self.powerModule:enableDisablePowerControls(true)
     self:getComponentNames()
     if controls.txtMotionMode then controls.txtMotionMode.Choices = { "Motion On/Off", "Motion Off", "Motion Disabled" } end
+    self:setGainTypeAssignments()
     self:setCallSyncComponent()
     if controls.compVideoBridge then 
         for i, _ in ipairs(getControlArray(controls.compVideoBridge)) do 
@@ -982,31 +1052,6 @@ function SystemAutomationController:cleanup()
 end
 
 ----------------[ Factory ]--------------------------
-local function getVolumeRanges(roomType)
-    local baseRanges = {
-        programVolume = { 1 },  -- Program volume always controls index 1
-        micVolume = function(type) 
-            if type == "Huddle Room" then return { 2, 3 }
-            elseif type == "Conference Room" then return { 2, 3, 4, 5, 6, 7, 8 }
-            elseif type == "Custom Room" then return { 2, 3, 4 }  -- Easily modifiable per project
-            else return { 2, 3, 4, 5 }  -- Default range
-            end
-        end,
-        gainVolume = function(type)
-            if type == "Huddle Room" then return { 4, 5 }
-            elseif type == "Conference Room" then return { 9, 10, 11, 12 }
-            elseif type == "Custom Room" then return { 5, 6, 7, 8, 9 }  -- Easily modifiable per project
-            else return { 6, 7, 8 }  -- Default range
-            end
-        end
-    }
-    return {
-        programVolume = baseRanges.programVolume,
-        micVolume = baseRanges.micVolume(roomType),
-        gainVolume = baseRanges.gainVolume(roomType)
-    }
-end
-
 local function getDefaultConfig(roomType)
     roomType = roomType or "Default"
     if roomType == "User Defined" then
@@ -1019,7 +1064,7 @@ local function getDefaultConfig(roomType)
             defaultProgramVolume = (controls.defaultProgramVolume and controls.defaultProgramVolume.Value) or 0.7,
             defaultMicVolume = (controls.defaultMicVolume and controls.defaultMicVolume.Value) or 0.5,
             defaultGainVolume = (controls.defaultGainVolume and controls.defaultGainVolume.Value) or 0.8,
-            volumeRanges = getVolumeRanges(roomType)
+
         }
     end
         local baseConfig = {
@@ -1033,29 +1078,25 @@ local function getDefaultConfig(roomType)
             debugging = true, warmupTime = 15, cooldownTime = 10, motionTimeout = 600, gracePeriod = 60,
             defaultProgramVolume = baseConfig.defaultProgramVolume,
             defaultMicVolume = baseConfig.defaultMicVolume,
-            defaultGainVolume = baseConfig.defaultGainVolume,
-            volumeRanges = getVolumeRanges("Conference Room")
+            defaultGainVolume = baseConfig.defaultGainVolume
         },
         ["Huddle Room"] = { 
             debugging = false, warmupTime = 5, cooldownTime = 3, motionTimeout = 300, gracePeriod = 30,
             defaultProgramVolume = 0.6,  -- Lower for huddle rooms
             defaultMicVolume = baseConfig.defaultMicVolume,
-            defaultGainVolume = baseConfig.defaultGainVolume,
-            volumeRanges = getVolumeRanges("Huddle Room")
+            defaultGainVolume = baseConfig.defaultGainVolume
         },
         ["Default"] = { 
             debugging = true, warmupTime = 10, cooldownTime = 5, motionTimeout = 300, gracePeriod = 30,
             defaultProgramVolume = baseConfig.defaultProgramVolume,
             defaultMicVolume = baseConfig.defaultMicVolume,
-            defaultGainVolume = baseConfig.defaultGainVolume,
-            volumeRanges = getVolumeRanges("Default")
+            defaultGainVolume = baseConfig.defaultGainVolume
         },
         ["Custom Room"] = { 
             debugging = true, warmupTime = 10, cooldownTime = 5, motionTimeout = 300, gracePeriod = 30,
             defaultProgramVolume = baseConfig.defaultProgramVolume,
             defaultMicVolume = baseConfig.defaultMicVolume,
-            defaultGainVolume = baseConfig.defaultGainVolume,
-            volumeRanges = getVolumeRanges("Custom Room")
+            defaultGainVolume = baseConfig.defaultGainVolume
         }
     }
     return defaults[roomType] or defaults["Default"]
