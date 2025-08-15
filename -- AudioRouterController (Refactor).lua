@@ -1,7 +1,7 @@
 --[[ 
-  Audio Router Controller - Class-based Implementation
+  Audio Router Controller - Refactored Class-based Implementation
   Author: Nikolas Smith, Q-SYS
-  2025-06-18
+  2025-08-14
   Firmware Req: 10.0.0
   Version: 1.0
   
@@ -20,17 +20,15 @@ local controls = {
 AudioRouterController = {}
 AudioRouterController.__index = AudioRouterController
 
---------** Class Constructor **--------
+--------[ Class Constructor ]--------
 function AudioRouterController.new(config)
     local self = setmetatable({}, AudioRouterController)
     
-    -- Instance properties
     self.debugging = config and config.debugging or true
     self.clearString = "[Clear]"
     self.invalidComponents = {}
     self.lastInput = {} -- Store the last input for each output
     
-    -- Input/Output mapping
     self.inputs = {
         xlr01 = 1,
         xlr02 = 2,
@@ -42,94 +40,91 @@ function AudioRouterController.new(config)
         xlr05 = 8,
         none  = 9,
     }
-    
     self.outputs = {
         output01 = 1
     }
-    -- Component type definitions
     self.componentTypes = {
         audioRouter  = "router_with_output",
-        roomControls =  "device_controller_script"
+        roomControls = "device_controller_script"
     }
-    
-    -- Component storage
     self.audioRouter  = nil
     self.roomControls = nil
-    self.lastInput    = {}    
-    -- Store controls reference
     self.controls = controls
-    -- Setup event handlers and initialize
-    self:registerEventHandlers()
-    self:funcInit()
+    self:initialize()
     
     return self
 end
 
---------** Debug Helper **--------
+--------[ Debug Helper ]--------
 function AudioRouterController:debugPrint(str)
     if self.debugging then
         print("[Audio Router Debug] " .. str)
     end
 end
 
---------** Component Management **--------
+--------[ Component Management ]--------
 function AudioRouterController:setComponent(ctrl, componentType)
     self:debugPrint("Setting Component: " .. componentType)
     local componentName = ctrl.String
-    
+    -- Guard clause: empty component name
     if componentName == "" then
         self:debugPrint("No " .. componentType .. " Component Selected")
         ctrl.Color = "white"
         self:setComponentValid(componentType)
         return nil
-    elseif componentName == self.clearString then
+    end
+    -- Guard clause: clear string selected
+    if componentName == self.clearString then
         self:debugPrint(componentType .. ": Component Cleared")
         ctrl.String = ""
         ctrl.Color = "white"
         self:setComponentValid(componentType)
         return nil
-    elseif #Component.GetControls(Component.New(componentName)) < 1 then
+    end
+    -- Guard clause: invalid component
+    if #Component.GetControls(Component.New(componentName)) < 1 then
         self:debugPrint(componentType .. " Component " .. componentName .. " is Invalid")
         ctrl.String = "[Invalid Component Selected]"
         ctrl.Color = "pink"
         self:setComponentInvalid(componentType)
         return nil
-    else
-        self:debugPrint("Setting " .. componentType .. " Component: {" .. ctrl.String .. "}")
-        ctrl.Color = "white"
-        self:setComponentValid(componentType)
-        return Component.New(componentName)
     end
+    -- Main path: valid component
+    self:debugPrint("Setting " .. componentType .. " Component: {" .. ctrl.String .. "}")
+    ctrl.Color = "white"
+    self:setComponentValid(componentType)
+    return Component.New(componentName)
 end
 
 function AudioRouterController:setComponentInvalid(componentType)
     self.invalidComponents[componentType] = true
-    self:checkStatus()
+    self:updateStatus()
 end
 
 function AudioRouterController:setComponentValid(componentType)
     self.invalidComponents[componentType] = false
-    self:checkStatus()
+    self:updateStatus()
 end
 
-function AudioRouterController:checkStatus()
-    for i, v in pairs(self.invalidComponents) do
-        if v == true then
+function AudioRouterController:updateStatus()
+    -- Check for any invalid components
+    for _, isInvalid in pairs(self.invalidComponents) do
+        if isInvalid then
             self.controls.txtStatus.String = "Invalid Components"
             self.controls.txtStatus.Value = 1
             return
         end
     end
+    -- All components valid
     self.controls.txtStatus.String = "OK"
     self.controls.txtStatus.Value = 0
 end
 
---------** Component Name Discovery **--------
+--------[ Component Name Discovery ]--------
 function AudioRouterController:discoverComponents()
     local audioRouterNames = {}
     local roomControlsNames = {}
 
-    -- Single pass through all components
     for i, v in pairs(Component.GetComponents()) do
         if v.Type == self.componentTypes.audioRouter then
             table.insert(audioRouterNames, v.Name)
@@ -138,12 +133,10 @@ function AudioRouterController:discoverComponents()
         end
     end
     
-    -- Sort and add clear string for audio router components
     table.sort(audioRouterNames)
     table.insert(audioRouterNames, self.clearString)
     self.controls.compAudioRouter.Choices = audioRouterNames
     
-    -- Sort and add clear string for room controls components
     table.sort(roomControlsNames)
     table.insert(roomControlsNames, self.clearString)
     self.controls.compRoomControls.Choices = roomControlsNames
@@ -152,56 +145,57 @@ function AudioRouterController:discoverComponents()
 end
 
 
---------** Component Setup **--------
+--------[ Component Setup ]--------
 function AudioRouterController:setAudioRouterComponent()
     -- Clean up old event handlers if switching devices
-    if self.audioRouter then
-        if self.audioRouter["select.1"].EventHandler then
-            self.audioRouter["select.1"].EventHandler = nil
-        end
-        self:debugPrint("Cleanup completed to due to switching devices")
+    if self.audioRouter and self.audioRouter["select.1"] then
+        self.audioRouter["select.1"].EventHandler = nil
+        self:debugPrint("Cleanup completed due to switching devices")
     end
 
-    -- Now assign the new device
     self.audioRouter = self:setComponent(self.controls.compAudioRouter, "Audio Router")
-    if self.audioRouter ~= nil then
-        self.audioRouter["select.1"].EventHandler = function(ctl)
-            for i, btn in ipairs(self.controls.btnAudioSource) do
-                btn.Boolean = (i == ctl.Value)
-            end
-            self:debugPrint("Audio Router set Output 1 to Input " .. ctl.Value)
+    if not self.audioRouter then
+        return
+    end
+    
+    self.audioRouter["select.1"].EventHandler = function(ctl)
+        local inputValue = ctl.Value
+        
+        -- Direct UI update for responsiveness
+        for i, btn in ipairs(self.controls.btnAudioSource) do
+            btn.Boolean = (i == inputValue)
         end
+        
+        self:debugPrint("Audio Router set Output 1 to Input " .. inputValue)
     end
 end
 
 function AudioRouterController:setRoomControlsComponent()
     self.roomControls = self:setComponent(self.controls.compRoomControls, "Room Controls")
-    if self.roomControls ~= nil then
-        -- Add event handlers for system power and fire alarm
-        local this = self  -- Capture self for use in handlers
-
-        self.roomControls["ledSystemPower"].EventHandler = function(ctl)
-            if ctl.Boolean then
-                this:setRoute(this.inputs.XLR01, this.outputs.OUTPUT01) -- System power on: route to XLR01
-            else
-                this:setRoute(this.inputs.NONE, this.outputs.OUTPUT01) -- System power off: route to NONE
-            end
-        end
-        -- Fire alarm active: route to NONE        
-        self.roomControls["ledFireAlarm"].EventHandler = function(ctl)
-            if ctl.Boolean then
-                this:setRoute(this.inputs.NONE, this.outputs.OUTPUT01)
-            else
-               if Controls.ledSystemPower.Boolean then -- If system power was On, set the route to Default
-               -- Fire alarm cleared: revert to last input (or default to XLR01) 
-               this:setRoute(this.lastInput[this.outputs.OUTPUT01] or this.inputs.XLR01, this.outputs.OUTPUT01)
-               end
+    if not self.roomControls then
+        return
+    end
+    
+    self.roomControls["ledSystemPower"].EventHandler = function(ctl)
+        local route = ctl.Boolean and self.inputs.xlr01 or self.inputs.none
+        self:setRoute(route, self.outputs.output01)
+    end
+    
+    self.roomControls["ledFireAlarm"].EventHandler = function(ctl)
+        if ctl.Boolean then
+            -- Fire alarm active: route to none
+            self:setRoute(self.inputs.none, self.outputs.output01)
+        else
+            -- Fire alarm cleared: revert to last input or default
+            if Controls.ledSystemPower.Boolean then
+                local defaultRoute = self.lastInput[self.outputs.output01] or self.inputs.xlr01
+                self:setRoute(defaultRoute, self.outputs.output01)
             end
         end
     end
 end
 
---------** Audio Routing Functions **--------
+--------[ Audio Routing Functions ]--------
 function AudioRouterController:setRoute(input, output)
     if self.audioRouter then
         self.audioRouter["select."..tostring(output)].Value = input
@@ -210,51 +204,56 @@ function AudioRouterController:setRoute(input, output)
     end
 end
 
---------** Event Handler Registration **--------
+--------[ Event Handler Registration ]--------
 function AudioRouterController:registerEventHandlers()
-    -- Audio Router component handler
+    -- Component selection handlers
     self.controls.compAudioRouter.EventHandler = function()
         self:setAudioRouterComponent()
     end
 
-    -- Room Controls component handler
     self.controls.compRoomControls.EventHandler = function()
         self:setRoomControlsComponent()
     end
 
-    -- Audio Source button handlers
+    -- Audio source button handlers (direct routing for responsiveness)
     for i, btn in ipairs(self.controls.btnAudioSource) do
         btn.EventHandler = function()
-            self:setRoute(i, self.outputs.OUTPUT01)
+            self:setRoute(i, self.outputs.output01)
         end
     end
 end
 
---------** Initialization **--------
-function AudioRouterController:funcInit()
+--------[ Initialization ]--------
+function AudioRouterController:initialize()
+    -- Batch initialization for better performance
+    self:registerEventHandlers()
     self:discoverComponents()
     self:setAudioRouterComponent()
     self:setRoomControlsComponent()
     self:debugPrint("Audio Router Controller Initialized")
 end
 
---------** Cleanup **--------
+--------[ Cleanup ]--------
 function AudioRouterController:cleanup()
-    if self.audioRouter and self.audioRouter["select.1"].EventHandler then
+    -- Clean up audio router event handlers
+    if self.audioRouter and self.audioRouter["select.1"] then
         self.audioRouter["select.1"].EventHandler = nil
     end
     
-    if self.roomControls and self.roomControls["ledSystemPower"].EventHandler then
-        self.roomControls["ledSystemPower"].EventHandler = nil
+    -- Clean up room controls event handlers
+    if self.roomControls then
+        if self.roomControls["ledSystemPower"] then
+            self.roomControls["ledSystemPower"].EventHandler = nil
+        end
+        if self.roomControls["ledFireAlarm"] then
+            self.roomControls["ledFireAlarm"].EventHandler = nil
+        end
     end
-    if self.roomControls and self.roomControls["ledFireAlarm"].EventHandler then
-        self.roomControls["ledFireAlarm"].EventHandler = nil
-    end 
+    
     self:debugPrint("Cleanup completed")
 end
 
-
---------** Factory Function **--------
+--------[ Factory Function ]--------
 local function createAudioRouterController(config)
     local defaultConfig = {
         debugging = true
@@ -275,22 +274,27 @@ local function createAudioRouterController(config)
     end
 end
 
---------** Instance Creation **--------
+--------[ Instance Creation ]--------
 -- Create the main audio router controller instance
 myAudioRouterController = createAudioRouterController()
 
---------** Usage Examples **--------
+--------[ Usage Examples ]--------
 --[[
 -- Example usage of the audio router controller:
 
 -- Set a route manually
 myAudioRouterController:setRoute(1, 1)  -- Set Output 1 to Input 1
 
--- Get current route
-local currentInput = myAudioRouterController.audioRouter["select.1"].Value
-
--- Update source buttons
-for i, btn in ipairs(Controls.btnAudioSource) do
-    btn.Boolean = (i == currentInput)
+-- Get current route (if audio router is available)
+if myAudioRouterController.audioRouter then
+    local currentInput = myAudioRouterController.audioRouter["select.1"].Value
+    
+    -- Update source buttons to reflect current state
+    for i, btn in ipairs(Controls.btnAudioSource) do
+        btn.Boolean = (i == currentInput)
+    end
 end
+
+-- Clean up when done
+-- myAudioRouterController:cleanup()
 ]]-- 

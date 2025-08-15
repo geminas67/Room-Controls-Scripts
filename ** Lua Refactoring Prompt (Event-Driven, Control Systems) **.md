@@ -20,6 +20,7 @@ Refactor the following Lua code to make it faster and more responsive, with a fo
     - Keep event handlers as direct and minimal as possible.
     - Update UI and system state immediately within the handler.
     - Avoid unnecessary indirection or excessive nesting in callbacks.
+    - Use helpers functions to reduce 
 
 4. **Reduce Redundant Component Access:**
     - Access component properties directly where safe (e.g., `component.property = value`).
@@ -49,7 +50,8 @@ Refactor the following Lua code to make it faster and more responsive, with a fo
 
 10. **Maintain Readability and Maintainability:**
     - Keep code modular and well-structured.
-    - se clear comments, spacing, and consistent naming conventions throughout.
+    - Use clear comments, spacing, and consistent naming conventions throughout.
+    - Favor helper functions to aid ongoing readability and maintenance.
 
 11. **Prefer Combo Boxes for Component Selection:**
     - Use Combo Boxes (dropdowns) instead of multiple buttons or manual input when users must select from several options.
