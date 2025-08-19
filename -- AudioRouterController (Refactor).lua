@@ -20,7 +20,7 @@ local controls = {
 AudioRouterController = {}
 AudioRouterController.__index = AudioRouterController
 
---------[ Class Constructor ]--------
+-----------------[ Class Constructor ]-------------------
 function AudioRouterController.new(config)
     local self = setmetatable({}, AudioRouterController)
     
@@ -55,14 +55,14 @@ function AudioRouterController.new(config)
     return self
 end
 
---------[ Debug Helper ]--------
+-----------------------------[ Debug Helper ]-----------------------------
 function AudioRouterController:debugPrint(str)
     if self.debugging then
         print("[Audio Router Debug] " .. str)
     end
 end
 
---------[ Component Management ]--------
+-----------------------------[ Component Management ]-----------------------------
 function AudioRouterController:setComponent(ctrl, componentType)
     self:debugPrint("Setting Component: " .. componentType)
     local componentName = ctrl.String
@@ -120,7 +120,7 @@ function AudioRouterController:updateStatus()
     self.controls.txtStatus.Value = 0
 end
 
---------[ Component Name Discovery ]--------
+-----------------------------[ Component Name Discovery ]-----------------------------
 function AudioRouterController:discoverComponents()
     local audioRouterNames = {}
     local roomControlsNames = {}
@@ -145,7 +145,7 @@ function AudioRouterController:discoverComponents()
 end
 
 
---------[ Component Setup ]--------
+-----------------------------[ Component Setup ]-----------------------------
 function AudioRouterController:setAudioRouterComponent()
     -- Clean up old event handlers if switching devices
     if self.audioRouter and self.audioRouter["select.1"] then
@@ -195,7 +195,7 @@ function AudioRouterController:setRoomControlsComponent()
     end
 end
 
---------[ Audio Routing Functions ]--------
+-----------------------------[ Audio Routing Functions ]-----------------------------
 function AudioRouterController:setRoute(input, output)
     if self.audioRouter then
         self.audioRouter["select."..tostring(output)].Value = input
@@ -204,7 +204,7 @@ function AudioRouterController:setRoute(input, output)
     end
 end
 
---------[ Event Handler Registration ]--------
+-----------------------------[ Event Handlers ]-----------------------------
 function AudioRouterController:registerEventHandlers()
     -- Component selection handlers
     self.controls.compAudioRouter.EventHandler = function()
@@ -223,7 +223,7 @@ function AudioRouterController:registerEventHandlers()
     end
 end
 
---------[ Initialization ]--------
+-----------------------------[ Initialization ]-----------------------------
 function AudioRouterController:initialize()
     -- Batch initialization for better performance
     self:registerEventHandlers()
@@ -233,7 +233,7 @@ function AudioRouterController:initialize()
     self:debugPrint("Audio Router Controller Initialized")
 end
 
---------[ Cleanup ]--------
+-----------------------------[ Cleanup ]-----------------------------
 function AudioRouterController:cleanup()
     -- Clean up audio router event handlers
     if self.audioRouter and self.audioRouter["select.1"] then
@@ -253,7 +253,7 @@ function AudioRouterController:cleanup()
     self:debugPrint("Cleanup completed")
 end
 
---------[ Factory Function ]--------
+-----------------------------[ Factory Function ]-----------------------------
 local function createAudioRouterController(config)
     local defaultConfig = {
         debugging = true
@@ -274,11 +274,11 @@ local function createAudioRouterController(config)
     end
 end
 
---------[ Instance Creation ]--------
+-----------------------------[ Instance Creation ]-----------------------------
 -- Create the main audio router controller instance
 myAudioRouterController = createAudioRouterController()
 
---------[ Usage Examples ]--------
+-----------------------------[ Usage Examples ]-----------------------------
 --[[
 -- Example usage of the audio router controller:
 
