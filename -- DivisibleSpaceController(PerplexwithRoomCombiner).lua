@@ -61,22 +61,24 @@ local controls = {
 local function validateControls()
     -- Guard clause: Check for missing required controls
     if not controls.selRoomCombination then
-        print("ERROR: Missing required control: selRoomCombination")
+        print("[DivisibleSpace ERROR] Missing required control: selRoomCombination")
         return false
     end
     
     -- Room controllers are required (not optional)
     local roomNames = {"A", "B", "C", "D", "E", "F", "G", "H"}
     for _, room in ipairs(roomNames) do
+        -- Validate room controller controls exist
         local roomControlName = "selRoomController" .. room
-        if not controls[roomControlName] then
-            print("ERROR: Missing required room controller control: " .. roomControlName)
+        if not roomControlName or roomControlName == "" or not controls[roomControlName] then
+            print("[DivisibleSpace ERROR] Missing required room controller control: " .. tostring(roomControlName))
             return false
         end
         
+        -- Validate audio router controls exist
         local audioRouterName = "selAudioRouter" .. room
-        if not controls[audioRouterName] then
-            print("ERROR: Missing required audio router control: " .. audioRouterName)
+        if not audioRouterName or audioRouterName == "" or not controls[audioRouterName] then
+            print("[DivisibleSpace ERROR] Missing required audio router control: " .. tostring(audioRouterName))
             return false
         end
     end
@@ -85,7 +87,42 @@ local function validateControls()
     return true
 end
 
+-----------------------------[ Table Utilities ]-----------------------------
+--- Safely insert into table with validation
+-- @param tbl table The table to insert into
+-- @param value any The value to insert
+local function safeTableInsert(tbl, value)
+    if not tbl or type(tbl) ~= "table" then return false end
+    if value == nil then return false end
+    table.insert(tbl, value)
+    return true
+end
+
+--- Safely get table value with fallback
+-- @param tbl table The table to get from
+-- @param key any The key to look up
+-- @param default any The default value if key not found
+local function safeTableGet(tbl, key, default)
+    if not tbl or type(tbl) ~= "table" or key == nil then return default end
+    return tbl[key] or default
+end
+
+--- Sort table keys and return sorted array
+-- @param tbl table The table to get sorted keys from
+local function getSortedKeys(tbl)
+    if not tbl or type(tbl) ~= "table" then return {} end
+    local keys = {}
+    for k, _ in pairs(tbl) do
+        table.insert(keys, k)
+    end
+    table.sort(keys)
+    return keys
+end
+
 -----------------------------[ Utility: Resolve Controls Table ]-----------------------------
+--- Safely resolve component controls table
+-- @param component table The component to get controls from
+-- @return table|nil The controls table or nil if not available
 local function getControlsTable(component)
     -- Guard clause: Validate component exists
     if not component or not component.Controls then return nil end
@@ -106,14 +143,19 @@ local function getControlsTable(component)
 end
 
 -----------------------------[ Class Definition ]-----------------------------
+--- DivisibleSpaceController: Manages room combinations, audio routing, and UCI switching
+-- Implements event-driven architecture with cached component access for optimal performance
 DivisibleSpaceController = {}
 DivisibleSpaceController.__index = DivisibleSpaceController
 
+--- Create new DivisibleSpaceController instance
+-- @param config table Configuration options including debugging, maxUCIPanels, maxRoomControls, autoDiscover
+-- @return table New controller instance
 function DivisibleSpaceController.new(config)
     local self = setmetatable({}, DivisibleSpaceController)
     
-    -- Core configuration with defaults
-    self.debugging = (config and config.debugging) or true
+    -- Core configuration with proper boolean defaults
+    self.debugging = (config and config.debugging ~= nil) and config.debugging or true
     self.clearString = "[Clear]"
     self.controls = controls
     
@@ -183,20 +225,34 @@ function DivisibleSpaceController.new(config)
         tscDevices = {}
     }
     
-    -- Performance configuration
+    -- Performance configuration with proper boolean handling
     self.config = {
-        maxUCIPanels = config and config.maxUCIPanels or 8,
-        maxRoomControls = config and config.maxRoomControls or 8,
-        autoDiscover = config and config.autoDiscover ~= false or true,
+        maxUCIPanels = (config and config.maxUCIPanels) or 8,
+        maxRoomControls = (config and config.maxRoomControls) or 8,
+        autoDiscover = (config and config.autoDiscover ~= nil) and config.autoDiscover or true,
         enableControlsCache = true  -- Cache frequently accessed controls
     }
     
     return self
 end
 
------------------------------[ Debug Helper ]-----------------------------
+-----------------------------[ Debug & Error Helpers ]-----------------------------
+--- Debug printing with conditional output
+-- @param str string The debug message to print
 function DivisibleSpaceController:debugPrint(str)
     if self.debugging then print("[DivisibleSpace Debug] "..str) end
+end
+
+--- Centralized error reporting
+-- @param str string The error message to print
+function DivisibleSpaceController:errorPrint(str)
+    print("[DivisibleSpace ERROR] " .. str)
+end
+
+--- Centralized warning reporting
+-- @param str string The warning message to print
+function DivisibleSpaceController:warningPrint(str)
+    print("[DivisibleSpace WARNING] " .. str)
 end
 
 -----------------------------[ Performance Helper: Cached Controls Access ]-----------------------------
@@ -220,6 +276,9 @@ function DivisibleSpaceController:getCachedControls(component)
     return controls
 end
 
+--- Debug component properties for troubleshooting
+-- @param component table The component to debug
+-- @param label string A label for the debug output
 function DivisibleSpaceController:debugComponentProperties(component, label)
     if not self.debugging or not component then return end
     self:debugPrint("Debugging component: " .. tostring(label))
@@ -232,7 +291,52 @@ function DivisibleSpaceController:debugComponentProperties(component, label)
     if t then for k,_ in pairs(t) do self:debugPrint("Available control: "..k) end end
 end
 
+--- Safely construct control name with validation
+-- @param prefix string The prefix for the control name
+-- @param suffix string The suffix for the control name
+-- @return string|nil The control name or nil if invalid
+function DivisibleSpaceController:safeControlName(prefix, suffix)
+    if not prefix or not suffix or prefix == "" or suffix == "" then
+        self:errorPrint("Invalid control name parameters: prefix=" .. tostring(prefix) .. ", suffix=" .. tostring(suffix))
+        return nil
+    end
+    return prefix .. suffix
+end
+
+--- Clear all event handlers safely
+function DivisibleSpaceController:clearEventHandlers()
+    self:debugPrint("Clearing all event handlers...")
+    
+    -- Clear control event handlers
+    for controlName, control in pairs(self.controls) do
+        if control and control.EventHandler then
+            control.EventHandler = nil
+            self:debugPrint("Cleared event handler for: " .. controlName)
+        end
+    end
+    
+    -- Clear any dynamically assigned event handlers from component controls
+    if self.state.roomControllers then
+        for room, controller in pairs(self.state.roomControllers) do
+            if controller then
+                local controls = self:getCachedControls(controller)
+                if controls then
+                    for controlName, control in pairs(controls) do
+                        if control and control.EventHandler then
+                            control.EventHandler = nil
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    self:debugPrint("Event handler cleanup completed")
+end
+
 -----------------------------[ Optimized Single-Pass Component Discovery ]-----------------------------
+--- Discover all Q-SYS components in a single pass for maximum performance
+-- Uses direct categorization and caching for optimal speed
 function DivisibleSpaceController:discoverComponents()
     self:debugPrint("Starting optimized component discovery...")
     
@@ -310,6 +414,8 @@ function DivisibleSpaceController:discoverComponents()
 end
 
 -----------------------------[ Enhanced Room Controller Management ]-----------------------------
+--- Get sorted list of room controller names for combo box population
+-- @return table Array of room controller names with clear option
 function DivisibleSpaceController:getRoomControllerNames()
     local namesTable = { RoomControllerNames = {} }
     for _, comp in ipairs(self.state.roomControllerComponents) do
@@ -320,6 +426,10 @@ function DivisibleSpaceController:getRoomControllerNames()
     return namesTable.RoomControllerNames
 end
 
+--- Set and validate room controller component
+-- @param ctrl table The control to update
+-- @param componentType string Description of the component type for logging
+-- @return table|nil The validated component or nil if invalid
 function DivisibleSpaceController:setRoomControllerComponent(ctrl, componentType)
     if not ctrl then return nil end
     local componentName = ctrl.String
@@ -350,6 +460,8 @@ function DivisibleSpaceController:setRoomControllerComponent(ctrl, componentType
 end
 
 -----------------------------[ Audio Router Management ]-----------------------------
+--- Get sorted list of audio router names for combo box population
+-- @return table Array of audio router names with clear option
 function DivisibleSpaceController:getAudioRouterNames()
     local namesTable = { AudioRouterNames = {} }
     for _, comp in ipairs(self.state.audioRouterComponents) do
@@ -360,6 +472,10 @@ function DivisibleSpaceController:getAudioRouterNames()
     return namesTable.AudioRouterNames
 end
 
+--- Set and validate audio router component
+-- @param ctrl table The control to update
+-- @param componentType string Description of the component type for logging
+-- @return table|nil The validated component or nil if invalid
 function DivisibleSpaceController:setAudioRouterComponent(ctrl, componentType)
     if not ctrl then return nil end
     local componentName = ctrl.String
@@ -391,6 +507,8 @@ function DivisibleSpaceController:setAudioRouterComponent(ctrl, componentType)
 end
 
 -----------------------------[ Enhanced Combo Box Population ]-----------------------------
+--- Populate all component combo boxes with discovered components
+-- Handles room combiners, room controllers, audio routers, and UCI components
 function DivisibleSpaceController:populateComponentComboBoxes()
     -- Populate Room Combiner combo box
     if self.controls.selRoomCombiner then
@@ -404,11 +522,11 @@ function DivisibleSpaceController:populateComponentComboBoxes()
         end
     end
     
-    -- Populate Room Controller combo boxes
+    -- Populate Room Controller combo boxes with safe name construction
     local roomControllerNames = self:getRoomControllerNames()
     for _, room in ipairs(self.roomNames) do
-        local controlName = "selRoomController" .. room
-        if self.controls[controlName] then
+        local controlName = self:safeControlName("selRoomController", room)
+        if controlName and self.controls[controlName] then
             self.controls[controlName].Choices = roomControllerNames
             if #roomControllerNames > 1 then
                 self.controls[controlName].String = roomControllerNames[1]
@@ -416,11 +534,11 @@ function DivisibleSpaceController:populateComponentComboBoxes()
         end
     end
     
-    -- Populate Audio Router combo boxes
+    -- Populate Audio Router combo boxes with safe name construction
     local audioRouterNames = self:getAudioRouterNames()
     for _, room in ipairs(self.roomNames) do
-        local controlName = "selAudioRouter" .. room
-        if self.controls[controlName] then
+        local controlName = self:safeControlName("selAudioRouter", room)
+        if controlName and self.controls[controlName] then
             self.controls[controlName].Choices = audioRouterNames
             if #audioRouterNames > 1 then
                 self.controls[controlName].String = audioRouterNames[1]
@@ -442,6 +560,8 @@ function DivisibleSpaceController:populateComponentComboBoxes()
 end
 
 -----------------------------[ Audio Router Priority Control ]-----------------------------
+--- Set audio router inputs based on room combination and priority
+-- @param combo table The room combination configuration
 function DivisibleSpaceController:setAudioRouterInputs(combo)
     if not combo or not combo.rooms then return end
     
@@ -483,9 +603,9 @@ function DivisibleSpaceController:setAudioRouterInputs(combo)
         local inputValue = self.audioPriority.default[master] or i
         assignedInputs[master] = inputValue
         
-        -- Set master room audio router
-        local masterRouterControl = "selAudioRouter" .. master
-        if self.controls[masterRouterControl] and self.state.selectedAudioRouters[master] then
+        -- Set master room audio router with safe name construction
+        local masterRouterControl = self:safeControlName("selAudioRouter", master)
+        if masterRouterControl and self.controls[masterRouterControl] and self.state.selectedAudioRouters[master] then
             local audioRouter = self.state.selectedAudioRouters[master]
             if audioRouter and audioRouter["select.1"] then
                 audioRouter["select.1"].Value = inputValue
@@ -496,8 +616,8 @@ function DivisibleSpaceController:setAudioRouterInputs(combo)
         -- Set slave rooms to same input as master
         for _, slave in ipairs(group.slaves) do
             assignedInputs[slave] = inputValue
-            local slaveRouterControl = "selAudioRouter" .. slave
-            if self.controls[slaveRouterControl] and self.state.selectedAudioRouters[slave] then
+            local slaveRouterControl = self:safeControlName("selAudioRouter", slave)
+            if slaveRouterControl and self.controls[slaveRouterControl] and self.state.selectedAudioRouters[slave] then
                 local audioRouter = self.state.selectedAudioRouters[slave]
                 if audioRouter and audioRouter["select.1"] then
                     audioRouter["select.1"].Value = inputValue
@@ -511,18 +631,20 @@ function DivisibleSpaceController:setAudioRouterInputs(combo)
 end
 
 -----------------------------[ Optimized Core Functions ]-----------------------------
+--- Set room combiner state directly for maximum performance
+-- @param stateString string The state string to apply to the room combiner
 function DivisibleSpaceController:setRoomCombinerStateDirect(stateString)
     -- Direct access to selected combiner with fallback
     local combiner = self.state.selectedRoomCombiner or self.state.roomCombinerComponents[1]
     if not combiner then
-        self:debugPrint("ERROR: No Room Combiner available!")
+        self:errorPrint("No Room Combiner available!")
         return
     end
     
     -- Use cached controls for maximum performance
     local controls = self:getCachedControls(combiner)
     if not controls or not controls.Rooms then
-        self:debugPrint("WARNING: Room Combiner has no 'Rooms' control!")
+        self:warningPrint("Room Combiner has no 'Rooms' control!")
         return
     end
     
@@ -531,10 +653,14 @@ function DivisibleSpaceController:setRoomCombinerStateDirect(stateString)
     self:debugPrint("Updated Room Combiner Rooms to: " .. stateString)
 end
 
+--- Set room combiner state (alias for direct method)
+-- @param stateString string The state string to set
 function DivisibleSpaceController:setRoomCombinerState(stateString)
-    self:setRoomCombinerStateDirect(stateString)
+    return self:setRoomCombinerStateDirect(stateString)
 end
 
+--- Switch UCIs directly using the fastest available method
+-- @param uciName string The UCI name to switch to
 function DivisibleSpaceController:switchUCIsDirect(uciName)
     -- Direct fallback to UCI switching for maximum performance
     self:debugPrint("Switching UCIs to: " .. uciName)
@@ -561,10 +687,14 @@ function DivisibleSpaceController:switchUCIsDirect(uciName)
     end
 end
 
+--- Switch UCIs (alias for direct method)
+-- @param uciName string The UCI name to switch to
 function DivisibleSpaceController:switchUCIs(uciName)
-    self:switchUCIsDirect(uciName)
+    return self:switchUCIsDirect(uciName)
 end
 
+--- Update room controller power states directly based on combination
+-- @param combo table The room combination configuration
 function DivisibleSpaceController:updateRoomControllerPowerDirect(combo)
     -- Pre-compute active rooms map inline for performance
     local activeRooms = {}
@@ -591,17 +721,17 @@ function DivisibleSpaceController:updateRoomControllerPowerDirect(combo)
     end
 end
 
+--- Update room controller power states
+-- @param activeRooms table Map of room names to boolean active states
 function DivisibleSpaceController:updateRoomControllerPower(activeRooms)
+    -- Use the direct implementation to avoid code duplication
+    local combo = { rooms = {} }
     for room, isActive in pairs(activeRooms) do
-        local roomController = self.state.roomControllers[room]
-        if roomController then
-            local controls = self:getCachedControls(roomController)
-            if controls and controls["btnSystemOnOff"] then
-                controls["btnSystemOnOff"].Boolean = isActive
-                self:debugPrint("Updated Room " .. room .. " power to: " .. tostring(isActive))
-            end
+        if isActive then
+            table.insert(combo.rooms, room)
         end
     end
+    self:updateRoomControllerPowerDirect(combo)
 end
 
 function DivisibleSpaceController:buildActiveRoomsMap(combo)
@@ -631,10 +761,12 @@ function DivisibleSpaceController:publishRoomState(combo)
 end
 
 -----------------------------[ Optimized Main Application Function ]-----------------------------
+--- Apply room combination by index with maximum performance
+-- @param index integer The combination index to apply (1-based)
 function DivisibleSpaceController:applyCombination(index)
     -- Guard clause: Validate index
     if not index or index < 1 or index > #self.roomCombinations then 
-        self:debugPrint("ERROR: Invalid combination index: " .. tostring(index))
+        self:errorPrint("Invalid combination index: " .. tostring(index))
         return 
     end
     
@@ -670,6 +802,8 @@ function DivisibleSpaceController:applyCombination(index)
 end
 
 --------** Ultra-Fast Event-Driven Control Handlers **--------
+--- Setup all event handlers for controls with optimized performance
+-- Uses pre-compiled closures and direct lookups for maximum speed
 function DivisibleSpaceController:setupEventHandlers()
     -- Optimized room combination dropdown handler (most critical)
     if self.controls.selRoomCombination then
@@ -767,8 +901,8 @@ function DivisibleSpaceController:setupEventHandlers()
 
     -- Room Controller selection handlers (batch processing for performance)
     for _, room in ipairs(self.roomNames) do
-        local controlName = "selRoomController" .. room
-        if self.controls[controlName] then
+        local controlName = self:safeControlName("selRoomController", room)
+        if controlName and self.controls[controlName] then
             self.controls[controlName].EventHandler = function(ctl)
                 local component = self:setRoomControllerComponent(ctl, "Room Controller " .. room)
                 self.state.roomControllers[room] = component
@@ -781,8 +915,8 @@ function DivisibleSpaceController:setupEventHandlers()
     
     -- Audio Router selection handlers (batch processing for performance)
     for _, room in ipairs(self.roomNames) do
-        local controlName = "selAudioRouter" .. room
-        if self.controls[controlName] then
+        local controlName = self:safeControlName("selAudioRouter", room)
+        if controlName and self.controls[controlName] then
             self.controls[controlName].EventHandler = function(ctl)
                 local component = self:setAudioRouterComponent(ctl, "Audio Router " .. room)
                 self.state.selectedAudioRouters[room] = component
@@ -795,6 +929,10 @@ function DivisibleSpaceController:setupEventHandlers()
 end
 
 -----------------------------[ Enhanced Status Management ]-----------------------------
+--- Check system status and component availability
+-- @return string Status message
+-- @return boolean Whether there are any errors
+-- @return table Array of status details
 function DivisibleSpaceController:checkStatus()
     local status, hasError = "OK", false
     local statusDetails = {}
@@ -835,19 +973,27 @@ function DivisibleSpaceController:checkStatus()
 end
 
 -----------------------------[ Initialize Modules ]-----------------------------
+--- Initialize any required modules (placeholder for future expansion)
 function DivisibleSpaceController:initModules()
     self:debugPrint("Modules initialized")
 end
 
 --------** API Methods **--------
+--- Set the current room combination by index
+-- @param index integer Combination index (1-based)
 function DivisibleSpaceController:SetCombination(index)
     self:applyCombination(index)
 end
 
+--- Get the current room combination information
+-- @return integer Current combination index
+-- @return table Current combination data
 function DivisibleSpaceController:GetCurrentCombination()
     return self.state.currentCombinationIndex, self.roomCombinations[self.state.currentCombinationIndex]
 end
 
+--- Get all available components discovered by the controller
+-- @return table Table containing arrays of discovered components
 function DivisibleSpaceController:GetAvailableComponents()
     return {
         roomCombiners = self.state.roomCombinerComponents,
@@ -857,18 +1003,31 @@ function DivisibleSpaceController:GetAvailableComponents()
     }
 end
 
+--- Refresh component discovery and reset all cached data
 function DivisibleSpaceController:RefreshComponentDiscovery()
     self:debugPrint("Refreshing component discovery...")
+    
+    -- Clear event handlers before resetting state
+    self:clearEventHandlers()
+    
+    -- Reset all state components consistently
     self.state.selectedRoomCombiner = nil
     self.state.selectedUCIs = {}
     self.state.roomControllers = {}
     self.state.selectedAudioRouters = {}
+    self.state.controlsCache = {}  -- Clear controls cache
+    self.state.componentCache = {}  -- Clear component cache
+    
+    -- Rediscover and repopulate
     self:discoverComponents()
     self:populateComponentComboBoxes()
+    self:setupEventHandlers()  -- Reestablish event handlers
     self:checkStatus()
 end
 
 --------** Optimized Batch Initialization **--------
+--- Initialize the controller with optimized batch operations
+-- Performs component discovery, UI setup, and applies initial state
 function DivisibleSpaceController:funcInit()
     self:debugPrint("Starting optimized DivisibleSpaceController initialization...")
     
@@ -909,15 +1068,14 @@ function DivisibleSpaceController:funcInit()
 end
 
 --------** Enhanced Cleanup **--------
+--- Comprehensive cleanup of all resources and event handlers
 function DivisibleSpaceController:cleanup()
-    -- Clear all event handlers
-    for controlName, control in pairs(self.controls) do
-        if control and control.EventHandler then
-            control.EventHandler = nil
-        end
-    end
+    self:debugPrint("Starting comprehensive cleanup...")
     
-    -- Reset state
+    -- Use centralized event handler cleanup
+    self:clearEventHandlers()
+    
+    -- Reset state completely and consistently
     self.state = {
         currentCombinationIndex = 1,
         isInitialized = false,
@@ -927,16 +1085,19 @@ function DivisibleSpaceController:cleanup()
         audioRouterComponents = {},
         selectedAudioRouters = {},
         componentCache = {},
+        controlsCache = {},  -- Ensure controls cache is reset
         roomCombinerComponents = {},
         roomControllerComponents = {},
         uciComponents = {},
         tscDevices = {}
     }
     
-    if self.debugging then self:debugPrint("Cleanup completed") end
+    self:debugPrint("Cleanup completed successfully")
 end
 
 -----------------------------[ Performance Monitoring ]-----------------------------
+--- Run performance test cycling through all combinations
+-- Measures total time and average time per combination
 function DivisibleSpaceController:runPerformanceTest()
     if self.controls.btnPerformanceTest then
         self.controls.btnPerformanceTest.EventHandler = function()
@@ -964,8 +1125,11 @@ function DivisibleSpaceController:runPerformanceTest()
 end
 
 -----------------------------[ Factory Function ]-----------------------------
+--- Factory function to create DivisibleSpaceController with error handling
+-- @param config table Configuration options for the controller
+-- @return table|nil Controller instance or nil if creation failed
 local function createDivisibleSpaceController(config)
-    print("Creating DivisibleSpaceController...")
+    print("[DivisibleSpace] Creating DivisibleSpaceController...")
     local success, controller = pcall(function()
         local instance = DivisibleSpaceController.new(config)
         instance:funcInit()
@@ -973,10 +1137,10 @@ local function createDivisibleSpaceController(config)
         return instance
     end)
     if success then
-        print("Successfully created DivisibleSpaceController")
+        print("[DivisibleSpace] Successfully created DivisibleSpaceController")
         return controller
     else
-        print("Failed to create controller: " .. tostring(controller))
+        print("[DivisibleSpace ERROR] Failed to create controller: " .. tostring(controller))
         return nil
     end
 end
@@ -995,9 +1159,9 @@ myDivisibleSpaceController = createDivisibleSpaceController({
 })
 
 if myDivisibleSpaceController then
-    print("DivisibleSpaceController created successfully!")
+    print("[DivisibleSpace] DivisibleSpaceController created successfully!")
 else
-    print("ERROR: Failed to create DivisibleSpaceController!")
+    print("[DivisibleSpace ERROR] Failed to create DivisibleSpaceController!")
 end
 
 -----------------------------[ End of Script ]-----------------------------
