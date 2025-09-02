@@ -191,15 +191,15 @@ function VideoModule.new(controller)
     return self
 end
 function VideoModule:setPrivacy(state, idx)
-    local apply = function(i, vb)
-        self.controller:safeComponentAccess(vb, "toggle.privacy", "set", state)
+    local apply = function(i, videoBridge)
+        self.controller:safeComponentAccess(videoBridge, "toggle.privacy", "set", state)
         self.controller:videoBridgeCheckPrivacy(i)
     end
     if idx then
-        local vb = self.controller.components.videoBridge[idx]
-        if vb then apply(idx, vb) end
+        local videoBridge = self.controller.components.videoBridge[idx]
+        if videoBridge then apply(idx, videoBridge) end
     else
-        for i, vb in pairs(self.controller.components.videoBridge) do if vb then apply(i, vb) end end
+        for i, videoBridge in pairs(self.controller.components.videoBridge) do if videoBridge then apply(i, videoBridge) end end
     end
     local camACPR = self.controller.components.camACPR
     if camACPR then self.controller:safeComponentAccess(camACPR, "TrackingBypass", "set", state) end
@@ -207,9 +207,9 @@ function VideoModule:setPrivacy(state, idx)
 end
 function VideoModule:getPrivacyState(idx)
     idx = idx or 1
-    local vb = self.controller.components.videoBridge[idx]
-    if not vb then return false end
-    local state = self.controller:safeComponentAccess(vb, "toggle.privacy", "get")
+    local videoBridge = self.controller.components.videoBridge[idx]
+    if not videoBridge then return false end
+    local state = self.controller:safeComponentAccess(videoBridge, "toggle.privacy", "get")
     self.controller:videoBridgeCheckPrivacy(idx)
     self.controller:publishNotification()
     return state
@@ -226,13 +226,13 @@ function DisplayModule.new(controller)
 end
 function DisplayModule:powerAll(state)
     local trig = state and "PowerOnTrigger" or "PowerOffTrigger"
-    for _, d in pairs(self.controller.components.displays) do
-        if d then self.controller:safeComponentAccess(d, trig, "trigger") end
+    for _, display in pairs(self.controller.components.displays) do
+        if display then self.controller:safeComponentAccess(display, trig, "trigger") end
     end
 end
 function DisplayModule:powerSingle(idx, state)
-    local d = self.controller:getDisplayComponent(idx)
-    if d then self.controller:safeComponentAccess(d, state and "PowerOnTrigger" or "PowerOffTrigger", "trigger") end
+    local display = self.controller:getDisplayComponent(idx)
+    if display then self.controller:safeComponentAccess(display, state and "PowerOnTrigger" or "PowerOffTrigger", "trigger") end
 end
 
 -------------------[ Power Module ]------------------------
@@ -281,8 +281,8 @@ function PowerModule:powerOff()
     self.controller.audioModule:setPrivacy(true)
     for i, gain in pairs(self.controller.components.gains) do
         if gain then
-            local gType = self.controller:getGainType(i)
-            if gType ~= "micVolume" and gType ~= "Mic" then
+            local gainType = self.controller:getGainType(i)
+            if gainType ~= "micVolume" and gainType ~= "Mic" then
                 self.controller.audioModule:setMute(true, i)
             end
         end
@@ -331,10 +331,10 @@ local SystemAutomationController = {}
 SystemAutomationController.__index = SystemAutomationController
 SystemAutomationController.clearString = "[Clear]"
 SystemAutomationController.componentTypes = {
-    callSync = "call_sync", videoBridge = "usb_uvc",
-    displays = "%PLUGIN%_78a74df3-40bf-447b-a714-f564ebae238a_%FP%_bec481a6666b76b5249bbd12046c3920",
-    gains = "gain", systemMute = "system_mute",
-    camACPR = "%PLUGIN%_648260e3-c166-4b00-98ba-ba16ksnza4a63b0_%FP%_a4d2263b4380c424e16eebb67084f355"
+    callSync    = "call_sync", videoBridge = "usb_uvc",
+    displays    = "%PLUGIN%_78a74df3-40bf-447b-a714-f564ebae238a_%FP%_bec481a6666b76b5249bbd12046c3920",
+    gains       = "gain", systemMute = "system_mute",
+    camACPR     = "%PLUGIN%_648260e3-c166-4b00-98ba-ba16ksnza4a63b0_%FP%_a4d2263b4380c424e16eebb67084f355"
 }
 function SystemAutomationController.new(roomName, config, defaultConfigs)
     local self = setmetatable({}, SystemAutomationController)
@@ -349,11 +349,11 @@ function SystemAutomationController.new(roomName, config, defaultConfigs)
     self.timers = {
         motion = Timer.New(), grace = Timer.New(), warmup = Timer.New(), cooldown = Timer.New()
     }
-    self.audioModule = AudioModule.new(self)
-    self.videoModule = VideoModule.new(self)
-    self.displayModule = DisplayModule.new(self)
-    self.powerModule = PowerModule.new(self)
-    self.motionModule = MotionModule.new(self)
+    self.audioModule    = AudioModule.new(self)
+    self.videoModule    = VideoModule.new(self)
+    self.displayModule  = DisplayModule.new(self)
+    self.powerModule    = PowerModule.new(self)
+    self.motionModule   = MotionModule.new(self)
     self:registerTimerHandlers()
     return self
 end
@@ -374,13 +374,13 @@ end
 function SystemAutomationController:safeComponentAccess(component, control, action, value)
     if not component or not component[control] then return false end
     local success, result = pcall(function()
-        if action == "set" then component[control].Boolean = value; return true
-        elseif action == "setPosition" then component[control].Position = value; return true
-        elseif action == "setString" then component[control].String = value; return true
-        elseif action == "trigger" then component[control]:Trigger(); return true
-        elseif action == "get" then return component[control].Boolean
-        elseif action == "getPosition" then return component[control].Position
-        elseif action == "getString" then return component[control].String end
+        if      action == "set"         then component[control].Boolean = value; return true
+        elseif  action == "setPosition" then component[control].Position = value; return true
+        elseif  action == "setString"   then component[control].String = value; return true
+        elseif  action == "trigger"     then component[control]:Trigger(); return true
+        elseif  action == "get"         then return component[control].Boolean
+        elseif  action == "getPosition" then return component[control].Position
+        elseif  action == "getString"   then return component[control].String end
         return false
     end)
     if not success then self:debugPrint("Component access error: "..tostring(result)); return false end
@@ -468,42 +468,42 @@ end
 function SystemAutomationController:getComponentNames()
     local compType = SystemAutomationController.componentTypes
     local namesTable = {
-        CallSyncNames = {},
-        VideoBridgeNames = {},
-        CamACPRNames = {},
-        DisplayNames = {},
-        GainNames = {},
-        MuteNames = {},
+        namesCallSync = {},
+        namesVideoBridge = {},
+        namesCamACPR = {},
+        namesDisplay = {},
+        namesGain = {},
+        namesMute = {},
     }
     for _, comp in pairs(Component.GetComponents()) do
         if comp.Type == compType.callSync then
-            table.insert(namesTable.CallSyncNames, comp.Name)
+            table.insert(namesTable.namesCallSync, comp.Name)
         elseif comp.Type == compType.videoBridge then
-            table.insert(namesTable.VideoBridgeNames, comp.Name)
+            table.insert(namesTable.namesVideoBridge, comp.Name)
         elseif comp.Type == compType.displays then
-            table.insert(namesTable.DisplayNames, comp.Name)
+            table.insert(namesTable.namesDisplay, comp.Name)
         elseif comp.Type == compType.gains then
-            table.insert(namesTable.GainNames, comp.Name)
+            table.insert(namesTable.namesGain, comp.Name)
         elseif comp.Type == compType.systemMute then
-            table.insert(namesTable.MuteNames, comp.Name)
+            table.insert(namesTable.namesMute, comp.Name)
         elseif comp.Type == compType.camACPR then
-            table.insert(namesTable.CamACPRNames, comp.Name)
+            table.insert(namesTable.namesCamACPR, comp.Name)
         end
     end
     for _, list in pairs(namesTable) do
         table.sort(list)
         table.insert(list, SystemAutomationController.clearString)
     end
-    if controls.compCallSync then controls.compCallSync.Choices = namesTable.CallSyncNames end
+    if controls.compCallSync then controls.compCallSync.Choices = namesTable.namesCallSync end
     if controls.compVideoBridge then 
         for _, ctl in ipairs(getControlArray(controls.compVideoBridge)) do 
-            ctl.Choices = namesTable.VideoBridgeNames 
+            ctl.Choices = namesTable.namesVideoBridge 
         end 
     end
-    if controls.compSystemMute then controls.compSystemMute.Choices = namesTable.MuteNames end
-    if controls.compACPR then controls.compACPR.Choices = namesTable.CamACPRNames end
-    if controls.compGains then for _, ctl in ipairs(controls.compGains) do ctl.Choices = namesTable.GainNames end end
-    if controls.devDisplays then for _, ctl in ipairs(controls.devDisplays) do ctl.Choices = namesTable.DisplayNames end end
+    if controls.compSystemMute then controls.compSystemMute.Choices = namesTable.namesMute end
+    if controls.compACPR then controls.compACPR.Choices = namesTable.namesCamACPR end
+    if controls.compGains then for _, ctl in ipairs(controls.compGains) do ctl.Choices = namesTable.namesGain end end
+    if controls.devDisplays then for _, ctl in ipairs(controls.devDisplays) do ctl.Choices = namesTable.namesDisplay end end
 end
 
 ----------------[ UI/Component Status Handling ]----------------
