@@ -1,7 +1,7 @@
 --[[ 
     Divisible Space Camera Controller - Modular/Refactored Version
     Author: Nikolas Smith, Q-SYS (Based on Single Room Refactor Patterns)
-    Version: 3.0 | Date: 2025-01-27
+    Version: 3.0 | Date: 2025-09-04
     Firmware Req: 10.0.0
     Notes:
     - Refactored per Lua Refactoring Prompt (event-driven, OOP modular)
@@ -153,11 +153,11 @@ function CameraModule:getCamerasForRoom(room)
     local devCams = self.controller.components.devCams
     
     if room == "A" then
-        return {devCams[1], devCams[3]}  -- Cam01, Cam03
+        return {devCams[1], devCams[3]}  -- Cam-01, Cam-03
     elseif room == "B" then
-        return {devCams[2], devCams[4]}  -- Cam02, Cam04
+        return {devCams[2], devCams[4]}  -- Cam-02, Cam-04
     elseif room == "Combined" then
-        return {devCams[1], devCams[2], devCams[3], devCams[4]}  -- All cameras
+        return {devCams[1], devCams[2], devCams[3], devCams[4]}  -- All cameras (Cam-01, Cam-02, Cam-03, Cam-04)
     end
     return {}
 end
@@ -581,10 +581,10 @@ local defaultConfig = {
 }
 
 local cameraLabels = {
-    ["1"] = "Cam01", -- Room A
-    ["2"] = "Cam02", -- Room B
-    ["3"] = "Cam03", -- Room A
-    ["4"] = "Cam04"  -- Room B
+    ["1"] = "Cam-01", -- Room A
+    ["2"] = "Cam-03", -- Room B
+    ["3"] = "Cam-02", -- Room A
+    ["4"] = "Cam-04"  -- Room B
 }
 
 SkaarhojPTZControllerMultiRoom.componentTypes = {
@@ -757,7 +757,7 @@ end
 function SkaarhojPTZControllerMultiRoom:setDevCamComponent(idx)
     if not controls.compdevCams or not controls.compdevCams[idx] then return end
     
-    local labels = { [1]="Cam01", [2]="Cam02", [3]="Cam03", [4]="Cam04" }
+    local labels = { [1]="Cam-01", [2]="Cam-03", [3]="Cam-02", [4]="Cam-04" }
     self.components.devCams[idx] = self:setComponent(controls.compdevCams[idx], labels[idx])
 end
 
