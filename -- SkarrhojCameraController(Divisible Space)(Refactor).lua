@@ -437,6 +437,8 @@ function HookStateModule:handleRoomAHookState(isOffHook)
             self.controller.ptzModule:disableRoomAPC()
             self.controller.cameraModule:setPrivacy("A", true)
         end
+        -- Ensure Button8 state is updated directly
+        self:updatePTZHookFeedback(isOffHook, nil)
         return
     end
     
@@ -466,6 +468,9 @@ function HookStateModule:handleRoomAHookState(isOffHook)
             self.controller.cameraModule:setPrivacy("A", true)
         end
     end
+    
+    -- Ensure Button8 state is updated directly after all logic
+    self:updatePTZHookFeedback(isOffHook, nil)
 end
 
 function HookStateModule:handleRoomBHookState(isOffHook)
@@ -479,6 +484,8 @@ function HookStateModule:handleRoomBHookState(isOffHook)
             self.controller.ptzModule:disableRoomBPC()
             self.controller.cameraModule:setPrivacy("B", true)
         end
+        -- Ensure Button9 state is updated directly
+        self:updatePTZHookFeedback(nil, isOffHook)
         return
     end
     
@@ -508,6 +515,9 @@ function HookStateModule:handleRoomBHookState(isOffHook)
             self.controller.cameraModule:setPrivacy("B", true)
         end
     end
+    
+    -- Ensure Button9 state is updated directly after all logic
+    self:updatePTZHookFeedback(nil, isOffHook)
 end
 
 function HookStateModule:handleSystemPowerOff()
@@ -519,6 +529,33 @@ function HookStateModule:handleSystemPowerOff()
     end
     if self.controller.components.skaarhojPTZController then 
         self.controller:safeComponentAccess(self.controller.components.skaarhojPTZController, "Disable", "set", true) 
+    end
+end
+
+function HookStateModule:updatePTZHookFeedback(roomA_isOffHook, roomB_isOffHook)
+    local ptz = self.controller.components.skaarhojPTZController
+    if not ptz then return end
+    
+    -- Update Button8 (Room A PC) based on Room A hook state
+    if roomA_isOffHook ~= nil then
+        local btn8Color = roomA_isOffHook and self.controller.config.buttonColors.warmWhite or self.controller.config.buttonColors.buttonOff
+        local btn8Text = roomA_isOffHook and "Send to PC A" or ""
+        self.controller:safeComponentAccess(ptz, "Button8.color", "setString", btn8Color)
+        self.controller:safeComponentAccess(ptz, "Button8.headerText", "setString", btn8Text)
+        if not roomA_isOffHook then
+            self.controller:safeComponentAccess(ptz, "Button8.controlLink", "setString", "None")
+        end
+    end
+    
+    -- Update Button9 (Room B PC) based on Room B hook state  
+    if roomB_isOffHook ~= nil then
+        local btn9Color = roomB_isOffHook and self.controller.config.buttonColors.warmWhite or self.controller.config.buttonColors.buttonOff
+        local btn9Text = roomB_isOffHook and "Send to PC B" or ""
+        self.controller:safeComponentAccess(ptz, "Button9.color", "setString", btn9Color)
+        self.controller:safeComponentAccess(ptz, "Button9.headerText", "setString", btn9Text)
+        if not roomB_isOffHook then
+            self.controller:safeComponentAccess(ptz, "Button9.controlLink", "setString", "None")
+        end
     end
 end
 
