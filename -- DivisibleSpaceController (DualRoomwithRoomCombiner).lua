@@ -1,419 +1,81 @@
 --[[
-  DivisibleSpaceController - Dual Room Divisible Space Controller
-  Author: Nikolas Smith (AI Optimized/Q-SYS Best Practices)
-  Date: 2025-07-29
-  Version: 1.0 - Refactored with Component Management Pattern
+    DivisibleSpaceController - Dual Room Divisible Space Controller (Refactored)
+    Author: Nikolas Smith, Q-SYS
+    Version: 2.0 | Date: 2025-01-27
+    Firmware Req: 10.0.0
+    Notes:
+    - Refactored per Lua Refactoring Prompt (event-driven, OOP modular).
+    - All event registration is DRY and centralized using control/event maps.
+    - Each logical domain is its own class; orchestrator is thin.
+    - Debug/config standardized, all validation centralized.
 ]]
 
------------------------------[ Control References ]-----------------------------
-local controlMap = {
-    roomName            = Controls.roomName,
-    txtStatus           = Controls.txtStatus,
-    btnCombine          = Controls.btnCombine,
-    partitionSensor     = Controls.partitionSensor,
-    compRoomCombiner    = Controls.compRoomCombiner,
-    txtRoomState        = Controls.txtRoomState,
-    compRoomControls    = Controls.compRoomControls,
+-------------------[ Control References ]-------------------
+local controls = {
+    roomName = Controls.roomName,
+    txtStatus = Controls.txtStatus,
+    btnCombine = Controls.btnCombine,
+    partitionSensor = Controls.partitionSensor,
+    compRoomCombiner = Controls.compRoomCombiner,
+    txtRoomState = Controls.txtRoomState,
+    compRoomControls = Controls.compRoomControls,
 }
 
-----------------------------[ Class Definition ]----------------------------
-local DivisibleSpaceController = {}
-DivisibleSpaceController.__index = DivisibleSpaceController
+local function validateControls()
+    local missing = {}
+    for k, v in pairs({ roomName = controls.roomName, txtStatus = controls.txtStatus }) do
+        if not v then table.insert(missing, k) end
+    end
+    if #missing > 0 then
+        print("ERROR: Missing required controls: " .. table.concat(missing, ", "))
+        return false
+    end
+    return true
+end
 
-function DivisibleSpaceController.new(config)
-    local self = setmetatable({}, DivisibleSpaceController)
-    self.controls = config.controls
-    self.debugging = config.debugging or false
-    self.clearString = "[Clear]"
+-------------------[ Utility Functions ]-------------------
+local function setProp(ctrl, prop, val)
+    if ctrl then ctrl[prop] = val end
+end
 
-    self.componentTypes = {
-        roomCombiner = "room_combiner",
-        roomControls = "device_controller_script"
-    }
-    
-    -- Initialize components table for Component Management pattern
-    self.components = {
-        roomCombiner = nil,
-        roomControls = nil,
-        invalid = {}
-    }
-    
-    self.state = {
-        isCombined = false,
-        selectedRoomCombiner = nil,
-        availableRoomCombiners = {}
-    }
-    self.config = {
-        wallStates = config.wallStates or {
-            "wall.1.open",
-            "wall.3.open"
-        },
-        controlColors = { white = 'White', pink = 'Pink', off = 'Off' },
-    }
-    self:_validateControls()
-    self:discoverComponents()
-    self:getComponentNames()
-    self:setupComponents()
-    self:_wireEventHandlers()
-    self:checkStatus()
+local function bind(ctrl, handler)
+    if ctrl then ctrl.EventHandler = handler end
+end
+
+-------------------[ Base Module Class ]------------------
+local BaseModule = {}; BaseModule.__index = BaseModule
+function BaseModule.new(controller, name)
+    local self = setmetatable({}, BaseModule)
+    self.controller = controller; self.name = name or "Module"
     return self
 end
-
-function DivisibleSpaceController:_validateControls()
-    for name, ctl in pairs(self.controls) do
-        if not ctl then error("Missing required control: " .. name) end
-    end
+function BaseModule:debug(msg)
+    self.controller:debugPrint("[" .. self.name .. "] " .. msg)
 end
+function BaseModule:cleanup() self:debug("Cleanup complete") end
 
-function DivisibleSpaceController:debugPrint(msg)
-    if self.debugging then print("[DivisibleSpace Debug] " .. tostring(msg)) end
+-------------------[ Room Combiner Module ]------------------------
+local RoomCombinerModule = setmetatable({}, BaseModule); RoomCombinerModule.__index = RoomCombinerModule
+function RoomCombinerModule.new(controller)
+    local self = BaseModule.new(controller, "RoomCombiner")
+    setmetatable(self, RoomCombinerModule)
+    return self
 end
-
-----------------------------[ Safe Component Access ]----------------------------
-function DivisibleSpaceController:safeComponentAccess(component, control, action, value)
-    local success, result = pcall(function()
-        if component and component[control] then
-            if action == "set" then
-                component[control].Boolean = value
-                return true
-            elseif action == "setPosition" then
-                component[control].Position = value
-                return true
-            elseif action == "setString" then
-                component[control].String = value
-                return true
-            elseif action == "setValue" then
-                component[control].Value = value
-                return true
-            elseif action == "trigger" then
-                component[control]:Trigger()
-                return true
-            elseif action == "get" then
-                return component[control].Boolean
-            elseif action == "getPosition" then
-                return component[control].Position
-            elseif action == "getString" then
-                return component[control].String
-            elseif action == "getValue" then
-                return component[control].Value
-            end
-        end
-        return false
-    end)
-    
-    if not success then
-        self:debugPrint("Component access error: " .. tostring(result))
-        return false
-    end
-    return result
-end
-
-----------------------------[ Component Discovery ]----------------------------
-function DivisibleSpaceController:discoverComponents()
-    local namesTable = {
-        RoomControlsNames = {}, 
-        RoomCombinerNames = {},
-        MXANames = {},
-    }
-
-    for _, comp in pairs(Component.GetComponents()) do
-        if comp.Type == self.componentTypes.roomCombiner and string.match(comp.Name, "^compRoomCombiner") then
-            table.insert(namesTable.RoomCombinerNames, comp.Name)
-        elseif comp.Type == self.componentTypes.mxaDevices then
-            table.insert(namesTable.MXANames, comp.Name)
-        elseif comp.Type == self.componentTypes.roomControls and string.match(comp.Name, "^compRoomControls") then
-            table.insert(namesTable.RoomControlsNames, comp.Name)
-        end
-    end
-
-    self:debugPrint(string.format("Discovery complete - Room Combiners: %d", #self.state.availableRoomCombiners))
-    
-    -- Debug: List available controls
-    if self.debugging and #self.state.availableRoomCombiners > 0 then
-        for _, combiner in ipairs(self.state.availableRoomCombiners) do
-            self:debugPrint("Available controls for " .. combiner.name .. ":")
-            local controls = Component.GetControls(combiner.name)
-            for _, ctrl in ipairs(controls) do
-                self:debugPrint("  - " .. ctrl.Name)
-            end
-        end
-    end
-end
-
-
------------------[ Component Management ]-------------------
-function DivisibleSpaceController:setComponent(ctrl, componentType)
-    if not ctrl then
-        if self.debugging then self:debugPrint("Control is nil for: " .. componentType) end
-        return nil
-    end
-    
-    local componentName = ctrl.String
-    
-    if componentName == "" then
-        self:setComponentValid(componentType)
-        ctrl.Color = self.config.controlColors.white
-        return nil
-    elseif componentName == self.clearString then
-        ctrl.String = ""
-        ctrl.Color = self.config.controlColors.white
-        self:setComponentValid(componentType)
-        return nil
-    elseif #Component.GetControls(Component.New(componentName)) < 1 then
-        ctrl.String = "[Invalid Component Selected]"
-        ctrl.Color = self.config.controlColors.pink
-        self:setComponentInvalid(componentType)
-        return nil
-    else
-        ctrl.Color = self.config.controlColors.white
-        self:setComponentValid(componentType)
-        return Component.New(componentName)
-    end
-end
-
-function DivisibleSpaceController:setComponentInvalid(componentType)
-    self.components.invalid[componentType] = true
-    self:updateStatus()
-end
-
-function DivisibleSpaceController:setComponentValid(componentType)
-    self.components.invalid[componentType] = false
-    self:updateStatus()
-end
-
-function DivisibleSpaceController:updateStatus()
-    if Controls.txtStatus then
-        for _, v in pairs(self.components.invalid) do
-            if v == true then
-                Controls.txtStatus.String = "Invalid Components"
-                Controls.txtStatus.Value = 1
-                return
-            end
-        end
-        Controls.txtStatus.String = "OK"
-        Controls.txtStatus.Value = 0
-    end
-end
-
-----------------------------[ Component Discovery ]----------------------------
-function DivisibleSpaceController:discoverComponents()
-    self.state.availableRoomCombiners = {}
-
-    for _, comp in pairs(Component.GetComponents()) do
-        if comp.Type == self.componentTypes.roomCombiner and string.match(comp.Name, "^compRoomCombiner") then
-            table.insert(self.state.availableRoomCombiners, { name = comp.Name, component = comp })
-        end
-    end
-
-    self:debugPrint(string.format("Discovery complete - Room Combiners: %d", #self.state.availableRoomCombiners))
-end
-
-----------------------------[ Component Names Setup ]----------------------------
-function DivisibleSpaceController:getComponentNames()
-    local namesTable = {
-        RoomControlsNames = {}, 
-        RoomCombinerNames = {}
-    }
-
-    -- Single pass through all components
-    for _, comp in pairs(Component.GetComponents()) do
-        if comp.Type == self.componentTypes.roomCombiner and string.match(comp.Name, "^compRoomCombiner") then
-            table.insert(namesTable.RoomCombinerNames, comp.Name)
-        elseif comp.Type == self.componentTypes.roomControls and string.match(comp.Name, "^compRoomControls") then
-            table.insert(namesTable.RoomControlsNames, comp.Name)
-        end
-    end
-
-    -- Sort and add clear option in single pass
-    for _, list in pairs(namesTable) do
-        table.sort(list)
-        table.insert(list, self.clearString)
-    end
-
-    -- Direct assignment to controls
-    if self.controls.compRoomCombiner then 
-        self.controls.compRoomCombiner.Choices = namesTable.RoomCombinerNames 
-    end
-    
-    if self.controls.compRoomControls then 
-        self.controls.compRoomControls.Choices = namesTable.RoomControlsNames 
-    end
-end
-
-----------------------------[ Component Setup ]----------------------------
-function DivisibleSpaceController:setupComponents()
-    self:setupRoomCombinerComponent()
-    self:setupRoomControlsComponent()
-end
-
-function DivisibleSpaceController:setupRoomCombinerComponent()
-    if self.controls.compRoomCombiner then
-        self.components.roomCombiner = self:setComponent(self.controls.compRoomCombiner, "Room Combiner")
-        if self.components.roomCombiner then
-            self:registerRoomCombinerEventHandlers()
-        end
-    end
-end
-
-function DivisibleSpaceController:setupRoomControlsComponent()
-    if self.controls.compRoomControls then
-        self.components.roomControls = self:setComponent(self.controls.compRoomControls, "Room Controls")
-        if self.components.roomControls then
-            self:registerRoomControlsEventHandlers()
-        end
-    end
-end
-
-
-
-----------------------------[ Event Handlers ]----------------------------
-function DivisibleSpaceController:_wireEventHandlers()
-    self:setupButtonHandlers()
-    self:setupSensorHandlers()
-    self:setupComponentChangeHandlers()
-end
-
-function DivisibleSpaceController:setupButtonHandlers()
-    local btnCombine = self.controls.btnCombine
-    if btnCombine then
-        btnCombine.EventHandler = function(ctl)
-            -- Prevent redundant updates if state hasn't changed
-            if self.state.isCombined ~= ctl.Boolean then
-                self:SetCombinedRoomState(ctl.Boolean)
-            end
-        end
-    end
-end
-
-function DivisibleSpaceController:setupSensorHandlers()
-    local sensor = self.controls.partitionSensor
-    if sensor then
-        sensor.EventHandler = function(ctl)
-            local newState = not ctl.Boolean
-            -- Prevent redundant updates if state hasn't changed
-            if self.state.isCombined ~= newState then
-                self:SetCombinedRoomState(newState)
-            end
-        end
-    end
-end
-
-function DivisibleSpaceController:setupComponentChangeHandlers()
-    if self.controls.compRoomCombiner then
-        self.controls.compRoomCombiner.EventHandler = function() 
-            self:setupRoomCombinerComponent()
-        end
-    end
-    if self.controls.compRoomControls then
-        self.controls.compRoomControls.EventHandler = function() 
-            self:setupRoomControlsComponent()
-        end
-    end
-end
-
-function DivisibleSpaceController:registerRoomCombinerEventHandlers()
-    local roomCombiner = self.components.roomCombiner
-    if not roomCombiner then return end
-    
-    -- Update selected room combiner when component is set
-    self.state.selectedRoomCombiner = self.controls.compRoomCombiner.String
-    if self.debugging then 
-        self:debugPrint("Room Combiner component set: " .. tostring(self.state.selectedRoomCombiner))
-    end
-end
-
-function DivisibleSpaceController:registerRoomControlsEventHandlers()
-    local roomControls = self.components.roomControls
-    if not roomControls then return end
-    
-    if self.debugging then 
-        self:debugPrint("Room Controls component set")
-    end
-end
-
-----------------------------[ Core Logic ]----------------------------
-function DivisibleSpaceController:updateRoomCombinerState(newState)
-    local combiner = self.components.roomCombiner
+function RoomCombinerModule:setWallStates(combined)
+    local combiner = self.controller.components.roomCombiner
     if not combiner then 
-        self:debugPrint("No room combiner component available for state update")
+        self:debug("No room combiner component available for state update")
         return 
     end
     
-    for _, wallState in ipairs(self.config.wallStates) do
-        if combiner[wallState] then
-            combiner[wallState].Boolean = newState
-            self:debugPrint("Set wall state '"..wallState.."' to: "..tostring(newState))
-        else
-            self:debugPrint("Warning: Wall state control '"..wallState.."' not found")
-        end
+    for _, wallState in ipairs(self.controller.config.wallStates) do
+        self.controller:safeComponentAccess(combiner, wallState, "set", combined)
+        self:debug("Set wall state '" .. wallState .. "' to: " .. tostring(combined))
     end
 end
-
-function DivisibleSpaceController:updateSystemState(newState)
-    self.state.isCombined = newState
-    
-    -- Update UI controls with error protection
-    if self.controls.btnCombine then 
-        local success = pcall(function() self.controls.btnCombine.Boolean = newState end)
-        if not success then
-            self:debugPrint("Warning: Failed to update btnCombine.Boolean")
-        end
-    end
-    
-    if self.controls.txtRoomState then
-        local success = pcall(function() 
-            self.controls.txtRoomState.String = newState and "Combined" or "Separated" 
-        end)
-        if not success then
-            self:debugPrint("Warning: Failed to update txtRoomState.String")
-        end
-    end
-    
-    self:updateRoomCombinerState(newState)
-    self:checkStatus()
-end
-
-----------------------------[ Status Management ]----------------------------
-function DivisibleSpaceController:checkStatus()
-    local status, hasError = "OK", false
-    local statusDetails = {}
-
-    if #self.state.availableRoomCombiners == 0 then
-        status, hasError = "No Room Combiners Found", true
-        table.insert(statusDetails, "Add Room Combiner component to design")
-    else
-        table.insert(statusDetails, "Room Combiners: "..#self.state.availableRoomCombiners)
-        if self.components.roomCombiner then
-            local isCombined, stateInfo = self:GetRoomCombinerState()
-            if isCombined ~= nil then
-                table.insert(statusDetails, "Room Combiner State: "..(isCombined and "Combined" or "Separated"))
-                table.insert(statusDetails, "State Details: "..stateInfo)
-            else
-                table.insert(statusDetails, "Room Combiner State: Unknown ("..(stateInfo or "")..")")
-            end
-        end
-    end
-    
-    if self.controls.txtStatus then
-        self.controls.txtStatus.String = status
-        self.controls.txtStatus.Value = hasError and 1 or 0
-    end
-    
-    self:debugPrint("Status: "..status)
-    for _, detail in ipairs(statusDetails) do self:debugPrint("  "..detail) end
-end
-
-----------------------------[ API Methods ]----------------------------
-function DivisibleSpaceController:SetCombinedRoomState(combined)
-    self:updateSystemState(combined)
-end
-
-function DivisibleSpaceController:GetCombinedRoomState()
-    return self.state.isCombined
-end
-
-function DivisibleSpaceController:GetRoomCombinerState()
-    if not self.components.roomCombiner or not self.config.wallStates then 
+function RoomCombinerModule:getWallStates()
+    local combiner = self.controller.components.roomCombiner
+    if not combiner or not self.controller.config.wallStates then 
         return nil, "No Room Combiner or wallStates configured" 
     end
 
@@ -421,25 +83,19 @@ function DivisibleSpaceController:GetRoomCombinerState()
     local allOpen = true
     local allClosed = true
     
-    for _, wallCtlName in ipairs(self.config.wallStates) do
-        local wallControl = self.components.roomCombiner[wallCtlName]
-        if wallControl then
-            local wallState = wallControl.Boolean
+    for _, wallCtlName in ipairs(self.controller.config.wallStates) do
+        local wallState = self.controller:safeComponentAccess(combiner, wallCtlName, "get")
+        if wallState ~= nil then
             wallStates[wallCtlName] = wallState and "Open" or "Closed"
-            if wallState then
-                allClosed = false
-            else
-                allOpen = false
-            end
+            if wallState then allClosed = false else allOpen = false end
         else
             wallStates[wallCtlName] = "Unknown (control not found)"
-            allOpen = false
-            allClosed = false
+            allOpen = false; allClosed = false
         end
     end
     
     local isCombined = allOpen
-    local stateInfo = "Wall states: "..table.concat(
+    local stateInfo = "Wall states: " .. table.concat(
         (function()
             local t = {}
             for k,v in pairs(wallStates) do table.insert(t, k..":"..v) end
@@ -449,13 +105,228 @@ function DivisibleSpaceController:GetRoomCombinerState()
     return isCombined, stateInfo
 end
 
-function DivisibleSpaceController:GetAvailableComponents()
-    return {
-        roomCombiners = self.state.availableRoomCombiners
-    }
+-------------------[ Sensor Module ]------------------------
+local SensorModule = setmetatable({}, BaseModule); SensorModule.__index = SensorModule
+function SensorModule.new(controller)
+    local self = BaseModule.new(controller, "Sensor")
+    setmetatable(self, SensorModule)
+    return self
+end
+function SensorModule:handleSensorChange(state)
+    -- Partition sensor logic: closed sensor = combined room
+    local combinedState = not state
+    self:debug("Sensor state changed to: " .. tostring(state) .. " (combined: " .. tostring(combinedState) .. ")")
+    self.controller:setCombinedRoomState(combinedState)
 end
 
-function DivisibleSpaceController:SetWallStateControls(wallStateNames)
+-------------------[ State Management Module ]------------------------
+local StateModule = setmetatable({}, BaseModule); StateModule.__index = StateModule
+function StateModule.new(controller)
+    local self = BaseModule.new(controller, "StateManagement")
+    setmetatable(self, StateModule)
+    return self
+end
+function StateModule:updateSystemState(newState)
+    -- Guard clause - prevent redundant updates
+    if self.controller.state.isCombined == newState then return end
+    
+    self.controller.state.isCombined = newState
+    self:updateUI(newState)
+    self.controller.roomCombinerModule:setWallStates(newState)
+    self.controller:checkStatus()
+    self:debug("System state updated to: " .. (newState and "Combined" or "Separated"))
+end
+function StateModule:updateUI(newState)
+    setProp(controls.btnCombine, "Boolean", newState)
+    setProp(controls.txtRoomState, "String", newState and "Combined" or "Separated")
+end
+
+-------------------[ DivisibleSpaceController (The Orchestrator) ]-------------------
+local DivisibleSpaceController = {}
+DivisibleSpaceController.__index = DivisibleSpaceController
+DivisibleSpaceController.clearString = "[Clear]"
+DivisibleSpaceController.componentTypes = {
+    roomCombiner = "room_combiner",
+    roomControls = "device_controller_script"
+}
+
+function DivisibleSpaceController.new(roomName, config)
+    local self = setmetatable({}, DivisibleSpaceController)
+    self.roomName = roomName or "Default Room"
+    self.debugging = config.debugging ~= false
+    self.state = { isCombined = false, availableRoomCombiners = {} }
+    self.config = config
+    self.components = {
+        roomCombiner = nil, roomControls = nil, invalid = {}
+    }
+    
+    -- Initialize modules
+    self.roomCombinerModule = RoomCombinerModule.new(self)
+    self.sensorModule = SensorModule.new(self)
+    self.stateModule = StateModule.new(self)
+    
+    return self
+end
+
+-----------------[ Debug Helper ]----------------------
+function DivisibleSpaceController:debugPrint(str)
+    if self.debugging then print("["..self.roomName.." Debug] "..str) end
+end
+
+------------------[ Component Utility Helpers ]---------------------
+function DivisibleSpaceController:safeComponentAccess(component, control, action, value)
+    if not component or not component[control] then return false end
+    local success, result = pcall(function()
+        if      action == "set"         then component[control].Boolean = value; return true
+        elseif  action == "setPosition" then component[control].Position = value; return true
+        elseif  action == "setString"   then component[control].String = value; return true
+        elseif  action == "setValue"    then component[control].Value = value; return true
+        elseif  action == "trigger"     then component[control]:Trigger(); return true
+        elseif  action == "get"         then return component[control].Boolean
+        elseif  action == "getPosition" then return component[control].Position
+        elseif  action == "getString"   then return component[control].String
+        elseif  action == "getValue"    then return component[control].Value end
+        return false
+    end)
+    if not success then self:debugPrint("Component access error: "..tostring(result)); return false end
+    return result
+end
+
+------------------[ Event Handler Mapping/Registration ]----------------------
+function DivisibleSpaceController:registerEventHandlers()
+    local eventMap = {
+        btnCombine = function(ctl) self:setCombinedRoomState(ctl.Boolean) end,
+        partitionSensor = function(ctl) self.sensorModule:handleSensorChange(ctl.Boolean) end,
+        compRoomCombiner = function() self:setRoomCombinerComponent() end,
+        compRoomControls = function() self:setRoomControlsComponent() end,
+        roomName = function()
+            local fmt = "[" .. controls.roomName.String .. "]"; self.roomName = fmt
+            self:debugPrint("Room name updated: " .. fmt)
+        end
+    }
+    for k, fn in pairs(eventMap) do bind(controls[k], fn) end
+end
+
+----------------[ UI/Component Status Handling ]----------------
+function DivisibleSpaceController:setComponent(ctrl, componentType)
+    if not ctrl then return nil end
+    local componentName = ctrl.String
+    
+    -- Guard clauses with early returns
+    if not componentName or componentName == "" then
+        ctrl.Color = "white"
+        self:setComponentValid(componentType)
+        return nil
+    end
+    
+    if componentName == self.clearString then
+        ctrl.String = ""
+        ctrl.Color = "white"
+        self:setComponentValid(componentType)
+        return nil
+    end
+    
+    local newComponent = Component.New(componentName)
+    if #Component.GetControls(newComponent) < 1 then
+        ctrl.String = "[Invalid Component Selected]"
+        ctrl.Color = "pink"
+        self:setComponentInvalid(componentType)
+        return nil
+    end
+    
+    self:debugPrint("Setting " .. componentType .. ": {" .. componentName .. "}")
+    ctrl.Color = "white"
+    self:setComponentValid(componentType)
+    return newComponent
+end
+
+function DivisibleSpaceController:setComponentInvalid(componentType)
+    self.components.invalid[componentType] = true
+    self:checkStatus()
+end
+
+function DivisibleSpaceController:setComponentValid(componentType)
+    self.components.invalid[componentType] = false
+    self:checkStatus()
+end
+
+function DivisibleSpaceController:checkStatus()
+    for _, isInvalid in pairs(self.components.invalid) do
+        if isInvalid then
+            setProp(controls.txtStatus, "String", "Invalid Components")
+            setProp(controls.txtStatus, "Value", 1)
+            return
+        end
+    end
+    setProp(controls.txtStatus, "String", "OK")
+    setProp(controls.txtStatus, "Value", 0)
+end
+
+------------------[ Component Discovery / Selection ]------------------
+function DivisibleSpaceController:getComponentNames()
+    local compType = DivisibleSpaceController.componentTypes
+    local namesTable = {
+        RoomCombinerNames = {},
+        RoomControlsNames = {}
+    }
+    
+    -- Single pass through all components with pattern matching
+    for _, comp in pairs(Component.GetComponents()) do
+        if comp.Type == compType.roomCombiner then
+            table.insert(namesTable.RoomCombinerNames, comp.Name)
+        elseif string.match(comp.Name, "^compRoomControls") then
+            -- More flexible: match by name pattern regardless of exact component type
+            table.insert(namesTable.RoomControlsNames, comp.Name)
+            self:debugPrint("Found RoomControls component: " .. comp.Name .. " (Type: " .. comp.Type .. ")")
+        end
+    end
+    
+    for _, list in pairs(namesTable) do
+        table.sort(list)
+        table.insert(list, DivisibleSpaceController.clearString)
+    end
+    
+    if controls.compRoomCombiner then 
+        controls.compRoomCombiner.Choices = namesTable.RoomCombinerNames 
+        self:debugPrint("RoomCombiner choices populated: " .. #namesTable.RoomCombinerNames .. " items")
+    end
+    
+    if controls.compRoomControls then 
+        controls.compRoomControls.Choices = namesTable.RoomControlsNames 
+        self:debugPrint("RoomControls choices populated: " .. #namesTable.RoomControlsNames .. " items")
+    end
+end
+
+------[ Component Setup/Assignment ]------
+function DivisibleSpaceController:setRoomCombinerComponent()
+    self.components.roomCombiner = self:setComponent(controls.compRoomCombiner, "Room Combiner")
+    if self.components.roomCombiner then
+        self:debugPrint("Room Combiner component set: " .. controls.compRoomCombiner.String)
+    end
+end
+
+function DivisibleSpaceController:setRoomControlsComponent()
+    self.components.roomControls = self:setComponent(controls.compRoomControls, "Room Controls")
+    if self.components.roomControls then
+        self:debugPrint("Room Controls component set: " .. controls.compRoomControls.String)
+    end
+end
+
+
+----------------------------[ API Methods ]----------------------------
+function DivisibleSpaceController:setCombinedRoomState(combined)
+    self.stateModule:updateSystemState(combined)
+end
+
+function DivisibleSpaceController:getCombinedRoomState()
+    return self.state.isCombined
+end
+
+function DivisibleSpaceController:getRoomCombinerState()
+    return self.roomCombinerModule:getWallStates()
+end
+
+function DivisibleSpaceController:setWallStateControls(wallStateNames)
     if type(wallStateNames) == "table" then
         self.config.wallStates = wallStateNames
         self:debugPrint("Wall state controls updated to: " .. table.concat(wallStateNames, ", "))
@@ -464,94 +335,79 @@ function DivisibleSpaceController:SetWallStateControls(wallStateNames)
     end
 end
 
-function DivisibleSpaceController:GetWallStateControls()
+function DivisibleSpaceController:getWallStateControls()
     return self.config.wallStates
 end
 
-function DivisibleSpaceController:RefreshComponentDiscovery()
-    self.state.selectedRoomCombiner = nil
-    self:discoverComponents()
-    self:setupComponents()
-    self:checkStatus()
+----------------[ Initialization ]--------------------------
+function DivisibleSpaceController:init()
+    self:getComponentNames()
+    
+    -- Initialize components
+    self:setRoomCombinerComponent()
+    self:setRoomControlsComponent()
+    
+    self:debugPrint("DivisibleSpaceController ready.")
 end
 
-----------------------------[ Cleanup ]----------------------------
+----------------[ Cleanup ]--------------------------
 function DivisibleSpaceController:cleanup()
-    -- Clear all event handlers
-    if self.controls.btnCombine then self.controls.btnCombine.EventHandler = nil end
-    if self.controls.partitionSensor then self.controls.partitionSensor.EventHandler = nil end
-    if self.controls.compRoomCombiner then self.controls.compRoomCombiner.EventHandler = nil end
-    if self.controls.compRoomControls then self.controls.compRoomControls.EventHandler = nil end
+    -- Cleanup all modules
+    local modules = { self.roomCombinerModule, self.sensorModule, self.stateModule }
+    for _, module in ipairs(modules) do
+        if module and module.cleanup then module:cleanup() end
+    end
     
-    -- Reset state
-    self.state = {
-        isCombined = false,
-        selectedRoomCombiner = nil,
-        availableRoomCombiners = {}
-    }
-    
-    -- Reset components
-    self.components = {
-        roomCombiner = nil,
-        roomControls = nil,
-        invalid = {}
-    }
-    
-    -- Clear references
-    self.controls = nil
-    self.config = nil
-    
-    self:debugPrint("Cleanup completed")
+    self:debugPrint("Cleanup completed for " .. self.roomName)
 end
 
-----------------------------[ Factory Function ]----------------------------
-local function createDivisibleSpaceController(config)
-    local success, instance = pcall(function() return DivisibleSpaceController.new(config) end)
-    if not success then
-        print("Failed to initialize DivisibleSpaceController: " .. tostring(instance))
+------------------[ Application Boot / Setup ]------------------
+-- Factory function to create the divisible space controller
+local function createDivisibleSpaceController(roomName, config)
+    local success, controller = pcall(function()
+        local object = DivisibleSpaceController.new(roomName, config)
+        object:registerEventHandlers()
+        object:init()
+        return object
+    end)
+    if success then
+        print("DivisibleSpaceController created for "..roomName)
+        return controller
+    else
+        print("ERROR: Failed to create controller: "..tostring(controller))
         return nil
     end
-    return instance
 end
 
-----------------------------[ Startup ]----------------------------
-local ctrlMap = controlMap
-local controllerConfig = {
-    controls = ctrlMap,
+--------------[ Instance Creation Entry ]----------------
+if not validateControls() then return end
+
+local formattedRoomName = "[" .. (controls.roomName and controls.roomName.String or "Unknown Room") .. "]"
+local config = {
     debugging = true,
     wallStates = {
         "wall.1.open", 
         "wall.3.open"
-    },
-
+    }
 }
 
--- Validate controls
-local hasErrors = false
-for k, v in pairs(ctrlMap) do
-    if not v then
-        print("ERROR: Missing required control: " .. k)
-        hasErrors = true
-    end
-end
+myDivisibleSpaceController = createDivisibleSpaceController(formattedRoomName, config)
 
-if hasErrors then
-    print("ERROR: Control validation failed. Please check your Q-SYS design.")
-    return
-end
-
-if not ctrlMap.roomName or not ctrlMap.roomName.String or ctrlMap.roomName.String == "" then
-    print("ERROR: Controls.roomName.String is empty or invalid!")
-    return
-end
-
-local formattedRoomName = "[" .. ctrlMap.roomName.String .. "]"
-controllerConfig.roomName = formattedRoomName
-
-local myDivisibleSpaceController = createDivisibleSpaceController(controllerConfig)
 if myDivisibleSpaceController then
-    myDivisibleSpaceController:SetCombinedRoomState(false)  -- Ensure walls start closed
+    myDivisibleSpaceController:setCombinedRoomState(false)  -- Ensure walls start closed
     print("DivisibleSpaceController created successfully!")
 else
-    print("ERROR: Failed to create DivisibleSpaceController!")
+    print("ERROR: DivisibleSpaceController NOT created.")
 end
+
+----------------[ PUBLIC API ]--------------------------
+--[[
+Public API:
+    myDivisibleSpaceController:setCombinedRoomState(true|false)
+    myDivisibleSpaceController:getCombinedRoomState()
+    myDivisibleSpaceController:getRoomCombinerState()
+    myDivisibleSpaceController:setWallStateControls({"wall.1.open", "wall.3.open"})
+    myDivisibleSpaceController:getWallStateControls()
+    myDivisibleSpaceController:cleanup()
+]]
+

@@ -316,10 +316,10 @@ function PTZModule:setButtonActive(buttonNumber, active)
     if self.controller.state.buttonStates.activeButton == buttonNumber and active then return end
     if not active and self.controller.state.buttonStates.activeButton ~= buttonNumber then return end
     
-    local headerText = active and "Active" or "Preview Mon"
+    local headerText = active and "Preview Mon" or "Select"
     self:setButtonProperties(buttonNumber, headerText)
     self.controller.state.buttonStates.activeButton = active and buttonNumber or 0
-    self:debug("Set Button"..buttonNumber.." to "..(active and "Active" or "Preview Mon"))
+    self:debug("Set Button"..buttonNumber.." to "..(active and "Preview Mon" or "Select"))
 end
 
 function PTZModule:setCameraLabel(buttonNumber, cameraNumber)
