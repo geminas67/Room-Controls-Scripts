@@ -1,10 +1,16 @@
 --[[
     System Automation Controller (Refactored, Lean OOP, DRY Event Registration)
     Author: Nikolas Smith, Q-SYS
-    Version: 3.4 | Date: 2025-08-27
+    Version: 3.5 | Date: 2025-09-10
     Firmware Req: 10.0.0
     Notes:
-    - Refactored per Lua Refactoring Prompt (event-driven, OOP modular).
+    - UPDATED: Now complies with latest Lua Refactoring Prompt specifications
+    - Enhanced validation: Comprehensive control validation with descriptive error messages
+    - Array normalization: Automatic conversion of single controls to array format
+    - Optimized event registration: Batch event registration using handler maps
+    - Enhanced BaseModule: Improved module pattern with initialization and cleanup
+    - Factory functions: Comprehensive error handling with graceful degradation
+    - Property access optimization: Cached references and redundancy prevention
     - All event registration is DRY and centralized using control/event maps.
     - Each logical domain is its own class; orchestrator is thin.
     - Debug/config standardized, all validation centralized.
@@ -51,15 +57,57 @@ local controls = {
 }
 
 local function validateControls()
+    local required = {
+        -- Core required controls
+        roomName = controls.roomName,
+        txtStatus = controls.txtStatus,
+        btnSystemOnOff = controls.btnSystemOnOff,
+        ledSystemPower = controls.ledSystemPower,
+        -- Essential timers and state controls
+        warmupTime = controls.warmupTime,
+        cooldownTime = controls.cooldownTime,
+        motionTimeout = controls.motionTimeout,
+        motionGracePeriod = controls.motionGracePeriod,
+        -- Volume defaults
+        defaultProgramVolume = controls.defaultProgramVolume,
+        defaultMicVolume = controls.defaultMicVolume,
+        defaultGainVolume = controls.defaultGainVolume
+    }
+    
     local missing = {}
-    for k, v in pairs({ roomName = controls.roomName, txtStatus = controls.txtStatus }) do
-        if not v then table.insert(missing, k) end
+    for name, control in pairs(required) do
+        if not control then 
+            table.insert(missing, name) 
+        end
     end
+    
     if #missing > 0 then
-        print("ERROR: Missing required controls: " .. table.concat(missing, ", "))
+        print("ERROR: SystemAutomationController missing required controls:")
+        for _, name in ipairs(missing) do
+            print("  - " .. name)
+        end
+        print("Controller initialization aborted.")
         return false
     end
+    
     return true
+end
+
+local function normalizeControlArrays()
+    -- Normalize all array controls to consistent structures
+    local arrayControls = {
+        'compVideoBridge', 'compGains', 'devDisplays', 'typeGain', 
+        'btnVideoPrivacy', 'knbVolumeFader', 'btnVolumeMute', 
+        'btnVolumeUp', 'btnVolumeDn'
+    }
+    
+    for _, controlName in ipairs(arrayControls) do
+        local ctrl = controls[controlName]
+        if ctrl and not isArr(ctrl) then
+            -- Convert single control to array format
+            controls[controlName] = { ctrl }
+        end
+    end
 end
 
 -------------------[ Utility Functions ]-------------------
@@ -73,7 +121,8 @@ local function getControlArray(ctrl)
 end
 
 local function setProp(ctrl, prop, val)
-    if ctrl then ctrl[prop] = val end
+    if not ctrl or ctrl[prop] == val then return end  -- Guard against redundant assignments
+    ctrl[prop] = val
 end
 
 local function bind(ctrl, handler)
@@ -90,26 +139,47 @@ end
 
 -------------------[ Base Module Class ]------------------
 local BaseModule = {}; BaseModule.__index = BaseModule
+
 function BaseModule.new(controller, name)
     local self = setmetatable({}, BaseModule)
-    self.controller = controller; self.name = name or "Module"
+    self.controller = controller
+    self.name = name or "Module"
+    self.initialized = false
     return self
 end
+
 function BaseModule:debug(msg)
-    self.controller:debugPrint("[" .. self.name .. "] " .. msg)
+    if self.controller and self.controller.debugPrint then
+        self.controller:debugPrint("[" .. self.name .. "] " .. msg)
+    end
 end
-function BaseModule:cleanup() self:debug("Cleanup complete") end
+
+function BaseModule:safeAccess(component, control, action, value)
+    return self.controller:safeComponentAccess(component, control, action, value)
+end
+
+function BaseModule:init()
+    self.initialized = true
+    self:debug("Module initialized")
+end
+
+function BaseModule:cleanup() 
+    self.initialized = false
+    self:debug("Cleanup complete") 
+end
 
 -------------------[ Audio Module ]------------------------
 local AudioModule = setmetatable({}, BaseModule); AudioModule.__index = AudioModule
+
 function AudioModule.new(controller)
     local self = BaseModule.new(controller, "Audio")
     setmetatable(self, AudioModule)
+    self:init()
     return self
 end
 function AudioModule:setVolume(level, gainIndex)
     local update = function(i, gain)
-        self.controller:safeComponentAccess(gain, "gain", "setPosition", level)
+        self:safeAccess(gain, "gain", "setPosition", level)
         self:updateVolumeVisuals(i)
     end
     if gainIndex then
@@ -122,7 +192,7 @@ function AudioModule:setVolume(level, gainIndex)
 end
 function AudioModule:setMute(state, gainIndex)
     local mute = function(i, gain)
-        self.controller:safeComponentAccess(gain, "mute", "set", state)
+        self:safeAccess(gain, "mute", "set", state)
         self:updateVolumeVisuals(i)
     end
     if gainIndex then
@@ -174,11 +244,15 @@ function AudioModule:getGainCount()
     return count
 end
 function AudioModule:updateVolumeVisuals(i)
+    -- Cache control references to reduce repeated lookups
     local fader = controls.knbVolumeFader and controls.knbVolumeFader[i]
     local mute = controls.btnVolumeMute and controls.btnVolumeMute[i]
     if not fader or not mute then return end
-    setProp(mute, "CssClass", mute.Boolean and "icon-volume_mute" or "icon-volume_off")
-    setProp(fader, "Color", mute.Boolean and "#CCCCCC" or "#0561A5")
+    
+    -- Cache current state to avoid redundant property access
+    local isMuted = mute.Boolean
+    setProp(mute, "CssClass", isMuted and "icon-volume_mute" or "icon-volume_off")
+    setProp(fader, "Color", isMuted and "#CCCCCC" or "#0561A5")
 end
 
 -------------------[ Video Module ]------------------------
@@ -389,45 +463,86 @@ end
 
 ------------------[ Event Handler Mapping/Registration ]----------------------
 function SystemAutomationController:registerEventHandlers()
-    local eventMap = {
-        btnSystemOnOff = function(ctl) if ctl.Boolean then self.powerModule:powerOn() else self.powerModule:powerOff() end end,
-        btnSystemOn    = function() self.powerModule:powerOn() end,
-        btnSystemOff   = function() self.powerModule:powerOff()
-            self.state.motionGraceActive = true; setProp(controls.ledMotionGraceActive, "Boolean", true)
-            self.timers.grace:Start(self.config.gracePeriod) end,
-        btnAudioPrivacy = function(ctl) self.audioModule:setPrivacy(ctl.Boolean) end,
-        roomName = function()
-            local fmt = "[" .. controls.roomName.String .. "]"; self.roomName = fmt
-            self:debugPrint("Room name updated: " .. fmt); self:publishNotification()
-        end,
-        ledMotionIn = function() self.motionModule:checkMotion() end,
-        compCallSync = function() self:setCallSyncComponent() end,
-        compSystemMute = function() self:setSystemMuteComponent() end,
-        compACPR = function() self:setCamACPRComponent() end
-    }
-    for k, fn in pairs(eventMap) do bind(controls[k], fn) end
-    -- Array controls
-    bindArray(controls.btnVideoPrivacy, function(i, ctl) self.videoModule:setPrivacy(ctl.Boolean, i) end)
-    bindArray(controls.knbVolumeFader, function(i, ctl) self.audioModule:setVolume(ctl.Position, i) end)
-    bindArray(controls.btnVolumeMute, function(i, ctl) self.audioModule:setMute(ctl.Boolean, i) end)
-    bindArray(controls.btnVolumeUp, function(i, ctl) self.audioModule:setVolumeUpDown("up", ctl.Boolean, i) end)
-    bindArray(controls.btnVolumeDn, function(i, ctl) self.audioModule:setVolumeUpDown("down", ctl.Boolean, i) end)
-    forEach(controls.compVideoBridge, function(i, ctrl)
-        bind(ctrl, function() self:setVideoBridgeComponent(i) end) end)
-    forEach(controls.compGains, function(i, ctrl)
-        bind(ctrl, function() self:setGainComponent(i) end) end)
-    forEach(controls.devDisplays, function(i, ctrl)
-        bind(ctrl, function() self:setDisplayComponent(i) end) end)
-    forEach(controls.typeGain, function(i, ctrl)
-        if i > 1 then bind(ctrl, function(ctl)
-            self:debugPrint("Gain Type [" .. i .. "] changed to: " .. ctl.String)
-            if self.components.gains[i] then
-                local val = self:getDefaultVolumeForType(ctl.String)
-                self.audioModule:setVolume(val, i)
-                self:debugPrint("Applied default volume (" .. val .. ") to gain index " .. i)
-            end
+    -- Single control event mappings with direct object references
+    local singleEventMap = {
+        { ctrl = controls.btnSystemOnOff, handler = function(ctl) 
+            if ctl.Boolean then self.powerModule:powerOn() else self.powerModule:powerOff() end 
+        end },
+        { ctrl = controls.btnSystemOn, handler = function() self.powerModule:powerOn() end },
+        { ctrl = controls.btnSystemOff, handler = function() 
+            self.powerModule:powerOff()
+            self.state.motionGraceActive = true
+            setProp(controls.ledMotionGraceActive, "Boolean", true)
+            self.timers.grace:Start(self.config.gracePeriod) 
+        end },
+        { ctrl = controls.btnAudioPrivacy, handler = function(ctl) self.audioModule:setPrivacy(ctl.Boolean) end },
+        { ctrl = controls.roomName, handler = function()
+            local fmt = "[" .. controls.roomName.String .. "]"
+            self.roomName = fmt
+            self:debugPrint("Room name updated: " .. fmt)
             self:publishNotification()
-        end) end
+        end },
+        { ctrl = controls.ledMotionIn, handler = function() self.motionModule:checkMotion() end },
+        { ctrl = controls.compCallSync, handler = function() self:setCallSyncComponent() end },
+        { ctrl = controls.compSystemMute, handler = function() self:setSystemMuteComponent() end },
+        { ctrl = controls.compACPR, handler = function() self:setCamACPRComponent() end }
+    }
+    
+    -- Batch register single controls
+    for _, mapping in ipairs(singleEventMap) do
+        bind(mapping.ctrl, mapping.handler)
+    end
+    
+    -- Array control mappings with indexed handlers
+    local arrayEventMap = {
+        { ctrls = controls.btnVideoPrivacy, handler = function(i, ctl) 
+            self.videoModule:setPrivacy(ctl.Boolean, i) 
+        end },
+        { ctrls = controls.knbVolumeFader, handler = function(i, ctl) 
+            self.audioModule:setVolume(ctl.Position, i) 
+        end },
+        { ctrls = controls.btnVolumeMute, handler = function(i, ctl) 
+            self.audioModule:setMute(ctl.Boolean, i) 
+        end },
+        { ctrls = controls.btnVolumeUp, handler = function(i, ctl) 
+            self.audioModule:setVolumeUpDown("up", ctl.Boolean, i) 
+        end },
+        { ctrls = controls.btnVolumeDn, handler = function(i, ctl) 
+            self.audioModule:setVolumeUpDown("down", ctl.Boolean, i) 
+        end }
+    }
+    
+    -- Batch register array controls
+    for _, mapping in ipairs(arrayEventMap) do
+        bindArray(mapping.ctrls, mapping.handler)
+    end
+    
+    -- Component selection handlers (with forEach optimization)
+    local componentMaps = {
+        { ctrls = controls.compVideoBridge, handler = function(i) self:setVideoBridgeComponent(i) end },
+        { ctrls = controls.compGains, handler = function(i) self:setGainComponent(i) end },
+        { ctrls = controls.devDisplays, handler = function(i) self:setDisplayComponent(i) end }
+    }
+    
+    for _, mapping in ipairs(componentMaps) do
+        forEach(mapping.ctrls, function(i, ctrl)
+            bind(ctrl, function() mapping.handler(i) end)
+        end)
+    end
+    
+    -- Special case: typeGain with conditional logic
+    forEach(controls.typeGain, function(i, ctrl)
+        if i > 1 then 
+            bind(ctrl, function(ctl)
+                self:debugPrint("Gain Type [" .. i .. "] changed to: " .. ctl.String)
+                if self.components.gains[i] then
+                    local val = self:getDefaultVolumeForType(ctl.String)
+                    self.audioModule:setVolume(val, i)
+                    self:debugPrint("Applied default volume (" .. val .. ") to gain index " .. i)
+                end
+                self:publishNotification()
+            end) 
+        end
     end)
 end
 
@@ -886,7 +1001,13 @@ function SystemAutomationController:setGainTypeAssignments(roomType)
     
     for i, gainType in ipairs(assignments) do
         if controls.typeGain[i] then
-            controls.typeGain[i].String = gainType
+            if i == 1 then
+                -- First gain control is always Program and should remain disabled
+                controls.typeGain[i].String = "Program"
+                controls.typeGain[i].IsDisabled = true
+            else
+                controls.typeGain[i].String = gainType
+            end
         end
     end
 end
@@ -896,6 +1017,22 @@ function SystemAutomationController:init()
     self.powerModule:enableDisablePowerControls(true)
     self:getComponentNames()
     setProp(controls.txtMotionMode, "Choices", { "Motion On/Off", "Motion Off", "Motion Disabled" })
+    
+    -- Setup typeGain dropdown choices
+    if controls.typeGain then
+        local gainChoices = { "Program", "Mic", "Gain" }
+        for i, gainControl in ipairs(getControlArray(controls.typeGain)) do
+            if gainControl then
+                gainControl.Choices = gainChoices
+                if i == 1 then
+                    -- First gain control is always Program and should be disabled
+                    gainControl.String = "Program"
+                    gainControl.IsDisabled = true
+                end
+            end
+        end
+    end
+    
     self:setGainTypeAssignments()
     
     -- Initialize components
@@ -1005,28 +1142,87 @@ local function getDefaultConfig(roomType)
     return defaults[roomType] or defaults["Default"]
 end
 
--- Factory function to create the system controller
+-- Enhanced factory function with comprehensive error handling
 local function createSystemController(roomName, roomType)
-    local config = getDefaultConfig(roomType)
-    local allConfigs = {
-        ["Conference Room"] = getDefaultConfig("Conference Room"),
-        ["Huddle Room"]     = getDefaultConfig("Huddle Room"),
-        ["Default"]         = getDefaultConfig("Default"),
-        ["Custom Room"]     = getDefaultConfig("Custom Room"),
-        ["User Defined"]    = getDefaultConfig("User Defined")
-    }
+    -- Input validation
+    if not roomName or roomName == "" then
+        print("ERROR: createSystemController requires a valid roomName")
+        return nil
+    end
+    
+    roomType = roomType or "Default"
+    local validRoomTypes = {"Conference Room", "Huddle Room", "Default", "Custom Room", "User Defined"}
+    local isValidType = false
+    for _, validType in ipairs(validRoomTypes) do
+        if roomType == validType then isValidType = true; break end
+    end
+    
+    if not isValidType then
+        print("WARNING: Invalid room type '" .. roomType .. "', defaulting to 'Default'")
+        roomType = "Default"
+    end
+    
+    -- Configuration preparation with error handling
+    local config, allConfigs
+    local configSuccess, configError = pcall(function()
+        config = getDefaultConfig(roomType)
+        allConfigs = {
+            ["Conference Room"] = getDefaultConfig("Conference Room"),
+            ["Huddle Room"]     = getDefaultConfig("Huddle Room"),
+            ["Default"]         = getDefaultConfig("Default"),
+            ["Custom Room"]     = getDefaultConfig("Custom Room"),
+            ["User Defined"]    = getDefaultConfig("User Defined")
+        }
+    end)
+    
+    if not configSuccess then
+        print("ERROR: Failed to load configurations: " .. tostring(configError))
+        return nil
+    end
+    
+    -- Controller creation with detailed error context
     local success, controller = pcall(function()
+        print("Initializing SystemAutomationController for " .. roomName .. " (" .. roomType .. ")")
+        
+        -- Step 1: Create controller object
         local object = SystemAutomationController.new(roomName, config, allConfigs)
+        if not object then error("Controller constructor returned nil") end
+        
+        -- Step 2: Normalize control arrays
+        normalizeControlArrays()
+        
+        -- Step 3: Register event handlers
         object:registerEventHandlers()
+        
+        -- Step 4: Setup configuration selection UI
         object:setupConfigSelection()
+        
+        -- Step 5: Initialize modules and components
         object:init()
+        
         return object
     end)
-    if success then
-        print("SystemAutomationController created for "..roomName)
+    
+    if success and controller then
+        print("✓ SystemAutomationController successfully created for " .. roomName)
+        -- Export globally for external access
+        _G.mySystemController = controller
         return controller
     else
-        print("ERROR: Failed to create controller: "..tostring(controller))
+        local errorMsg = tostring(controller)
+        print("✗ ERROR: SystemAutomationController creation failed")
+        print("  Room: " .. roomName .. " (" .. roomType .. ")")
+        print("  Error: " .. errorMsg)
+        
+        -- Provide graceful degradation guidance
+        if errorMsg:find("Missing required controls") then
+            print("  Suggestion: Check that all required UI controls are properly named and connected")
+        elseif errorMsg:find("Component") then
+            print("  Suggestion: Verify Q-SYS component assignments and naming")
+        else
+            print("  Suggestion: Review script configuration and control mappings")
+        end
+        
         return nil
     end
 end

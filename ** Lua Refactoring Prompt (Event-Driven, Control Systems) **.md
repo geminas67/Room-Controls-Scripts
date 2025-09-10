@@ -62,3 +62,51 @@ Refactor the following Lua code to make it faster and more responsive, with a fo
     - Use `Component.GetComponents()` to dynamically discover and enumerate available system components (in one loop).
     - Populate Combo Boxes or selection lists with dynamic results to keep UI current with actual system state.
     - Never hard-code component types—dynamic queries ensure flexibility and maintainability.
+
+13. **Use State Management Utilities for Dynamic Component Arrays:**
+    - Always create and include a utility function directly within each script to handle state management before populating or batch operating on dynamic arrays/tables that reference components (audio, video, room topology, etc.).
+    - Follow the functional pattern found in successful modular scripts such as SystemAutomationController, which implements its own utility to safely reset and manage component arrays within the script itself—do not require importing shared utilities.
+    - Ensure this local utility function provides proper initialization and cleanup of component references, preventing stale data and maintaining system reliability.
+    - Call this function at the start of any operation that modifies component collections to guarantee a consistent state.
+
+14. **Implement Comprehensive Control Validation:**
+    - Create a `validateControls()` function that checks for required controls before initialization.
+    - Return early from constructor if validation fails to prevent runtime errors.
+    - Use descriptive error messages listing specific missing controls.
+    - Include validation as the first step in any constructor to ensure robust initialization.
+
+15. **Normalize Control Arrays at Initialization:**
+    - Create a `normalizeControlArrays()` function to standardize control structures upfront.
+    - Convert single controls to arrays where array processing is expected (e.g., device collections).
+    - Call normalization early in initialization to optimize subsequent array operations.
+    - Reduce repetitive type checking by ensuring consistent data structures from the start.
+
+16. **Use Efficient Utility Functions with Standard Patterns:**
+    - Implement core utilities: `isArr()`, `getControlArray()`, `setProp()`, `bind()`, `bindArray()`, `forEach()`.
+    - Ensure `setProp()` includes guard logic to prevent redundant property assignments.
+    - Design utilities to work optimally with pre-normalized data structures.
+    - Keep utility functions consistent across all scripts for maintainability.
+
+17. **Implement Batch Event Registration:**
+    - Use handler maps instead of individual event binding calls for devices with multiple controls.
+    - Employ single loops with key-value pairs for registering similar event handlers.
+    - Pass object references directly to avoid double lookups in event registration.
+    - Group related event handlers logically within maps for better organization.
+
+18. **Follow Modular Architecture with BaseModule Pattern:**
+    - Create a `BaseModule` class that provides common functionality (debug logging, controller reference).
+    - Extend BaseModule for domain-specific modules (ComponentModule, DeviceModule, etc.).
+    - Initialize modules within the main controller using dependency injection patterns.
+    - Keep each module focused on a single responsibility (component management, device control, etc.).
+
+19. **Implement Optimized Property Access Patterns:**
+    - Avoid redundant property assignments by checking current values before setting.
+    - Pass references directly between functions to eliminate repeated lookups.
+    - Cache frequently accessed objects at appropriate scopes to reduce traversal overhead.
+    - Use local variables for objects referenced multiple times within the same function.
+
+20. **Use Factory Functions with Enhanced Error Handling:**
+    - Implement factory functions that wrap constructor calls with comprehensive error handling.
+    - Provide clear success/failure messaging with specific error context.
+    - Export both the class and instance globally for external access and multiple instance support.
+    - Include graceful degradation when optional components are unavailable.

@@ -7,11 +7,13 @@
 ]]--
 
 local controls = {
-    compMicBox = Controls.compMicBox,
-    compMicMixer = Controls.compMicMixer,   
-    compCallSync = Controls.compCallSync,
-    compRoomControls = Controls.compRoomControls,
-    txtStatus = Controls.txtStatus,
+    compMicBox          = Controls.compMicBox,
+    compMicMixer        = Controls.compMicMixer,   
+    compCallSync        = Controls.compCallSync,
+    compRoomControls    = Controls.compRoomControls,
+    txtStatus           = Controls.txtStatus,  
+    ledFireAlarm        = Controls.ledFireAlarm,
+    ledSystemPower      = Controls.ledSystemPower,
 }
 
 -----------------[ Class Constructor ]-------------------

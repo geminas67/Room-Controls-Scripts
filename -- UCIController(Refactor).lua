@@ -6,9 +6,12 @@
     Notes:
     - Refactored per Lua Refactoring Prompt (event-driven, OOP modular).
     - All event registration is DRY and centralized using control/event maps.
+    - Added debug logging for each layer function call.
+    - This script is a modified version of the UCIController class that adds enhanced error handling and validation for required controls.
+    - It also adds a check for the System Automation (Room Controls) component and a fallback method if the component is not found.
+    - NEW: Universal video switcher integration supporting NV32, Extron DXP, and other video switchers
     - Each logical domain is its own module; orchestrator is thin.
     - Aligned with SystemAutomationController architecture patterns.
-    - Removed performance anti-patterns and excessive caching.
 ]]
 
 -------------------[ Control References ]-------------------
@@ -20,67 +23,206 @@ local controls = {
     btnNav10 = Controls.btnNav10, btnNav11 = Controls.btnNav11, btnNav12 = Controls.btnNav12,
     
     -- System Controls
-    btnStartSystem = Controls.btnStartSystem,
-    btnNavShutdown = Controls.btnNavShutdown,
-    btnShutdownCancel = Controls.btnShutdownCancel,
-    btnShutdownConfirm = Controls.btnShutdownConfirm,
+    btnStartSystem      = Controls.btnStartSystem,
+    btnNavShutdown      = Controls.btnNavShutdown,
+    btnShutdownCancel   = Controls.btnShutdownCancel,
+    btnShutdownConfirm  = Controls.btnShutdownConfirm,
     
     -- Help Buttons
-    btnHelpLaptop = Controls.btnHelpLaptop,
-    btnHelpPC = Controls.btnHelpPC,
-    btnHelpWireless = Controls.btnHelpWireless,
-    btnHelpRouting = Controls.btnHelpRouting,
-    btnHelpDialer = Controls.btnHelpDialer,
-    btnHelpStreamMusic = Controls.btnHelpStreamMusic,
+    btnHelpLaptop       = Controls.btnHelpLaptop,
+    btnHelpPC           = Controls.btnHelpPC,
+    btnHelpWireless     = Controls.btnHelpWireless,
+    btnHelpRouting      = Controls.btnHelpRouting,
+    btnHelpDialer       = Controls.btnHelpDialer,
+    btnHelpStreamMusic  = Controls.btnHelpStreamMusic,
     
     -- Routing Buttons
     btnRouting01 = Controls.btnRouting01, btnRouting02 = Controls.btnRouting02,
-    btnRouting03 = Controls.btnRouting03, btnRouting04 = Controls.btnRouting04,
-    btnRouting05 = Controls.btnRouting05,
+    btnRouting03 = Controls.btnRouting03, btnRouting04 = Controls.btnRouting04, btnRouting05 = Controls.btnRouting05,
     
     -- Progress Controls
     knbProgressBar = Controls.knbProgressBar,
     txtProgressBar = Controls.txtProgressBar,
     
     -- Pin Inputs
-    pinCallActive = Controls.pinCallActive,
-    pinLEDUSBLaptop = Controls.pinLEDUSBLaptop,
-    pinLEDUSBPC = Controls.pinLEDUSBPC,
-    pinLEDOffHookLaptop = Controls.pinLEDOffHookLaptop,
-    pinLEDOffHookPC = Controls.pinLEDOffHookPC,
-    pinLEDHDMI01Active = Controls.pinLEDHDMI01Active,
-    pinLEDHDMI02Active = Controls.pinLEDHDMI02Active,
-    pinLEDPresetSaved = Controls.pinLEDPresetSaved,
-    pinLEDHDMI01Connect = Controls.pinLEDHDMI01Connect,
-    pinLEDHDMI02Connect = Controls.pinLEDHDMI02Connect,
-    pinLEDACPRBypassActive = Controls.pinLEDACPRBypassActive,
+    pinCallActive           = Controls.pinCallActive,
+    pinLEDUSBLaptop         = Controls.pinLEDUSBLaptop,
+    pinLEDUSBPC             = Controls.pinLEDUSBPC,
+    pinLEDOffHookLaptop     = Controls.pinLEDOffHookLaptop,
+    pinLEDOffHookPC         = Controls.pinLEDOffHookPC,
+    pinLEDHDMI01Active      = Controls.pinLEDHDMI01Active,
+    pinLEDHDMI02Active      = Controls.pinLEDHDMI02Active,
+    pinLEDPresetSaved       = Controls.pinLEDPresetSaved,
+    pinLEDHDMI01Connect     = Controls.pinLEDHDMI01Connect,
+    pinLEDHDMI02Connect     = Controls.pinLEDHDMI02Connect,
+    pinLEDACPRBypassActive  = Controls.pinLEDACPRBypassActive,
     
     -- System State
     ledSystemPower = Controls.ledSystemPower
 }
 
 local function validateControls()
-    local required = { "btnNav01", "btnStartSystem" }
+    -- Core navigation controls
+    local required = {
+        "btnNav01", "btnNav02", "btnNav03", "btnNav04", "btnNav05", "btnNav06",
+        "btnNav07", "btnNav08", "btnNav09", "btnNav10", "btnNav11", "btnNav12",
+        "btnStartSystem", "btnNavShutdown", "btnShutdownCancel", "btnShutdownConfirm"
+    }
+    
+    -- Optional but recommended controls
+    local optional = {
+        "knbProgressBar", "txtProgressBar", "ledSystemPower",
+        "btnHelpLaptop", "btnHelpPC", "btnHelpWireless", "btnHelpRouting",
+        "btnHelpDialer", "btnHelpStreamMusic",
+        "btnRouting01", "btnRouting02", "btnRouting03", "btnRouting04", "btnRouting05"
+    }
+    
     local missing = {}
+    local warnings = {}
+    
+    -- Check required controls
     for _, name in ipairs(required) do
-        if not controls[name] then table.insert(missing, name) end
+        if not controls[name] then
+            table.insert(missing, name)
+        end
     end
+    
+    -- Check optional controls for warnings
+    for _, name in ipairs(optional) do
+        if not controls[name] then
+            table.insert(warnings, name)
+        end
+    end
+    
+    -- Report missing required controls
     if #missing > 0 then
-        print("ERROR: Missing required controls: " .. table.concat(missing, ", "))
+        print("ERROR: UCIController validation failed - Missing required controls:")
+        for _, name in ipairs(missing) do
+            print("  - " .. name)
+        end
         return false
     end
+    
+    -- Report missing optional controls as warnings
+    if #warnings > 0 then
+        print("WARNING: UCIController - Missing optional controls (reduced functionality):")
+        for _, name in ipairs(warnings) do
+            print("  - " .. name)
+        end
+    end
+    
+    print("UCIController validation passed - All required controls found")
     return true
+end
+
+-------------------[ Control Normalization ]---------------
+local function normalizeControlArrays()
+    -- Convert single controls to arrays where array processing is expected
+    local controlsToNormalize = {
+        navButtons = {},
+        routingButtons = {},
+        helpButtons = {},
+        pinInputs = {}
+    }
+    
+    -- Build navigation button array
+    for i = 1, 12 do
+        local btn = controls["btnNav" .. string.format("%02d", i)]
+        if btn then controlsToNormalize.navButtons[i] = btn end
+    end
+    
+    -- Build routing button array
+    for i = 1, 5 do
+        local btn = controls["btnRouting" .. string.format("%02d", i)]
+        if btn then controlsToNormalize.routingButtons[i] = btn end
+    end
+    
+    -- Build help button array
+    local helpButtons = {"btnHelpLaptop", "btnHelpPC", "btnHelpWireless", "btnHelpRouting", "btnHelpDialer", "btnHelpStreamMusic"}
+    for i, name in ipairs(helpButtons) do
+        if controls[name] then controlsToNormalize.helpButtons[i] = controls[name] end
+    end
+    
+    -- Build pin input array  
+    local pinInputs = {"pinCallActive", "pinLEDUSBLaptop", "pinLEDUSBPC", "pinLEDOffHookLaptop", "pinLEDOffHookPC", 
+                      "pinLEDHDMI01Active", "pinLEDHDMI02Active", "pinLEDPresetSaved", "pinLEDHDMI01Connect", 
+                      "pinLEDHDMI02Connect", "pinLEDACPRBypassActive"}
+    for i, name in ipairs(pinInputs) do
+        if controls[name] then controlsToNormalize.pinInputs[i] = controls[name] end
+    end
+    
+    return controlsToNormalize
 end
 
 -------------------[ Utility Functions ]-------------------
 local function isArr(t) return type(t) == "table" and t[1] ~= nil end
 local function getControlArray(ctrl) return isArr(ctrl) and ctrl or (type(ctrl) == "table" and {ctrl} or {}) end
-local function setProp(ctrl, prop, val) if ctrl then ctrl[prop] = val end end
-local function bind(ctrl, handler) if ctrl then ctrl.EventHandler = handler end end
+
+-- Enhanced setProp with guard logic to prevent redundant assignments
+local function setProp(ctrl, prop, val)
+    if not ctrl or not prop then return false end
+    if ctrl[prop] == val then return false end -- Prevent redundant assignment
+    ctrl[prop] = val
+    return true
+end
+
+local function bind(ctrl, handler) 
+    if ctrl and handler then ctrl.EventHandler = handler end 
+end
+
 local function bindArray(ctrls, handler)
     for i, ctrl in ipairs(getControlArray(ctrls)) do 
         bind(ctrl, function(ctl) handler(i, ctl) end) 
     end
+end
+
+-- Enhanced forEach utility for normalized arrays
+local function forEach(arr, fn)
+    if not arr or not fn then return end
+    for i, item in ipairs(arr) do
+        if item then fn(i, item) end
+    end
+end
+
+-------------------[ State Management Utility ]-------------
+local function resetComponentsArray()
+    -- State management utility for dynamic component arrays
+    -- Following SystemAutomationController pattern for consistency
+    local componentState = {
+        videoSwitchers = {},
+        roomControllers = {},
+        audioComponents = {},
+        initialized = false
+    }
+    
+    -- Clear any existing component references
+    for category, components in pairs(componentState) do
+        if type(components) == "table" then
+            for k in pairs(components) do
+                components[k] = nil
+            end
+        end
+    end
+    
+    -- Reinitialize component discovery
+    local availableComponents = Component.GetComponents()
+    if availableComponents then
+        -- Categorize components by type
+        for name, comp in pairs(availableComponents) do
+            if comp.Type then
+                if comp.Type:find("streamer_hdmi_switcher") or comp.Type:find("extron") then
+                    componentState.videoSwitchers[name] = comp
+                elseif comp.Type:find("automation") or comp.Type:find("room") then
+                    componentState.roomControllers[name] = comp
+                elseif comp.Type:find("audio") then
+                    componentState.audioComponents[name] = comp
+                end
+            end
+        end
+    end
+    
+    componentState.initialized = true
+    return componentState
 end
 
 -------------------[ Base Module Class ]-------------------
@@ -121,11 +263,19 @@ function LayerModule:safeSetLayerVisibility(layer, visible, transition)
 end
 
 function LayerModule:updateLayerVisibility(layers, visible, transition)
+    -- Guard clauses with early returns
+    if not layers or #layers == 0 then return end
+    if visible == nil then return end
+    
     for _, layer in ipairs(layers) do
+        if not layer then goto continue end -- Skip nil layers
+        
         local currentState = self.layerStates[layer]
         if not self.controller.isInitialized or currentState ~= visible then
             self:safeSetLayerVisibility(layer, visible, transition)
         end
+        
+        ::continue::
     end
 end
 
@@ -136,16 +286,22 @@ end
 function LayerModule:showLayer()
     -- Hide all layers first
     local layersToHide = {
-        "A01-Alarm", "B01-IncomingCall", "C05-Start", "D01-ShutdownConfirm",
+        "A01-Alarm", 
+        "B01-IncomingCall", 
+        "C05-Start", 
+        "D01-ShutdownConfirm",
         "E01-SystemProgressWarming", "E02-SystemProgressCooling", "E05-SystemProgress",
-        "H01-RoomControls", "I01-CallActive", "I02-HelpLaptop", "I03-HelpPC",
-        "I04-HelpWireless", "I05-HelpRouting", "I06-HelpDialer", "I07-HelpStreamMusic",
-        "J01-ConnectUSBLaptop", "J02-ConnectUSBPC", "J03-ACPRActive", "J04-CamPresetSaved",
-        "J05-CameraControls", "L01-HDMI01Disconnected", "L05-Laptop",
+        "H01-RoomControls", 
+        "I01-CallActive", "I02-HelpLaptop", "I03-HelpPC","I04-HelpWireless", "I05-HelpRouting", "I06-HelpDialer", "I07-HelpStreamMusic",
+        "J01-ConnectUSBLaptop", "J02-ConnectUSBPC", "J03-ACPRActive", "J04-CamPresetSaved","J05-CameraControls", 
+        "L01-HDMI01Disconnected", "L05-Laptop",
         "P01-HDMI02Disconnected", "P05-PC", "W05-Wireless",
-        "R01-Routing-Lobby", "R02-Routing-WTerrace", "R03-Routing-NTerraceWall",
-        "R04-Routing-Garden", "R05-Routing-NTerraceFloor", "R10-Routing",
-        "S05-StreamMusic", "V05-Dialer", "X01-ProgramVolume", "Y01-Navbar", "Z01-Base"
+        "R01-Routing-Lobby", "R02-Routing-WTerrace", "R03-Routing-NTerraceWall","R04-Routing-Garden", "R05-Routing-NTerraceFloor", "R10-Routing",
+        "S05-StreamMusic", 
+        "V05-Dialer", 
+        "X01-ProgramVolume", 
+        "Y01-Navbar", 
+        "Z01-Base"
     }
     
     for _, layer in ipairs(layersToHide) do
@@ -158,31 +314,31 @@ function LayerModule:showLayer()
     local layerConfigs = {
         [self.controller.kLayerAlarm] = {
             showLayers = {"A01-Alarm"},
-            callFunctions = {function() self:hideBaseLayers() end}
+            callLayerFunctions = {function() self:hideBaseLayers() end}
         },
         [self.controller.kLayerIncomingCall] = {
             showLayers = {"B01-IncomingCall"}
         },
         [self.controller.kLayerStart] = {
             showLayers = {"C05-Start"},
-            callFunctions = {function() self:hideBaseLayers() end}
+            callLayerFunctions = {function() self:hideBaseLayers() end}
         },
         [self.controller.kLayerWarming] = {
             showLayers = {"E05-SystemProgress", "E01-SystemProgressWarming"},
-            callFunctions = {function() self:hideBaseLayers() end}
+            callLayerFunctions = {function() self:hideBaseLayers() end}
         },
         [self.controller.kLayerCooling] = {
             showLayers = {"E05-SystemProgress", "E02-SystemProgressCooling"},
-            callFunctions = {function() self:hideBaseLayers() end}
+            callLayerFunctions = {function() self:hideBaseLayers() end}
         },
         [self.controller.kLayerRoomControls] = {
             showLayers = {"H01-RoomControls"},
             hideLayers = {"X01-ProgramVolume"},
-            callFunctions = {function() self.controller.sublayerModule:updateCallActiveState() end}
+            callLayerFunctions = {function() self.controller.sublayerModule:updateCallActiveState() end}
         },
         [self.controller.kLayerLaptop] = {
             showLayers = {"L05-Laptop"},
-            callFunctions = {
+            callLayerFunctions = {
                 function() self.controller.sublayerModule:updateHDMI01State() end,
                 function() self.controller.sublayerModule:updateCameraState() end,
                 function() self.controller.sublayerModule:updatePresetSavedState() end,
@@ -193,7 +349,7 @@ function LayerModule:showLayer()
         },
         [self.controller.kLayerPC] = {
             showLayers = {"P05-PC"},
-            callFunctions = {
+            callLayerFunctions = {
                 function() self.controller.sublayerModule:updateHDMI02State() end,
                 function() self.controller.sublayerModule:updateCameraState() end,
                 function() self.controller.sublayerModule:updatePresetSavedState() end,
@@ -204,28 +360,28 @@ function LayerModule:showLayer()
         },
         [self.controller.kLayerWireless] = {
             showLayers = {"W05-Wireless"},
-            callFunctions = {
+            callLayerFunctions = {
                 function() self.controller.sublayerModule:updateWirelessHelpState() end,
                 function() self.controller.sublayerModule:updateCallActiveState() end
             }
         },
         [self.controller.kLayerRouting] = {
             showLayers = {"R10-Routing"},
-            callFunctions = {
+            callLayerFunctions = {
                 function() self.controller.routingModule:showRoutingLayer() end,
                 function() self.controller.sublayerModule:updateCallActiveState() end
             }
         },
         [self.controller.kLayerDialer] = {
             showLayers = {"V05-Dialer"},
-            callFunctions = {
+            callLayerFunctions = {
                 function() self.controller.sublayerModule:updateDialerHelpState() end,
                 function() self.controller.sublayerModule:updateCallActiveState() end
             }
         },
         [self.controller.kLayerStreamMusic] = {
             showLayers = {"S05-StreamMusic"},
-            callFunctions = {
+            callLayerFunctions = {
                 function() self.controller.sublayerModule:updateStreamMusicHelpState() end,
                 function() self.controller.sublayerModule:updateCallActiveState() end
             }
@@ -246,7 +402,7 @@ function LayerModule:showLayer()
     end
     
     -- Call functions in order
-    for _, func in ipairs(config.callFunctions or {}) do
+    for _, func in ipairs(config.callLayerFunctions or {}) do
         func()
     end
 end
@@ -265,7 +421,10 @@ function SublayerModule.new(controller)
 end
 
 function SublayerModule:updateCallActiveState()
-    local isActive = controls.pinCallActive and controls.pinCallActive.Boolean or false
+    -- Guard clause - early return if control doesn't exist
+    if not controls.pinCallActive then return end
+    
+    local isActive = controls.pinCallActive.Boolean or false
     self.controller.layerModule:updateLayerVisibility({"I01-CallActive"}, isActive, isActive and "fade" or "none")
     self:debug("Call Active: " .. (isActive and "Showing" or "Hiding"))
 end
@@ -277,17 +436,24 @@ function SublayerModule:updatePresetSavedState()
 end
 
 function SublayerModule:updateHDMI01State()
+    -- Guard clauses with early returns
     if self.controller.varActiveLayer ~= self.controller.kLayerLaptop then return end
+    if not controls.pinLEDHDMI01Connect then return end
     
-    local isConnected = controls.pinLEDHDMI01Connect and controls.pinLEDHDMI01Connect.Boolean or false
+    local isConnected = controls.pinLEDHDMI01Connect.Boolean or false
+    
+    -- Direct logic path without unnecessary nesting
     if isConnected then
         self.controller.layerModule:updateLayerVisibility({"L05-Laptop"}, true, "fade")
         self.controller.layerModule:updateLayerVisibility({"L01-HDMI01Disconnected"}, false, "none")
-    else
-        self.controller.layerModule:updateLayerVisibility({"L01-HDMI01Disconnected"}, true, "fade")
-        self.controller.layerModule:updateLayerVisibility({"L05-Laptop", "J05-CameraControls"}, false, "none")
+        self:debug("HDMI01: Connected")
+        return
     end
-    self:debug("HDMI01: " .. (isConnected and "Connected" or "Disconnected"))
+    
+    -- Disconnected state handling
+    self.controller.layerModule:updateLayerVisibility({"L01-HDMI01Disconnected"}, true, "fade")
+    self.controller.layerModule:updateLayerVisibility({"L05-Laptop", "J05-CameraControls"}, false, "none")
+    self:debug("HDMI01: Disconnected")
 end
 
 function SublayerModule:updateHDMI02State()
@@ -514,27 +680,33 @@ function VideoSwitcherModule:autoDetectSwitcher()
 end
 
 function VideoSwitcherModule:switchToInput(inputNumber, uciButton)
-    if not self.isEnabled or not self.switcherComponent then return false end
+    -- Guard clauses with early returns
+    if not self.isEnabled then return false end
+    if not self.switcherComponent then return false end
+    if not inputNumber or not uciButton then return false end
     
     self:debug("Switching to input " .. inputNumber .. " via UCI button " .. uciButton)
     
     local success, err = pcall(function()
         local config = self.SwitcherTypes[self.switcherType]
+        if not config then return false end
+        
+        -- Use setProp to avoid redundant property assignments
         if self.switcherType == "NV32" then
-            self.switcherComponent[config.routingMethod].Value = inputNumber
+            setProp(self.switcherComponent[config.routingMethod], "Value", inputNumber)
         else
-            self.switcherComponent[config.routingMethod].String = tostring(inputNumber)
+            setProp(self.switcherComponent[config.routingMethod], "String", tostring(inputNumber))
         end
         return true
     end)
     
-    if success then
-        self:debug("Successfully switched to input " .. inputNumber)
-        return true
-    else
+    if not success then
         self:debug("Failed to switch: " .. tostring(err))
         return false
     end
+    
+    self:debug("Successfully switched to input " .. inputNumber)
+    return true
 end
 
 -------------------[ Room Automation Module ]--------------
@@ -770,9 +942,19 @@ end
 local UCIController = {}; UCIController.__index = UCIController
 
 function UCIController.new(uciPage, defaultRoutingLayer, defaultActiveLayer, hiddenNavIndices)
-    if not validateControls() then return nil end
+    -- Early validation - return nil if controls are missing
+    if not validateControls() then 
+        print("ERROR: UCIController initialization failed - validation errors")
+        return nil 
+    end
     
     local self = setmetatable({}, UCIController)
+    
+    -- Normalize control arrays early in initialization
+    self.normalizedControls = normalizeControlArrays()
+    
+    -- Reset component state for clean initialization
+    self.componentState = resetComponentsArray()
     
     -- Core properties
     self.uciPage = uciPage
@@ -798,12 +980,12 @@ function UCIController.new(uciPage, defaultRoutingLayer, defaultActiveLayer, hid
     
     
     -- Initialize modules
-    self.layerModule = LayerModule.new(self)
-    self.sublayerModule = SublayerModule.new(self)
-    self.routingModule = RoutingModule.new(self)
-    self.videoSwitcherModule = VideoSwitcherModule.new(self)
-    self.roomAutomationModule = RoomAutomationModule.new(self)
-    self.progressModule = ProgressModule.new(self)
+    self.layerModule            = LayerModule.new(self)
+    self.sublayerModule         = SublayerModule.new(self)
+    self.routingModule          = RoutingModule.new(self)
+    self.videoSwitcherModule    = VideoSwitcherModule.new(self)
+    self.roomAutomationModule   = RoomAutomationModule.new(self)
+    self.progressModule         = ProgressModule.new(self)
     
     -- Setup routing
     if defaultRoutingLayer then
@@ -825,36 +1007,37 @@ end
 
 -------------------[ Event Handler Registration ]----------
 function UCIController:registerEventHandlers()
-    -- Navigation buttons with centralized mapping
-    local navButtons = {}
-    for i = 1, 12 do
-        navButtons[i] = controls["btnNav" .. string.format("%02d", i)]
+    -- Batch event registration using normalized control arrays
+    local normalizedControls = normalizeControlArrays()
+    
+    -- Navigation button batch registration
+    if normalizedControls.navButtons then
+        forEach(normalizedControls.navButtons, function(i, btn)
+            bind(btn, function() self:btnNavEventHandler(i) end)
+        end)
     end
     
-    bindArray(navButtons, function(i, ctl)
-        self:btnNavEventHandler(i)
-    end)
+    -- Routing button batch registration  
+    if normalizedControls.routingButtons then
+        forEach(normalizedControls.routingButtons, function(i, btn)
+            bind(btn, function() self.routingModule:routingButtonEventHandler(i) end)
+        end)
+    end
     
-    -- Routing buttons
-    local routingButtons = {controls.btnRouting01, controls.btnRouting02, controls.btnRouting03, controls.btnRouting04, controls.btnRouting05}
-    bindArray(routingButtons, function(i, ctl)
-        self.routingModule:routingButtonEventHandler(i)
-    end)
-    
-    -- System control event map
-    local systemEventMap = {
-        btnStartSystem = function()
+    -- System control handler map with direct object references
+    local systemHandlerMap = {
+        [controls.btnStartSystem] = function()
             self.roomAutomationModule:powerOn()
             self.progressModule:startLoadingBar(true)
             self:btnNavEventHandler(self.kLayerWarming)
         end,
-        btnNavShutdown = function()
+        [controls.btnNavShutdown] = function()
             self.layerModule:updateLayerVisibility({"D01-ShutdownConfirm"}, true, "fade")
         end,
-        btnShutdownCancel = function()
+        [controls.btnShutdownCancel] = function()
             self.layerModule:updateLayerVisibility({"D01-ShutdownConfirm"}, false, "fade")
         end,
-        btnShutdownConfirm = function()
+        [controls.btnShutdownConfirm] = function()
             self.layerModule:updateLayerVisibility({"D01-ShutdownConfirm"}, false, "fade")
             self.roomAutomationModule:powerOff()
             self.progressModule:startLoadingBar(false)
@@ -864,60 +1047,60 @@ function UCIController:registerEventHandlers()
         end
     }
     
-    for k, fn in pairs(systemEventMap) do
-        bind(controls[k], fn)
-    end
-    
-    -- Help button event map
-    local helpEventMap = {
-        btnHelpLaptop = function(ctl) self.sublayerModule:updateLaptopHelpState() end,
-        btnHelpPC = function(ctl) self.sublayerModule:updatePCHelpState() end,
-        btnHelpWireless = function(ctl) self.sublayerModule:updateWirelessHelpState() end,
-        btnHelpRouting = function(ctl) self.sublayerModule:updateRoutingHelpState() end,
-        btnHelpDialer = function(ctl) self.sublayerModule:updateDialerHelpState() end,
-        btnHelpStreamMusic = function(ctl) self.sublayerModule:updateStreamMusicHelpState() end
+    -- Help button handler map
+    local helpHandlerMap = {
+        [controls.btnHelpLaptop] = function() self.sublayerModule:updateLaptopHelpState() end,
+        [controls.btnHelpPC] = function() self.sublayerModule:updatePCHelpState() end,
+        [controls.btnHelpWireless] = function() self.sublayerModule:updateWirelessHelpState() end,
+        [controls.btnHelpRouting] = function() self.sublayerModule:updateRoutingHelpState() end,
+        [controls.btnHelpDialer] = function() self.sublayerModule:updateDialerHelpState() end,
+        [controls.btnHelpStreamMusic] = function() self.sublayerModule:updateStreamMusicHelpState() end
     }
     
-    for k, fn in pairs(helpEventMap) do
-        bind(controls[k], fn)
-    end
-    
-    -- Pin state event map
-    local pinEventMap = {
-        pinLEDUSBLaptop = function(ctl)
+    -- Pin state handler map
+    local pinHandlerMap = {
+        [controls.pinLEDUSBLaptop] = function(ctl)
             if ctl.Boolean then self.varActiveLayer = self.kLayerLaptop end
             self.layerModule:showLayer(); self:interlock()
         end,
-        pinLEDUSBPC = function(ctl)
+        [controls.pinLEDUSBPC] = function(ctl)
             if ctl.Boolean then self.varActiveLayer = self.kLayerPC end
             self.layerModule:showLayer(); self:interlock()
         end,
-        pinLEDOffHookLaptop = function(ctl)
+        [controls.pinLEDOffHookLaptop] = function(ctl)
             if ctl.Boolean then self.varActiveLayer = self.kLayerLaptop end
             self.layerModule:showLayer(); self:interlock()
         end,
-        pinLEDOffHookPC = function(ctl)
+        [controls.pinLEDOffHookPC] = function(ctl)
             if ctl.Boolean then self.varActiveLayer = self.kLayerPC end
             self.layerModule:showLayer(); self:interlock()
         end,
-        pinLEDHDMI01Active = function(ctl)
+        [controls.pinLEDHDMI01Active] = function(ctl)
             if ctl.Boolean then self.varActiveLayer = self.kLayerLaptop end
             self.layerModule:showLayer(); self:interlock()
         end,
-        pinLEDHDMI02Active = function(ctl)
+        [controls.pinLEDHDMI02Active] = function(ctl)
             if ctl.Boolean then self.varActiveLayer = self.kLayerPC end
             self.layerModule:showLayer(); self:interlock()
         end,
-        pinLEDPresetSaved = function(ctl) self.sublayerModule:updatePresetSavedState() end,
-        pinLEDHDMI01Connect = function(ctl) self.sublayerModule:updateHDMI01State() end,
-        pinLEDHDMI02Connect = function(ctl) self.sublayerModule:updateHDMI02State() end,
-        pinLEDACPRBypassActive = function(ctl) self.sublayerModule:updateACPRBypassState() end,
-        pinCallActive = function(ctl) self.sublayerModule:updateCallActiveState() end
+        [controls.pinLEDPresetSaved] = function() self.sublayerModule:updatePresetSavedState() end,
+        [controls.pinLEDHDMI01Connect] = function() self.sublayerModule:updateHDMI01State() end,
+        [controls.pinLEDHDMI02Connect] = function() self.sublayerModule:updateHDMI02State() end,
+        [controls.pinLEDACPRBypassActive] = function() self.sublayerModule:updateACPRBypassState() end,
+        [controls.pinCallActive] = function() self.sublayerModule:updateCallActiveState() end
     }
     
-    for k, fn in pairs(pinEventMap) do
-        bind(controls[k], fn)
+    -- Batch register all handler maps
+    local handlerMaps = {systemHandlerMap, helpHandlerMap, pinHandlerMap}
+    for _, handlerMap in ipairs(handlerMaps) do
+        for ctrl, handler in pairs(handlerMap) do
+            if ctrl then -- Only bind if control exists
+                bind(ctrl, handler)
+            end
+        end
     end
+    
+    self:debug("Event handlers registered using batch registration")
 end
 
 -------------------[ Core Navigation Logic ]---------------
@@ -940,50 +1123,73 @@ function UCIController:btnNavEventHandler(argIndex)
 end
 
 function UCIController:interlock()
-    -- Reset all nav buttons
-    for i = 1, 12 do
-        local btn = controls["btnNav" .. string.format("%02d", i)]
-        if btn then btn.Boolean = false end
+    -- Use cached control arrays to avoid repeated lookups
+    local navButtons = self.normalizedControls.navButtons
+    if not navButtons then return end
+    
+    -- Layer to button index mapping (cached at class level for better performance)
+    if not self.layerToButtonMap then
+        self.layerToButtonMap = {
+            [self.kLayerAlarm]          = 1, 
+            [self.kLayerIncomingCall]   = 2, 
+            [self.kLayerStart]          = 3,
+            [self.kLayerWarming]        = 4, 
+            [self.kLayerCooling]        = 5, 
+            [self.kLayerRoomControls]   = 6,
+            [self.kLayerPC]             = 7, 
+            [self.kLayerLaptop]         = 8, 
+            [self.kLayerWireless]       = 9,
+            [self.kLayerRouting]        = 10, 
+            [self.kLayerDialer]         = 11, 
+            [self.kLayerStreamMusic]    = 12
+        }
     end
     
-    -- Set active button
-    local layerToButton = {
-        [self.kLayerAlarm] = 1, [self.kLayerIncomingCall] = 2, [self.kLayerStart] = 3,
-        [self.kLayerWarming] = 4, [self.kLayerCooling] = 5, [self.kLayerRoomControls] = 6,
-        [self.kLayerPC] = 7, [self.kLayerLaptop] = 8, [self.kLayerWireless] = 9,
-        [self.kLayerRouting] = 10, [self.kLayerDialer] = 11, [self.kLayerStreamMusic] = 12
-    }
+    local activeButtonIndex = self.layerToButtonMap[self.varActiveLayer]
     
-    local btnIndex = layerToButton[self.varActiveLayer]
-    if btnIndex then
-        local btn = controls["btnNav" .. string.format("%02d", btnIndex)]
-        if btn then btn.Boolean = true end
+    -- Efficiently reset all buttons and set active one in single loop
+    for i, btn in ipairs(navButtons) do
+        if btn then
+            local shouldBeActive = (i == activeButtonIndex)
+            setProp(btn, "Boolean", shouldBeActive) -- Use setProp to prevent redundant assignments
+        end
     end
 end
 
 function UCIController:updateLegends()
-    -- Simplified legend update without caching
-    local legendMappings = {
-        {legend = "txtNav01", variable = "txtLabelNav01"},
-        {legend = "txtNav02", variable = "txtLabelNav02"},
-        {legend = "txtNav03", variable = "txtLabelNav03"},
-        {legend = "txtNav04", variable = "txtLabelNav04"},
-        {legend = "txtNav05", variable = "txtLabelNav05"},
-        {legend = "txtNav06", variable = "txtLabelNav06"},
-        {legend = "txtNav07", variable = "txtLabelNav07"},
-        {legend = "txtNav08", variable = "txtLabelNav08"},
-        {legend = "txtNav09", variable = "txtLabelNav09"},
-        {legend = "txtNav10", variable = "txtLabelNav10"},
-        {legend = "txtNav11", variable = "txtLabelNav11"},
-        {legend = "txtNav12", variable = "txtLabelNav12"}
-    }
+    -- Guard clause - early return if no UCI variables available
+    if not Uci or not Uci.Variables then return end
     
-    for _, mapping in ipairs(legendMappings) do
+    -- Cache legend mappings at class level for better performance
+    if not self.legendMappings then
+        self.legendMappings = {
+            {legend = "txtNav01", variable = "txtLabelNav01"},
+            {legend = "txtNav02", variable = "txtLabelNav02"},
+            {legend = "txtNav03", variable = "txtLabelNav03"},
+            {legend = "txtNav04", variable = "txtLabelNav04"},
+            {legend = "txtNav05", variable = "txtLabelNav05"},
+            {legend = "txtNav06", variable = "txtLabelNav06"},
+            {legend = "txtNav07", variable = "txtLabelNav07"},
+            {legend = "txtNav08", variable = "txtLabelNav08"},
+            {legend = "txtNav09", variable = "txtLabelNav09"},
+            {legend = "txtNav10", variable = "txtLabelNav10"},
+            {legend = "txtNav11", variable = "txtLabelNav11"},
+            {legend = "txtNav12", variable = "txtLabelNav12"}
+        }
+    end
+    
+    for _, mapping in ipairs(self.legendMappings) do
         local legendControl = Controls[mapping.legend]
         local variable = Uci.Variables[mapping.variable]
-        if legendControl and variable then
-            legendControl.Legend = variable.String
-        end
+        
+        -- Skip if either control or variable is missing
+        if not legendControl or not variable then goto continue end
+        
+        -- Use setProp to avoid redundant assignments
+        local newLegend = variable.String or ""
+        setProp(legendControl, "Legend", newLegend)
+        
+        ::continue::
     end
 end
 
@@ -1049,26 +1255,70 @@ end
 
 ------------------[ Factory Function ]----------------------
 local function createUCIController(targetPageName, defaultRoutingLayer, defaultActiveLayer, hiddenNavIndices)
+    -- Guard clause - validate input parameters
+    if not targetPageName or targetPageName == "" then
+        print("ERROR: UCI Factory - Invalid or missing target page name")
+        return nil
+    end
+    
+    -- Comprehensive page name variations with graceful fallbacks
     local pageNames = {
         targetPageName,
-        targetPageName:gsub("%s+", " "),
-        targetPageName:gsub("%s+", ""),
-        targetPageName:gsub("%(", ""):gsub("%)", ""),
-        targetPageName:gsub("%s+", "-"):gsub("%(", ""):gsub("%)", "")
+        targetPageName:gsub("%s+", " "),       -- Normalize spaces
+        targetPageName:gsub("%s+", ""),        -- Remove spaces
+        targetPageName:gsub("%(", ""):gsub("%)", ""), -- Remove parentheses
+        targetPageName:gsub("%s+", "-"):gsub("%(", ""):gsub("%)", ""), -- Dashes instead of spaces
+        "UCI " .. targetPageName,              -- Add UCI prefix
+        targetPageName:match("^(.-)%s*%(") or targetPageName -- Remove trailing parentheses content
     }
     
-    for _, pageName in ipairs(pageNames) do
-        local success, controller = pcall(function()
+    local lastError = nil
+    
+    for i, pageName in ipairs(pageNames) do
+        local success, result = pcall(function()
             return UCIController.new(pageName, defaultRoutingLayer, defaultActiveLayer, hiddenNavIndices)
         end)
         
-        if success and controller then
-            print("Successfully created UCI controller for page: " .. pageName)
-            return controller
+        if success and result then
+            print("✓ UCI Factory: Successfully created controller for page '" .. pageName .. "' (attempt " .. i .. ")")
+            
+            -- Export for global access and external integration
+            _G.myUCI = result
+            _G.UCIController = UCIController -- Export class for multiple instances
+            
+            return result
+        else
+            lastError = result
+            print("✗ UCI Factory: Attempt " .. i .. " failed for '" .. pageName .. "': " .. tostring(lastError))
         end
     end
     
-    print("ERROR: Could not create UCI controller for: " .. targetPageName)
+    -- Graceful degradation - return minimal controller if possible
+    print("⚠ UCI Factory: All attempts failed. Attempting minimal controller...")
+    local success, minimalController = pcall(function()
+        -- Create minimal controller with basic functionality only
+        return {
+            uciPage = targetPageName,
+            debugging = true,
+            varActiveLayer = defaultActiveLayer or 8,
+            isInitialized = false,
+            btnNavEventHandler = function(self, layer)
+                print("Minimal UCI: Navigation to layer " .. layer .. " (limited functionality)")
+            end,
+            cleanup = function(self)
+                print("Minimal UCI: Cleanup completed")
+            end
+        }
+    end)
+    
+    if success and minimalController then
+        print("⚠ UCI Factory: Created minimal controller with reduced functionality")
+        _G.myUCI = minimalController
+        return minimalController
+    end
+    
+    print("✗ UCI Factory: Complete failure - Could not create any controller for '" .. targetPageName .. "'")
+    print("✗ Last error: " .. tostring(lastError))
     return nil
 end
 
@@ -1081,7 +1331,7 @@ myUCI = createUCIController(
 )
 
 if myUCI then
-    print("UCIController (Refactored) created successfully!")
+    print("UCIController created successfully!")
     
     -- Optional Room Automation sync timer
     if mySystemController then
