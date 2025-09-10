@@ -1,8 +1,8 @@
 --[[
     DivisibleSpaceController - Dual Room Divisible Space Controller (Refactored)
     Author: Nikolas Smith, Q-SYS
-    Version: 2.0 | Date: 2025-01-27
-    Firmware Req: 10.0.0
+    Version: 2.0 | Date: 2025-09-08
+    Firmware Req: 10.0.0    
     Notes:
     - Refactored per Lua Refactoring Prompt (event-driven, OOP modular).
     - All event registration is DRY and centralized using control/event maps.
@@ -34,6 +34,15 @@ local function validateControls()
 end
 
 -------------------[ Utility Functions ]-------------------
+local function isArr(t)
+    return type(t) == "table" and t[1] ~= nil
+end
+
+local function getControlArray(ctrl)
+    if isArr(ctrl) then return ctrl end
+    return type(ctrl) == "table" and { ctrl } or {}
+end
+
 local function setProp(ctrl, prop, val)
     if ctrl then ctrl[prop] = val end
 end
@@ -157,7 +166,10 @@ function DivisibleSpaceController.new(roomName, config)
     self.state = { isCombined = false, availableRoomCombiners = {} }
     self.config = config
     self.components = {
-        roomCombiner = nil, roomControls = nil, invalid = {}
+        roomCombiner = nil, roomControls = {}, invalid = {
+            roomCombiner = false,
+            roomControls = false
+        }
     }
     
     -- Initialize modules
@@ -211,21 +223,17 @@ end
 function DivisibleSpaceController:setComponent(ctrl, componentType)
     if not ctrl then return nil end
     local componentName = ctrl.String
-    
-    -- Guard clauses with early returns
-    if not componentName or componentName == "" then
+    if componentName == "" then
         ctrl.Color = "white"
         self:setComponentValid(componentType)
         return nil
     end
-    
     if componentName == self.clearString then
         ctrl.String = ""
         ctrl.Color = "white"
         self:setComponentValid(componentType)
         return nil
     end
-    
     local newComponent = Component.New(componentName)
     if #Component.GetControls(newComponent) < 1 then
         ctrl.String = "[Invalid Component Selected]"
@@ -233,7 +241,6 @@ function DivisibleSpaceController:setComponent(ctrl, componentType)
         self:setComponentInvalid(componentType)
         return nil
     end
-    
     self:debugPrint("Setting " .. componentType .. ": {" .. componentName .. "}")
     ctrl.Color = "white"
     self:setComponentValid(componentType)
@@ -274,8 +281,8 @@ function DivisibleSpaceController:getComponentNames()
     for _, comp in pairs(Component.GetComponents()) do
         if comp.Type == compType.roomCombiner then
             table.insert(namesTable.RoomCombinerNames, comp.Name)
-        elseif string.match(comp.Name, "^compRoomControls") then
-            -- More flexible: match by name pattern regardless of exact component type
+        elseif comp.Type == compType.roomControls and string.match(comp.Name, "^compRoomControls") then
+            -- Check both component type AND name pattern like other working scripts
             table.insert(namesTable.RoomControlsNames, comp.Name)
             self:debugPrint("Found RoomControls component: " .. comp.Name .. " (Type: " .. comp.Type .. ")")
         end
@@ -287,28 +294,49 @@ function DivisibleSpaceController:getComponentNames()
     end
     
     if controls.compRoomCombiner then 
-        controls.compRoomCombiner.Choices = namesTable.RoomCombinerNames 
+        setProp(controls.compRoomCombiner, "Choices", namesTable.RoomCombinerNames)
         self:debugPrint("RoomCombiner choices populated: " .. #namesTable.RoomCombinerNames .. " items")
     end
     
     if controls.compRoomControls then 
-        controls.compRoomControls.Choices = namesTable.RoomControlsNames 
-        self:debugPrint("RoomControls choices populated: " .. #namesTable.RoomControlsNames .. " items")
+        for i, v in ipairs(getControlArray(controls.compRoomControls)) do
+            setProp(v, "Choices", namesTable.RoomControlsNames)
+        end
+        self:debugPrint("RoomControls choices populated: " .. #namesTable.RoomControlsNames .. " items for " .. #getControlArray(controls.compRoomControls) .. " controls")
     end
 end
 
 ------[ Component Setup/Assignment ]------
 function DivisibleSpaceController:setRoomCombinerComponent()
-    self.components.roomCombiner = self:setComponent(controls.compRoomCombiner, "Room Combiner")
+    self.components.roomCombiner = self:setComponent(controls.compRoomCombiner, "roomCombiner")
     if self.components.roomCombiner then
         self:debugPrint("Room Combiner component set: " .. controls.compRoomCombiner.String)
     end
 end
 
 function DivisibleSpaceController:setRoomControlsComponent()
-    self.components.roomControls = self:setComponent(controls.compRoomControls, "Room Controls")
-    if self.components.roomControls then
-        self:debugPrint("Room Controls component set: " .. controls.compRoomControls.String)
+    if controls.compRoomControls and #getControlArray(controls.compRoomControls) > 0 then
+        local allValid = true
+        self.components.roomControls = self.components.roomControls or {}
+        
+        for i, control in ipairs(getControlArray(controls.compRoomControls)) do
+            self.components.roomControls[i] = self:setComponent(control, "roomControls [" .. i .. "]")
+            if self.components.roomControls[i] then
+                self:debugPrint("Room Controls component set [" .. i .. "]: " .. control.String)
+            else
+                allValid = false
+            end
+        end
+        
+        -- Set overall validation based on whether all room controls are valid
+        if allValid then
+            self:setComponentValid("roomControls")
+        else
+            self:setComponentInvalid("roomControls")
+        end
+    else
+        -- No room controls configured - this is valid
+        self:setComponentValid("roomControls")
     end
 end
 
@@ -410,4 +438,5 @@ Public API:
     myDivisibleSpaceController:getWallStateControls()
     myDivisibleSpaceController:cleanup()
 ]]
+
 

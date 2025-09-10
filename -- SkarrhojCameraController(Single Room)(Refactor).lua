@@ -304,8 +304,8 @@ function HookStateModule:handleHookState(isOffHook)
     self:setHookState(isOffHook)
     
     if not isOffHook then
-        self.controller.routingModule:setRouterOutput(3, '6')
-        self.controller.routingModule:setRouterOutput(4, '6')
+        self.controller.routingModule:setRouterOutput(3, '5')
+        self.controller.routingModule:setRouterOutput(4, '5')
     end
     
     self:updatePTZHookFeedback(isOffHook)

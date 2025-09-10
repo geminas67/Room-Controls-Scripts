@@ -31,7 +31,7 @@ function ShureMXAController.new(roomName, config)
 
     self.componentTypes = {
         callSync = "call_sync",
-        mxaDevices = "%PLUGIN%_15f47939-2779-495a-881b-b10317365958_%FP%_53a1bc56de2ede23e07c7d9e32bec505",
+        mxaDevices = "%PLUGIN%_984f65d4-443f-406d-9742-3cb4027ff81c_%FP%_1257aeeea0835196bee126b4dccce889",
         roomControls = "device_controller_script"
     }
     self.components = {
@@ -50,8 +50,6 @@ function ShureMXAController.new(roomName, config)
     self.config = {
         ledBrightness = (config and config.ledBrightness) or 5,
         ledOff = (config and config.ledOff) or 0,
-        ledRed = (config and config.ledRed) or "Red",
-        ledGreen = (config and config.ledGreen) or "Green",
         controlColors = { white = 'White', pink = 'Pink', off = 'Off' },
         ledToggleInterval = 1.5
     }
@@ -85,24 +83,16 @@ function ShureMXAController:initMXAModule()
             local value = state and self.config.ledBrightness or self.config.ledOff
             for _, device in pairs(self.components.mxaDevices) do
                 if device then
-                    self:safeComponentAccess(device, "BrightnessLevel", "setValue", value)
+                    self:safeComponentAccess(device, "bright", "setValue", value)
                 end
             end
         end,
-
-        setAllLEDsColor = function(color)
-            for _, device in pairs(self.components.mxaDevices) do
-                if device then
-                    self:safeComponentAccess(device, "LedUnmuteColor", "setString", color)
-                end
-            end
-        end,
-
+        
         setAllMute = function(state)
             self.state.muteState = state
             for _, device in pairs(self.components.mxaDevices) do
                 if device then
-                    self:safeComponentAccess(device, "GlobalMute", "set", state)
+                    self:safeComponentAccess(device, "muteall", "set", state)
                 end
             end
         end,
@@ -167,15 +157,10 @@ function ShureMXAController:safeComponentAccess(component, control, action, valu
 end
 
 -----------------[ Privacy Control ]-------------------
-function ShureMXAController:setPrivacyLEDColor(state)
-    local color = state and self.config.ledRed or self.config.ledGreen
-    self.mxaModule.setAllLEDsColor(color)
-    if self.debugging then self:debugPrint("Audio Privacy LED: " .. color) end
-end
-
 function ShureMXAController:setAudioPrivacy(state)
     self.state.audioPrivacy = state
-    self:setPrivacyLEDColor(state)
+    self.mxaModule.setAllMute(state)
+    if self.debugging then self:debugPrint("Audio Privacy: "..tostring(state)) end
 end
 
 function ShureMXAController:getPrivacyState()
@@ -188,7 +173,7 @@ function ShureMXAController:setFireAlarm(state)
     if state then
         if self.debugging then self:debugPrint("Fire Alarm Active") end
         self.mxaModule.startLEDToggle()
-        self:setPrivacyLEDColor(true)
+        self.mxaModule.setAllMute(true)
         self.mxaModule.setAllLEDs(false)
     else
         self.mxaModule.stopLEDToggle()
@@ -196,11 +181,11 @@ function ShureMXAController:setFireAlarm(state)
             local isOffHook = self.components.callSync["off.hook"].Boolean
             if isOffHook then
                 if self.debugging then self:debugPrint("Fire Alarm Cleared - Call Off-Hook") end
-                self:setPrivacyLEDColor(false)
+                self.mxaModule.setAllMute(false)
                 self.mxaModule.setAllLEDs(true)
             else
                 if self.debugging then self:debugPrint("Fire Alarm Cleared - Call On-Hook") end
-                self:setPrivacyLEDColor(true)
+                self.mxaModule.setAllMute(true)
                 self.mxaModule.setAllLEDs(false)
             end
         end
@@ -215,7 +200,7 @@ end
 
 function ShureMXAController:setCallMuteState(state)
     if self.debugging then self:debugPrint("Call Sync Mute: "..tostring(state)) end
-    self:setPrivacyLEDColor(state)
+    self.mxaModule.setAllMute(state)
 end
 
 function ShureMXAController:endCall()
@@ -299,6 +284,7 @@ function ShureMXAController:setupRoomControlsComponent()
 end
 
 function ShureMXAController:setupMXAComponents()
+    -- Clear stale device references before repopulating
     self.components.mxaDevices = {}
     if Controls.devMXAs then
         for i, _ in ipairs(Controls.devMXAs) do
@@ -337,7 +323,7 @@ function ShureMXAController:registerRoomControlsEventHandlers()
     if systemPower then
         systemPower.EventHandler = function(ctl) 
             if not ctl.Boolean then
-                self:setPrivacyLEDColor(true)
+                self.mxaModule.setAllMute(true)
                 self.mxaModule.setAllLEDs(false)
                 if self.debugging then self:debugPrint("System Power OFF - All MXAs muted and LEDs off") end
             else
@@ -363,30 +349,19 @@ function ShureMXAController:registerMXAEventHandlers(idx)
     local device = self.components.mxaDevices[idx]
     if not device then return end
     
-    local muteAll = device["GlobalMute"]
+    local muteAll = device["muteall"]
     if muteAll then
         muteAll.EventHandler = function(control) 
             if self.debugging then self:debugPrint("MXA ["..idx.."] Mute: "..tostring(control.Boolean)) end 
         end
     end
     
-    local ledBrightness = device["BrightnessLevel"]
-    if ledBrightness then
-        ledBrightness.EventHandler = function(control) 
+    local bright = device["bright"]
+    if bright then
+        bright.EventHandler = function(control) 
             if self.debugging then self:debugPrint("MXA ["..idx.."] Brightness: "..tostring(control.Value)) end 
         end
     end
-
-    local function setupLEDColorHandler(controlName, displayName)
-        local control = device[controlName]
-        if control then
-            control.EventHandler = function(control) 
-                if self.debugging then self:debugPrint("MXA ["..idx.."] "..displayName..": "..tostring(control.String)) end 
-            end
-        end
-    end
-    
-    setupLEDColorHandler("LedUnmuteColor", "Unmute Color")
 end
 
 function ShureMXAController:registerEventHandlers()
@@ -394,7 +369,6 @@ function ShureMXAController:registerEventHandlers()
     if Controls.btnMXAMute then
         Controls.btnMXAMute.EventHandler = function(ctl) 
             self.mxaModule.setAllMute(ctl.Boolean) 
-            self.mxaModule.setAllLEDsColor(self.config.ledGreen)
         end
     end
     -- Component change handlers using global Controls table
@@ -463,7 +437,7 @@ end
 -----------------[ System Initialization ]-------------------
 function ShureMXAController:performSystemInitialization()
     if self.debugging then self:debugPrint("System initialization") end
-    self:setPrivacyLEDColor(true)
+    self.mxaModule.setAllMute(true)
     self.mxaModule.setAllLEDs(false)
     if self.debugging then self:debugPrint("System initialization completed") end
 end
@@ -505,14 +479,14 @@ function ShureMXAController:cleanup()
     
     for _, device in pairs(self.components.mxaDevices) do
         if device then
-            if device["GlobalMute"] then 
-                device["GlobalMute"].EventHandler = nil 
+            if device["muteall"] then 
+                device["muteall"].EventHandler = nil 
             end
-            if device["BrightnessLevel"] then 
-                device["BrightnessLevel"].EventHandler = nil 
+            if device["bright"] then 
+                device["bright"].EventHandler = nil 
             end
-            if device["LedUnmuteColor"] then 
-                device["LedUnmuteColor"].EventHandler = nil 
+            if device["mute"] then 
+                device["mute"].EventHandler = nil 
             end
         end
     end

@@ -21,6 +21,7 @@ local controls = {
     compdevCams = Controls.compdevCams,
     compcamACPR = Controls.compcamACPR,
     compRoomControls = Controls.compRoomControls,
+    compRoomCombiner = Controls.compRoomCombiner,
     btnProductionMode = Controls.btnProductionMode
 }
 
@@ -341,18 +342,17 @@ function PTZModule:handleCameraSelection(cameraIndex)
     -- Early return guards
     if not self.controller.components.skaarhojPTZController then return end
     if not self.controller.components.camRouter then return end
-    
     -- Main logic unindented
     local ptz = self.controller.components.skaarhojPTZController
-    local camNum = tostring(cameraIndex)
+    local camerNumber = tostring(cameraIndex)
     
-    self.controller.routingModule:setRouterOutput(1, camNum)
-    self.controller.routingModule:setRouterOutput(2, camNum)
-    self.controller:safeComponentAccess(ptz, "Button" .. cameraIndex .. ".headerText", "setString", "Active")
+    self.controller.routingModule:setRouterOutput(1, camerNumber)
+    self.controller.routingModule:setRouterOutput(2, camerNumber)
+    self.controller:safeComponentAccess(ptz, "Button" .. cameraIndex .. ".headerText", "setString", "Preview Mon")
     
     -- Update visual feedback for all buttons
     for j = 1, 4 do 
-        self:setButtonActive(j, j == cameraIndex)
+        self:setButtonActive(j, j == cameraIndex and "Preview Mon" or "Select")
     end
 end
 
@@ -365,18 +365,17 @@ function PTZModule:handlePCSend(room)
     local callSync = self.controller.components.callSync[callSyncIndex]
     if not callSync then return end
     if not self.controller:safeComponentAccess(callSync, "off.hook", "get") then return end
-    
     -- Main logic unindented
     local outputNumber = room == "A" and "1" or "2"
-    local currentCam = self.controller:safeComponentAccess(self.controller.components.camRouter, "select." .. outputNumber, "getString")
-    if not currentCam then return end
+    local currentCamera = self.controller:safeComponentAccess(self.controller.components.camRouter, "select." .. outputNumber, "getString")
+    if not currentCamera then return end
     
     local usbOutput = room == "A" and "3" or "4"
-    self.controller.routingModule:setRouterOutput(usbOutput, currentCam)
+    self.controller.routingModule:setRouterOutput(usbOutput, currentCamera)
     
     local selectedText = self.controller:safeComponentAccess(
         self.controller.components.skaarhojPTZController, 
-        "Button" .. currentCam .. ".screenText", 
+        "Button" .. currentCamera .. ".screenText", 
         "getString"
     )
     
@@ -398,7 +397,100 @@ HookStateModule.__index = HookStateModule
 function HookStateModule:create(controller)
     local self = BaseModule.new(controller, "HookState")
     setmetatable(self, HookStateModule)
+    -- Room configuration for parameterizing hardware-specific details
+    self.roomConfig = {
+        A = {
+            roomId = "A",
+            componentIndex = 1,
+            buttonNumber = 8,
+            cameraRouterOutput = "01",
+            usbOutput = "3",
+            privacyRoom = "A"
+        },
+        B = {
+            roomId = "B", 
+            componentIndex = 2,
+            buttonNumber = 9,
+            cameraRouterOutput = "02",
+            usbOutput = "4",
+            privacyRoom = "B"
+        }
+    }
+    
     return self
+end
+
+function HookStateModule:handleRoomHookStateCommon(roomConfig, isOffHook)
+    -- Shared logic for room hook state handling with parameterized room-specific details
+    if not self.controller.components.roomCombiner then
+        -- Default behavior when roomCombiner is not available
+        self:debug("roomCombiner not available - using default hook state behavior for Room " .. roomConfig.roomId)
+        if isOffHook then
+            if roomConfig.roomId == "A" then
+                self.controller.ptzModule:enableRoomAPC()
+            else
+                self.controller.ptzModule:enableRoomBPC()
+            end
+            self.controller.cameraModule:setPrivacy(roomConfig.privacyRoom, false)
+        else
+            if roomConfig.roomId == "A" then
+                self.controller.ptzModule:disableRoomAPC()
+            else
+                self.controller.ptzModule:disableRoomBPC()
+            end
+            self.controller.cameraModule:setPrivacy(roomConfig.privacyRoom, true)
+        end
+        -- Ensure button state is updated directly
+        local roomAHook = roomConfig.roomId == "A" and isOffHook or nil
+        local roomBHook = roomConfig.roomId == "B" and isOffHook or nil
+        self:updatePTZHookFeedback(roomAHook, roomBHook)
+        return
+    end
+    
+    local isWallOpen = self:getComponentBoolean(self.controller.components.roomCombiner, "wall.1.open")
+    
+    if isWallOpen then
+        -- Combined mode
+        self:setCombinedHookState(isOffHook)
+        if isOffHook then
+            self.controller:safeComponentAccess(self.controller.components.camACPR[3], "CameraRouterOutput", "setString", roomConfig.cameraRouterOutput)
+            if roomConfig.roomId == "A" then
+                self.controller:safeComponentAccess(self.controller.components.skaarhojPTZController, "Button15.press", "set", false)
+            end
+        else
+            self:setComponentBoolean(self.controller.components.camACPR[3], "TrackingBypass", true)
+            if roomConfig.roomId == "A" then
+                self.controller:safeComponentAccess(self.controller.components.skaarhojPTZController, "Button15.press", "set", true)
+            end
+        end
+    else
+        -- Divided mode
+        self:setCombinedHookState(false)
+        if isOffHook then
+            self:setComponentBoolean(self.controller.components.camACPR[3], "TrackingBypass", true)
+            if roomConfig.roomId == "A" then
+                self.controller.ptzModule:enableRoomAPC()
+            else
+                self.controller.ptzModule:enableRoomBPC()
+            end
+            if not self:getProductionModeState() then
+                self.controller:safeComponentAccess(self.controller.components.compRoomControls[roomConfig.componentIndex], "CameraRouterOutput", "setString", roomConfig.cameraRouterOutput)
+                self.controller.cameraModule:setPrivacy(roomConfig.privacyRoom, false)
+            end
+        else
+            if roomConfig.roomId == "A" then
+                self.controller.ptzModule:disableRoomAPC()
+            else
+                self.controller.ptzModule:disableRoomBPC()
+            end
+            self:setComponentBoolean(self.controller.components.compRoomControls[roomConfig.componentIndex], "TrackingBypass", true)
+            self.controller.cameraModule:setPrivacy(roomConfig.privacyRoom, true)
+        end
+    end
+    -- Ensure button state is updated directly after all logic
+    local roomAHook = roomConfig.roomId == "A" and isOffHook or nil
+    local roomBHook = roomConfig.roomId == "B" and isOffHook or nil
+    self:updatePTZHookFeedback(roomAHook, roomBHook)
 end
 
 function HookStateModule:setCombinedHookState(state)
@@ -427,97 +519,13 @@ function HookStateModule:setCombinedHookState(state)
 end
 
 function HookStateModule:handleRoomAHookState(isOffHook)
-    if not self.controller.components.roomsCombiner then
-        -- Default behavior when roomsCombiner is not available
-        self:debug("roomsCombiner not available - using default hook state behavior")
-        if isOffHook then
-            self.controller.ptzModule:enableRoomAPC()
-            self.controller.cameraModule:setPrivacy("A", false)
-        else
-            self.controller.ptzModule:disableRoomAPC()
-            self.controller.cameraModule:setPrivacy("A", true)
-        end
-        -- Ensure Button8 state is updated directly
-        self:updatePTZHookFeedback(isOffHook, nil)
-        return
-    end
-    
-    if self:getComponentBoolean(self.controller.components.roomsCombiner, "load.2") then
-        -- Combined mode
-        self:setCombinedHookState(isOffHook)
-        if isOffHook then
-            self.controller:safeComponentAccess(self.controller.components.camACPR[3], "CameraRouterOutput", "setString", "01")
-            self.controller:safeComponentAccess(self.controller.components.skaarhojPTZController, "Button15.press", "set", false)
-        else
-            self:setComponentBoolean(self.controller.components.camACPR[3], "TrackingBypass", true)
-            self.controller:safeComponentAccess(self.controller.components.skaarhojPTZController, "Button15.press", "set", true)
-        end
-    elseif self:getComponentBoolean(self.controller.components.roomsCombiner, "load.1") then
-        -- Divided mode
-        self:setCombinedHookState(false)
-        if isOffHook then
-            self:setComponentBoolean(self.controller.components.camACPR[3], "TrackingBypass", true)
-            self.controller.ptzModule:enableRoomAPC()
-            if not self:getProductionModeState() then
-                self.controller:safeComponentAccess(self.controller.components.compRoomControls[1], "CameraRouterOutput", "setString", "01")
-                self.controller.cameraModule:setPrivacy("A", false)
-            end
-        else
-            self.controller.ptzModule:disableRoomAPC()
-            self:setComponentBoolean(self.controller.components.compRoomControls[1], "TrackingBypass", true)
-            self.controller.cameraModule:setPrivacy("A", true)
-        end
-    end
-    
-    -- Ensure Button8 state is updated directly after all logic
-    self:updatePTZHookFeedback(isOffHook, nil)
+    -- Use shared utility function with Room A configuration
+    self:handleRoomHookStateCommon(self.roomConfig.A, isOffHook)
 end
 
 function HookStateModule:handleRoomBHookState(isOffHook)
-    if not self.controller.components.roomsCombiner then
-        -- Default behavior when roomsCombiner is not available
-        self:debug("roomsCombiner not available - using default hook state behavior")
-        if isOffHook then
-            self.controller.ptzModule:enableRoomBPC()
-            self.controller.cameraModule:setPrivacy("B", false)
-        else
-            self.controller.ptzModule:disableRoomBPC()
-            self.controller.cameraModule:setPrivacy("B", true)
-        end
-        -- Ensure Button9 state is updated directly
-        self:updatePTZHookFeedback(nil, isOffHook)
-        return
-    end
-    
-    if self:getComponentBoolean(self.controller.components.roomsCombiner, "load.2") then
-        -- Combined mode
-        self:setCombinedHookState(isOffHook)
-        if isOffHook then
-            self.controller:safeComponentAccess(self.controller.components.camACPR[3], "CameraRouterOutput", "setString", "02")
-            self:debug("Combined - Privacy OFF")
-        else
-            self:setComponentBoolean(self.controller.components.camACPR[3], "TrackingBypass", true)
-            self:debug("Combined - Privacy ON")
-        end
-    elseif self:getComponentBoolean(self.controller.components.roomsCombiner, "load.1") then
-        -- Divided mode
-        self:setCombinedHookState(false)
-        if isOffHook then
-            self:setComponentBoolean(self.controller.components.camACPR[3], "TrackingBypass", true)
-            self.controller.ptzModule:enableRoomBPC()
-            if not self:getProductionModeState() then
-                self.controller:safeComponentAccess(self.controller.components.compRoomControls[2], "CameraRouterOutput", "setString", "02")
-                self.controller.cameraModule:setPrivacy("B", false)
-            end
-        else
-            self.controller.ptzModule:disableRoomBPC()
-            self:setComponentBoolean(self.controller.components.compRoomControls[2], "TrackingBypass", true)
-            self.controller.cameraModule:setPrivacy("B", true)
-        end
-    end
-    
-    -- Ensure Button9 state is updated directly after all logic
-    self:updatePTZHookFeedback(nil, isOffHook)
+    -- Use shared utility function with Room B configuration
+    self:handleRoomHookStateCommon(self.roomConfig.B, isOffHook)
 end
 
 function HookStateModule:handleSystemPowerOff()
@@ -535,7 +543,6 @@ end
 function HookStateModule:updatePTZHookFeedback(roomA_isOffHook, roomB_isOffHook)
     local ptz = self.controller.components.skaarhojPTZController
     if not ptz then return end
-    
     -- Update Button8 (Room A PC) based on Room A hook state
     if roomA_isOffHook ~= nil then
         local btn8Color = roomA_isOffHook and self.controller.config.buttonColors.warmWhite or self.controller.config.buttonColors.buttonOff
@@ -546,7 +553,6 @@ function HookStateModule:updatePTZHookFeedback(roomA_isOffHook, roomB_isOffHook)
             self.controller:safeComponentAccess(ptz, "Button8.controlLink", "setString", "None")
         end
     end
-    
     -- Update Button9 (Room B PC) based on Room B hook state  
     if roomB_isOffHook ~= nil then
         local btn9Color = roomB_isOffHook and self.controller.config.buttonColors.warmWhite or self.controller.config.buttonColors.buttonOff
@@ -577,7 +583,6 @@ function HookStateModule:handleProductionModeChange()
         end
     end
 end
-
 -- Helper functions for hook state module
 function HookStateModule:getProductionModeState()
     return controls.btnProductionMode and controls.btnProductionMode.Boolean
@@ -608,10 +613,10 @@ local defaultConfig = {
         red = 'Red'
     },
     defaultCameraRouterSettings = {
-        monitorA = '6',
-        monitorB = '6',
-        usbA = '6',
-        usbB = '6'
+        monitorA = '2',
+        monitorB = '4',
+        usbA = '2',
+        usbB = '4'
     },
     initializationDelay = 0.1,
     recalibrationDelay = 1.0
@@ -630,7 +635,8 @@ SkaarhojPTZControllerMultiRoom.componentTypes = {
     camRouter = "video_router",
     devCams = "onvif_camera_operative",
     camACPR = "%PLUGIN%_648260e3-c166-4b00-98ba-ba16ksnza4a63b0_%FP%_a4d2263b4380c424e16eebb67084f355",
-    roomControls = "device_controller_script"
+    roomControls = "device_controller_script",
+    roomCombiner = "room_combiner"
 }
 
 function SkaarhojPTZControllerMultiRoom.new(roomName, config)
@@ -641,7 +647,6 @@ function SkaarhojPTZControllerMultiRoom.new(roomName, config)
     self.debugging = (config and config.debugging) or true
     self.config = config or defaultConfig
     self.cameraLabels = cameraLabels
-    
     -- State management
     self.state = {
         combinedHookState = false,
@@ -656,7 +661,6 @@ function SkaarhojPTZControllerMultiRoom.new(roomName, config)
             roomBPCEnabled = false
         }
     }
-    
     -- Component storage
     self.components = {
         callSync = {}, -- Rm-A [1], Rm-B [2]
@@ -666,10 +670,9 @@ function SkaarhojPTZControllerMultiRoom.new(roomName, config)
         camACPR = {}, -- Rm-A [1], Rm-B [2], Combined [3]
         compRoomControls = {}, -- Rm-A [1], Rm-B [2]
         productionMode = nil,
-        roomsCombiner = nil,
+        roomCombiner = nil,
         invalid = {}
     }
-    
     -- Initialize modules
     self.cameraModule = CameraModule:create(self)
     self.routingModule = RoutingModule:create(self)
@@ -734,7 +737,6 @@ function SkaarhojPTZControllerMultiRoom:setComponent(ctrl, componentType)
         self:setComponentValid(componentType)
         return nil
     end
-    
     -- Component validation
     local newComponent = Component.New(ctrl.String)
     if #Component.GetControls(newComponent) < 1 then
@@ -743,7 +745,6 @@ function SkaarhojPTZControllerMultiRoom:setComponent(ctrl, componentType)
         self:setComponentInvalid(componentType)
         return nil
     end
-    
     -- Success path
     ctrl.Color = "white"
     self:setComponentValid(componentType)
@@ -774,21 +775,39 @@ end
 
 -------------------[ Component Setup ]----------------------
 function SkaarhojPTZControllerMultiRoom:setupComponents()
+    self:debugPrint("Setting up components...")
+    
     -- Main components
+    self:debugPrint("Setting up CallSync components")
     self:setCallSyncComponents()
+    
+    self:debugPrint("Setting up Skaarhoj PTZ Controller")
     self.components.skaarhojPTZController = self:setComponent(controls.compdevSkaarhojPTZ, "Skaarhoj PTZ Controller")
+    
+    self:debugPrint("Setting up Camera Router")
     self.components.camRouter = self:setComponent(controls.compcamRouter, "Camera Router")
+    
+    self:debugPrint("Setting up Cam ACPR components")
     self:setCamACPRComponents()
+    
+    self:debugPrint("Setting up Room Controls components")
     self:setCompRoomControlsComponents()
     
+    self:debugPrint("Setting up Room Combiner components")
+    self:setRoomCombinerComponents()
+    
     -- Camera components array
+    self:debugPrint("Setting up device camera components")
     if controls.compdevCams then
         for i = 1, 4 do 
+            self:debugPrint("Setting up camera component " .. i)
             self:setDevCamComponent(i) 
         end
     end
     
+    self:debugPrint("Registering component event handlers")
     self:registerComponentEventHandlers()
+    self:debugPrint("Component setup complete")
 end
 
 function SkaarhojPTZControllerMultiRoom:setDevCamComponent(idx)
@@ -799,12 +818,29 @@ function SkaarhojPTZControllerMultiRoom:setDevCamComponent(idx)
 end
 
 function SkaarhojPTZControllerMultiRoom:setCallSyncComponents()
-    if not controls.compCallSync then return end
+    if not controls.compCallSync then 
+        self:debugPrint("controls.compCallSync is nil")
+        return 
+    end
+    
+    self:debugPrint("controls.compCallSync type: " .. type(controls.compCallSync))
+    self:debugPrint("controls.compCallSync is table: " .. tostring(type(controls.compCallSync) == "table"))
+    
+    -- Check if it's an array by trying to access first element
+    local success1, result1 = pcall(function() return controls.compCallSync[1] end)
+    local success2, result2 = pcall(function() return controls.compCallSync[2] end)
+    
+    self:debugPrint("Can access [1]: " .. tostring(success1) .. " - " .. tostring(result1))
+    self:debugPrint("Can access [2]: " .. tostring(success2) .. " - " .. tostring(result2))
     
     for i = 1, 2 do
-        if controls.compCallSync[i] then
+        local success, control = pcall(function() return controls.compCallSync[i] end)
+        if success and control then
+            self:debugPrint("Setting up callSync component " .. i)
             local roomLabel = i == 1 and "Rm-A" or "Rm-B"
-            self.components.callSync[i] = self:setComponent(controls.compCallSync[i], "Call Sync " .. roomLabel)
+            self.components.callSync[i] = self:setComponent(control, "Call Sync " .. roomLabel)
+        else
+            self:debugPrint("Failed to access controls.compCallSync[" .. i .. "]: " .. tostring(control))
         end
     end
 end
@@ -831,18 +867,22 @@ function SkaarhojPTZControllerMultiRoom:setCompRoomControlsComponents()
     end
 end
 
+function SkaarhojPTZControllerMultiRoom:setRoomCombinerComponents()
+    if not controls.compRoomCombiner then return end
+    
+    self.components.roomCombiner = self:setComponent(controls.compRoomCombiner, "Rooms Combiner")
+end
+
 -------------------[ Event Handler Registration ]-----------
 function SkaarhojPTZControllerMultiRoom:registerEventHandlers()
     -- Centralized event mapping for DRY registration
     local eventMap = {
         btnProductionMode = function() self.hookStateModule:handleProductionModeChange() end
     }
-    
     -- Bind single events
     for controlName, handler in pairs(eventMap) do
         bind(controls[controlName], handler)
     end
-    
     -- Component dropdown handlers
     local componentEventMap = {
         compdevSkaarhojPTZ = function() self:setSkaarhojPTZComponent() end,
@@ -852,7 +892,6 @@ function SkaarhojPTZControllerMultiRoom:registerEventHandlers()
     for controlName, handler in pairs(componentEventMap) do
         bind(controls[controlName], handler)
     end
-    
     -- Array component handlers
     if controls.compCallSync then
         for i, callSyncComp in ipairs(controls.compCallSync) do
@@ -877,29 +916,47 @@ function SkaarhojPTZControllerMultiRoom:registerEventHandlers()
             bind(roomControlComp, function() self:setCompRoomControlsComponents() end)
         end
     end
+    if controls.compRoomCombiner then
+        for i, roomsCombinerComp in ipairs(controls.compRoomCombiner) do
+            bind(roomsCombinerComp, function() self:setRoomCombinerComponents() end)
+        end
+    end
 end
 
 function SkaarhojPTZControllerMultiRoom:registerComponentEventHandlers()
+    self:debugPrint("Registering component event handlers...")
     -- Call Sync event handlers
-    for i, callSync in ipairs(self.components.callSync) do
-        if callSync and callSync["off.hook"] then
-            callSync["off.hook"].EventHandler = function()
-                local hookState = self:safeComponentAccess(callSync, "off.hook", "get")
-                if i == 1 then
-                    self.hookStateModule:handleRoomAHookState(hookState)
-                else
-                    self.hookStateModule:handleRoomBHookState(hookState)
+    self:debugPrint("Registering Call Sync event handlers")
+    self:debugPrint("callSync components table: " .. tostring(self.components.callSync))
+    if self.components.callSync then
+        self:debugPrint("callSync table length: " .. tostring(#self.components.callSync))
+    end
+    -- Safely iterate over callSync components
+    if self.components.callSync then
+        for i, callSync in ipairs(self.components.callSync) do
+            self:debugPrint("Registering event handler for callSync[" .. i .. "]")
+            if callSync and callSync["off.hook"] then
+                self:debugPrint("Setting up off.hook event handler for callSync " .. i)
+                callSync["off.hook"].EventHandler = function()
+                    local hookState = self:safeComponentAccess(callSync, "off.hook", "get")
+                    if i == 1 then
+                        self.hookStateModule:handleRoomAHookState(hookState)
+                    else
+                        self.hookStateModule:handleRoomBHookState(hookState)
+                    end
                 end
+            else
+                self:debugPrint("callSync[" .. i .. "] or off.hook control not available")
             end
         end
+    else
+        self:debugPrint("No callSync components to register")
     end
-    
     -- PTZ Controller event handlers
     if self.components.skaarhojPTZController then
         self:registerPTZButtonHandlers()
         self.ptzModule:initializeCameraLabels()
     end
-    
     -- Room Controls event handlers
     for i, roomControl in ipairs(self.components.compRoomControls) do
         if roomControl and roomControl["ledSystemPower"] then
@@ -917,7 +974,6 @@ end
 function SkaarhojPTZControllerMultiRoom:registerPTZButtonHandlers()
     local ptz = self.components.skaarhojPTZController
     if not ptz then return end
-    
     -- Camera selection buttons (1-4)
     for i = 1, 4 do
         local btn = ptz["Button" .. i .. ".press"]
@@ -925,13 +981,11 @@ function SkaarhojPTZControllerMultiRoom:registerPTZButtonHandlers()
             btn.EventHandler = function() self.ptzModule:handleCameraSelection(i) end
         end
     end
-    
     -- Room A PC button (Button8)
     local btn8 = ptz["Button8.press"]
     if btn8 then
         btn8.EventHandler = function() self.ptzModule:handlePCSend("A") end
     end
-    
     -- Room B PC button (Button9)
     local btn9 = ptz["Button9.press"]
     if btn9 then
@@ -961,11 +1015,20 @@ function SkaarhojPTZControllerMultiRoom:getComponentNames()
         CamRouterNames = {},
         DevCamNames = {},
         CamACPRNames = {},
-        CompRoomControlsNames = {}
+        CompRoomControlsNames = {},
+        RoomCombinerNames = {}
     }
+    
+    self:debugPrint("Starting component discovery...")
+    self:debugPrint("Looking for roomCombiner type: " .. compTypes.roomCombiner)
     
     for _, comp in pairs(Component.GetComponents()) do
         if not comp.Name or comp.Name == "" then goto continue end
+        
+        -- Debug: Print all component types to help identify room combiner type
+        if string.find(string.lower(comp.Name), "combiner") or string.find(string.lower(comp.Type), "combiner") then
+            self:debugPrint("Found potential combiner component: " .. comp.Name .. " (Type: " .. comp.Type .. ")")
+        end
         
         if comp.Type == compTypes.callSync then
             table.insert(namesTable.CallSyncNames, comp.Name)
@@ -979,6 +1042,9 @@ function SkaarhojPTZControllerMultiRoom:getComponentNames()
             table.insert(namesTable.CamACPRNames, comp.Name)
         elseif comp.Type == compTypes.roomControls and string.match(comp.Name, "^compRoomControls") then
             table.insert(namesTable.CompRoomControlsNames, comp.Name)
+        elseif comp.Type == compTypes.roomCombiner then
+            table.insert(namesTable.RoomCombinerNames, comp.Name)
+            self:debugPrint("Added room combiner: " .. comp.Name)
         end
         
         ::continue::
@@ -1003,6 +1069,16 @@ function SkaarhojPTZControllerMultiRoom:getComponentNames()
             setProp(v, "Choices", namesTable.DevCamNames)
         end
     end
+    if controls.compRoomCombiner then
+        self:debugPrint("RoomCombinerNames count: " .. #namesTable.RoomCombinerNames)
+        for i, name in ipairs(namesTable.RoomCombinerNames) do
+            self:debugPrint("RoomCombiner[" .. i .. "]: " .. name)
+        end
+        
+        -- compRoomCombiner is a single control, not an array
+        setProp(controls.compRoomCombiner, "Choices", namesTable.RoomCombinerNames)
+        self:debugPrint("Set choices for compRoomCombiner")
+    end
     if controls.compcamACPR then 
         for i, v in ipairs(controls.compcamACPR) do 
             setProp(v, "Choices", namesTable.CamACPRNames)
@@ -1024,8 +1100,15 @@ function SkaarhojPTZControllerMultiRoom:performSystemInitialization()
     self.ptzModule:initializeCameraLabels()
     
     Timer.CallAfter(function()
-        local offHookA = self.components.callSync[1] and self:safeComponentAccess(self.components.callSync[1], "off.hook", "get")
-        local offHookB = self.components.callSync[2] and self:safeComponentAccess(self.components.callSync[2], "off.hook", "get")
+        self:debugPrint("Starting Timer.CallAfter in performSystemInitialization")
+        self:debugPrint("callSync components table type: " .. type(self.components.callSync))
+        if self.components.callSync then
+            self:debugPrint("callSync[1] exists: " .. tostring(self.components.callSync[1] ~= nil))
+            self:debugPrint("callSync[2] exists: " .. tostring(self.components.callSync[2] ~= nil))
+        end
+        
+        local offHookA = self.components.callSync and self.components.callSync[1] and self:safeComponentAccess(self.components.callSync[1], "off.hook", "get")
+        local offHookB = self.components.callSync and self.components.callSync[2] and self:safeComponentAccess(self.components.callSync[2], "off.hook", "get")
         
         if not offHookA and not offHookB then
             self.cameraModule:setPrivacy("Combined", true)
@@ -1050,15 +1133,25 @@ function SkaarhojPTZControllerMultiRoom:funcInit()
     self:performSystemInitialization()
     
     -- Initial hook state check
-    if self.components.callSync[1] then
+    self:debugPrint("Starting initial hook state check")
+    self:debugPrint("callSync components available: " .. tostring(self.components.callSync ~= nil))
+    
+    if self.components.callSync and self.components.callSync[1] then
+        self:debugPrint("Checking Room A hook state")
         local initialHookStateA = self:safeComponentAccess(self.components.callSync[1], "off.hook", "get")
         self:debugPrint("Initial Room A hook state: " .. tostring(initialHookStateA))
         self.hookStateModule:handleRoomAHookState(initialHookStateA)
+    else
+        self:debugPrint("Room A callSync not available")
     end
-    if self.components.callSync[2] then
+    
+    if self.components.callSync and self.components.callSync[2] then
+        self:debugPrint("Checking Room B hook state")
         local initialHookStateB = self:safeComponentAccess(self.components.callSync[2], "off.hook", "get")
         self:debugPrint("Initial Room B hook state: " .. tostring(initialHookStateB))
         self.hookStateModule:handleRoomBHookState(initialHookStateB)
+    else
+        self:debugPrint("Room B callSync not available")
     end
     
     self:debugPrint("Divisible Space Camera Controller Initialized with " .. 

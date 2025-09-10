@@ -174,7 +174,7 @@ function VideoSwitcherIntegration.new()
         return discovered
     end
     
-    -- Auto-detect switcher type (using direct Controls access like Brookgreen version)
+    -- Auto-detect switcher type
     function self:autoDetectSwitcherType()
         local discovered = self:discoverSwitchers()
         

@@ -886,7 +886,13 @@ function SystemAutomationController:setGainTypeAssignments(roomType)
     
     for i, gainType in ipairs(assignments) do
         if controls.typeGain[i] then
-            controls.typeGain[i].String = gainType
+            if i == 1 then
+                -- First gain control is always Program and should remain disabled
+                controls.typeGain[i].String = "Program"
+                controls.typeGain[i].IsDisabled = true
+            else
+                controls.typeGain[i].String = gainType
+            end
         end
     end
 end
@@ -896,6 +902,22 @@ function SystemAutomationController:init()
     self.powerModule:enableDisablePowerControls(true)
     self:getComponentNames()
     setProp(controls.txtMotionMode, "Choices", { "Motion On/Off", "Motion Off", "Motion Disabled" })
+    
+    -- Setup typeGain dropdown choices
+    if controls.typeGain then
+        local gainChoices = { "Program", "Mic", "Gain" }
+        for i, gainControl in ipairs(getControlArray(controls.typeGain)) do
+            if gainControl then
+                gainControl.Choices = gainChoices
+                if i == 1 then
+                    -- First gain control is always Program and should be disabled
+                    gainControl.String = "Program"
+                    gainControl.IsDisabled = true
+                end
+            end
+        end
+    end
+    
     self:setGainTypeAssignments()
     
     -- Initialize components
