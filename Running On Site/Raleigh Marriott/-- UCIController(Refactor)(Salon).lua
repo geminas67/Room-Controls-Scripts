@@ -37,8 +37,14 @@ local controls = {
     btnHelpStreamMusic  = Controls.btnHelpStreamMusic,
     
     -- Routing Buttons
-    btnRouting01 = Controls.btnRouting01, btnRouting02 = Controls.btnRouting02,
-    btnRouting03 = Controls.btnRouting03, btnRouting04 = Controls.btnRouting04, btnRouting05 = Controls.btnRouting05,
+    btnRouting01 = Controls.btnRouting01, 
+    btnRouting02 = Controls.btnRouting02,
+    btnRouting03 = Controls.btnRouting03, 
+    btnRouting04 = Controls.btnRouting04, 
+    btnRouting05 = Controls.btnRouting05,
+    btnRouting06 = Controls.btnRouting06,
+    btnRouting07 = Controls.btnRouting07,
+    btnRouting08 = Controls.btnRouting08,
     
     -- Progress Controls
     knbProgressBar = Controls.knbProgressBar,
@@ -74,7 +80,7 @@ local function validateControls()
         "knbProgressBar", "txtProgressBar", "ledSystemPower",
         "btnHelpLaptop", "btnHelpPC", "btnHelpWireless", "btnHelpRouting",
         "btnHelpDialer", "btnHelpStreamMusic",
-        "btnRouting01", "btnRouting02", "btnRouting03", "btnRouting04", "btnRouting05"
+        "btnRouting01", "btnRouting02", "btnRouting03", "btnRouting04", "btnRouting05", "btnRouting06", "btnRouting07", "btnRouting08"
     }
     
     local missing = {}
@@ -132,7 +138,7 @@ local function normalizeControlArrays()
     end
     
     -- Build routing button array
-    for i = 1, 5 do
+    for i = 1, 8 do
         local btn = controls["btnRouting" .. string.format("%02d", i)]
         if btn then controlsToNormalize.routingButtons[i] = btn end
     end
@@ -291,13 +297,14 @@ function LayerModule:showLayer()
         "C05-Start", 
         "D01-ShutdownConfirm",
         "E01-SystemProgressWarming", "E02-SystemProgressCooling", "E05-SystemProgress",
-        "H01-RoomControls", 
+        "H05-RoomControls", 
         "I01-CallActive", "I02-HelpLaptop", "I03-HelpPC","I04-HelpWireless", "I05-HelpRouting", "I06-HelpDialer", "I07-HelpStreamMusic",
         "J01-ConnectUSBLaptop", "J02-ConnectUSBPC", "J03-ACPRActive", "J04-CamPresetSaved","J05-CameraControls", 
         "L01-HDMI01Disconnected", "L05-Laptop",
         "P01-HDMI02Disconnected", "P05-PC", "W05-Wireless",
-        "R01-Routing-Lobby", "R02-Routing-WTerrace", "R03-Routing-NTerraceWall","R04-Routing-Garden", "R05-Routing-NTerraceFloor", "R10-Routing",
-        "S05-StreamMusic", 
+        "R01-Routing-SalonA", "R02-Routing-SalonB", "R03-Routing-SalonC","R04-Routing-SalonD", "R05-Routing-SalonE",
+        "R06-Routing-SalonF", "R07-Routing-SalonG", "R08-Routing-SalonH", "R10-Routing",
+        "S10-StreamMusic", 
         "V05-Dialer", 
         "X01-ProgramVolume", 
         "Y01-Navbar", 
@@ -332,7 +339,7 @@ function LayerModule:showLayer()
             callLayerFunctions = {function() self:hideBaseLayers() end}
         },
         [self.controller.kLayerRoomControls] = {
-            showLayers = {"H01-RoomControls"},
+            showLayers = {"H05-RoomControls"},
             hideLayers = {"X01-ProgramVolume"},
             callLayerFunctions = {function() self.controller.sublayerModule:updateCallActiveState() end}
         },
@@ -380,7 +387,7 @@ function LayerModule:showLayer()
             }
         },
         [self.controller.kLayerStreamMusic] = {
-            showLayers = {"S05-StreamMusic"},
+            showLayers = {"S10-StreamMusic"},
             callLayerFunctions = {
                 function() self.controller.sublayerModule:updateStreamMusicHelpState() end,
                 function() self.controller.sublayerModule:updateCallActiveState() end
@@ -562,8 +569,9 @@ function RoutingModule.new(controller)
     local self = BaseModule.new(controller, "Routing")
     setmetatable(self, RoutingModule)
     self.routingLayers = {
-        "R01-Routing-Lobby", "R02-Routing-WTerrace", "R03-Routing-NTerraceWall",
-        "R04-Routing-Garden", "R05-Routing-NTerraceFloor"
+        "R01-Routing-SalonA", "R02-Routing-SalonB", "R03-Routing-SalonC",
+        "R04-Routing-SalonD", "R05-Routing-SalonE", "R06-Routing-SalonF",
+        "R07-Routing-SalonG", "R08-Routing-SalonH"
     }
     self.activeRoutingLayer = 1
     return self
@@ -576,7 +584,7 @@ function RoutingModule:showRoutingLayer()
     end
     
     -- Hide program volume layer for routing view
-    self.controller.layerModule:updateLayerVisibility({"X01-ProgramVolume"}, false, "none")
+    --self.controller.layerModule:updateLayerVisibility({"X01-ProgramVolume"}, false, "none")
     
     -- Hide all routing layers
     for _, layer in ipairs(self.routingLayers) do
@@ -589,8 +597,10 @@ function RoutingModule:showRoutingLayer()
 end
 
 function RoutingModule:getRoutingButtons()
-    return {controls.btnRouting01, controls.btnRouting02, controls.btnRouting03, controls.btnRouting04, controls.btnRouting05, controls.btnRouting06, controls.btnRouting07, controls.btnRouting08}
+    return {controls.btnRouting01, controls.btnRouting02, controls.btnRouting03, controls.btnRouting04, 
+    controls.btnRouting05, controls.btnRouting06, controls.btnRouting07, controls.btnRouting08}
 end
+
 function RoutingModule:interlockRoutingButtons()
     local routingButtons = self:getRoutingButtons()
     for i, btn in ipairs(routingButtons) do
@@ -612,8 +622,11 @@ end
 function RoutingModule:resetRoutingButtons()
     local routingButtons = self:getRoutingButtons()
     for i, btn in ipairs(routingButtons) do
-        if btn then btn.Boolean = (i == self.activeRoutingLayer) end
+        if btn then 
+            setProp(btn, "Boolean", false) -- Reset all routing buttons to false
+        end
     end
+    self:debug("Routing buttons reset")
 end
 
 -------------------[ Video Switcher Module ]---------------
@@ -927,7 +940,7 @@ function ProgressModule:startLoadingBar(isPoweringOn)
             self.timeoutTimer:Stop()
             self.isAnimating = false
             
-            local targetLayer = isPoweringOn and self.controller.kLayerLaptop or self.controller.kLayerStart
+            local targetLayer = isPoweringOn and self.controller.kLayerRouting or self.controller.kLayerStart
             self.controller:btnNavEventHandler(targetLayer)
         else
             self.loadingTimer:Start(interval)
@@ -966,8 +979,8 @@ function UCIController.new(uciPage, defaultRoutingLayer, defaultActiveLayer, hid
     -- Core properties
     self.uciPage = uciPage
     self.debugging = true
-    self.varActiveLayer = defaultActiveLayer or 8 -- kLayerLaptop
-    self.defaultActiveLayer = defaultActiveLayer or 8
+    self.varActiveLayer = defaultActiveLayer or 10 -- kLayerRouting
+    self.defaultActiveLayer = defaultActiveLayer or 10
     self.hiddenNavIndices = hiddenNavIndices or {}
     self.isInitialized = false
     
@@ -1130,7 +1143,6 @@ function UCIController:btnNavEventHandler(argIndex)
 end
 
 function UCIController:interlock()
-    -- Use cached control arrays to avoid repeated lookups
     local navButtons = self.normalizedControls.navButtons
     if not navButtons then return end
     
@@ -1161,11 +1173,11 @@ function UCIController:interlock()
             setProp(btn, "Boolean", shouldBeActive) -- Use setProp to prevent redundant assignments
         end
     end
-end
-
---Reset routing buttons when not on routing layer
-if self.varActiveLayer ~= self.kLayerRouting then
-    self.routingModule:resetRoutingButtons()
+    
+    -- Reset routing buttons when not on routing layer
+    if self.varActiveLayer ~= self.kLayerRouting then
+        self.routingModule:resetRoutingButtons()
+    end
 end
 
 function UCIController:updateLegends()
@@ -1199,11 +1211,15 @@ function UCIController:initializeLegendArrays()
         "txtNav05", "txtNav06", "txtNav07", "txtNav08",
         "txtNav09", "txtNav10", "txtNav11", "txtNav12",
         "txtNavShutdown", "txtRoomName", "txtRoomNameStart",
-        "txtRoutingRooms", "txtRouting01", "txtRouting02", "txtRouting03","txtRouting04", "txtRouting05", "txtRoutingSources",
+        "txtRoutingRooms", "txtRouting01", "txtRouting02", "txtRouting03","txtRouting04", 
+        "txtRouting05", "txtRouting06", "txtRouting07", "txtRouting08", "txtRoutingSources",
         "txtAudSrc01", "txtAudSrc02", "txtAudSrc03", "txtAudSrc04",
         "txtAudSrc05", "txtAudSrc06", "txtAudSrc07", "txtAudSrc08",
-        "txtGainPGM", "txtGain01", "txtGain02", "txtGain03", "txtGain04",
-        "txtGain05", "txtGain06", "txtGain07", "txtGain08", "txtGain09", "txtGain10",
+        "txtGainPGM", 
+        "txtGain01", "txtGain02", "txtGain03", "txtGain04","txtGain05", "txtGain06", "txtGain07", "txtGain08", "txtGain09", "txtGain10",
+        "txtGain11", "txtGain12", "txtGain13", "txtGain14","txtGain15", "txtGain16", "txtGain17", "txtGain18", "txtGain19", "txtGain20",
+        "txtGain21", "txtGain22", "txtGain23", "txtGain24","txtGain25", "txtGain26", "txtGain27", "txtGain28", "txtGain29", "txtGain30",
+        "txtGain31", "txtGain32", "txtGain33", "txtGain34","txtGain35", "txtGain36", "txtGain37", "txtGain38", "txtGain39", "txtGain40",
         "txtDisplay01", "txtDisplay02", "txtDisplay03", "txtDisplay04"
     }
     
@@ -1224,11 +1240,15 @@ function UCIController:initializeLegendArrays()
         "txtLabelNav05", "txtLabelNav06", "txtLabelNav07", "txtLabelNav08",
         "txtLabelNav09", "txtLabelNav10", "txtLabelNav11", "txtLabelNav12",
         "txtLabelNavShutdown", "txtLabelRoomName", "txtLabelRoomNameStart",
-        "txtLabelRoutingRooms", "txtLabelRouting01", "txtLabelRouting02", "txtLabelRouting03","txtLabelRouting04", "txtLabelRouting05", "txtLabelRoutingSources",
+        "txtLabelRoutingRooms", "txtLabelRouting01", "txtLabelRouting02", "txtLabelRouting03","txtLabelRouting04", 
+        "txtLabelRouting05", "txtLabelRouting06", "txtLabelRouting07", "txtLabelRouting08", "txtLabelRoutingSources",
         "txtLabelAudSrc01", "txtLabelAudSrc02", "txtLabelAudSrc03", "txtLabelAudSrc04",
         "txtLabelAudSrc05", "txtLabelAudSrc06", "txtLabelAudSrc07", "txtLabelAudSrc08",
-        "txtLabelGainPGM", "txtLabelGain01", "txtLabelGain02", "txtLabelGain03", "txtLabelGain04",
-        "txtLabelGain05", "txtLabelGain06", "txtLabelGain07", "txtLabelGain08", "txtLabelGain09", "txtLabelGain10",
+        "txtLabelGainPGM", 
+        "txtLabelGain01", "txtLabelGain02", "txtLabelGain03", "txtLabelGain04","txtLabelGain05", "txtLabelGain06", "txtLabelGain07", "txtLabelGain08", "txtLabelGain09", "txtLabelGain10",
+        "txtLabelGain11", "txtLabelGain12", "txtLabelGain13", "txtLabelGain14","txtLabelGain15", "txtLabelGain16", "txtLabelGain17", "txtLabelGain18", "txtLabelGain19", "txtLabelGain20",
+        "txtLabelGain21", "txtLabelGain22", "txtLabelGain23", "txtLabelGain24","txtLabelGain25", "txtLabelGain26", "txtLabelGain27", "txtLabelGain28", "txtLabelGain29", "txtLabelGain30",
+        "txtLabelGain31", "txtLabelGain32", "txtLabelGain33", "txtLabelGain34","txtLabelGain35", "txtLabelGain36", "txtLabelGain37", "txtLabelGain38", "txtLabelGain39", "txtLabelGain40",
         "txtLabelDisplay01", "txtLabelDisplay02", "txtLabelDisplay03", "txtLabelDisplay04"
     }
     
@@ -1375,7 +1395,7 @@ local function createUCIController(targetPageName, defaultRoutingLayer, defaultA
         return {
             uciPage = targetPageName,
             debugging = true,
-            varActiveLayer = defaultActiveLayer or 8,
+            varActiveLayer = defaultActiveLayer or 10,
             isInitialized = false,
             btnNavEventHandler = function(self, layer)
                 print("Minimal UCI: Navigation to layer " .. layer .. " (limited functionality)")
@@ -1400,8 +1420,8 @@ end
 --------------[ Instance Creation ]-------------------------
 myUCI = createUCIController(
     Uci.Variables.txtUCIPageName.String,
-    tonumber(Uci.Variables.numDefaultRoutingLayer.Value) or 4,
-    tonumber(Uci.Variables.numDefaultActiveLayer.Value) or 8,
+    tonumber(Uci.Variables.numDefaultRoutingLayer.Value) or 1,
+    tonumber(Uci.Variables.numDefaultActiveLayer.Value) or 10,
     {} -- Hidden nav indices
 )
 

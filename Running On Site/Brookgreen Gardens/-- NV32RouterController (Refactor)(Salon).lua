@@ -174,11 +174,10 @@ function NV32RouterController.new(config)
     }
     
     self.outputs = {
-        OUTPUT1    = 1,
-        OUTPUT2    = 2,
+        nvOutput01    = 1,
+        nvOutput02    = 2,
     }
     
-    -- UCI Input mapping (matching original implementation)
     self.uciInputs = {
         self.inputs.HDMI1,
         self.inputs.HDMI2,
@@ -271,7 +270,7 @@ function NV32RouterController:checkUCILayerChange()
         if self.uciLayerToInput[currentLayer] then
             local targetInput = self.uciLayerToInput[currentLayer]
             self:debugPrint("UCI Layer " .. currentLayer .. " triggers input switch to " .. targetInput)
-            self:setRoute(targetInput, self.outputs.OUTPUT1)
+            self:setRoute(targetInput, self.outputs.nvOutput01)
         end
     end
 end
@@ -308,7 +307,7 @@ function NV32RouterController:setupDirectUCIButtonMonitoring()
                 if ctl.Boolean and self.uciLayerToInput[layer] then
                     local targetInput = self.uciLayerToInput[layer]
                     self:debugPrint("UCI Button " .. layer .. " pressed, switching to input " .. targetInput)
-                    self:setRoute(targetInput, self.outputs.OUTPUT1)
+                    self:setRoute(targetInput, self.outputs.nvOutput01)
                 end
             end
             self:debugPrint("Direct monitoring set up for UCI button " .. layer)
@@ -330,7 +329,7 @@ function NV32RouterController:onUCILayerChange(layerChangeInfo)
     if self.uciLayerToInput[layerChangeInfo.currentLayer] then
         local targetInput = self.uciLayerToInput[layerChangeInfo.currentLayer]
         self:debugPrint("UCI Layer " .. layerChangeInfo.currentLayer .. " triggers input switch to " .. targetInput)
-        self:setRoute(targetInput, self.outputs.OUTPUT1)
+        self:setRoute(targetInput, self.outputs.nvOutput01)
     end
 end
 
@@ -508,8 +507,8 @@ function NV32RouterController:setRoomControlsComponent()
     if powerLED then
         powerLED.EventHandler = function(ctl)
             local targetInput = ctl.Boolean and uciInputs[1] or uciInputs[4]
-            this:setRoute(targetInput, outputs.OUTPUT1)
-            this:setRoute(targetInput, outputs.OUTPUT2)
+            this:setRoute(targetInput, outputs.nvOutput01)
+            this:setRoute(targetInput, outputs.nvOutput02)
         end
     end
 
@@ -520,22 +519,22 @@ function NV32RouterController:setRoomControlsComponent()
             if ctl.Boolean and not this.fireAlarmActive then
                 -- Fire alarm just activated: store the last input before override
                 this.preFireAlarmInput = this.preFireAlarmInput or {}
-                this.preFireAlarmInput[outputs.OUTPUT1] = this.lastInput[outputs.OUTPUT1]
-                this.preFireAlarmInput[outputs.OUTPUT2] = this.lastInput[outputs.OUTPUT2]
+                this.preFireAlarmInput[outputs.nvOutput01] = this.lastInput[outputs.nvOutput01]
+                this.preFireAlarmInput[outputs.nvOutput02] = this.lastInput[outputs.nvOutput02]
                 this.fireAlarmActive = true
                 -- Route to fire alarm input (e.g., Graphic2)
-                this:setRoute(uciInputs[5], outputs.OUTPUT1)
-                this:setRoute(uciInputs[5], outputs.OUTPUT2)
+                this:setRoute(uciInputs[5], outputs.nvOutput01)
+                this:setRoute(uciInputs[5], outputs.nvOutput02)
             elseif not ctl.Boolean and this.fireAlarmActive then
                 -- Fire alarm just cleared: restore previous input
                 this.fireAlarmActive = false
                 if powerLED and powerLED.Boolean then
-                    this:setRoute(this.preFireAlarmInput[outputs.OUTPUT1] or uciInputs[1], outputs.OUTPUT1)
-                    this:setRoute(this.preFireAlarmInput[outputs.OUTPUT2] or uciInputs[1], outputs.OUTPUT2)
+                    this:setRoute(this.preFireAlarmInput[outputs.nvOutput01] or uciInputs[1], outputs.nvOutput01)
+                    this:setRoute(this.preFireAlarmInput[outputs.nvOutput02] or uciInputs[1], outputs.nvOutput02)
                 end
                 -- Clear the stored values
-                this.preFireAlarmInput[outputs.OUTPUT1] = nil
-                this.preFireAlarmInput[outputs.OUTPUT2] = nil
+                this.preFireAlarmInput[outputs.nvOutput01] = nil
+                this.preFireAlarmInput[outputs.nvOutput02] = nil
             end
         end
     end
@@ -585,8 +584,8 @@ function NV32RouterController:registerEventHandlers()
     
     -- Output button handler map
     local outputHandlers = {
-        btnNV32Out01 = {output = self.outputs.OUTPUT1, name = "Output 1"},
-        btnNV32Out02 = {output = self.outputs.OUTPUT2, name = "Output 2"}
+        btnNV32Out01 = {output = self.outputs.nvOutput01, name = "Output 1"},
+        btnNV32Out02 = {output = self.outputs.nvOutput02, name = "Output 2"}
     }
     
     -- Register output button handlers
@@ -615,8 +614,8 @@ function NV32RouterController:funcInit()
     
     -- Set default selection to first input (HDMI1) for both outputs
     if self.nv32Router then
-        self:setRoute(self.uciInputs[1], self.outputs.OUTPUT1)
-        self:setRoute(self.uciInputs[1], self.outputs.OUTPUT2)
+        self:setRoute(self.uciInputs[1], self.outputs.nvOutput01)
+        self:setRoute(self.uciInputs[1], self.outputs.nvOutput02)
     end
     
     self:debugPrint("NV32 Router Controller Initialized")

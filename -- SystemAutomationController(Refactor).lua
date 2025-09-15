@@ -93,6 +93,16 @@ local function validateControls()
     return true
 end
 
+-------------------[ Utility Functions ]-------------------
+local function isArr(t)
+    return type(t) == "table" and t[1] ~= nil
+end
+
+local function getControlArray(ctrl)
+    if isArr(ctrl) then return ctrl end
+    return type(ctrl) == "table" and { ctrl } or {}
+end
+
 local function normalizeControlArrays()
     -- Normalize all array controls to consistent structures
     local arrayControls = {
@@ -108,16 +118,6 @@ local function normalizeControlArrays()
             controls[controlName] = { ctrl }
         end
     end
-end
-
--------------------[ Utility Functions ]-------------------
-local function isArr(t)
-    return type(t) == "table" and t[1] ~= nil
-end
-
-local function getControlArray(ctrl)
-    if isArr(ctrl) then return ctrl end
-    return type(ctrl) == "table" and { ctrl } or {}
 end
 
 local function setProp(ctrl, prop, val)

@@ -38,11 +38,172 @@ local presetTolerance = 0.1  -- Default tolerance value
 -- Required libraries
 rapidjson = require("rapidjson")
 
+-------------------[ Control Validation ]-------------------
+local function validateControls()
+    local required = {
+        devCams = controls.devCams,
+        btnCamPreset = controls.btnCamPreset,
+        ledPresetMatch = controls.ledPresetMatch,
+        ledPresetSaved = controls.ledPresetSaved,
+        txtJSONStorage = controls.txtJSONStorage,
+        txtStatus = controls.txtStatus
+    }
+    
+    local optional = {
+        knbledOnTime = controls.knbledOnTime,
+        knbHoldTime = controls.knbHoldTime,
+        compcamRouter = controls.compcamRouter,
+        compRoomControls = controls.compRoomControls,
+        compCallSync = controls.compCallSync
+    }
+    
+    local missing = {}
+    local warnings = {}
+    
+    -- Check required controls
+    for name, control in pairs(required) do
+        if not control then
+            table.insert(missing, name)
+        end
+    end
+    
+    -- Check optional controls for warnings
+    for name, control in pairs(optional) do
+        if not control then
+            table.insert(warnings, name)
+        end
+    end
+    
+    -- Report missing required controls
+    if #missing > 0 then
+        print("ERROR: CameraPresetController validation failed - Missing required controls:")
+        for _, name in ipairs(missing) do
+            print("  - " .. name)
+        end
+        print("Controller initialization aborted.")
+        return false
+    end
+    
+    -- Report warnings for missing optional controls
+    if #warnings > 0 then
+        print("WARNING: CameraPresetController - Missing optional controls:")
+        for _, name in ipairs(warnings) do
+            print("  - " .. name)
+        end
+    end
+    
+    return true
+end
+
+-------------------[ Array Normalization ]-------------------
+local function normalizeControlArrays()
+    -- Normalize controls that should be arrays
+    local arrayControls = {'btnCamPreset', 'ledPresetMatch', 'ledPresetSaved'}
+    
+    for _, controlName in ipairs(arrayControls) do
+        local control = controls[controlName]
+        if control and type(control) ~= "table" then
+            controls[controlName] = {control}
+        end
+    end
+end
+
+-------------------[ Utility Functions ]-------------------
+local function isArr(obj)
+    return type(obj) == "table" and obj[1] ~= nil
+end
+
+local function getControlArray(control)
+    if not control then return {} end
+    return isArr(control) and control or {control}
+end
+
+local function setProp(obj, prop, value)
+    if not obj or obj[prop] == value then return false end
+    obj[prop] = value
+    return true
+end
+
+local function bind(control, handler)
+    if control and control.EventHandler ~= handler then
+        control.EventHandler = handler
+        return true
+    end
+    return false
+end
+
+local function bindArray(controls, handler)
+    local bound = 0
+    for i, control in ipairs(getControlArray(controls)) do
+        if bind(control, handler) then
+            bound = bound + 1
+        end
+    end
+    return bound
+end
+
+local function forEach(array, fn)
+    if not isArr(array) then return end
+    for i, item in ipairs(array) do
+        fn(item, i)
+    end
+end
+
+-------------------[ Component State Management Utility ]-------------------
+local function resetComponentsArray(componentsTable, componentType)
+    if not componentsTable or not componentType then return false end
+    
+    -- Clear existing components of this type
+    if componentsTable[componentType] then
+        componentsTable[componentType] = {}
+    end
+    
+    -- Initialize component array if it doesn't exist
+    if not componentsTable[componentType] then
+        componentsTable[componentType] = {}
+    end
+    
+    return true
+end
+
+-------------------[ Base Module ]-------------------
+local BaseModule = {}
+BaseModule.__index = BaseModule
+
+function BaseModule.new(controller, name)
+    local self = setmetatable({}, BaseModule)
+    self.controller = controller
+    self.name = name or "BaseModule"
+    return self
+end
+
+function BaseModule:debugPrint(message)
+    if self.controller and self.controller.debugging then
+        print(string.format("[%s Debug] %s", self.name, message))
+    end
+end
+
+function BaseModule:init()
+    -- Override in derived modules
+end
+
+function BaseModule:cleanup()
+    -- Override in derived modules
+end
+
 -----------------[ Class Constructor ]-------------------
 CameraPresetController = {}
 CameraPresetController.__index = CameraPresetController
 
 function CameraPresetController.new(config)
+    -- Early validation - return nil if validation fails
+    if not validateControls() then
+        return nil
+    end
+    
+    -- Normalize control arrays early
+    normalizeControlArrays()
+    
     local self = setmetatable({}, CameraPresetController)
     
     -- Instance properties
@@ -94,119 +255,229 @@ function CameraPresetController.new(config)
 end
 
 -----------------[ JSON Module ]-------------------
+local JSONModule = setmetatable({}, {__index = BaseModule})
+JSONModule.__index = JSONModule
+
+function JSONModule.new(controller)
+    local self = setmetatable(BaseModule.new(controller, "JSONModule"), JSONModule)
+    return self
+end
+
+function JSONModule:save()
+    if not self.controller.components.presets then return false end
+    
+    local strTemp = rapidjson.encode(self.controller.components.presets, {pretty=true, sort_keys=true})
+    if not setProp(controls.txtJSONStorage, "String", strTemp) then
+        self:debugPrint("No new JSON data to save")
+        return false
+    end
+    
+    self:debugPrint("JSON data saved")
+    return true
+end
+
+function JSONModule:load()
+    if not controls.txtJSONStorage.String or controls.txtJSONStorage.String == "" then
+        self:debugPrint("JSON storage is empty")
+        return false
+    end
+    
+    local tblTemp = rapidjson.decode(controls.txtJSONStorage.String)
+    if type(tblTemp) ~= "table" then
+        self:debugPrint("JSON data was invalid")
+        return false
+    end
+    
+    self.controller.components.presets = tblTemp
+    self:debugPrint("JSON data loaded successfully")
+    return true
+end
+
 function CameraPresetController:initJSONModule()
-    self.jsonModule = {
-        save = function()
-            local strTemp = rapidjson.encode(self.components.presets, {pretty=true, sort_keys=true})
-            if strTemp ~= Controls.txtJSONStorage.String then
-                Controls.txtJSONStorage.String = strTemp
-                self:debugPrint("JSON data saved")
-            else
-                self:debugPrint("No new JSON data to save")
-            end
-        end,
-        
-        load = function()
-            local tblTemp = rapidjson.decode(Controls.txtJSONStorage.String)
-            if type(tblTemp) == "table" then
-                self.components.presets = tblTemp
-                self:debugPrint("JSON data loaded successfully")
-            else
-                self:debugPrint("JSON data was empty or invalid")
-            end
-        end
-    }
+    self.jsonModule = JSONModule.new(self)
 end
 
 -----------------[ Camera Module ]-------------------
-function CameraPresetController:initCameraModule()
-    self.cameraModule = {
-        discoverCameras = function()
-            local cameraNames = {}
-            for index, tblComponents in pairs(Component.GetComponents()) do
-                for k, v in pairs(tblComponents) do
-                    if v == self.componentTypes.cameras then
-                        table.insert(cameraNames, tblComponents.Name)
-                        self.components.cameras[tblComponents.Name] = Component.New(tblComponents.Name)
-                        self:debugPrint("Found camera: " .. tblComponents.Name)
-                    end
-                end
-            end
-            return cameraNames
-        end,
-        
-        purgeRemovedCameras = function()
-            for key, value in pairs(self.components.presets) do
-                local found = false
-                for k, v in pairs(self.components.cameras) do
-                    if key == k then found = true end
-                end
-                if not found then
-                    self.components.presets[key] = nil
-                    self:debugPrint("Purged presets for missing camera: " .. key)
-                end
-            end
-        end,
-        
-        initializePresets = function(cameraNames)
-            for _, camName in pairs(cameraNames) do
-                if self.components.presets[camName] == nil then
-                    self.components.presets[camName] = {}
-                    for i, v in ipairs(Controls.btnCamPreset) do
-                        self.components.presets[camName][i] = "0 0 0"
-                    end
-                    self:debugPrint("Initialized presets for camera: " .. camName)
-                end
-            end
-        end,
-        
-        updatePresetMatchLEDs = function()
-            local camName = Controls.devCams.String
-            local currentPreset = ""
-            local isMoving = false
-            
-            -- Get current preset and movement status if camera exists
-            if camName ~= "" and self.components.cameras[camName] then
-                currentPreset = self.components.cameras[camName]["ptz.preset"].String
-                -- Check if camera is moving
-                if self.components.cameras[camName]["is.moving"] then
-                    isMoving = self.components.cameras[camName]["is.moving"].Boolean
-                end
-            end
-            
-            -- Update all LEDs in one loop
-            for i, led in ipairs(Controls.ledPresetMatch) do
-                local presetMatches = false
-                -- Skip tolerance checking if camera is moving
-                if not isMoving and currentPreset ~= "" and self.components.presets[camName] and self.components.presets[camName][i] then
-                    presetMatches = self:comparePresetWithTolerance(currentPreset, self.components.presets[camName][i])
-                end
-                led.Boolean = presetMatches
-            end
-        end,
-        
-        savePreset = function(presetIndex)
-            local camName = Controls.devCams.String
-            if camName ~= "" and self.components.cameras[camName] then
-                local oldPreset = self.components.presets[camName][presetIndex]
-                local newPreset = self.components.cameras[camName]["ptz.preset"].String
-                self.components.presets[camName][presetIndex] = newPreset
-                self:debugPrint(string.format("Saved %s Preset[%d] from %s to %s", 
-                    camName, presetIndex, oldPreset, newPreset))
-                self.jsonModule.save()
-            end
-        end,
-        
-        recallPreset = function(presetIndex)
-            local camName = Controls.devCams.String
-            if camName ~= "" and self.components.cameras[camName] then
-                local preset = self.components.presets[camName][presetIndex]
-                self.components.cameras[camName]["ptz.preset"].String = preset
-                self:debugPrint(string.format("Recalled %s Preset[%d]: %s", 
-                    camName, presetIndex, preset))
-            end
+local CameraModule = setmetatable({}, {__index = BaseModule})
+CameraModule.__index = CameraModule
+
+function CameraModule.new(controller)
+    local self = setmetatable(BaseModule.new(controller, "CameraModule"), CameraModule)
+    return self
+end
+
+function CameraModule:discoverCameras()
+    -- Reset cameras array for fresh discovery
+    resetComponentsArray(self.controller.components, "cameras")
+    
+    local cameraNames = {}
+    local components = Component.GetComponents()
+    
+    if not components then
+        self:debugPrint("No components available for discovery")
+        return cameraNames
+    end
+    
+    for _, tblComponents in pairs(components) do
+        if not tblComponents.Type or not tblComponents.Name then
+            goto continue
         end
-    }
+        
+        if tblComponents.Type == self.controller.componentTypes.cameras then
+            table.insert(cameraNames, tblComponents.Name)
+            self.controller.components.cameras[tblComponents.Name] = Component.New(tblComponents.Name)
+            self:debugPrint("Found camera: " .. tblComponents.Name)
+        end
+        
+        ::continue::
+    end
+    
+    return cameraNames
+end
+function CameraModule:purgeRemovedCameras()
+    if not self.controller.components.presets then return end
+    
+    for cameraName in pairs(self.controller.components.presets) do
+        if not self.controller.components.cameras[cameraName] then
+            self.controller.components.presets[cameraName] = nil
+            self:debugPrint("Purged presets for missing camera: " .. cameraName)
+        end
+    end
+end
+
+function CameraModule:initializePresets(cameraNames)
+    if not cameraNames or #cameraNames == 0 then
+        self:debugPrint("No cameras to initialize presets for")
+        return
+    end
+    
+    local presetControls = getControlArray(controls.btnCamPreset)
+    if #presetControls == 0 then
+        self:debugPrint("No preset controls available")
+        return
+    end
+    
+    for _, camName in pairs(cameraNames) do
+        if not self.controller.components.presets[camName] then
+            self.controller.components.presets[camName] = {}
+            for i = 1, #presetControls do
+                self.controller.components.presets[camName][i] = "0 0 0"
+            end
+            self:debugPrint("Initialized presets for camera: " .. camName)
+        end
+    end
+end
+function CameraModule:updatePresetMatchLEDs()
+    local camName = controls.devCams.String
+    if not camName or camName == "" then
+        -- Clear all LEDs when no camera selected
+        forEach(getControlArray(controls.ledPresetMatch), function(led)
+            setProp(led, "Boolean", false)
+        end)
+        return
+    end
+    
+    local camera = self.controller.components.cameras[camName]
+    if not camera then
+        self:debugPrint("Camera not found: " .. camName)
+        return
+    end
+    
+    -- Early return if camera is moving
+    local isMoving = camera["is.moving"] and camera["is.moving"].Boolean or false
+    if isMoving then
+        forEach(getControlArray(controls.ledPresetMatch), function(led)
+            setProp(led, "Boolean", false)
+        end)
+        return
+    end
+    
+    local currentPreset = camera["ptz.preset"] and camera["ptz.preset"].String or ""
+    if currentPreset == "" then
+        self:debugPrint("No current preset available for camera: " .. camName)
+        return
+    end
+    
+    local savedPresets = self.controller.components.presets[camName]
+    if not savedPresets then
+        self:debugPrint("No saved presets for camera: " .. camName)
+        return
+    end
+    
+    -- Update LEDs efficiently
+    local ledControls = getControlArray(controls.ledPresetMatch)
+    for i, led in ipairs(ledControls) do
+        local presetMatches = savedPresets[i] and 
+            self.controller:comparePresetWithTolerance(currentPreset, savedPresets[i]) or false
+        setProp(led, "Boolean", presetMatches)
+    end
+end
+function CameraModule:savePreset(presetIndex)
+    local camName = controls.devCams.String
+    if not camName or camName == "" then
+        self:debugPrint("No camera selected for preset save")
+        return false
+    end
+    
+    local camera = self.controller.components.cameras[camName]
+    if not camera or not camera["ptz.preset"] then
+        self:debugPrint("Invalid camera or missing preset control: " .. camName)
+        return false
+    end
+    
+    local newPreset = camera["ptz.preset"].String
+    if not newPreset or newPreset == "" then
+        self:debugPrint("No current preset available to save")
+        return false
+    end
+    
+    -- Ensure presets table exists
+    if not self.controller.components.presets[camName] then
+        self.controller.components.presets[camName] = {}
+    end
+    
+    local oldPreset = self.controller.components.presets[camName][presetIndex] or "none"
+    self.controller.components.presets[camName][presetIndex] = newPreset
+    
+    self:debugPrint(string.format("Saved %s Preset[%d] from %s to %s", 
+        camName, presetIndex, oldPreset, newPreset))
+    
+    -- Save to JSON
+    return self.controller.jsonModule:save()
+end
+
+function CameraModule:recallPreset(presetIndex)
+    local camName = controls.devCams.String
+    if not camName or camName == "" then
+        self:debugPrint("No camera selected for preset recall")
+        return false
+    end
+    
+    local camera = self.controller.components.cameras[camName]
+    if not camera or not camera["ptz.preset"] then
+        self:debugPrint("Invalid camera or missing preset control: " .. camName)
+        return false
+    end
+    
+    local savedPresets = self.controller.components.presets[camName]
+    if not savedPresets or not savedPresets[presetIndex] then
+        self:debugPrint(string.format("No saved preset[%d] for camera: %s", presetIndex, camName))
+        return false
+    end
+    
+    local preset = savedPresets[presetIndex]
+    if preset == "0 0 0" then
+        self:debugPrint(string.format("Preset[%d] not initialized for camera: %s", presetIndex, camName))
+        return false
+    end
+    
+    setProp(camera["ptz.preset"], "String", preset)
+    self:debugPrint(string.format("Recalled %s Preset[%d]: %s", camName, presetIndex, preset))
+    return true
+end
+
+function CameraPresetController:initCameraModule()
+    self.cameraModule = CameraModule.new(self)
 end
 
 -----------------[ Call Sync ]-------------------
@@ -227,73 +498,119 @@ function CameraPresetController:initVideoBridgeModule()
     }
 end
 
------------------[ Router ]-------------------
-function CameraPresetController:initRouterModule()
-    self.routerModule = {
-        discoverRouters = function()
-            for index, tblComponents in pairs(Component.GetComponents()) do
-                for k, v in pairs(tblComponents) do
-                    if v == self.componentTypes.routers then
-                        self.components.routers[tblComponents.Name] = Component.New(tblComponents.Name)
-                        self:debugPrint("Found video router: " .. tblComponents.Name)
-                    end
-                end
-            end
-        end,
-        
-        syncCamChoiceWithRouter = function(router, routerKey, camChoiceControl)
-            local selectedRouterName = Controls.compcamRouter.String or "(none)"
-            if not router or not router[routerKey] then
-                self:debugPrint("Invalid router or router key")
-                return
-            end
-            
-            -- Event handler updates camChoiceControl based on router state
-            router[routerKey].EventHandler = function()
-                local routedInputIndex = router[routerKey].Value
-                self:debugPrint(string.format("Router %s.%s EventHandler fired, Value=%s", selectedRouterName, routerKey, tostring(routedInputIndex)))
-                
-                -- Direct index mapping since router values match camera choice indices
-                if routedInputIndex > 0 and routedInputIndex <= #camChoiceControl.Choices then
-                    camChoiceControl.Value = routedInputIndex
-                    camChoiceControl.String = camChoiceControl.Choices[routedInputIndex]
-                    self:debugPrint(string.format("Set camChoiceControl.Value = %d (%s)", 
-                        routedInputIndex, camChoiceControl.String))
-                else
-                    self:debugPrint(string.format("Invalid router input index: %d", routedInputIndex))
-                end
-                
-                -- Update LED states after camera selection changes
-                self.cameraModule.updatePresetMatchLEDs()
-            end
-            
-            -- Call once at startup
-            router[routerKey].EventHandler()
-            self:debugPrint(string.format("Synchronized router %s.%s with camera choice", 
-                selectedRouterName, routerKey))
-        end,
-        
-        setupRouterSync = function()
-            local selectedRouterName = Controls.compcamRouter.String
-            local router = self.components.routers[selectedRouterName]
-            
-            if not router then
-                self:debugPrint("No router selected or router not found for sync.")
-                return
-            end
-            
-            self:debugPrint(string.format("Setting up router sync for: %s", selectedRouterName))
-            
-            -- Setup sync for all configured outputs
-            for _, output in ipairs(self.config.routerOutputs) do
-                if router[output] then
-                    self.routerModule.syncCamChoiceWithRouter(router, output, Controls.devCams)
-                else
-                    self:debugPrint(string.format("Router output %s not found", output))
-                end
-            end
+-----------------[ Router Module ]-------------------
+local RouterModule = setmetatable({}, {__index = BaseModule})
+RouterModule.__index = RouterModule
+
+function RouterModule.new(controller)
+    local self = setmetatable(BaseModule.new(controller, "RouterModule"), RouterModule)
+    return self
+end
+
+function RouterModule:discoverRouters()
+    -- Reset routers array for fresh discovery
+    resetComponentsArray(self.controller.components, "routers")
+    
+    local components = Component.GetComponents()
+    if not components then
+        self:debugPrint("No components available for router discovery")
+        return
+    end
+    
+    for _, tblComponents in pairs(components) do
+        if not tblComponents.Type or not tblComponents.Name then
+            goto continue
         end
-    }
+        
+        if tblComponents.Type == self.controller.componentTypes.routers then
+            self.controller.components.routers[tblComponents.Name] = Component.New(tblComponents.Name)
+            self:debugPrint("Found video router: " .. tblComponents.Name)
+        end
+        
+        ::continue::
+    end
+end
+function RouterModule:syncCamChoiceWithRouter(router, routerKey, camChoiceControl)
+    local selectedRouterName = controls.compcamRouter.String or "(none)"
+    
+    if not router or not router[routerKey] then
+        self:debugPrint("Invalid router or router key for sync")
+        return false
+    end
+    
+    if not camChoiceControl then
+        self:debugPrint("Invalid camera choice control for sync")
+        return false
+    end
+    
+    -- Create optimized event handler
+    local eventHandler = function()
+        local routedInputIndex = router[routerKey].Value
+        
+        -- Guard clause for invalid indices
+        if not routedInputIndex or routedInputIndex <= 0 or routedInputIndex > #camChoiceControl.Choices then
+            self:debugPrint(string.format("Invalid router input index: %s", tostring(routedInputIndex)))
+            return
+        end
+        
+        -- Update camera choice efficiently
+        if setProp(camChoiceControl, "Value", routedInputIndex) then
+            camChoiceControl.String = camChoiceControl.Choices[routedInputIndex]
+            self:debugPrint(string.format("Router %s.%s -> Camera: %s", 
+                selectedRouterName, routerKey, camChoiceControl.String))
+            
+            -- Update LED states after camera selection changes
+            self.controller.cameraModule:updatePresetMatchLEDs()
+        end
+    end
+    
+    -- Bind event handler
+    if bind(router[routerKey], eventHandler) then
+        self:debugPrint(string.format("Bound router %s.%s event handler", selectedRouterName, routerKey))
+        
+        -- Initialize state immediately
+        eventHandler()
+        return true
+    end
+    
+    return false
+end
+function RouterModule:setupRouterSync()
+    local selectedRouterName = controls.compcamRouter.String
+    
+    if not selectedRouterName or selectedRouterName == "" then
+        self:debugPrint("No router selected for sync setup")
+        return false
+    end
+    
+    local router = self.controller.components.routers[selectedRouterName]
+    if not router then
+        self:debugPrint("Router not found: " .. selectedRouterName)
+        return false
+    end
+    
+    self:debugPrint("Setting up router sync for: " .. selectedRouterName)
+    
+    local syncCount = 0
+    local routerOutputs = self.controller.config.routerOutputs or {"select.1"}
+    
+    -- Setup sync for all configured outputs
+    for _, output in ipairs(routerOutputs) do
+        if router[output] then
+            if self:syncCamChoiceWithRouter(router, output, controls.devCams) then
+                syncCount = syncCount + 1
+            end
+        else
+            self:debugPrint(string.format("Router output %s not found on %s", output, selectedRouterName))
+        end
+    end
+    
+    self:debugPrint(string.format("Successfully synced %d router outputs", syncCount))
+    return syncCount > 0
+end
+
+function CameraPresetController:initRouterModule()
+    self.routerModule = RouterModule.new(self)
 end
 
 -----------------[ Debug ]-------------------
@@ -426,169 +743,291 @@ end
 
 -----------------[ Event Handler Registration ]-------------------
 function CameraPresetController:registerEventHandlers()
-    -- Camera selection handler
-    Controls.devCams.EventHandler = function()
-        self.cameraModule.updatePresetMatchLEDs()
+    -- Core control handlers map
+    local coreHandlers = {
+        devCams = function()
+            self.cameraModule:updatePresetMatchLEDs()
+        end,
+        compcamRouter = function()
+            self.routerModule:setupRouterSync()
+        end,
+        compRoomControls = function()
+            self.components.roomControls = self:setComponent(controls.compRoomControls, "roomControls")
+        end,
+        knbledOnTime = function()
+            self.config.ledOnTime = controls.knbledOnTime.Value
+            self:debugPrint("LED On Time updated to: " .. self.config.ledOnTime)
+        end
+    }
+    
+    -- Batch register core handlers
+    for controlName, handler in pairs(coreHandlers) do
+        local control = controls[controlName]
+        if control then
+            bind(control, handler)
+            self:debugPrint("Registered handler for: " .. controlName)
+        end
     end
     
-    -- Router selection handler
-    Controls.compcamRouter.EventHandler = function()
-        self.routerModule.setupRouterSync()
+    -- Initialize preset button system
+    self:initPresetButtonHandlers()
+end
+
+function CameraPresetController:initPresetButtonHandlers()
+    local presetButtons = getControlArray(controls.btnCamPreset)
+    local ledControls = getControlArray(controls.ledPresetSaved)
+    
+    if #presetButtons == 0 then
+        self:debugPrint("No preset buttons found for handler registration")
+        return
     end
     
-    -- Room Controls selection handler
-    Controls.compRoomControls.EventHandler = function()
-        self.components.roomControls = self:setComponent(Controls.compRoomControls, "roomControls")
-    end
-    
-    -- LED On Time knob handler
-    Controls.knbledOnTime.EventHandler = function()
-        self.config.ledOnTime = Controls.knbledOnTime.Value
-        self:debugPrint("LED On Time updated to: " .. self.config.ledOnTime)
-    end
-    
-    -- Initialize timers and button handlers for each preset
-    for i, v in ipairs(Controls.btnCamPreset) do
+    -- Initialize button state and timers
+    for i = 1, #presetButtons do
         self.state.longPressed[i] = false
         self.state.countdownTimers[i] = Timer.New()
         self.state.ledTimers[i] = Timer.New()
         
-        -- Long press detection
+        -- Countdown timer handler (long press detection)
         self.state.countdownTimers[i].EventHandler = function()
             self.state.countdownTimers[i]:Stop()
-            if Controls.btnCamPreset[i].Boolean then
+            if presetButtons[i].Boolean then
                 self.state.longPressed[i] = true
-                Controls.ledPresetSaved[i].Boolean = true
+                if ledControls[i] then
+                    setProp(ledControls[i], "Boolean", true)
+                end
                 self.state.ledTimers[i]:Start(self.config.ledOnTime)
             end
         end
         
-        -- LED timer completion
+        -- LED timer handler (turn off save indicator)
         self.state.ledTimers[i].EventHandler = function()
             self.state.ledTimers[i]:Stop()
-            Controls.ledPresetSaved[i].Boolean = false
+            if ledControls[i] then
+                setProp(ledControls[i], "Boolean", false)
+            end
         end
         
         -- Button press/release handler
-        v.EventHandler = function(ctl)
+        local buttonHandler = function(ctl)
             if ctl.Boolean then
+                -- Button pressed - start long press timer
                 self.state.longPressed[i] = false
                 self.state.countdownTimers[i]:Start(self.config.holdTime)
             else
+                -- Button released - determine action
                 if self.state.longPressed[i] then
-                    self.cameraModule.savePreset(i)
+                    self.cameraModule:savePreset(i)
                 else
-                    self.cameraModule.recallPreset(i)
+                    self.cameraModule:recallPreset(i)
                 end
                 self.state.longPressed[i] = false
-                self.cameraModule.updatePresetMatchLEDs()
+                self.cameraModule:updatePresetMatchLEDs()
             end
         end
+        
+        bind(presetButtons[i], buttonHandler)
+    end
+    
+    self:debugPrint(string.format("Initialized %d preset button handlers", #presetButtons))
+end
+
+function CameraPresetController:setupCameraEventHandlers(cameraNames)
+    if not cameraNames or #cameraNames == 0 then
+        self:debugPrint("No cameras available for event handler setup")
+        return
+    end
+    
+    for _, camName in pairs(cameraNames) do
+        local camera = self.components.cameras[camName]
+        if not camera then
+            self:debugPrint("Camera component not found: " .. camName)
+            goto continue
+        end
+        
+        -- Set up preset change handler
+        if camera["ptz.preset"] then
+            bind(camera["ptz.preset"], function()
+                self.cameraModule:updatePresetMatchLEDs()
+            end)
+        end
+        
+        -- Set up movement status handler
+        if camera["is.moving"] then
+            bind(camera["is.moving"], function()
+                self.cameraModule:updatePresetMatchLEDs()
+            end)
+        end
+        
+        ::continue::
+    end
+    
+    self:debugPrint(string.format("Setup event handlers for %d cameras", #cameraNames))
+end
+
+function CameraPresetController:updateCameraUI(cameraNames)
+    -- Update camera choices safely
+    if controls.devCams then
+        controls.devCams.Choices = cameraNames or {}
+    end
+    
+    -- Disable JSON storage editing
+    if controls.txtJSONStorage then
+        setProp(controls.txtJSONStorage, "IsDisabled", true)
+    end
+    
+    -- Populate router choices
+    self:updateRouterChoices()
+    
+    -- Setup room controls choices
+    self:populateRoomControlsChoices()
+end
+
+function CameraPresetController:updateRouterChoices()
+    if not controls.compcamRouter then return end
+    
+    local routerNames = {}
+    for name in pairs(self.components.routers) do
+        table.insert(routerNames, name)
+    end
+    table.sort(routerNames)
+    
+    controls.compcamRouter.Choices = routerNames
+    if #routerNames > 0 then
+        setProp(controls.compcamRouter, "String", routerNames[1])
     end
 end
 
 -----------------[ Initialization ]-------------------
 function CameraPresetController:funcInit()
+    self:debugPrint("Starting controller initialization...")
+    
+    -- Early exit if essential modules not available
+    if not self.jsonModule or not self.cameraModule or not self.routerModule then
+        self:debugPrint("CRITICAL: Essential modules not initialized")
+        return false
+    end
+    
     -- Load saved presets
-    self.jsonModule.load()
+    if not self.jsonModule:load() then
+        self:debugPrint("Warning: Could not load existing JSON presets")
+    end
     
     -- Discover and initialize cameras and routers
-    local cameraNames = self.cameraModule.discoverCameras()
-    table.sort(cameraNames)  -- Ensure order is devCam01, devCam02, devCam03
-    for i, name in ipairs(cameraNames) do
-        self:debugPrint(string.format("Sorted cameraNames[%d]: %s", i, name))
-    end
-    self.routerModule.discoverRouters()
-    self.cameraModule.purgeRemovedCameras()
-    self.cameraModule.initializePresets(cameraNames)
-    
-    -- Set up camera position change handlers
-    for _, camName in pairs(cameraNames) do
-        self.components.cameras[camName]["ptz.preset"].EventHandler = function()
-            self.cameraModule.updatePresetMatchLEDs()
-        end
-        
-        -- Set up camera movement status handlers
-        if self.components.cameras[camName]["is.moving"] then
-            self.components.cameras[camName]["is.moving"].EventHandler = function()
-                self.cameraModule.updatePresetMatchLEDs()
-            end
-        end
+    local cameraNames = self.cameraModule:discoverCameras()
+    if not cameraNames or #cameraNames == 0 then
+        self:debugPrint("Warning: No cameras discovered")
+        cameraNames = {}
+    else
+        table.sort(cameraNames)  -- Ensure consistent order
+        self:debugPrint(string.format("Discovered %d cameras", #cameraNames))
     end
     
-    -- Setup router synchronization
-    self.routerModule.setupRouterSync()
+    -- Router discovery (optional)
+    self.routerModule:discoverRouters()
     
-    -- Update UI
-    Controls.devCams.Choices = cameraNames
-    Controls.txtJSONStorage.IsDisabled = true
+    -- Cleanup and initialize camera presets
+    self.cameraModule:purgeRemovedCameras()
+    self.cameraModule:initializePresets(cameraNames)
     
-    -- Set default camera selection
-    if #cameraNames > 0 then
-        -- Try to set the configured default camera, fallback to first available
-        local defaultCameraFound = false
-        for i, camName in ipairs(cameraNames) do
-            if camName == self.config.defaultCamera then
-                Controls.devCams.String = camName
-                Controls.devCams.Value = i
-                defaultCameraFound = true
-                self:debugPrint("Set default camera: " .. camName)
-                break
-            end
-        end
-        
-        -- If configured default not found, use first camera
-        if not defaultCameraFound then
-            Controls.devCams.String = cameraNames[1]
-            Controls.devCams.Value = 1
-            self:debugPrint("Set fallback default camera: " .. cameraNames[1])
-        end
-        
-        -- Recall default preset for the selected camera
-        local selectedCamera = Controls.devCams.String
-        if selectedCamera ~= "" and self.components.cameras[selectedCamera] then
-            local defaultPresetIndex = self.config.defaultPreset
-            if self.components.presets[selectedCamera] and 
-               self.components.presets[selectedCamera][defaultPresetIndex] then
-                self.cameraModule.recallPreset(defaultPresetIndex)
-                self:debugPrint(string.format("Recalled default preset %d for camera: %s", 
-                    defaultPresetIndex, selectedCamera))
-            else
-                self:debugPrint(string.format("Default preset %d not available for camera: %s", 
-                    defaultPresetIndex, selectedCamera))
-            end
-        end
+    -- Set up camera event handlers with error checking
+    self:setupCameraEventHandlers(cameraNames)
+    
+    -- Setup router synchronization (optional)
+    if not self.routerModule:setupRouterSync() then
+        self:debugPrint("Router sync setup failed or no router available")
     end
     
-    -- Populate room controls choices
-    self:populateRoomControlsChoices()
+    -- Update UI safely
+    self:updateCameraUI(cameraNames)
+    
+    -- Set default camera selection with improved error handling
+    self:setDefaultCamera(cameraNames)
     
     -- Set room controls component
-    self.components.roomControls = self:setComponent(Controls.compRoomControls, "roomControls")
+    if controls.compRoomControls then
+        self.components.roomControls = self:setComponent(controls.compRoomControls, "roomControls")
+    end
     
     -- Save initial state
-    self.jsonModule.save()
+    if not self.jsonModule:save() then
+        self:debugPrint("Warning: Could not save initial JSON state")
+    end
 
-    -- Set default router output and camera selection at startup
-    for routerName, router in pairs(self.components.routers) do
-        if router["select.1"] then
-            router["select.1"].Value = 1
+    -- Initialize router defaults
+    self:initializeRouterDefaults()
+    
+    self:debugPrint("Camera Preset Controller initialization completed successfully")
+    return true
+end
+
+function CameraPresetController:setDefaultCamera(cameraNames)
+    if not cameraNames or #cameraNames == 0 then
+        self:debugPrint("No cameras available for default selection")
+        return
+    end
+    
+    local defaultCameraFound = false
+    
+    -- Try to set the configured default camera
+    for i, camName in ipairs(cameraNames) do
+        if camName == self.config.defaultCamera then
+            if setProp(controls.devCams, "String", camName) then
+                controls.devCams.Value = i
+                defaultCameraFound = true
+                self:debugPrint("Set default camera: " .. camName)
+            end
+            break
         end
     end
     
-    -- After self.routerModule.discoverRouters()
-    local routerNames = {}
-    for name, _ in pairs(self.components.routers) do
-        table.insert(routerNames, name)
-    end
-    table.sort(routerNames)
-    Controls.compcamRouter.Choices = routerNames
-    if #routerNames > 0 then
-        Controls.compcamRouter.String = routerNames[1]  -- Default to first router
+    -- Fallback to first camera if default not found
+    if not defaultCameraFound and controls.devCams then
+        setProp(controls.devCams, "String", cameraNames[1])
+        controls.devCams.Value = 1
+        self:debugPrint("Set fallback default camera: " .. cameraNames[1])
     end
     
-    self:debugPrint("Camera Preset Controller Initialized")
+    -- Recall default preset for the selected camera
+    self:recallDefaultPreset()
+end
+
+function CameraPresetController:recallDefaultPreset()
+    local selectedCamera = controls.devCams.String
     
+    if not selectedCamera or selectedCamera == "" then
+        self:debugPrint("No camera selected for default preset recall")
+        return
+    end
+    
+    if not self.components.cameras[selectedCamera] then
+        self:debugPrint("Selected camera not found: " .. selectedCamera)
+        return
+    end
+    
+    local defaultPresetIndex = self.config.defaultPreset
+    local savedPresets = self.components.presets[selectedCamera]
+    
+    if savedPresets and savedPresets[defaultPresetIndex] and 
+       savedPresets[defaultPresetIndex] ~= "0 0 0" then
+        if self.cameraModule:recallPreset(defaultPresetIndex) then
+            self:debugPrint(string.format("Recalled default preset %d for camera: %s", 
+                defaultPresetIndex, selectedCamera))
+        end
+    else
+        self:debugPrint(string.format("Default preset %d not available for camera: %s", 
+            defaultPresetIndex, selectedCamera))
+    end
+end
+
+function CameraPresetController:initializeRouterDefaults()
+    -- Set default router output values
+    for routerName, router in pairs(self.components.routers) do
+        if router["select.1"] then
+            setProp(router["select.1"], "Value", 1)
+            self:debugPrint("Set default router output for: " .. routerName)
+        end
+    end
 end
 
 -----------------[ Cleanup ]-------------------
@@ -614,32 +1053,96 @@ function CameraPresetController:cleanup()
     self:debugPrint("Cleanup completed")
 end
 
------------------[ Factory ]-------------------
+-----------------[ Enhanced Factory ]-------------------
 local function createCameraPresetController(config)
+    print("CameraPresetController Factory: Starting initialization...")
+    
+    -- Build configuration with graceful fallbacks
     local defaultConfig = {
         debugging = true,
-        holdTime = Controls.knbHoldTime.Value,
-        ledOnTime = Controls.knbledOnTime.Value,
+        holdTime = 3.0,
+        ledOnTime = 2.5,
         presetTolerance = presetTolerance,
-        routerOutputs = {"select.1", "select.2"},  -- Default to first two outputs, add more if needed
-        defaultCamera = "devCam01",  -- Default camera selection
-        defaultPreset = 1  -- Default preset to recall on startup
+        routerOutputs = {"select.1", "select.2"},
+        defaultCamera = "devCam01",
+        defaultPreset = 1
     }
     
-    local controllerConfig = config or defaultConfig
+    -- Enhanced config merging with fallbacks for controls
+    local controllerConfig = config or {}
     
+    -- Safe control value extraction with fallbacks
+    if controls.knbHoldTime and controls.knbHoldTime.Value then
+        controllerConfig.holdTime = controllerConfig.holdTime or controls.knbHoldTime.Value
+    else
+        controllerConfig.holdTime = controllerConfig.holdTime or defaultConfig.holdTime
+        print("WARNING: knbHoldTime control not available, using default: " .. defaultConfig.holdTime)
+    end
+    
+    if controls.knbledOnTime and controls.knbledOnTime.Value then
+        controllerConfig.ledOnTime = controllerConfig.ledOnTime or controls.knbledOnTime.Value
+    else
+        controllerConfig.ledOnTime = controllerConfig.ledOnTime or defaultConfig.ledOnTime
+        print("WARNING: knbledOnTime control not available, using default: " .. defaultConfig.ledOnTime)
+    end
+    
+    -- Merge remaining defaults
+    for key, value in pairs(defaultConfig) do
+        if controllerConfig[key] == nil then
+            controllerConfig[key] = value
+        end
+    end
+    
+    -- Attempt controller creation with comprehensive error handling
     local success, controller = pcall(function()
         return CameraPresetController.new(controllerConfig)
     end)
     
-    if success then
-        print("Successfully created Camera Preset Controller")
-        return controller
-    else
-        print("Failed to create controller: " .. tostring(controller))
+    if not success then
+        print("ERROR: CameraPresetController factory failed during construction:")
+        print("  " .. tostring(controller))
+        print("  Attempting graceful degradation...")
+        
+        -- Attempt minimal configuration fallback
+        local minimalConfig = {
+            debugging = false,
+            holdTime = 3.0,
+            ledOnTime = 2.5,
+            presetTolerance = 0.1,
+            routerOutputs = {"select.1"},
+            defaultCamera = "",
+            defaultPreset = 1
+        }
+        
+        local fallbackSuccess, fallbackController = pcall(function()
+            return CameraPresetController.new(minimalConfig)
+        end)
+        
+        if fallbackSuccess and fallbackController then
+            print("SUCCESS: Created CameraPresetController with minimal configuration")
+            print("WARNING: Some features may be limited due to missing controls")
+            return fallbackController
+        else
+            print("CRITICAL: Factory failed even with minimal configuration")
+            print("  " .. tostring(fallbackController or "Unknown error"))
+            return nil
+        end
+    end
+    
+    if not controller then
+        print("ERROR: Controller validation failed - required controls missing")
         return nil
     end
+    
+    print("SUCCESS: CameraPresetController created successfully")
+    print("  Configuration: " .. (controllerConfig.debugging and "Debug enabled" or "Production mode"))
+    print("  Features: Router sync, JSON persistence, preset tolerance")
+    
+    return controller
 end
+
+-- Export both class and factory for external access
+CameraPresetController.createInstance = createCameraPresetController
 
 -----------------[ Instance Creation ]-------------------
 -- Create the main camera preset controller instance
@@ -664,3 +1167,4 @@ myCameraPresetController.jsonModule.save()
 -- Load JSON data
 myCameraPresetController.jsonModule.load()
 ]]--
+

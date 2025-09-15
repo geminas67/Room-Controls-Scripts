@@ -1,9 +1,14 @@
 --[[
   ClockAudioCDTMicController - Q-SYS Control Script for ClockAudio CDT 100
   Author: Nikolas Smith
-  Date: 2025-07-13
-  Version: 1.0
+  Date: 2025-09-10
+  Version: 2.0
   Description: ClockAudio CDT microphone controller with optimized event handling
+  Notes: Refactored per Lua Refactoring Prompt (event-driven, OOP modular)
+         - Added comprehensive control validation and error handling
+         - Implemented utility functions for efficient array operations
+         - Enhanced batch event registration patterns
+         - Improved factory pattern with better error messaging
 ]]--
 
 local controls = {
@@ -16,11 +21,132 @@ local controls = {
     ledSystemPower      = Controls.ledSystemPower,
 }
 
+-------------------[ Control Validation ]-------------------
+local function validateControls()
+    local required = {
+        "compMicBox", "compMicMixer", "compCallSync", 
+        "compRoomControls", "txtStatus"
+    }
+    
+    local optional = {
+        "ledFireAlarm", "ledSystemPower"
+    }
+    
+    local missing = {}
+    local warnings = {}
+    
+    -- Check required controls
+    for _, name in ipairs(required) do
+        if not controls[name] then
+            table.insert(missing, name)
+        end
+    end
+    
+    -- Check optional controls for warnings
+    for _, name in ipairs(optional) do
+        if not controls[name] then
+            table.insert(warnings, name)
+        end
+    end
+    
+    -- Report missing required controls
+    if #missing > 0 then
+        print("ERROR: ClockAudioCDTMicController validation failed - Missing required controls:")
+        for _, name in ipairs(missing) do
+            print("  - " .. name)
+        end
+        return false
+    end
+    
+    -- Report optional control warnings
+    if #warnings > 0 then
+        print("WARNING: ClockAudioCDTMicController - Missing optional controls:")
+        for _, name in ipairs(warnings) do
+            print("  - " .. name)
+        end
+    end
+    
+    return true
+end
+
+-------------------[ Control Array Normalization ]-------------------
+local function normalizeControlArrays()
+    -- Ensure compMicBox is always an array
+    if controls.compMicBox and type(controls.compMicBox) ~= "table" then
+        controls.compMicBox = {controls.compMicBox}
+    elseif not controls.compMicBox then
+        controls.compMicBox = {}
+    end
+    
+    -- Validate array indices for mic boxes (should be 1-4)
+    local normalizedMicBox = {}
+    for i = 1, 4 do
+        if controls.compMicBox[i] then
+            normalizedMicBox[i] = controls.compMicBox[i]
+        end
+    end
+    controls.compMicBox = normalizedMicBox
+end
+
+-------------------[ Utility Functions ]-------------------
+local function isArr(obj)
+    return type(obj) == "table" and #obj > 0
+end
+
+local function getControlArray(control)
+    if not control then return {} end
+    return isArr(control) and control or {control}
+end
+
+local function setProp(obj, prop, value)
+    if not obj or not obj[prop] or obj[prop] == value then return false end
+    obj[prop] = value
+    return true
+end
+
+local function bind(control, eventHandler)
+    if control and control.EventHandler ~= eventHandler then
+        control.EventHandler = eventHandler
+        return true
+    end
+    return false
+end
+
+local function bindArray(controlArray, eventHandler)
+    local boundCount = 0
+    for _, control in ipairs(controlArray or {}) do
+        if bind(control, eventHandler) then
+            boundCount = boundCount + 1
+        end
+    end
+    return boundCount
+end
+
+local function forEach(array, func)
+    if not isArr(array) or not func then return 0 end
+    local count = 0
+    for i, item in ipairs(array) do
+        if func(item, i) then
+            count = count + 1
+        end
+    end
+    return count
+end
+
 -----------------[ Class Constructor ]-------------------
 ClockAudioCDTMicController = {}
 ClockAudioCDTMicController.__index = ClockAudioCDTMicController
 
 function ClockAudioCDTMicController.new(roomName, config)
+    -- Early return for validation failure
+    if not validateControls() then
+        print("ERROR: ClockAudioCDTMicController constructor failed validation")
+        return nil
+    end
+    
+    -- Normalize control arrays early
+    normalizeControlArrays()
+    
     local self = setmetatable({}, ClockAudioCDTMicController)
     self.roomName = roomName or "ClockAudio CDT"
     self.debugging = (config and config.debugging) or false
@@ -75,32 +201,39 @@ end
 function ClockAudioCDTMicController:setComponent(controlRef, componentName)
     -- Early return for clear/invalid control reference
     if not controlRef or controlRef.String == self.clearString then
-        if controlRef then controlRef.Color = "white" end
+        setProp(controlRef, "Color", "white")
         self:setComponentValid(componentName)
         return nil
     end    
+    
+    -- Early return for invalid component string
+    if not controlRef.String or controlRef.String == "" then
+        setProp(controlRef, "String", "[Invalid Component Selected]")
+        setProp(controlRef, "Color", "pink")
+        self:setComponentInvalid(componentName)
+        return nil
+    end
+    
     -- Try to create the component
     local component = Component.New(controlRef.String)
     if not component then
-        if controlRef then
-            controlRef.String = "[Invalid Component Selected]"
-            controlRef.Color = "pink"
-        end
+        setProp(controlRef, "String", "[Invalid Component Selected]")
+        setProp(controlRef, "Color", "pink")
         self:setComponentInvalid(componentName)
         return nil
     end    
+    
     -- Validate component has controls
-    local controls = Component.GetControls(component)
-    if not controls or #controls < 1 then
-        if controlRef then
-            controlRef.String = "[Invalid Component Selected]"
-            controlRef.Color = "pink"
-        end
+    local componentControls = Component.GetControls(component)
+    if not componentControls or #componentControls < 1 then
+        setProp(controlRef, "String", "[Invalid Component Selected]")
+        setProp(controlRef, "Color", "pink")
         self:setComponentInvalid(componentName)
         return nil
     end    
+    
     -- Component is valid - set success state
-    if controlRef then controlRef.Color = "white" end
+    setProp(controlRef, "Color", "white")
     self:setComponentValid(componentName)
     self:debugPrint("Connected to "..componentName)
     return component
@@ -117,19 +250,18 @@ function ClockAudioCDTMicController:setComponentValid(componentType)
 end
 
 function ClockAudioCDTMicController:checkStatus()
-    for _, v in pairs(self.components.invalid) do
-        if v == true then
-            if controls.txtStatus then
-                controls.txtStatus.String = "Invalid Components"
-                controls.txtStatus.Value = 1
-            end
+    -- Early return if any component is invalid
+    for _, isInvalid in pairs(self.components.invalid) do
+        if isInvalid == true then
+            setProp(controls.txtStatus, "String", "Invalid Components")
+            setProp(controls.txtStatus, "Value", 1)
             return
         end
     end
-    if controls.txtStatus then
-        controls.txtStatus.String = "OK"
-        controls.txtStatus.Value = 0
-    end
+    
+    -- All components are valid
+    setProp(controls.txtStatus, "String", "OK")
+    setProp(controls.txtStatus, "Value", 0)
 end
 
 function ClockAudioCDTMicController:setupComponents()
@@ -322,53 +454,64 @@ end
 function ClockAudioCDTMicController:registerEventHandlers()
     local selfRef = self
     
-    if self.components.roomControls then
-        local powerControl = self.components.roomControls["ledSystemPower"]
-        if powerControl then
-            powerControl.EventHandler = function(ctl)
-                selfRef.state.systemPower = ctl.Boolean
-                if not ctl.Boolean then
-                    selfRef.state.globalMute = true
-                    selfRef.cdtModule.setHookState(false)
+    -- Room Controls handler map
+    local roomControlsMap = {
+        ledSystemPower = function(ctl)
+            selfRef.state.systemPower = ctl.Boolean
+            if not ctl.Boolean then
+                selfRef.state.globalMute = true
+                selfRef.cdtModule.setHookState(false)
+            end
+        end,
+        ledFireAlarm = function(ctl)
+            selfRef.state.fireAlarm = ctl.Boolean
+            if ctl.Boolean then
+                selfRef.cdtModule.startLEDToggle()
+                selfRef.state.globalMute = true
+                selfRef.cdtModule.setHookState(false)
+            else
+                selfRef.cdtModule.stopLEDToggle()
+                if selfRef.state.offHook then
+                    selfRef.cdtModule.setHookState(true)
                 end
             end
         end
-        
-        local fireControl = self.components.roomControls["ledFireAlarm"]
-        if fireControl then
-            fireControl.EventHandler = function(ctl)
-                selfRef.state.fireAlarm = ctl.Boolean
-                if ctl.Boolean then
-                    selfRef.cdtModule.startLEDToggle()
-                    selfRef.state.globalMute = true
-                    selfRef.cdtModule.setHookState(false)
-                else
-                    selfRef.cdtModule.stopLEDToggle()
-                    if selfRef.state.offHook then
-                        selfRef.cdtModule.setHookState(true)
-                    end
-                end
-            end
+    }
+    
+    -- Call Sync handler map
+    local callSyncMap = {
+        ["off.hook"] = function(ctl)
+            selfRef.cdtModule.setHookState(ctl.Boolean)
+        end,
+        mute = function(ctl)
+            selfRef.cdtModule.setGlobalMute(ctl.Boolean)
+        end
+    }
+    
+    -- Batch register room controls handlers
+    self:batchRegisterHandlers(self.components.roomControls, roomControlsMap)
+    
+    -- Batch register call sync handlers  
+    self:batchRegisterHandlers(self.components.callSync, callSyncMap)
+    
+    -- Register mic and privacy button handlers
+    self:registerMicHandlers()
+    self:registerPrivacyButtonHandlers()
+end
+
+function ClockAudioCDTMicController:batchRegisterHandlers(component, handlerMap)
+    if not component or not handlerMap then return 0 end
+    
+    local registeredCount = 0
+    for controlName, handler in pairs(handlerMap) do
+        local control = component[controlName]
+        if bind(control, handler) then
+            registeredCount = registeredCount + 1
+            self:debugPrint("Registered handler for " .. controlName)
         end
     end
     
-    if self.components.callSync then
-        local offHookControl = self.components.callSync["off.hook"]
-        if offHookControl then
-            offHookControl.EventHandler = function(ctl)
-                selfRef.cdtModule.setHookState(ctl.Boolean)
-            end
-        end
-        
-        local muteControl = self.components.callSync["mute"]
-        if muteControl then
-            muteControl.EventHandler = function(ctl)
-                selfRef.cdtModule.setGlobalMute(ctl.Boolean)
-            end
-        end
-    end    
-    self:registerMicHandlers()
-    self:registerPrivacyButtonHandlers()
+    return registeredCount
 end
 
 -----------------[ Table-Driven Mic Button Registration ]-------------------
@@ -380,22 +523,29 @@ function ClockAudioCDTMicController:registerMicHandlers()
         {box = 3, buttons = {{6,1,8}, {8,2,9}, {10,3,10}, {12,4,11}}},
         {box = 4, buttons = {{6,1,12}, {8,2,13}, {10,3,14}}}
     }    
+    
+    local registeredCount = 0
     for _, config in ipairs(buttonConfigs) do
         local box = self.components.micBoxes[config.box]
         if not box then goto continue end
         
+        -- Create handler map for this box
+        local handlerMap = {}
         for _, btn in ipairs(config.buttons) do
-            local buttonControl = box['ButtonState '..btn[1]]
-            if not buttonControl then goto continue end
-            
+            local buttonName = 'ButtonState '..btn[1]
             local boxIdx, ledIdx, mixerIdx = config.box, btn[2], btn[3]
-            buttonControl.EventHandler = function()
+            handlerMap[buttonName] = function()
                 selfRef.cdtModule.toggleMic(boxIdx, ledIdx, mixerIdx)
-            end            
-            ::continue::
-        end        
+            end
+        end
+        
+        -- Batch register handlers for this box
+        registeredCount = registeredCount + self:batchRegisterHandlers(box, handlerMap)
+        
         ::continue::
     end
+    
+    self:debugPrint("Registered " .. registeredCount .. " mic button handlers")
 end
 
 -----------------[ Privacy Button Registration ]-------------------
@@ -409,15 +559,17 @@ function ClockAudioCDTMicController:registerPrivacyButtonHandlers()
         {box = 3, buttons = {1, 2, 3, 4}},
         {box = 4, buttons = {1, 2, 3}}
     }
+    
+    local registeredCount = 0
     for _, config in ipairs(privacyConfigs) do
         local box = self.components.micBoxes[config.box]
         if not box then goto continue end
         
+        -- Create handler map for privacy buttons
+        local handlerMap = {}
         for _, buttonNum in ipairs(config.buttons) do
-            local privacyButton = box['ButtonState '..buttonNum]
-            if not privacyButton then goto continue end
-            
-            privacyButton.EventHandler = function(ctl)
+            local buttonName = 'ButtonState '..buttonNum
+            handlerMap[buttonName] = function(ctl)
                 -- Early return for non-press events
                 if not ctl.Boolean then return end
                 
@@ -426,20 +578,29 @@ function ClockAudioCDTMicController:registerPrivacyButtonHandlers()
                     selfRef:debugPrint("Privacy button "..buttonNum.." on box "..config.box.." is disabled - ignoring press")
                     return
                 end            
+                
                 -- Handle valid button press
                 local callSync = selfRef.components.callSync
                 if not callSync or not callSync["mute"] then return end                
+                
                 -- Toggle mute state directly
                 callSync["mute"].Boolean = not callSync["mute"].Boolean
                 selfRef:debugPrint("Privacy button "..buttonNum.." on box "..config.box.." toggled mute to "..tostring(callSync["mute"].Boolean))                
+                
                 -- Update LED states to reflect the new privacy state
                 if selfRef.state.offHook then
                     selfRef.cdtModule.updateIndividualLEDs()
                 end
             end
-        end        
+        end
+        
+        -- Batch register privacy button handlers for this box
+        registeredCount = registeredCount + self:batchRegisterHandlers(box, handlerMap)
+        
         ::continue::
     end
+    
+    self:debugPrint("Registered " .. registeredCount .. " privacy button handlers")
 end
 
 -----------------[ Initialization ]-------------------
@@ -604,36 +765,17 @@ end
 
 -----------------[ Cleanup ]-------------------
 function ClockAudioCDTMicController:cleanup()
-    -- Stop timers
+    self:debugPrint("Starting cleanup...")
+    
+    -- Stop timers first
     if self.cdtModule and self.cdtModule.ledToggleTimer then
         self.cdtModule.stopLEDToggle()
         self.cdtModule.ledToggleTimer.EventHandler = nil
     end    
-    -- Clear handlers in batch
-    local handlersToClean = {
-        {self.components.callSync, {"off.hook", "mute"}},
-        {self.components.roomControls, {"ledSystemPower", "ledFireAlarm"}}
-    }    
-    for _, handler in ipairs(handlersToClean) do
-        local component, controls = handler[1], handler[2]
-        if component then
-            for _, controlName in ipairs(controls) do
-                if component[controlName] then
-                    component[controlName].EventHandler = nil
-                end
-            end
-        end
-    end    
-    -- Clean mic box handlers
-    for i = 1, 4 do
-        local box = self.components.micBoxes[i]
-        if box then
-            for buttonNum = 1, 12 do
-                local button = box['ButtonState '..buttonNum]
-                if button then button.EventHandler = nil end
-            end
-        end
-    end 
+    
+    -- Clear handlers using batch approach
+    self:batchClearHandlers()
+    
     -- Reset component references
     self.components = {
         callSync = nil,
@@ -642,25 +784,90 @@ function ClockAudioCDTMicController:cleanup()
         roomControls = nil,
         invalid = {}
     }    
+    
     self:debugPrint("Cleanup completed")
+end
+
+function ClockAudioCDTMicController:batchClearHandlers()
+    local clearedCount = 0
+    
+    -- Clear call sync and room control handlers
+    local componentHandlers = {
+        {self.components.callSync, {"off.hook", "mute"}},
+        {self.components.roomControls, {"ledSystemPower", "ledFireAlarm"}}
+    }    
+    
+    for _, handler in ipairs(componentHandlers) do
+        local component, controlNames = handler[1], handler[2]
+        if component then
+            for _, controlName in ipairs(controlNames) do
+                local control = component[controlName]
+                if control and control.EventHandler then
+                    control.EventHandler = nil
+                    clearedCount = clearedCount + 1
+                end
+            end
+        end
+    end    
+    
+    -- Clear mic box button handlers (1-12 buttons per box)
+    for i = 1, 4 do
+        local box = self.components.micBoxes[i]
+        if box then
+            for buttonNum = 1, 12 do
+                local button = box['ButtonState '..buttonNum]
+                if button and button.EventHandler then
+                    button.EventHandler = nil
+                    clearedCount = clearedCount + 1
+                end
+            end
+        end
+    end 
+    
+    self:debugPrint("Cleared " .. clearedCount .. " event handlers")
 end
 
 -----------------[ Factory Function ]-------------------
 local function createClockAudioCDTMicController(roomName, config)
-    print("Creating ClockAudioCDTMicController for: "..tostring(roomName))
+    local displayName = tostring(roomName or "ClockAudio CDT")
+    print("Creating ClockAudioCDTMicController for: " .. displayName)
+    
+    -- Validate input parameters
+    if config and type(config) ~= "table" then
+        print("ERROR: Config parameter must be a table, got " .. type(config))
+        return nil
+    end
+    
     local success, controller = pcall(function()
+        -- Constructor handles its own validation and early returns
         local instance = ClockAudioCDTMicController.new(roomName, config)
+        if not instance then
+            error("Constructor validation failed - see previous error messages")
+        end
+        
+        -- Initialize the instance
         instance:funcInit()
         return instance
     end)
-    if success then
-        print("Successfully created controller for "..roomName)
+    
+    if success and controller then
+        print("✓ Successfully created ClockAudioCDTMicController for " .. displayName)
+        print("  - Mic boxes connected: " .. controller:getMicBoxCount())
+        print("  - Room name: " .. controller.roomName)
+        print("  - Debug mode: " .. tostring(controller.debugging))
         return controller
     else
-        print("Failed to create controller for "..roomName..": "..tostring(controller))
+        local errorMsg = controller or "Unknown error"
+        print("✗ Failed to create ClockAudioCDTMicController for " .. displayName)
+        print("  Error: " .. tostring(errorMsg))
+        print("  Check control definitions and component assignments")
         return nil
     end
 end
+
+-- Export both class and factory function globally
+_G.ClockAudioCDTMicController = ClockAudioCDTMicController
+_G.createClockAudioCDTMicController = createClockAudioCDTMicController
 
 -----------------[ Instance Creation ]-------------------
 local tempRoomName = "[ClockAudio CDT]"
