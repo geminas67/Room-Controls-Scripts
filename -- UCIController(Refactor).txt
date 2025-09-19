@@ -29,17 +29,12 @@ local controls = {
     btnShutdownConfirm  = Controls.btnShutdownConfirm,
     
     -- Help Buttons
-    btnOpenHelpLaptop       = Controls.btnOpenHelpLaptop,
-    btnOpenHelpPC           = Controls.btnOpenHelpPC,
-    btnOpenHelpWireless     = Controls.btnOpenHelpWireless,
-    btnOpenHelpRouting      = Controls.btnOpenHelpRouting,
-    btnOpenHelpStreamMusic  = Controls.btnOpenHelpStreamMusic,
-    
-    btnCloseHelpLaptop      = Controls.btnCloseHelpLaptop,
-    btnCloseHelpPC          = Controls.btnCloseHelpPC,
-    btnCloseHelpWireless     = Controls.btnCloseHelpWireless,
-    btnCloseHelpRouting      = Controls.btnCloseHelpRouting,
-    btnCloseHelpStreamMusic  = Controls.btnCloseHelpStreamMusic,
+    btnHelpLaptop       = Controls.btnHelpLaptop,
+    btnHelpPC           = Controls.btnHelpPC,
+    btnHelpWireless     = Controls.btnHelpWireless,
+    btnHelpRouting      = Controls.btnHelpRouting,
+    btnHelpDialer       = Controls.btnHelpDialer,
+    btnHelpStreamMusic  = Controls.btnHelpStreamMusic,
     
     -- Routing Buttons
     btnRouting01 = Controls.btnRouting01, btnRouting02 = Controls.btnRouting02,
@@ -77,8 +72,8 @@ local function validateControls()
     -- Optional but recommended controls
     local optional = {
         "knbProgressBar", "txtProgressBar", "ledSystemPower",
-        "btnOpenHelpLaptop", "btnOpenHelpPC", "btnOpenHelpWireless", "btnOpenHelpRouting", "btnOpenHelpStreamMusic",
-        "btnCloseHelpLaptop", "btnCloseHelpPC", "btnCloseHelpWireless", "btnCloseHelpRouting", "btnCloseHelpStreamMusic",
+        "btnHelpLaptop", "btnHelpPC", "btnHelpWireless", "btnHelpRouting",
+        "btnHelpDialer", "btnHelpStreamMusic",
         "btnRouting01", "btnRouting02", "btnRouting03", "btnRouting04", "btnRouting05"
     }
     
@@ -143,8 +138,7 @@ local function normalizeControlArrays()
     end
     
     -- Build help button array
-    local helpButtons = {"btnOpenHelpLaptop", "btnOpenHelpPC", "btnOpenHelpWireless", "btnOpenHelpRouting", "btnOpenHelpStreamMusic",
-    "btnCloseHelpLaptop", "btnCloseHelpPC", "btnCloseHelpWireless", "btnCloseHelpRouting", "btnCloseHelpStreamMusic"}
+    local helpButtons = {"btnHelpLaptop", "btnHelpPC", "btnHelpWireless", "btnHelpRouting", "btnHelpDialer", "btnHelpStreamMusic"}
     for i, name in ipairs(helpButtons) do
         if controls[name] then controlsToNormalize.helpButtons[i] = controls[name] end
     end
@@ -298,7 +292,7 @@ function LayerModule:showLayer()
         "D01-ShutdownConfirm",
         "E01-SystemProgressWarming", "E02-SystemProgressCooling", "E05-SystemProgress",
         "H01-RoomControls", 
-        "I01-CallActive", "I02-HelpLaptop", "I03-HelpPC","I04-HelpWireless", "I05-HelpRouting", "I07-HelpStreamMusic",
+        "I01-CallActive", "I02-HelpLaptop", "I03-HelpPC","I04-HelpWireless", "I05-HelpRouting", "I06-HelpDialer", "I07-HelpStreamMusic",
         "J01-ConnectUSBLaptop", "J02-ConnectUSBPC", "J03-ACPRActive", "J04-CamPresetSaved","J05-ConferenceControls", 
         "L01-HDMI01Disconnected", "L05-Laptop",
         "P01-HDMI02Disconnected", "P05-PC", "W05-Wireless",
@@ -374,7 +368,6 @@ function LayerModule:showLayer()
         [self.controller.kLayerRouting] = {
             showLayers = {"R10-Routing"},
             callLayerFunctions = {
-                function() self.controller.sublayerModule:updateRoutingHelpState() end,
                 function() self.controller.routingModule:showRoutingLayer() end,
                 function() self.controller.sublayerModule:updateCallActiveState() end
             }
@@ -382,6 +375,7 @@ function LayerModule:showLayer()
         [self.controller.kLayerDialer] = {
             showLayers = {"V05-Dialer"},
             callLayerFunctions = {
+                function() self.controller.sublayerModule:updateDialerHelpState() end,
                 function() self.controller.sublayerModule:updateCallActiveState() end
             }
         },
@@ -427,36 +421,43 @@ function SublayerModule.new(controller)
 end
 
 function SublayerModule:updateCallActiveState()
+    -- Guard clause - early return if control doesn't exist
     if not controls.pinCallActive then return end
     
     local isActive = controls.pinCallActive.Boolean or false
     self.controller.layerModule:updateLayerVisibility({"I01-CallActive"}, isActive, isActive and "fade" or "none")
-    self:debug("Call Active: " .. (isActive and "Showing" or "Hiding") .. " I01-CallActive")
+    self:debug("Call Active: " .. (isActive and "Showing" or "Hiding"))
 end
 
 function SublayerModule:updatePresetSavedState()
     local isVisible = controls.pinLEDPresetSaved and controls.pinLEDPresetSaved.Boolean or false
     self.controller.layerModule:updateLayerVisibility({"J04-CamPresetSaved"}, isVisible, isVisible and "fade" or "none")
-    self:debug("Preset Saved: " .. (isVisible and "Showing" or "Hiding") .. " J04-CamPresetSaved")
+    self:debug("Preset Saved: " .. (isVisible and "Showing" or "Hiding"))
 end
 
 function SublayerModule:updateHDMI01State()
     if self.controller.varActiveLayer ~= self.controller.kLayerLaptop then return end
     if not controls.pinLEDHDMI01Connect then return end
-    local isConnected = controls.pinLEDHDMI01Connect and controls.pinLEDHDMI01Connect.Boolean or false
+    
+    local isConnected = controls.pinLEDHDMI01Connect.Boolean or false
+    
+    -- Direct logic path without unnecessary nesting
     if isConnected then
         self.controller.layerModule:updateLayerVisibility({"L05-Laptop"}, true, "fade")
         self.controller.layerModule:updateLayerVisibility({"L01-HDMI01Disconnected"}, false, "none")
-    else
-        self.controller.layerModule:updateLayerVisibility({"L01-HDMI01Disconnected"}, true, "fade")
-        self.controller.layerModule:updateLayerVisibility({"L05-Laptop", "J05-ConferenceControls"}, false, "none")
+        self:debug("HDMI01: Connected")
+        return
     end
-    self:debug("HDMI01: " .. (isConnected and "Connected" or "Disconnected") .. " L05-Laptop")
+    
+    -- Disconnected state handling
+    self.controller.layerModule:updateLayerVisibility({"L01-HDMI01Disconnected"}, true, "fade")
+    self.controller.layerModule:updateLayerVisibility({"L05-Laptop", "J05-ConferenceControls"}, false, "none")
+    self:debug("HDMI01: Disconnected")
 end
 
 function SublayerModule:updateHDMI02State()
     if self.controller.varActiveLayer ~= self.controller.kLayerPC then return end
-    if not controls.pinLEDHDMI02Connect then return end
+    
     local isConnected = controls.pinLEDHDMI02Connect and controls.pinLEDHDMI02Connect.Boolean or false
     if isConnected then
         self.controller.layerModule:updateLayerVisibility({"P05-PC"}, true, "fade")
@@ -465,7 +466,7 @@ function SublayerModule:updateHDMI02State()
         self.controller.layerModule:updateLayerVisibility({"P01-HDMI02Disconnected"}, true, "fade")
         self.controller.layerModule:updateLayerVisibility({"P05-PC", "J05-ConferenceControls"}, false, "none")
     end
-    self:debug("HDMI02: " .. (isConnected and "Connected" or "Disconnected") .. " P05-PC")
+    self:debug("HDMI02: " .. (isConnected and "Connected" or "Disconnected"))
 end
 
 function SublayerModule:updateACPRBypassState()
@@ -480,7 +481,7 @@ function SublayerModule:updateACPRBypassState()
         self.controller.layerModule:updateLayerVisibility({"J05-ConferenceControls"}, true, "fade")
         self.controller.layerModule:updateLayerVisibility({"J03-ACPRActive"}, false, "none")
     end
-    self:debug("ACPR Bypass: " .. (isBypassActive and "Active" or "Inactive") .. " J03-ACPRActive")
+    self:debug("ACPR Bypass: " .. (isBypassActive and "Active" or "Inactive"))
 end
 
 function SublayerModule:updateConferenceState()
@@ -504,11 +505,11 @@ function SublayerModule:updateConferenceState()
         self.controller.layerModule:updateLayerVisibility({usbNotConnectedLayer}, true, "fade")
         self.controller.layerModule:updateLayerVisibility({"J05-ConferenceControls"}, false, "none")
     end
-    self:debug("USB: " .. (usbConnected and "Connected" or "Disconnected") .. " J05-ConferenceControls")
+    self:debug("USB: " .. (usbConnected and "Connected" or "Disconnected"))
 end
 
 function SublayerModule:updateLaptopHelpState()
-    local isVisible = controls.btnOpenHelpLaptop and controls.btnOpenHelpLaptop.Boolean or false
+    local isVisible = controls.btnHelpLaptop and controls.btnHelpLaptop.Boolean or false
     if isVisible then
         self.controller.layerModule:updateLayerVisibility({"I02-HelpLaptop"}, true, "fade")
         self.controller.layerModule:updateLayerVisibility({"J05-ConferenceControls", "J01-ConnectUSBLaptop", "J02-ConnectUSBPC"}, false, "none")
@@ -516,11 +517,11 @@ function SublayerModule:updateLaptopHelpState()
         self.controller.layerModule:updateLayerVisibility({"I02-HelpLaptop"}, false, "none")
         self:updateConferenceState()
     end
-    self:debug("Laptop Help: " .. (isVisible and "Showing" or "Hiding") .. " I02-HelpLaptop")
+    self:debug("Laptop Help: " .. (isVisible and "Showing" or "Hiding"))
 end
 
 function SublayerModule:updatePCHelpState()
-    local isVisible = controls.btnOpenHelpPC and controls.btnOpenHelpPC.Boolean or false
+    local isVisible = controls.btnHelpPC and controls.btnHelpPC.Boolean or false
     if isVisible then
         self.controller.layerModule:updateLayerVisibility({"I03-HelpPC"}, true, "fade")
         self.controller.layerModule:updateLayerVisibility({"J05-ConferenceControls", "J01-ConnectUSBLaptop", "J02-ConnectUSBPC"}, false, "none")
@@ -528,25 +529,31 @@ function SublayerModule:updatePCHelpState()
         self.controller.layerModule:updateLayerVisibility({"I03-HelpPC"}, false, "none")
         self:updateConferenceState()
     end
-    self:debug("PC Help: " .. (isVisible and "Showing" or "Hiding") .. " I03-HelpPC")
+    self:debug("PC Help: " .. (isVisible and "Showing" or "Hiding"))
 end
 
 function SublayerModule:updateWirelessHelpState()
-    local isVisible = controls.btnOpenHelpWireless and controls.btnOpenHelpWireless.Boolean or false
+    local isVisible = controls.btnHelpWireless and controls.btnHelpWireless.Boolean or false
     self.controller.layerModule:updateLayerVisibility({"I04-HelpWireless"}, isVisible, "none")
-    self:debug("Wireless Help: " .. (isVisible and "Showing" or "Hiding") .. " I04-HelpWireless")
+    self:debug("Wireless Help: " .. (isVisible and "Showing" or "Hiding"))
 end
 
 function SublayerModule:updateRoutingHelpState()
-    local isVisible = controls.btnOpenHelpRouting and controls.btnOpenHelpRouting.Boolean or false
+    local isVisible = controls.btnHelpRouting and controls.btnHelpRouting.Boolean or false
     self.controller.layerModule:updateLayerVisibility({"I05-HelpRouting"}, isVisible, "none")
-    self:debug("Routing Help: " .. (isVisible and "Showing" or "Hiding") .. " I05-HelpRouting")
+    self:debug("Routing Help: " .. (isVisible and "Showing" or "Hiding"))
+end
+
+function SublayerModule:updateDialerHelpState()
+    local isVisible = controls.btnHelpDialer and controls.btnHelpDialer.Boolean or false
+    self.controller.layerModule:updateLayerVisibility({"I06-HelpDialer"}, isVisible, "none")
+    self:debug("Dialer Help: " .. (isVisible and "Showing" or "Hiding"))
 end
 
 function SublayerModule:updateStreamMusicHelpState()
-    local isVisible = controls.btnOpenHelpStreamMusic and controls.btnOpenHelpStreamMusic.Boolean or false
+    local isVisible = controls.btnHelpStreamMusic and controls.btnHelpStreamMusic.Boolean or false
     self.controller.layerModule:updateLayerVisibility({"I07-HelpStreamMusic"}, isVisible, "none")
-    self:debug("Stream Music Help: " .. (isVisible and "Showing" or "Hiding") .. " I07-HelpStreamMusic")
+    self:debug("Stream Music Help: " .. (isVisible and "Showing" or "Hiding"))
 end
 
 -------------------[ Routing Module ]----------------------
@@ -1048,45 +1055,13 @@ function UCIController:registerEventHandlers()
     }
     
     -- Help button handler map
-    local helpOpenHandlerMap = {
-        [controls.btnOpenHelpLaptop] = function() self.sublayerModule:updateLaptopHelpState() end,
-        [controls.btnOpenHelpPC] = function() self.sublayerModule:updatePCHelpState() end,
-        [controls.btnOpenHelpWireless] = function() self.sublayerModule:updateWirelessHelpState() end,
-        [controls.btnOpenHelpRouting] = function() self.sublayerModule:updateRoutingHelpState() end,
-        [controls.btnOpenHelpStreamMusic] = function() self.sublayerModule:updateStreamMusicHelpState() end
-    }
-    
-    local helpCloseHandlerMap = {
-        [controls.btnCloseHelpLaptop] = function() 
-            if controls.btnOpenHelpLaptop then
-                controls.btnOpenHelpLaptop.Boolean = false
-                self.sublayerModule:updateLaptopHelpState()
-            end
-        end,
-        [controls.btnCloseHelpPC] = function() 
-            if controls.btnOpenHelpPC then
-                controls.btnOpenHelpPC.Boolean = false
-                self.sublayerModule:updatePCHelpState()
-            end
-        end,
-        [controls.btnCloseHelpWireless] = function() 
-            if controls.btnOpenHelpWireless then
-                controls.btnOpenHelpWireless.Boolean = false
-                self.sublayerModule:updateWirelessHelpState()
-            end
-        end,
-        [controls.btnCloseHelpRouting] = function() 
-            if controls.btnOpenHelpRouting then
-                controls.btnOpenHelpRouting.Boolean = false
-                self.sublayerModule:updateRoutingHelpState()
-            end
-        end,
-        [controls.btnCloseHelpStreamMusic] = function() 
-            if controls.btnOpenHelpStreamMusic then
-                controls.btnOpenHelpStreamMusic.Boolean = false
-                self.sublayerModule:updateStreamMusicHelpState()
-            end
-        end
+    local helpHandlerMap = {
+        [controls.btnHelpLaptop] = function() self.sublayerModule:updateLaptopHelpState() end,
+        [controls.btnHelpPC] = function() self.sublayerModule:updatePCHelpState() end,
+        [controls.btnHelpWireless] = function() self.sublayerModule:updateWirelessHelpState() end,
+        [controls.btnHelpRouting] = function() self.sublayerModule:updateRoutingHelpState() end,
+        [controls.btnHelpDialer] = function() self.sublayerModule:updateDialerHelpState() end,
+        [controls.btnHelpStreamMusic] = function() self.sublayerModule:updateStreamMusicHelpState() end
     }
     
     -- Pin state handler map
@@ -1123,7 +1098,7 @@ function UCIController:registerEventHandlers()
     }
     
     -- Batch register all handler maps
-    local handlerMaps = {systemHandlerMap, helpOpenHandlerMap, helpCloseHandlerMap, pinHandlerMap}
+    local handlerMaps = {systemHandlerMap, helpHandlerMap, pinHandlerMap}
     for _, handlerMap in ipairs(handlerMaps) do
         for ctrl, handler in pairs(handlerMap) do
             if ctrl then -- Only bind if control exists

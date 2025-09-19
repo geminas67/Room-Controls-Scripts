@@ -297,7 +297,7 @@ function LayerModule:showLayer()
         "C05-Start", 
         "D01-ShutdownConfirm",
         "E01-SystemProgressWarming", "E02-SystemProgressCooling", "E05-SystemProgress",
-        "H05-RoomControls", 
+        "H01-RoomCombining", "H05-RoomControls",
         "I01-CallActive", "I02-HelpLaptop", "I03-HelpPC","I04-HelpWireless", "I05-HelpRouting", "I06-HelpDialer", "I07-HelpStreamMusic",
         "J01-ConnectUSBLaptop", "J02-ConnectUSBPC", "J03-ACPRActive", "J04-CamPresetSaved","J05-CameraControls", 
         "L01-HDMI01Disconnected", "L05-Laptop",
@@ -412,11 +412,25 @@ function LayerModule:showLayer()
     for _, func in ipairs(config.callLayerFunctions or {}) do
         func()
     end
+
+    self:updateRoutingButtonState()
 end
 
 function LayerModule:resetLayerStates()
     self.layerStates = {}
     self:debug("Layer states reset")
+end
+
+function LayerModule:updateRoutingButtonState()
+    if self.controller.varActiveLayer == self.controller.kLayerRouting or controls.btnNav06.Boolean then
+    setProp(controls.btnNav10, "IsDisabled", true)
+    setProp(controls.btnNav10, "IsInvisible", true)
+    self:debug("Routing button disabled")
+else
+        setProp(controls.btnNav10, "IsDisabled", false)
+        setProp(controls.btnNav10, "IsInvisible", false)
+        self:debug("Routing button enabled")
+    end
 end
 
 -------------------[ Sublayer Module ]---------------------
@@ -922,7 +936,7 @@ function ProgressModule:startLoadingBar(isPoweringOn)
             self:debug("Loading bar timeout reached")
             self.isAnimating = false
             if self.loadingTimer then self.loadingTimer:Stop(); self.loadingTimer = nil end
-            self.controller:btnNavEventHandler(isPoweringOn and self.controller.kLayerLaptop or self.controller.kLayerStart)
+            self.controller:btnNavEventHandler(isPoweringOn and self.controller.kLayerRoomControls or self.controller.kLayerStart)
         end
     end
     self.timeoutTimer:Start(300) -- 5-minute timeout
@@ -940,7 +954,7 @@ function ProgressModule:startLoadingBar(isPoweringOn)
             self.timeoutTimer:Stop()
             self.isAnimating = false
             
-            local targetLayer = isPoweringOn and self.controller.kLayerRouting or self.controller.kLayerStart
+            local targetLayer = isPoweringOn and self.controller.kLayerRoomControls or self.controller.kLayerStart
             self.controller:btnNavEventHandler(targetLayer)
         else
             self.loadingTimer:Start(interval)

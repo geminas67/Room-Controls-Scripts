@@ -9,30 +9,12 @@
 -----------------------------[ Control References ]-----------------------------
 local controls = {
     selRoomCombiner = Controls.selRoomCombiner,
-    compRoomControlsA = Controls.compRoomControlsA,
-    compRoomControlsB = Controls.compRoomControlsB,
-    compRoomControlsC = Controls.compRoomControlsC,
-    compRoomControlsD = Controls.compRoomControlsD,
-    compRoomControlsE = Controls.compRoomControlsE,
-    compRoomControlsF = Controls.compRoomControlsF,
-    compRoomControlsG = Controls.compRoomControlsG,
-    compRoomControlsH = Controls.compRoomControlsH,
-    selRoomControllerA = Controls.selRoomControllerA,
-    selRoomControllerB = Controls.selRoomControllerB,
-    selRoomControllerC = Controls.selRoomControllerC,
-    selRoomControllerD = Controls.selRoomControllerD,
-    selRoomControllerE = Controls.selRoomControllerE,
-    selRoomControllerF = Controls.selRoomControllerF,
-    selRoomControllerG = Controls.selRoomControllerG,
-    selRoomControllerH = Controls.selRoomControllerH,
-    selAudioRouterA = Controls.selAudioRouterA,
-    selAudioRouterB = Controls.selAudioRouterB,
-    selAudioRouterC = Controls.selAudioRouterC,
-    selAudioRouterD = Controls.selAudioRouterD,
-    selAudioRouterE = Controls.selAudioRouterE,
-    selAudioRouterF = Controls.selAudioRouterF,
-    selAudioRouterG = Controls.selAudioRouterG,
-    selAudioRouterH = Controls.selAudioRouterH,
+    compRoomControlsA = Controls.compRoomControlsA, compRoomControlsB = Controls.compRoomControlsB, compRoomControlsC = Controls.compRoomControlsC, compRoomControlsD = Controls.compRoomControlsD,
+    compRoomControlsE = Controls.compRoomControlsE, compRoomControlsF = Controls.compRoomControlsF, compRoomControlsG = Controls.compRoomControlsG, compRoomControlsH = Controls.compRoomControlsH,
+    selRoomControllerA = Controls.selRoomControllerA,selRoomControllerB = Controls.selRoomControllerB,selRoomControllerC = Controls.selRoomControllerC, selRoomControllerD = Controls.selRoomControllerD,
+    selRoomControllerE = Controls.selRoomControllerE,selRoomControllerF = Controls.selRoomControllerF,selRoomControllerG = Controls.selRoomControllerG,selRoomControllerH = Controls.selRoomControllerH,
+    selAudioRouterA = Controls.selAudioRouterA,selAudioRouterB = Controls.selAudioRouterB,selAudioRouterC = Controls.selAudioRouterC, selAudioRouterD = Controls.selAudioRouterD,
+    selAudioRouterE = Controls.selAudioRouterE,selAudioRouterF = Controls.selAudioRouterF,selAudioRouterG = Controls.selAudioRouterG,selAudioRouterH = Controls.selAudioRouterH,
     selUCI = Controls.selUCI,
     selRoomCombination = Controls.selRoomCombination,
     btnAllSeparated = Controls.btnAllSeparated,
@@ -630,7 +612,7 @@ function DivisibleSpaceController:setAudioRouterInputs(combo)
     self:debugPrint("Audio router input assignment completed")
 end
 
------------------------------[ Optimized Core Functions ]-----------------------------
+-----------------------------[ Core Functions ]-----------------------------
 --- Set room combiner state directly for maximum performance
 -- @param stateString string The state string to apply to the room combiner
 function DivisibleSpaceController:setRoomCombinerStateDirect(stateString)
@@ -760,7 +742,7 @@ function DivisibleSpaceController:publishRoomState(combo)
     end
 end
 
------------------------------[ Optimized Main Application Function ]-----------------------------
+-----------------------------[ Main Application Function ]-----------------------------
 --- Apply room combination by index with maximum performance
 -- @param index integer The combination index to apply (1-based)
 function DivisibleSpaceController:applyCombination(index)
@@ -801,7 +783,7 @@ function DivisibleSpaceController:applyCombination(index)
     self:debugPrint("Combination applied successfully")
 end
 
---------** Ultra-Fast Event-Driven Control Handlers **--------
+-----------------------------[ Event Handlers ]-----------------------------
 --- Setup all event handlers for controls with optimized performance
 -- Uses pre-compiled closures and direct lookups for maximum speed
 function DivisibleSpaceController:setupEventHandlers()
@@ -978,7 +960,7 @@ function DivisibleSpaceController:initModules()
     self:debugPrint("Modules initialized")
 end
 
---------** API Methods **--------
+-----------------------------[ API Methods ]-----------------------------
 --- Set the current room combination by index
 -- @param index integer Combination index (1-based)
 function DivisibleSpaceController:SetCombination(index)
@@ -1025,7 +1007,7 @@ function DivisibleSpaceController:RefreshComponentDiscovery()
     self:checkStatus()
 end
 
---------** Optimized Batch Initialization **--------
+-----------------------------[ Initialization ]-----------------------------
 --- Initialize the controller with optimized batch operations
 -- Performs component discovery, UI setup, and applies initial state
 function DivisibleSpaceController:funcInit()
@@ -1067,7 +1049,7 @@ function DivisibleSpaceController:funcInit()
     self:debugPrint("DivisibleSpaceController initialized in " .. initDuration .. " seconds")
 end
 
---------** Enhanced Cleanup **--------
+-----------------------------[ Cleanup ]-----------------------------
 --- Comprehensive cleanup of all resources and event handlers
 function DivisibleSpaceController:cleanup()
     self:debugPrint("Starting comprehensive cleanup...")

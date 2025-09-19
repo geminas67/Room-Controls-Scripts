@@ -251,7 +251,14 @@ function AudioModule:updateVolumeVisuals(i)
     
     -- Cache current state to avoid redundant property access
     local isMuted = mute.Boolean
-    setProp(mute, "CssClass", isMuted and "icon-volume_mute" or "icon-volume_off")
+    local gainType = self.controller:getGainType(i)
+    
+    -- Set CSS class based on gain type
+    if gainType == "Mic" then
+        setProp(mute, "CssClass", isMuted and "icon-mic_none" or "icon-mic_off")
+    else
+        setProp(mute, "CssClass", isMuted and "icon-volume_mute" or "icon-volume_off")
+    end
     setProp(fader, "Color", isMuted and "#CCCCCC" or "#0561A5")
 end
 
@@ -406,7 +413,7 @@ SystemAutomationController.__index = SystemAutomationController
 SystemAutomationController.clearString = "[Clear]"
 SystemAutomationController.componentTypes = {
     callSync    = "call_sync", videoBridge = "usb_uvc",
-    displays    = "%PLUGIN%_78a74df3-40bf-447b-a714-f564ebae238a_%FP%_bec481a6666b76b5249bbd12046c3920",
+    displays    = "%PLUGIN%_404F4311-A38D-4891-AF61-709B8F48A6E1_%FP%_77008e895ac50ad1242e3dee981c5e4a",
     gains       = "gain", systemMute = "system_mute",
     camACPR     = "%PLUGIN%_648260e3-c166-4b00-98ba-ba16ksnza4a63b0_%FP%_a4d2263b4380c424e16eebb67084f355"
 }
@@ -994,7 +1001,7 @@ function SystemAutomationController:setGainTypeAssignments(roomType)
         ["Conference Room"] = { "Program", "Mic", "Mic", "Mic", "Mic", "Mic", "Mic", "Mic", "Gain", "Gain", "Gain", "Gain" },
         ["Huddle Room"] = { "Program", "Mic", "Mic", "Gain", "Gain" },
         ["Custom Room"] = { "Program", "Mic", "Mic", "Mic", "Gain", "Gain", "Gain", "Gain", "Gain" },
-        ["Default"] = { "Program", "Mic", "Mic", "Mic", "Mic", "Gain", "Gain", "Gain" }
+        ["Default"] = { "Program", "Gain", "Gain", "Gain", "Mic", "Mic", "Gain", "Gain" }
     }
     
     local assignments = gainTypeAssignments[roomType] or gainTypeAssignments["Default"]
@@ -1221,5 +1228,4 @@ Public API:
     mySystemController.powerModule:powerOn()
     mySystemController.powerModule:powerOff()
 ]]
-
 
