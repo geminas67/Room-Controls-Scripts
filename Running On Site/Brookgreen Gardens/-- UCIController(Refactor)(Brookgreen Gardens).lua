@@ -1064,7 +1064,6 @@ function UCIController:registerEventHandlers()
         end
     }
     
-    -- Help button paired controls - more efficient approach
     local helpControlPairs = {
         {open = controls.btnOpenHelpLaptop, close = controls.btnCloseHelpLaptop, handler = function() self.sublayerModule:updateLaptopHelpState() end},
         {open = controls.btnOpenHelpPC, close = controls.btnCloseHelpPC, handler = function() self.sublayerModule:updatePCHelpState() end},
@@ -1072,9 +1071,7 @@ function UCIController:registerEventHandlers()
         {open = controls.btnOpenHelpRouting, close = controls.btnCloseHelpRouting, handler = function() self.sublayerModule:updateRoutingHelpState() end},
         {open = controls.btnOpenHelpStreamMusic, close = controls.btnCloseHelpStreamMusic, handler = function() self.sublayerModule:updateStreamMusicHelpState() end}
     }
-    
-    -- Bind all paired help controls
-    for _, pair in ipairs(helpControlPairs) do
+        for _, pair in ipairs(helpControlPairs) do
         bindPairedControls(pair.open, pair.close, pair.handler)
     end
     
