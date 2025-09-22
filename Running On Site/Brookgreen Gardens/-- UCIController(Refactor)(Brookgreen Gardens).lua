@@ -190,6 +190,23 @@ local function forEach(arr, fn)
     end
 end
 
+-- Utility function for managing paired controls (open/close, on/off, etc.)
+local function bindPairedControls(openCtrl, closeCtrl, updateHandler)
+    if openCtrl and updateHandler then
+        bind(openCtrl, function()
+            if closeCtrl then setProp(closeCtrl, "Boolean", false) end
+            updateHandler()
+        end)
+    end
+    
+    if closeCtrl and updateHandler then
+        bind(closeCtrl, function()
+            if openCtrl then setProp(openCtrl, "Boolean", false) end
+            updateHandler()
+        end)
+    end
+end
+
 -------------------[ State Management Utility ]-------------
 local function resetComponentsArray()
     -- State management utility for dynamic component arrays
@@ -1047,47 +1064,19 @@ function UCIController:registerEventHandlers()
         end
     }
     
-    -- Help button handler map
-    local helpOpenHandlerMap = {
-        [controls.btnOpenHelpLaptop] = function() self.sublayerModule:updateLaptopHelpState() end,
-        [controls.btnOpenHelpPC] = function() self.sublayerModule:updatePCHelpState() end,
-        [controls.btnOpenHelpWireless] = function() self.sublayerModule:updateWirelessHelpState() end,
-        [controls.btnOpenHelpRouting] = function() self.sublayerModule:updateRoutingHelpState() end,
-        [controls.btnOpenHelpStreamMusic] = function() self.sublayerModule:updateStreamMusicHelpState() end
+    -- Help button paired controls - more efficient approach
+    local helpControlPairs = {
+        {open = controls.btnOpenHelpLaptop, close = controls.btnCloseHelpLaptop, handler = function() self.sublayerModule:updateLaptopHelpState() end},
+        {open = controls.btnOpenHelpPC, close = controls.btnCloseHelpPC, handler = function() self.sublayerModule:updatePCHelpState() end},
+        {open = controls.btnOpenHelpWireless, close = controls.btnCloseHelpWireless, handler = function() self.sublayerModule:updateWirelessHelpState() end},
+        {open = controls.btnOpenHelpRouting, close = controls.btnCloseHelpRouting, handler = function() self.sublayerModule:updateRoutingHelpState() end},
+        {open = controls.btnOpenHelpStreamMusic, close = controls.btnCloseHelpStreamMusic, handler = function() self.sublayerModule:updateStreamMusicHelpState() end}
     }
     
-    local helpCloseHandlerMap = {
-        [controls.btnCloseHelpLaptop] = function() 
-            if controls.btnOpenHelpLaptop then
-                controls.btnOpenHelpLaptop.Boolean = false
-                self.sublayerModule:updateLaptopHelpState()
-            end
-        end,
-        [controls.btnCloseHelpPC] = function() 
-            if controls.btnOpenHelpPC then
-                controls.btnOpenHelpPC.Boolean = false
-                self.sublayerModule:updatePCHelpState()
-            end
-        end,
-        [controls.btnCloseHelpWireless] = function() 
-            if controls.btnOpenHelpWireless then
-                controls.btnOpenHelpWireless.Boolean = false
-                self.sublayerModule:updateWirelessHelpState()
-            end
-        end,
-        [controls.btnCloseHelpRouting] = function() 
-            if controls.btnOpenHelpRouting then
-                controls.btnOpenHelpRouting.Boolean = false
-                self.sublayerModule:updateRoutingHelpState()
-            end
-        end,
-        [controls.btnCloseHelpStreamMusic] = function() 
-            if controls.btnOpenHelpStreamMusic then
-                controls.btnOpenHelpStreamMusic.Boolean = false
-                self.sublayerModule:updateStreamMusicHelpState()
-            end
-        end
-    }
+    -- Bind all paired help controls
+    for _, pair in ipairs(helpControlPairs) do
+        bindPairedControls(pair.open, pair.close, pair.handler)
+    end
     
     -- Pin state handler map
     local pinHandlerMap = {
@@ -1122,8 +1111,8 @@ function UCIController:registerEventHandlers()
         [controls.pinCallActive] = function() self.sublayerModule:updateCallActiveState() end
     }
     
-    -- Batch register all handler maps
-    local handlerMaps = {systemHandlerMap, helpOpenHandlerMap, helpCloseHandlerMap, pinHandlerMap}
+    -- Batch register all handler maps (help controls are bound above via paired controls)
+    local handlerMaps = {systemHandlerMap, pinHandlerMap}
     for _, handlerMap in ipairs(handlerMaps) do
         for ctrl, handler in pairs(handlerMap) do
             if ctrl then -- Only bind if control exists

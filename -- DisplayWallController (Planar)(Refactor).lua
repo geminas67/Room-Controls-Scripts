@@ -415,8 +415,48 @@ function PlanarDisplayWallController:initPowerModule()
         setDisplayPowerFB = function(state)
             setProp(controls.ledDisplayPower, "Boolean", state)
             setProp(controls.btnDisplayPowerAll, "Boolean", state)
-            setProp(controls.btnDisplayPowerOn, "Boolean", state)
-            setProp(controls.btnDisplayPowerOff, "Boolean", not state)
+            -- Set global power button arrays efficiently
+            selfRef.powerModule.setDisplayPowerButtonsFB(state)
+        end,
+        
+        setDisplayPowerButtonsFB = function(state)
+            -- Efficiently set Boolean properties for btnDisplayPowerOn and btnDisplayPowerOff arrays
+            local powerOnControls = controls.btnDisplayPowerOn
+            local powerOffControls = controls.btnDisplayPowerOff
+            
+            if powerOnControls then
+                if isArr(powerOnControls) then
+                    for i, btn in ipairs(powerOnControls) do
+                        setProp(btn, "Boolean", state)
+                    end
+                else
+                    setProp(powerOnControls, "Boolean", state)
+                end
+            end
+            
+            if powerOffControls then
+                if isArr(powerOffControls) then
+                    for i, btn in ipairs(powerOffControls) do
+                        setProp(btn, "Boolean", not state)
+                    end
+                else
+                    setProp(powerOffControls, "Boolean", not state)
+                end
+            end
+        end,
+        
+        setIndividualDisplayPowerFB = function(index, state)
+            -- Set individual display power button feedback efficiently
+            if controls.btnDisplayPowerSingle and controls.btnDisplayPowerSingle[index] then
+                setProp(controls.btnDisplayPowerSingle[index], "Boolean", state)
+            end
+            -- Also update individual power on/off buttons if they exist as arrays
+            if controls.btnDisplayPowerOn and controls.btnDisplayPowerOn[index] then
+                setProp(controls.btnDisplayPowerOn[index], "Boolean", state)
+            end
+            if controls.btnDisplayPowerOff and controls.btnDisplayPowerOff[index] then
+                setProp(controls.btnDisplayPowerOff[index], "Boolean", not state)
+            end
         end,
         
         updatePowerFeedbackFromDisplays = function()
@@ -429,14 +469,12 @@ function PlanarDisplayWallController:initPowerModule()
                     if powerStatus then
                         poweredOnCount = poweredOnCount + 1
                         anyPoweredOn = true
-                        if controls.btnDisplayPowerSingle and controls.btnDisplayPowerSingle[i] then
-                            setProp(controls.btnDisplayPowerSingle[i], "Boolean", true)
-                        end
+                        -- Use the efficient individual display power feedback function
+                        selfRef.powerModule.setIndividualDisplayPowerFB(i, true)
                     else
                         allPoweredOn = false
-                        if controls.btnDisplayPowerSingle and controls.btnDisplayPowerSingle[i] then
-                            setProp(controls.btnDisplayPowerSingle[i], "Boolean", false)
-                        end
+                        -- Use the efficient individual display power feedback function
+                        selfRef.powerModule.setIndividualDisplayPowerFB(i, false)
                     end
                 end
             end
@@ -455,9 +493,7 @@ function PlanarDisplayWallController:initPowerModule()
             selfRef.state.isWarming = true
             setProp(controls.ledDisplayWarming, "Boolean", true)
             selfRef.timers.warmup:Start(selfRef:getTimerConfig(true))
-            if controls.btnDisplayPowerSingle and controls.btnDisplayPowerSingle[index] then
-                setProp(controls.btnDisplayPowerSingle[index], "Boolean", true)
-            end
+            selfRef.powerModule.setIndividualDisplayPowerFB(index, true)
         end,
         
         powerOffDisplay = function(index)
@@ -467,9 +503,7 @@ function PlanarDisplayWallController:initPowerModule()
             selfRef.state.isCooling = true
             setProp(controls.ledDisplayCooling, "Boolean", true)
             selfRef.timers.cooldown:Start(selfRef:getTimerConfig(false))
-            if controls.btnDisplayPowerSingle and controls.btnDisplayPowerSingle[index] then
-                setProp(controls.btnDisplayPowerSingle[index], "Boolean", false)
-            end
+            selfRef.powerModule.setIndividualDisplayPowerFB(index, false)
         end,
         
         powerOnAll = function()

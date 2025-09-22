@@ -30,6 +30,25 @@ local controls = {
     txtStatus = Controls.txtStatus,
 }
 
+-------------------[ Utility Functions ]-------------------
+local function isArr(t) return type(t) == "table" and t[1] ~= nil end
+local function getControlArray(ctrl) 
+    -- Optimized for pre-normalized arrays
+    return ctrl and (isArr(ctrl) and ctrl or {ctrl}) or {}
+end
+local function setProp(ctrl, prop, val) 
+    if ctrl and ctrl[prop] ~= val then ctrl[prop] = val end 
+end
+local function bind(ctrl, handler) if ctrl then ctrl.EventHandler = handler end end
+local function bindArray(ctrls, handler)
+    for i, ctrl in ipairs(getControlArray(ctrls)) do 
+        bind(ctrl, function(ctl) handler(i, ctl) end) 
+    end
+end
+local function forEach(ctrls, fn)
+    for i, ctrl in ipairs(getControlArray(ctrls)) do fn(i, ctrl) end
+end
+
 local function validateControls()
     local required = { "devMXAs", "btnMXAMute" }
     local missing = {}
@@ -48,25 +67,6 @@ local function normalizeControlArrays()
     if controls.devMXAs and not isArr(controls.devMXAs) then
         controls.devMXAs = { controls.devMXAs }
     end
-end
-
--------------------[ Utility Functions ]-------------------
-local function isArr(t) return type(t) == "table" and t[1] ~= nil end
-local function getControlArray(ctrl) 
-    -- Optimized for pre-normalized arrays
-    return ctrl and (isArr(ctrl) and ctrl or {ctrl}) or {}
-end
-local function setProp(ctrl, prop, val) 
-    if ctrl and ctrl[prop] ~= val then ctrl[prop] = val end 
-end
-local function bind(ctrl, handler) if ctrl then ctrl.EventHandler = handler end end
-local function bindArray(ctrls, handler)
-    for i, ctrl in ipairs(getControlArray(ctrls)) do 
-        bind(ctrl, function(ctl) handler(i, ctl) end) 
-    end
-end
-local function forEach(ctrls, fn)
-    for i, ctrl in ipairs(getControlArray(ctrls)) do fn(i, ctrl) end
 end
 
 -------------------[ State Management Utility ]-------------------

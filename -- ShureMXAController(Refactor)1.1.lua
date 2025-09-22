@@ -30,6 +30,25 @@ local controls = {
     txtStatus = Controls.txtStatus,
 }
 
+-------------------[ Utility Functions ]-------------------
+local function isArr(t) return type(t) == "table" and t[1] ~= nil end
+local function getControlArray(ctrl) 
+    -- Optimized for pre-normalized arrays
+    return ctrl and (isArr(ctrl) and ctrl or {ctrl}) or {}
+end
+local function setProp(ctrl, prop, val) 
+    if ctrl and ctrl[prop] ~= val then ctrl[prop] = val end 
+end
+local function bind(ctrl, handler) if ctrl then ctrl.EventHandler = handler end end
+local function bindArray(ctrls, handler)
+    for i, ctrl in ipairs(getControlArray(ctrls)) do 
+        bind(ctrl, function(ctl) handler(i, ctl) end) 
+    end
+end
+local function forEach(ctrls, fn)
+    for i, ctrl in ipairs(getControlArray(ctrls)) do fn(i, ctrl) end
+end
+
 local function validateControls()
     local required = { "devMXAs", "btnMXAMute" }
     local missing = {}
@@ -48,25 +67,6 @@ local function normalizeControlArrays()
     if controls.devMXAs and not isArr(controls.devMXAs) then
         controls.devMXAs = { controls.devMXAs }
     end
-end
-
--------------------[ Utility Functions ]-------------------
-local function isArr(t) return type(t) == "table" and t[1] ~= nil end
-local function getControlArray(ctrl) 
-    -- Optimized for pre-normalized arrays
-    return ctrl and (isArr(ctrl) and ctrl or {ctrl}) or {}
-end
-local function setProp(ctrl, prop, val) 
-    if ctrl and ctrl[prop] ~= val then ctrl[prop] = val end 
-end
-local function bind(ctrl, handler) if ctrl then ctrl.EventHandler = handler end end
-local function bindArray(ctrls, handler)
-    for i, ctrl in ipairs(getControlArray(ctrls)) do 
-        bind(ctrl, function(ctl) handler(i, ctl) end) 
-    end
-end
-local function forEach(ctrls, fn)
-    for i, ctrl in ipairs(getControlArray(ctrls)) do fn(i, ctrl) end
 end
 
 -------------------[ State Management Utility ]-------------------
@@ -241,80 +241,6 @@ function MXAModule:stopLEDToggle()
     self:debug("Stopped LED toggle timer")
 end
 
--------------------[ Main Controller Class ]-------------------
-ShureMXAController = {}; ShureMXAController.__index = ShureMXAController
-
-function ShureMXAController.new(roomName, config)
-    if not validateControls() then return nil end
-    
-    -- Normalize control arrays upfront for efficiency
-    normalizeControlArrays()
-    
-    local self = setmetatable({}, ShureMXAController)
-    self.roomName = roomName or "Shure MXA"
-    self.debugging = (config and config.debugging) or true
-    self.clearString = "[Clear]"
-    
-    self.state = {
-        audioPrivacy = false,
-        systemPower = false, 
-        fireAlarm = false,
-        ledState = false, 
-        muteState = false
-    }
-    
-    self.config = {
-        ledBrightness = (config and config.ledBrightness) or 5,
-        ledOff = (config and config.ledOff) or 0,
-        ledRed = (config and config.ledRed) or "Red",
-        ledGreen = (config and config.ledGreen) or "Green",
-        controlColors = { white = 'White', pink = 'Pink', off = 'Off' },
-        ledToggleInterval = 1.5
-    }
-    
-    -- Initialize modules (declared below)
-    self.componentModule = nil
-    self.mxaModule = nil
-    self.privacyModule = nil
-    self.systemModule = nil
-    self.callModule = nil
-    
-    -- Initialize timer
-    self.ledToggleTimer = Timer.New()
-    self.ledToggleTimer.EventHandler = function()
-        self.state.ledState = not self.state.ledState
-        self.mxaModule:setAllLEDs(self.state.ledState)
-    end
-    
-    return self
-end
-
-function ShureMXAController:debugPrint(str)
-    if self.debugging then print("["..self.roomName.." MXA] "..str) end
-end
-
-function ShureMXAController:initializeModules()
-    self.componentModule = ComponentModule.new(self)
-    self.mxaModule = MXAModule.new(self)
-    self.privacyModule = PrivacyModule.new(self)
-    self.systemModule = SystemModule.new(self)
-    self.callModule = CallModule.new(self)
-end
-
-function ShureMXAController:updateStatus()
-    if not controls.txtStatus then return end
-    
-    for _, v in pairs(self.componentModule.components.invalid) do
-        if v == true then
-            controls.txtStatus.String = "Invalid Components"
-            controls.txtStatus.Value = 1
-            return
-        end
-    end
-    controls.txtStatus.String = "OK"
-    controls.txtStatus.Value = 0
-end
-
 -------------------[ Privacy Control Module ]-------------------
 local PrivacyModule = setmetatable({}, BaseModule); PrivacyModule.__index = PrivacyModule
 function PrivacyModule.new(controller)
@@ -396,6 +322,80 @@ function CallModule:endCall()
     
     callSync["end.call"]:Trigger()
     self:debug("End call triggered")
+end
+
+-------------------[ Main Controller Class ]-------------------
+ShureMXAController = {}; ShureMXAController.__index = ShureMXAController
+
+function ShureMXAController.new(roomName, config)
+    if not validateControls() then return nil end
+    
+    -- Normalize control arrays upfront for efficiency
+    normalizeControlArrays()
+    
+    local self = setmetatable({}, ShureMXAController)
+    self.roomName = roomName or "Shure MXA"
+    self.debugging = (config and config.debugging) or true
+    self.clearString = "[Clear]"
+    
+    self.state = {
+        audioPrivacy = false,
+        systemPower = false, 
+        fireAlarm = false,
+        ledState = false, 
+        muteState = false
+    }
+    
+    self.config = {
+        ledBrightness = (config and config.ledBrightness) or 5,
+        ledOff = (config and config.ledOff) or 0,
+        ledRed = (config and config.ledRed) or "Red",
+        ledGreen = (config and config.ledGreen) or "Green",
+        controlColors = { white = 'White', pink = 'Pink', off = 'Off' },
+        ledToggleInterval = 1.5
+    }
+    
+    -- Initialize modules (declared below)
+    self.componentModule = nil
+    self.mxaModule = nil
+    self.privacyModule = nil
+    self.systemModule = nil
+    self.callModule = nil
+    
+    -- Initialize timer
+    self.ledToggleTimer = Timer.New()
+    self.ledToggleTimer.EventHandler = function()
+        self.state.ledState = not self.state.ledState
+        self.mxaModule:setAllLEDs(self.state.ledState)
+    end
+    
+    return self
+end
+
+function ShureMXAController:debugPrint(str)
+    if self.debugging then print("["..self.roomName.." MXA] "..str) end
+end
+
+function ShureMXAController:initializeModules()
+    self.componentModule = ComponentModule.new(self)
+    self.mxaModule = MXAModule.new(self)
+    self.privacyModule = PrivacyModule.new(self)
+    self.systemModule = SystemModule.new(self)
+    self.callModule = CallModule.new(self)
+end
+
+function ShureMXAController:updateStatus()
+    if not controls.txtStatus then return end
+    
+    for _, v in pairs(self.componentModule.components.invalid) do
+        if v == true then
+            controls.txtStatus.String = "Invalid Components"
+            controls.txtStatus.Value = 1
+            return
+        end
+    end
+    controls.txtStatus.String = "OK"
+    controls.txtStatus.Value = 0
 end
 
 -------------------[ Component Setup Methods ]-------------------
