@@ -37,9 +37,9 @@ local controls = {
     
     btnCloseHelpLaptop      = Controls.btnCloseHelpLaptop,
     btnCloseHelpPC          = Controls.btnCloseHelpPC,
-    btnCloseHelpWireless     = Controls.btnCloseHelpWireless,
-    btnCloseHelpRouting      = Controls.btnCloseHelpRouting,
-    btnCloseHelpStreamMusic  = Controls.btnCloseHelpStreamMusic,
+    btnCloseHelpWireless    = Controls.btnCloseHelpWireless,
+    btnCloseHelpRouting     = Controls.btnCloseHelpRouting,
+    btnCloseHelpStreamMusic = Controls.btnCloseHelpStreamMusic,
     
     -- Routing Buttons
     btnRouting01 = Controls.btnRouting01, btnRouting02 = Controls.btnRouting02,
@@ -1214,7 +1214,8 @@ function UCIController:initializeLegendArrays()
         "txtAudSrc01", "txtAudSrc02", "txtAudSrc03", "txtAudSrc04",
         "txtAudSrc05", "txtAudSrc06", "txtAudSrc07", "txtAudSrc08",
         "txtAudSrc09", "txtAudSrc10", "txtAudSrc11", "txtAudSrc12",
-        "txtGainPGM", "txtGain01", "txtGain02", "txtGain03", "txtGain04",
+        "txtGainPGM", 
+        "txtGain01", "txtGain02", "txtGain03", "txtGain04",
         "txtGain05", "txtGain06", "txtGain07", "txtGain08", "txtGain09", "txtGain10",
         "txtDisplay01", "txtDisplay02", "txtDisplay03", "txtDisplay04",
     }
@@ -1240,7 +1241,8 @@ function UCIController:initializeLegendArrays()
         "txtLabelAudSrc01", "txtLabelAudSrc02", "txtLabelAudSrc03", "txtLabelAudSrc04",
         "txtLabelAudSrc05", "txtLabelAudSrc06", "txtLabelAudSrc07", "txtLabelAudSrc08",
         "txtLabelAudSrc09", "txtLabelAudSrc10", "txtLabelAudSrc11", "txtLabelAudSrc12",
-        "txtLabelGainPGM", "txtLabelGain01", "txtLabelGain02", "txtLabelGain03", "txtLabelGain04",
+        "txtLabelGainPGM", 
+        "txtLabelGain01", "txtLabelGain02", "txtLabelGain03", "txtLabelGain04",
         "txtLabelGain05", "txtLabelGain06", "txtLabelGain07", "txtLabelGain08", "txtLabelGain09", "txtLabelGain10",
         "txtLabelDisplay01", "txtLabelDisplay02", "txtLabelDisplay03", "txtLabelDisplay04",
     }

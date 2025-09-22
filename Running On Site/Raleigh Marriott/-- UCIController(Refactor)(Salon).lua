@@ -29,12 +29,18 @@ local controls = {
     btnShutdownConfirm  = Controls.btnShutdownConfirm,
     
     -- Help Buttons
-    btnHelpLaptop       = Controls.btnHelpLaptop,
-    btnHelpPC           = Controls.btnHelpPC,
-    btnHelpWireless     = Controls.btnHelpWireless,
-    btnHelpRouting      = Controls.btnHelpRouting,
-    btnHelpDialer       = Controls.btnHelpDialer,
-    btnHelpStreamMusic  = Controls.btnHelpStreamMusic,
+    btnOpenHelpLaptop       = Controls.btnOpenHelpLaptop,
+    btnOpenHelpPC           = Controls.btnOpenHelpPC,
+    btnOpenHelpWireless     = Controls.btnOpenHelpWireless,
+    btnOpenHelpRouting      = Controls.btnOpenHelpRouting,
+    btnOpenHelpStreamMusic  = Controls.btnOpenHelpStreamMusic,
+
+    btnCloseHelpLaptop      = Controls.btnCloseHelpLaptop,
+    btnCloseHelpPC          = Controls.btnCloseHelpPC,
+    btnCloseHelpWireless    = Controls.btnCloseHelpWireless,
+    btnCloseHelpRouting     = Controls.btnCloseHelpRouting,
+    btnCloseHelpStreamMusic = Controls.btnCloseHelpStreamMusic,
+
     
     -- Routing Buttons
     btnRouting01 = Controls.btnRouting01, 
@@ -78,8 +84,8 @@ local function validateControls()
     -- Optional but recommended controls
     local optional = {
         "knbProgressBar", "txtProgressBar", "ledSystemPower",
-        "btnHelpLaptop", "btnHelpPC", "btnHelpWireless", "btnHelpRouting",
-        "btnHelpDialer", "btnHelpStreamMusic",
+        "btnOpenHelpLaptop", "btnOpenHelpPC", "btnOpenHelpWireless", "btnOpenHelpRouting","btnOpenHelpStreamMusic",
+        "btnCloseHelpLaptop", "btnCloseHelpPC", "btnCloseHelpWireless", "btnCloseHelpRouting", "btnCloseHelpStreamMusic",
         "btnRouting01", "btnRouting02", "btnRouting03", "btnRouting04", "btnRouting05", "btnRouting06", "btnRouting07", "btnRouting08"
     }
     
@@ -144,7 +150,7 @@ local function normalizeControlArrays()
     end
     
     -- Build help button array
-    local helpButtons = {"btnHelpLaptop", "btnHelpPC", "btnHelpWireless", "btnHelpRouting", "btnHelpDialer", "btnHelpStreamMusic"}
+    local helpButtons = {"btnOpenHelpLaptop", "btnOpenHelpPC", "btnOpenHelpWireless", "btnOpenHelpRouting", "btnOpenHelpStreamMusic", "btnCloseHelpLaptop", "btnCloseHelpPC", "btnCloseHelpWireless", "btnCloseHelpRouting", "btnCloseHelpStreamMusic"}
     for i, name in ipairs(helpButtons) do
         if controls[name] then controlsToNormalize.helpButtons[i] = controls[name] end
     end
@@ -189,6 +195,24 @@ local function forEach(arr, fn)
         if item then fn(i, item) end
     end
 end
+
+-- Utility function for managing paired controls (open/close, on/off, etc.)
+local function bindPairedControls(openCtrl, closeCtrl, updateHandler)
+    if openCtrl and updateHandler then
+        bind(openCtrl, function()
+            if closeCtrl then setProp(closeCtrl, "Boolean", false) end
+            updateHandler()
+        end)
+    end
+    
+    if closeCtrl and updateHandler then
+        bind(closeCtrl, function()
+            if openCtrl then setProp(openCtrl, "Boolean", false) end
+            updateHandler()
+        end)
+    end
+end
+
 
 -------------------[ State Management Utility ]-------------
 local function resetComponentsArray()
@@ -302,8 +326,7 @@ function LayerModule:showLayer()
         "J01-ConnectUSBLaptop", "J02-ConnectUSBPC", "J03-ACPRActive", "J04-CamPresetSaved","J05-CameraControls", 
         "L01-HDMI01Disconnected", "L05-Laptop",
         "P01-HDMI02Disconnected", "P05-PC", "W05-Wireless",
-        "R01-Routing-SalonA", "R02-Routing-SalonB", "R03-Routing-SalonC","R04-Routing-SalonD", "R05-Routing-SalonE",
-        "R06-Routing-SalonF", "R07-Routing-SalonG", "R08-Routing-SalonH", "R10-Routing",
+        "R01-Routing-SalonA", "R02-Routing-SalonB", "R03-Routing-SalonC","R04-Routing-SalonD", "R05-Routing-SalonE","R06-Routing-SalonF", "R07-Routing-SalonG", "R08-Routing-SalonH", "R10-Routing",
         "S10-StreamMusic", 
         "V05-Dialer", 
         "X01-ProgramVolume", 
@@ -459,18 +482,14 @@ end
 function SublayerModule:updateHDMI01State()
     if self.controller.varActiveLayer ~= self.controller.kLayerLaptop then return end
     if not controls.pinLEDHDMI01Connect then return end
-    
     local isConnected = controls.pinLEDHDMI01Connect.Boolean or false
-    
-    -- Direct logic path without unnecessary nesting
     if isConnected then
         self.controller.layerModule:updateLayerVisibility({"L05-Laptop"}, true, "fade")
         self.controller.layerModule:updateLayerVisibility({"L01-HDMI01Disconnected"}, false, "none")
         self:debug("HDMI01: Connected")
         return
     end
-    
-    -- Disconnected state handling
+
     self.controller.layerModule:updateLayerVisibility({"L01-HDMI01Disconnected"}, true, "fade")
     self.controller.layerModule:updateLayerVisibility({"L05-Laptop", "J05-CameraControls"}, false, "none")
     self:debug("HDMI01: Disconnected")
@@ -1081,15 +1100,16 @@ function UCIController:registerEventHandlers()
         end
     }
     
-    -- Help button handler map
-    local helpHandlerMap = {
-        [controls.btnHelpLaptop] = function() self.sublayerModule:updateLaptopHelpState() end,
-        [controls.btnHelpPC] = function() self.sublayerModule:updatePCHelpState() end,
-        [controls.btnHelpWireless] = function() self.sublayerModule:updateWirelessHelpState() end,
-        [controls.btnHelpRouting] = function() self.sublayerModule:updateRoutingHelpState() end,
-        [controls.btnHelpDialer] = function() self.sublayerModule:updateDialerHelpState() end,
-        [controls.btnHelpStreamMusic] = function() self.sublayerModule:updateStreamMusicHelpState() end
+    local helpControlPairs = {
+        {open = controls.btnOpenHelpLaptop, close = controls.btnCloseHelpLaptop, handler = function() self.sublayerModule:updateLaptopHelpState() end},
+        {open = controls.btnOpenHelpPC, close = controls.btnCloseHelpPC, handler = function() self.sublayerModule:updatePCHelpState() end},
+        {open = controls.btnOpenHelpWireless, close = controls.btnCloseHelpWireless, handler = function() self.sublayerModule:updateWirelessHelpState() end},
+        {open = controls.btnOpenHelpRouting, close = controls.btnCloseHelpRouting, handler = function() self.sublayerModule:updateRoutingHelpState() end},
+        {open = controls.btnOpenHelpStreamMusic, close = controls.btnCloseHelpStreamMusic, handler = function() self.sublayerModule:updateStreamMusicHelpState() end},
     }
+        for _, pair in ipairs(helpControlPairs) do
+            bindPairedControls(pair.open, pair.close, pair.handler)
+    end
     
     -- Pin state handler map
     local pinHandlerMap = {
