@@ -1067,32 +1067,7 @@ function SystemAutomationController:cleanup()
     self:debugPrint("Cleanup completed for " .. self.roomName)
 end
 
-------------------[ Application Boot / Setup ]------------------
--- Factory function for volume ranges based on room type
-local function getVolumeRanges(roomType)
-    local baseRanges = {
-        programVolume = { 1 },  -- Program volume always controls index 1
-        micVolume = function(type) 
-            if type == "Huddle Room" then return { 2, 3 }
-            elseif type == "Conference Room" then return { 2, 3, 4, 5, 6, 7, 8 }
-            elseif type == "Custom Room" then return { 2, 3, 4 }  -- Easily modifiable per project
-            else return { 2, 3, 4, 5 }  -- Default range
-            end
-        end,
-        gainVolume = function(type)
-            if type == "Huddle Room" then return { 4, 5 }
-            elseif type == "Conference Room" then return { 9, 10, 11, 12 }
-            elseif type == "Custom Room" then return { 5, 6, 7, 8, 9 }  -- Easily modifiable per project
-            else return { 6, 7, 8 }  -- Default range
-            end
-        end
-    }
-    return {
-        programVolume = baseRanges.programVolume,
-        micVolume = baseRanges.micVolume(roomType),
-        gainVolume = baseRanges.gainVolume(roomType)
-    }
-end
+----------------[ Application Boot / Setup ]--------------------------
 
 -- Factory function for default configurations
 local function getDefaultConfig(roomType)
@@ -1107,7 +1082,6 @@ local function getDefaultConfig(roomType)
             defaultProgramVolume = (controls.defaultProgramVolume and controls.defaultProgramVolume.Value) or 0.7,
             defaultMicVolume = (controls.defaultMicVolume and controls.defaultMicVolume.Value) or 0.5,
             defaultGainVolume = (controls.defaultGainVolume and controls.defaultGainVolume.Value) or 0.8,
-            volumeRanges = getVolumeRanges(roomType)
         }
     end
         local baseConfig = {
@@ -1122,28 +1096,24 @@ local function getDefaultConfig(roomType)
             defaultProgramVolume = baseConfig.defaultProgramVolume,
             defaultMicVolume = baseConfig.defaultMicVolume,
             defaultGainVolume = baseConfig.defaultGainVolume,
-            volumeRanges = getVolumeRanges("Conference Room")
         },
         ["Huddle Room"] = { 
             debugging = false, warmupTime = 5, cooldownTime = 3, motionTimeout = 300, gracePeriod = 30,
             defaultProgramVolume = 0.6,  -- Lower for huddle rooms
             defaultMicVolume = baseConfig.defaultMicVolume,
             defaultGainVolume = baseConfig.defaultGainVolume,
-            volumeRanges = getVolumeRanges("Huddle Room")
         },
         ["Default"] = { 
             debugging = true, warmupTime = 10, cooldownTime = 5, motionTimeout = 300, gracePeriod = 30,
             defaultProgramVolume = baseConfig.defaultProgramVolume,
             defaultMicVolume = baseConfig.defaultMicVolume,
             defaultGainVolume = baseConfig.defaultGainVolume,
-            volumeRanges = getVolumeRanges("Default")
         },
         ["Custom Room"] = { 
             debugging = true, warmupTime = 10, cooldownTime = 5, motionTimeout = 300, gracePeriod = 30,
             defaultProgramVolume = baseConfig.defaultProgramVolume,
             defaultMicVolume = baseConfig.defaultMicVolume,
             defaultGainVolume = baseConfig.defaultGainVolume,
-            volumeRanges = getVolumeRanges("Custom Room")
         }
     }
     return defaults[roomType] or defaults["Default"]
