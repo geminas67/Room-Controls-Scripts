@@ -69,8 +69,6 @@ local controls = {
     pinLEDHDMI02Connect     = Controls.pinLEDHDMI02Connect,
     pinLEDACPRBypassActive  = Controls.pinLEDACPRBypassActive,
     
-    -- System State
-    ledSystemPower = Controls.ledSystemPower
 }
 
 local function validateControls()
@@ -83,7 +81,7 @@ local function validateControls()
     
     -- Optional but recommended controls
     local optional = {
-        "knbProgressBar", "txtProgressBar", "ledSystemPower",
+        "knbProgressBar", "txtProgressBar",
         "btnOpenHelpLaptop", "btnOpenHelpPC", "btnOpenHelpWireless", "btnOpenHelpRouting","btnOpenHelpStreamMusic",
         "btnCloseHelpLaptop", "btnCloseHelpPC", "btnCloseHelpWireless", "btnCloseHelpRouting", "btnCloseHelpStreamMusic",
         "btnRouting01", "btnRouting02", "btnRouting03", "btnRouting04", "btnRouting05", "btnRouting06", "btnRouting07", "btnRouting08"
@@ -115,11 +113,15 @@ local function validateControls()
         return false
     end
     
-    -- Report missing optional controls as warnings
+    -- Report missing optional controls as warnings with functionality notes
     if #warnings > 0 then
         print("WARNING: UCIController - Missing optional controls (reduced functionality):")
         for _, name in ipairs(warnings) do
-            print("  - " .. name)
+            local functionalityNote = ""
+            if name == "knbProgressBar" or name == "txtProgressBar" then
+                functionalityNote = " (progress bar animation disabled)"
+            end
+            print("  - " .. name .. functionalityNote)
         end
     end
     
@@ -955,7 +957,7 @@ function ProgressModule:startLoadingBar(isPoweringOn)
             self:debug("Loading bar timeout reached")
             self.isAnimating = false
             if self.loadingTimer then self.loadingTimer:Stop(); self.loadingTimer = nil end
-            self.controller:btnNavEventHandler(isPoweringOn and self.controller.kLayerRoomControls or self.controller.kLayerStart)
+            self.controller:btnNavEventHandler(isPoweringOn and self.controller.defaultActiveLayer or self.controller.kLayerStart)
         end
     end
     self.timeoutTimer:Start(300) -- 5-minute timeout
@@ -973,7 +975,7 @@ function ProgressModule:startLoadingBar(isPoweringOn)
             self.timeoutTimer:Stop()
             self.isAnimating = false
             
-            local targetLayer = isPoweringOn and self.controller.kLayerRoomControls or self.controller.kLayerStart
+            local targetLayer = isPoweringOn and self.controller.defaultActiveLayer or self.controller.kLayerStart
             self.controller:btnNavEventHandler(targetLayer)
         else
             self.loadingTimer:Start(interval)

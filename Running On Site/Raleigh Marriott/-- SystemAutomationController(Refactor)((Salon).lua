@@ -251,7 +251,14 @@ function AudioModule:updateVolumeVisuals(i)
     
     -- Cache current state to avoid redundant property access
     local isMuted = mute.Boolean
-    setProp(mute, "CssClass", isMuted and "icon-volume_mute" or "icon-volume_off")
+    local gainType = self.controller:getGainType(i)
+    
+    -- Set CSS class based on gain type
+    if gainType == "Mic" then
+        setProp(mute, "CssClass", isMuted and "icon-mic_none" or "icon-mic_off")
+    else
+        setProp(mute, "CssClass", isMuted and "icon-volume_mute" or "icon-volume_off")
+    end
     setProp(fader, "Color", isMuted and "#CCCCCC" or "#0561A5")
 end
 
