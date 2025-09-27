@@ -41,7 +41,6 @@ local controls = {
     btnCloseHelpRouting     = Controls.btnCloseHelpRouting,
     btnCloseHelpStreamMusic = Controls.btnCloseHelpStreamMusic,
 
-    
     -- Routing Buttons
     btnRouting01 = Controls.btnRouting01, 
     btnRouting02 = Controls.btnRouting02,
@@ -51,6 +50,15 @@ local controls = {
     btnRouting06 = Controls.btnRouting06,
     btnRouting07 = Controls.btnRouting07,
     btnRouting08 = Controls.btnRouting08,
+    -- Routing Text Labels
+    txtRouting01 = Controls.txtRouting01, 
+    txtRouting02 = Controls.txtRouting02,
+    txtRouting03 = Controls.txtRouting03, 
+    txtRouting04 = Controls.txtRouting04, 
+    txtRouting05 = Controls.txtRouting05,
+    txtRouting06 = Controls.txtRouting06,
+    txtRouting07 = Controls.txtRouting07,
+    txtRouting08 = Controls.txtRouting08,
     
     -- Progress Controls
     knbProgressBar = Controls.knbProgressBar,
@@ -68,6 +76,14 @@ local controls = {
     pinLEDHDMI01Connect     = Controls.pinLEDHDMI01Connect,
     pinLEDHDMI02Connect     = Controls.pinLEDHDMI02Connect,
     pinLEDACPRBypassActive  = Controls.pinLEDACPRBypassActive,
+    pinLEDIsVisibleBtn01       = Controls.pinLEDIsVisibleBtn01,
+    pinLEDIsVisibleBtn02       = Controls.pinLEDIsVisibleBtn02,
+    pinLEDIsVisibleBtn03       = Controls.pinLEDIsVisibleBtn03,
+    pinLEDIsVisibleBtn04       = Controls.pinLEDIsVisibleBtn04,
+    pinLEDIsVisibleBtn05       = Controls.pinLEDIsVisibleBtn05,
+    pinLEDIsVisibleBtn06       = Controls.pinLEDIsVisibleBtn06,
+    pinLEDIsVisibleBtn07       = Controls.pinLEDIsVisibleBtn07,
+    pinLEDIsVisibleBtn08       = Controls.pinLEDIsVisibleBtn08,
     
 }
 
@@ -84,7 +100,8 @@ local function validateControls()
         "knbProgressBar", "txtProgressBar",
         "btnOpenHelpLaptop", "btnOpenHelpPC", "btnOpenHelpWireless", "btnOpenHelpRouting","btnOpenHelpStreamMusic",
         "btnCloseHelpLaptop", "btnCloseHelpPC", "btnCloseHelpWireless", "btnCloseHelpRouting", "btnCloseHelpStreamMusic",
-        "btnRouting01", "btnRouting02", "btnRouting03", "btnRouting04", "btnRouting05", "btnRouting06", "btnRouting07", "btnRouting08"
+        "btnRouting01", "btnRouting02", "btnRouting03", "btnRouting04", "btnRouting05", "btnRouting06", "btnRouting07", "btnRouting08",
+        "txtRouting01", "txtRouting02", "txtRouting03", "txtRouting04", "txtRouting05", "txtRouting06", "txtRouting07", "txtRouting08"
     }
     
     local missing = {}
@@ -1143,11 +1160,21 @@ function UCIController:registerEventHandlers()
         [controls.pinLEDHDMI01Connect] = function() self.sublayerModule:updateHDMI01State() end,
         [controls.pinLEDHDMI02Connect] = function() self.sublayerModule:updateHDMI02State() end,
         [controls.pinLEDACPRBypassActive] = function() self.sublayerModule:updateACPRBypassState() end,
-        [controls.pinCallActive] = function() self.sublayerModule:updateCallActiveState() end
+        [controls.pinCallActive] = function() self.sublayerModule:updateCallActiveState() end,
+        
+        -- Routing Button Visibility Controls
+        [controls.pinLEDIsVisibleBtn01] = function(ctl) self:updateRoutingControlVisibility(1, ctl.Boolean) end,
+        [controls.pinLEDIsVisibleBtn02] = function(ctl) self:updateRoutingControlVisibility(2, ctl.Boolean) end,
+        [controls.pinLEDIsVisibleBtn03] = function(ctl) self:updateRoutingControlVisibility(3, ctl.Boolean) end,
+        [controls.pinLEDIsVisibleBtn04] = function(ctl) self:updateRoutingControlVisibility(4, ctl.Boolean) end,
+        [controls.pinLEDIsVisibleBtn05] = function(ctl) self:updateRoutingControlVisibility(5, ctl.Boolean) end,
+        [controls.pinLEDIsVisibleBtn06] = function(ctl) self:updateRoutingControlVisibility(6, ctl.Boolean) end,
+        [controls.pinLEDIsVisibleBtn07] = function(ctl) self:updateRoutingControlVisibility(7, ctl.Boolean) end,
+        [controls.pinLEDIsVisibleBtn08] = function(ctl) self:updateRoutingControlVisibility(8, ctl.Boolean) end
     }
     
     -- Batch register all handler maps
-    local handlerMaps = {systemHandlerMap, helpHandlerMap, pinHandlerMap}
+    local handlerMaps = {systemHandlerMap, pinHandlerMap}
     for _, handlerMap in ipairs(handlerMaps) do
         for ctrl, handler in pairs(handlerMap) do
             if ctrl then -- Only bind if control exists
@@ -1176,6 +1203,22 @@ function UCIController:btnNavEventHandler(argIndex)
     self.layerModule:showLayer()
     self:interlock()
     self:debug("Layer changed from " .. previousLayer .. " to " .. argIndex)
+end
+
+function UCIController:updateRoutingControlVisibility(buttonIndex, isVisible)
+    local indexStr = string.format("%02d", buttonIndex)
+    local controlNames = {"btnRouting" .. indexStr, "txtRouting" .. indexStr}
+    
+    for _, controlName in ipairs(controlNames) do
+        local control = controls[controlName]
+        if control then
+            setProp(control, "IsInvisible", not isVisible)
+        else
+            self:debug("Warning: " .. controlName .. " not found")
+        end
+    end
+    
+    self:debug("Routing controls " .. indexStr .. " visibility: " .. (isVisible and "shown" or "hidden"))
 end
 
 function UCIController:interlock()
@@ -1456,7 +1499,7 @@ end
 --------------[ Instance Creation ]-------------------------
 myUCI = createUCIController(
     Uci.Variables.txtUCIPageName.String,
-    tonumber(Uci.Variables.numDefaultRoutingLayer.Value) or 1,
+    tonumber(Uci.Variables.numDefaultRoutingLayer.Value) or 2,
     tonumber(Uci.Variables.numDefaultActiveLayer.Value) or 10,
     {} -- Hidden nav indices
 )

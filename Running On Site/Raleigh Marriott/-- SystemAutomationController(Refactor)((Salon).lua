@@ -252,13 +252,7 @@ function AudioModule:updateVolumeVisuals(i)
     -- Cache current state to avoid redundant property access
     local isMuted = mute.Boolean
     local gainType = self.controller:getGainType(i)
-    
-    -- Set CSS class based on gain type
-    if gainType == "Mic" then
-        setProp(mute, "CssClass", isMuted and "icon-mic_none" or "icon-mic_off")
-    else
-        setProp(mute, "CssClass", isMuted and "icon-volume_mute" or "icon-volume_off")
-    end
+    setProp(mute, "CssClass", isMuted and (gainType == "Mic" and "icon-mic_none" or "icon-volume_mute") or (gainType == "Mic" and "icon-mic_off" or "icon-volume_off"))
     setProp(fader, "Color", isMuted and "#CCCCCC" or "#0561A5")
 end
 
@@ -1104,7 +1098,7 @@ local function getDefaultConfig(roomType)
             defaultGainVolume = baseConfig.defaultGainVolume,
         },
         ["Default"] = { 
-            debugging = true, warmupTime = 10, cooldownTime = 5, motionTimeout = 300, gracePeriod = 30,
+            debugging = true, warmupTime = 3, cooldownTime = 3, motionTimeout = 300, gracePeriod = 30,
             defaultProgramVolume = baseConfig.defaultProgramVolume,
             defaultMicVolume = baseConfig.defaultMicVolume,
             defaultGainVolume = baseConfig.defaultGainVolume,
