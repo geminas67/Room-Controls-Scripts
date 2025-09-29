@@ -1005,7 +1005,7 @@ function SystemAutomationController:setGainTypeAssignments(roomType)
             if i == 1 then
                 -- First gain control is always Program and should remain disabled
                 controls.typeGain[i].String = "Program"
-                controls.typeGain[i].IsDisabled = true
+                controls.typeGain[i].IsDisabled = false
             else
                 controls.typeGain[i].String = gainType
             end
@@ -1028,7 +1028,7 @@ function SystemAutomationController:init()
                 if i == 1 then
                     -- First gain control is always Program and should be disabled
                     gainControl.String = "Program"
-                    gainControl.IsDisabled = true
+                    gainControl.IsDisabled = false
                 end
             end
         end

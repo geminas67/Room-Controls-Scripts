@@ -21,6 +21,7 @@ local controls = {
     btnNav04 = Controls.btnNav04, btnNav05 = Controls.btnNav05, btnNav06 = Controls.btnNav06,
     btnNav07 = Controls.btnNav07, btnNav08 = Controls.btnNav08, btnNav09 = Controls.btnNav09,
     btnNav10 = Controls.btnNav10, btnNav11 = Controls.btnNav11, btnNav12 = Controls.btnNav12,
+    btnNav13 = Controls.btnNav13,
     
     -- System Controls
     btnStartSystem      = Controls.btnStartSystem,
@@ -91,7 +92,7 @@ local function validateControls()
     -- Core navigation controls
     local required = {
         "btnNav01", "btnNav02", "btnNav03", "btnNav04", "btnNav05", "btnNav06",
-        "btnNav07", "btnNav08", "btnNav09", "btnNav10", "btnNav11", "btnNav12",
+        "btnNav07", "btnNav08", "btnNav09", "btnNav10", "btnNav11", "btnNav12", "btnNav13",
         "btnStartSystem", "btnNavShutdown", "btnShutdownCancel", "btnShutdownConfirm"
     }
     
@@ -157,7 +158,7 @@ local function normalizeControlArrays()
     }
     
     -- Build navigation button array
-    for i = 1, 12 do
+    for i = 1, 13 do
         local btn = controls["btnNav" .. string.format("%02d", i)]
         if btn then controlsToNormalize.navButtons[i] = btn end
     end
@@ -1037,19 +1038,19 @@ function UCIController.new(uciPage, defaultRoutingLayer, defaultActiveLayer, hid
     self.isInitialized = false
     
     -- Layer constants
-    self.kLayerAlarm        = 1; 
-    self.kLayerIncomingCall = 2; 
-    self.kLayerStart        = 3;
-    self.kLayerWarming      = 4; 
-    self.kLayerCooling      = 5; 
-    self.kLayerRoomControls = 6;
-    self.kLayerPC           = 7; 
-    self.kLayerLaptop       = 8; 
-    self.kLayerWireless     = 9;
-    self.kLayerRouting      = 10; 
-    self.kLayerDialer       = 11; 
-    self.kLayerStreamMusic  = 12;
-    
+    self.kLayerAlarm            = 1; 
+    self.kLayerIncomingCall     = 2; 
+    self.kLayerStart            = 3;
+    self.kLayerWarming          = 4; 
+    self.kLayerCooling          = 5; 
+    self.kLayerRoomControls     = 6;
+    self.kLayerPC               = 7; 
+    self.kLayerLaptop           = 8; 
+    self.kLayerWireless         = 9;
+    self.kLayerRouting          = 10; 
+    self.kLayerDialer           = 11; 
+    self.kLayerStreamMusic      = 12;
+    self.kLayerRoomCombining    = 13;
     
     -- Initialize modules
     self.layerModule            = LayerModule.new(self)
@@ -1098,6 +1099,10 @@ function UCIController:registerEventHandlers()
     
     -- System control handler map with direct object references
     local systemHandlerMap = {
+        [controls.btnNav13] = function()
+            self.layerModule:showLayer()
+            self:interlock()
+        end,
         [controls.btnStartSystem] = function()
             self.roomAutomationModule:powerOn()
             self.progressModule:startLoadingBar(true)
@@ -1239,7 +1244,8 @@ function UCIController:interlock()
             [self.kLayerWireless]       = 9,
             [self.kLayerRouting]        = 10, 
             [self.kLayerDialer]         = 11, 
-            [self.kLayerStreamMusic]    = 12
+            [self.kLayerStreamMusic]    = 12,
+            [self.kLayerRoomCombining]  = 13
         }
     end
     
@@ -1499,7 +1505,7 @@ end
 --------------[ Instance Creation ]-------------------------
 myUCI = createUCIController(
     Uci.Variables.txtUCIPageName.String,
-    tonumber(Uci.Variables.numDefaultRoutingLayer.Value) or 1,
+    tonumber(Uci.Variables.numDefaultRoutingLayer.Value) or 2,
     tonumber(Uci.Variables.numDefaultActiveLayer.Value) or 10,
     {} -- Hidden nav indices
 )
