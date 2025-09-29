@@ -435,6 +435,12 @@ function LayerModule:showLayer()
                 function() self.controller.sublayerModule:updateStreamMusicHelpState() end,
                 function() self.controller.sublayerModule:updateCallActiveState() end
             }
+        },
+        [self.controller.kLayerRoomCombining] = {
+            showLayers = {"H01-RoomCombining"},
+            callLayerFunctions = {
+                function() self.controller.sublayerModule:updateCallActiveState() end
+            }
         }
     }
     
@@ -1099,10 +1105,6 @@ function UCIController:registerEventHandlers()
     
     -- System control handler map with direct object references
     local systemHandlerMap = {
-        [controls.btnNav13] = function()
-            self.layerModule:showLayer()
-            self:interlock()
-        end,
         [controls.btnStartSystem] = function()
             self.roomAutomationModule:powerOn()
             self.progressModule:startLoadingBar(true)
