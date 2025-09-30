@@ -21,6 +21,7 @@ local controls = {
     btnNav04 = Controls.btnNav04, btnNav05 = Controls.btnNav05, btnNav06 = Controls.btnNav06,
     btnNav07 = Controls.btnNav07, btnNav08 = Controls.btnNav08, btnNav09 = Controls.btnNav09,
     btnNav10 = Controls.btnNav10, btnNav11 = Controls.btnNav11, btnNav12 = Controls.btnNav12,
+    btnNav13 = Controls.btnNav13,
     
     -- System Controls
     btnStartSystem      = Controls.btnStartSystem,
@@ -91,7 +92,7 @@ local function validateControls()
     -- Core navigation controls
     local required = {
         "btnNav01", "btnNav02", "btnNav03", "btnNav04", "btnNav05", "btnNav06",
-        "btnNav07", "btnNav08", "btnNav09", "btnNav10", "btnNav11", "btnNav12",
+        "btnNav07", "btnNav08", "btnNav09", "btnNav10", "btnNav11", "btnNav12", "btnNav13",
         "btnStartSystem", "btnNavShutdown", "btnShutdownCancel", "btnShutdownConfirm"
     }
     
@@ -157,7 +158,7 @@ local function normalizeControlArrays()
     }
     
     -- Build navigation button array
-    for i = 1, 12 do
+    for i = 1, 13 do
         local btn = controls["btnNav" .. string.format("%02d", i)]
         if btn then controlsToNormalize.navButtons[i] = btn end
     end
@@ -432,6 +433,12 @@ function LayerModule:showLayer()
             showLayers = {"S10-StreamMusic"},
             callLayerFunctions = {
                 function() self.controller.sublayerModule:updateStreamMusicHelpState() end,
+                function() self.controller.sublayerModule:updateCallActiveState() end
+            }
+        },
+        [self.controller.kLayerRoomCombining] = {
+            showLayers = {"H01-RoomCombining"},
+            callLayerFunctions = {
                 function() self.controller.sublayerModule:updateCallActiveState() end
             }
         }
@@ -1037,19 +1044,19 @@ function UCIController.new(uciPage, defaultRoutingLayer, defaultActiveLayer, hid
     self.isInitialized = false
     
     -- Layer constants
-    self.kLayerAlarm        = 1; 
-    self.kLayerIncomingCall = 2; 
-    self.kLayerStart        = 3;
-    self.kLayerWarming      = 4; 
-    self.kLayerCooling      = 5; 
-    self.kLayerRoomControls = 6;
-    self.kLayerPC           = 7; 
-    self.kLayerLaptop       = 8; 
-    self.kLayerWireless     = 9;
-    self.kLayerRouting      = 10; 
-    self.kLayerDialer       = 11; 
-    self.kLayerStreamMusic  = 12;
-    
+    self.kLayerAlarm            = 1; 
+    self.kLayerIncomingCall     = 2; 
+    self.kLayerStart            = 3;
+    self.kLayerWarming          = 4; 
+    self.kLayerCooling          = 5; 
+    self.kLayerRoomControls     = 6;
+    self.kLayerPC               = 7; 
+    self.kLayerLaptop           = 8; 
+    self.kLayerWireless         = 9;
+    self.kLayerRouting          = 10; 
+    self.kLayerDialer           = 11; 
+    self.kLayerStreamMusic      = 12;
+    self.kLayerRoomCombining    = 13;
     
     -- Initialize modules
     self.layerModule            = LayerModule.new(self)
@@ -1239,7 +1246,8 @@ function UCIController:interlock()
             [self.kLayerWireless]       = 9,
             [self.kLayerRouting]        = 10, 
             [self.kLayerDialer]         = 11, 
-            [self.kLayerStreamMusic]    = 12
+            [self.kLayerStreamMusic]    = 12,
+            [self.kLayerRoomCombining]  = 13
         }
     end
     
@@ -1288,7 +1296,7 @@ function UCIController:initializeLegendArrays()
     local legendControls = {
         "txtNav01", "txtNav02", "txtNav03", "txtNav04",
         "txtNav05", "txtNav06", "txtNav07", "txtNav08",
-        "txtNav09", "txtNav10", "txtNav11", "txtNav12",
+        "txtNav09", "txtNav10", "txtNav11", "txtNav12", "txtNav13",
         "txtNavShutdown", "txtRoomName", "txtRoomNameStart",
         "txtRoutingRooms", "txtRouting01", "txtRouting02", "txtRouting03","txtRouting04", 
         "txtRouting05", "txtRouting06", "txtRouting07", "txtRouting08", "txtRoutingSources",
@@ -1317,7 +1325,7 @@ function UCIController:initializeLegendArrays()
     local userLabelVariables = {
         "txtLabelNav01", "txtLabelNav02", "txtLabelNav03", "txtLabelNav04",
         "txtLabelNav05", "txtLabelNav06", "txtLabelNav07", "txtLabelNav08",
-        "txtLabelNav09", "txtLabelNav10", "txtLabelNav11", "txtLabelNav12",
+        "txtLabelNav09", "txtLabelNav10", "txtLabelNav11", "txtLabelNav12", "txtLabelNav13",
         "txtLabelNavShutdown", "txtLabelRoomName", "txtLabelRoomNameStart",
         "txtLabelRoutingRooms", "txtLabelRouting01", "txtLabelRouting02", "txtLabelRouting03","txtLabelRouting04", 
         "txtLabelRouting05", "txtLabelRouting06", "txtLabelRouting07", "txtLabelRouting08", "txtLabelRoutingSources",
@@ -1499,7 +1507,7 @@ end
 --------------[ Instance Creation ]-------------------------
 myUCI = createUCIController(
     Uci.Variables.txtUCIPageName.String,
-    tonumber(Uci.Variables.numDefaultRoutingLayer.Value) or 1,
+    tonumber(Uci.Variables.numDefaultRoutingLayer.Value) or 2,
     tonumber(Uci.Variables.numDefaultActiveLayer.Value) or 10,
     {} -- Hidden nav indices
 )

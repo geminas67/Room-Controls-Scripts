@@ -1077,30 +1077,42 @@ function UCIController:registerEventHandlers()
         bindPairedControls(pair.open, pair.close, pair.handler)
     end
     
+    -- Helper function to check and start system if needed
+    local function ensureSystemOn()
+        if self.roomControlsComponent and self.roomControlsComponent["btnSystemOnOff"] then
+            if not self.roomControlsComponent["btnSystemOnOff"].Boolean then
+                -- System is OFF, trigger start system
+                self.roomAutomationModule:powerOn()
+                self.progressModule:startLoadingBar(true)
+                self:btnNavEventHandler(self.kLayerWarming)
+            end
+        end
+    end
+    
     -- Pin state handler map
     local pinHandlerMap = {
         [controls.pinLEDUSBLaptop] = function(ctl)
-            if ctl.Boolean then self.varActiveLayer = self.kLayerLaptop end
+            if ctl.Boolean then ensureSystemOn() self.varActiveLayer = self.kLayerLaptop end
             self.layerModule:showLayer(); self:interlock()
         end,
         [controls.pinLEDUSBPC] = function(ctl)
-            if ctl.Boolean then self.varActiveLayer = self.kLayerPC end
+            if ctl.Boolean then ensureSystemOn() self.varActiveLayer = self.kLayerPC end
             self.layerModule:showLayer(); self:interlock()
         end,
         [controls.pinLEDOffHookLaptop] = function(ctl)
-            if ctl.Boolean then self.varActiveLayer = self.kLayerLaptop end
+            if ctl.Boolean then ensureSystemOn() self.varActiveLayer = self.kLayerLaptop end
             self.layerModule:showLayer(); self:interlock()
         end,
         [controls.pinLEDOffHookPC] = function(ctl)
-            if ctl.Boolean then self.varActiveLayer = self.kLayerPC end
+            if ctl.Boolean then ensureSystemOn() self.varActiveLayer = self.kLayerPC end
             self.layerModule:showLayer(); self:interlock()
         end,
         [controls.pinLEDHDMI01Active] = function(ctl)
-            if ctl.Boolean then self.varActiveLayer = self.kLayerLaptop end
+            if ctl.Boolean then ensureSystemOn() self.varActiveLayer = self.kLayerLaptop end
             self.layerModule:showLayer(); self:interlock()
         end,
         [controls.pinLEDHDMI02Active] = function(ctl)
-            if ctl.Boolean then self.varActiveLayer = self.kLayerPC end
+            if ctl.Boolean then ensureSystemOn() self.varActiveLayer = self.kLayerPC end
             self.layerModule:showLayer(); self:interlock()
         end,
         [controls.pinLEDPresetSaved] = function() self.sublayerModule:updatePresetSavedState() end,
