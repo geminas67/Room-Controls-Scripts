@@ -466,6 +466,9 @@ function SublayerModule:updateHDMI01State()
     if isConnected then
         self.controller.layerModule:updateLayerVisibility({"L05-Laptop"}, true, "fade")
         self.controller.layerModule:updateLayerVisibility({"L01-HDMI01Disconnected"}, false, "none")
+        -- Only update ACPR and Conference state if HDMI is connected
+        self:updateACPRBypassState()
+        self:updateConferenceState()
     else
         self.controller.layerModule:updateLayerVisibility({"L01-HDMI01Disconnected"}, true, "fade")
         self.controller.layerModule:updateLayerVisibility({"L05-Laptop", "J05-ConferenceControls"}, false, "none")
@@ -480,6 +483,9 @@ function SublayerModule:updateHDMI02State()
     if isConnected then
         self.controller.layerModule:updateLayerVisibility({"P05-PC"}, true, "fade")
         self.controller.layerModule:updateLayerVisibility({"P01-HDMI02Disconnected"}, false, "none")
+        -- Only update ACPR and Conference state if HDMI is connected
+        self:updateACPRBypassState()
+        self:updateConferenceState()
     else
         self.controller.layerModule:updateLayerVisibility({"P01-HDMI02Disconnected"}, true, "fade")
         self.controller.layerModule:updateLayerVisibility({"P05-PC", "J05-ConferenceControls"}, false, "none")
@@ -503,6 +509,20 @@ function SublayerModule:updateACPRBypassState()
 end
 
 function SublayerModule:updateConferenceState()
+    if self.controller.varActiveLayer == self.controller.kLayerLaptop then
+        if not controls.pinLEDHDMI01Connect or not controls.pinLEDHDMI01Connect.Boolean then
+            self.controller.layerModule:updateLayerVisibility({"J05-ConferenceControls"}, false, "none")
+            return
+        end
+    elseif self.controller.varActiveLayer == self.controller.kLayerPC then
+        if not controls.pinLEDHDMI02Connect or not controls.pinLEDHDMI02Connect.Boolean then
+            self.controller.layerModule:updateLayerVisibility({"J05-ConferenceControls"}, false, "none")
+            return
+        end
+    else
+        return
+    end
+    
     local usbConnected = false
     local usbNotConnectedLayer
     
@@ -1071,7 +1091,7 @@ function UCIController:registerEventHandlers()
     end
     
     -- Helper function to check and start system if needed
-    local function ensureSystemOn()
+    local function ensureSystemIsOn()
         if self.roomControlsComponent and self.roomControlsComponent["btnSystemOnOff"] then
             if not self.roomControlsComponent["btnSystemOnOff"].Boolean then
                 -- System is OFF, trigger start system
@@ -1083,27 +1103,27 @@ function UCIController:registerEventHandlers()
     -- Pin state handler map
     local pinHandlerMap = {
         [controls.pinLEDUSBLaptop] = function(ctl)
-            if ctl.Boolean then ensureSystemOn() self.varActiveLayer = self.kLayerLaptop end
+            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerLaptop end
             self.layerModule:showLayer(); self:interlock()
         end,
         [controls.pinLEDUSBPC] = function(ctl)
-            if ctl.Boolean then ensureSystemOn() self.varActiveLayer = self.kLayerPC end
+            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerPC end
             self.layerModule:showLayer(); self:interlock()
         end,
         [controls.pinLEDOffHookLaptop] = function(ctl)
-            if ctl.Boolean then ensureSystemOn() self.varActiveLayer = self.kLayerLaptop end
+            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerLaptop end
             self.layerModule:showLayer(); self:interlock()
         end,
         [controls.pinLEDOffHookPC] = function(ctl)
-            if ctl.Boolean then ensureSystemOn() self.varActiveLayer = self.kLayerPC end
+            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerPC end
             self.layerModule:showLayer(); self:interlock()
         end,
         [controls.pinLEDHDMI01Active] = function(ctl)
-            if ctl.Boolean then ensureSystemOn() self.varActiveLayer = self.kLayerLaptop end
+            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerLaptop end
             self.layerModule:showLayer(); self:interlock()
         end,
         [controls.pinLEDHDMI02Active] = function(ctl)
-            if ctl.Boolean then ensureSystemOn() self.varActiveLayer = self.kLayerPC end
+            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerPC end
             self.layerModule:showLayer(); self:interlock()
         end,
         [controls.pinLEDPresetSaved] = function() self.sublayerModule:updatePresetSavedState() end,

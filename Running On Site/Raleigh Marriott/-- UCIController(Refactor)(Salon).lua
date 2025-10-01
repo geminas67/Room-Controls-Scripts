@@ -1106,9 +1106,7 @@ function UCIController:registerEventHandlers()
     -- System control handler map with direct object references
     local systemHandlerMap = {
         [controls.btnStartSystem] = function()
-            self.roomAutomationModule:powerOn()
-            self.progressModule:startLoadingBar(true)
-            self:btnNavEventHandler(self.kLayerWarming)
+            self:startSystem()
         end,
         [controls.btnNavShutdown] = function()
             self.layerModule:updateLayerVisibility({"D01-ShutdownConfirm"}, true, "fade")
@@ -1117,12 +1115,7 @@ function UCIController:registerEventHandlers()
             self.layerModule:updateLayerVisibility({"D01-ShutdownConfirm"}, false, "fade")
         end,
         [controls.btnShutdownConfirm] = function()
-            self.layerModule:updateLayerVisibility({"D01-ShutdownConfirm"}, false, "fade")
-            self.roomAutomationModule:powerOff()
-            self.progressModule:startLoadingBar(false)
-            self.varActiveLayer = self.kLayerCooling
-            self.layerModule:showLayer()
-            self:interlock()
+            self:shutdownSystem()
         end
     }
     
@@ -1137,30 +1130,40 @@ function UCIController:registerEventHandlers()
             bindPairedControls(pair.open, pair.close, pair.handler)
     end
     
+    -- Helper function to check and start system if needed
+    local function ensureSystemIsOn()
+        if self.roomControlsComponent and self.roomControlsComponent["btnSystemOnOff"] then
+            if not self.roomControlsComponent["btnSystemOnOff"].Boolean then
+                -- System is OFF, trigger start system
+                self:startSystem()
+            end
+        end
+    end
+    
     -- Pin state handler map
     local pinHandlerMap = {
         [controls.pinLEDUSBLaptop] = function(ctl)
-            if ctl.Boolean then self.varActiveLayer = self.kLayerLaptop end
+            if ctl.Boolean then ensureSystemIsOn()  self.varActiveLayer = self.kLayerLaptop end
             self.layerModule:showLayer(); self:interlock()
         end,
         [controls.pinLEDUSBPC] = function(ctl)
-            if ctl.Boolean then self.varActiveLayer = self.kLayerPC end
+            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerPC end
             self.layerModule:showLayer(); self:interlock()
         end,
         [controls.pinLEDOffHookLaptop] = function(ctl)
-            if ctl.Boolean then self.varActiveLayer = self.kLayerLaptop end
+            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerLaptop end
             self.layerModule:showLayer(); self:interlock()
         end,
         [controls.pinLEDOffHookPC] = function(ctl)
-            if ctl.Boolean then self.varActiveLayer = self.kLayerPC end
+            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerPC end
             self.layerModule:showLayer(); self:interlock()
         end,
         [controls.pinLEDHDMI01Active] = function(ctl)
-            if ctl.Boolean then self.varActiveLayer = self.kLayerLaptop end
+            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerLaptop end
             self.layerModule:showLayer(); self:interlock()
         end,
         [controls.pinLEDHDMI02Active] = function(ctl)
-            if ctl.Boolean then self.varActiveLayer = self.kLayerPC end
+            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerPC end
             self.layerModule:showLayer(); self:interlock()
         end,
         [controls.pinLEDPresetSaved] = function() self.sublayerModule:updatePresetSavedState() end,
@@ -1191,6 +1194,22 @@ function UCIController:registerEventHandlers()
     end
     
     self:debug("Event handlers registered using batch registration")
+end
+
+-------------------[ System Control Methods ]-------------
+function UCIController:startSystem()
+    self.roomAutomationModule:powerOn()
+    self.progressModule:startLoadingBar(true)
+    self:btnNavEventHandler(self.kLayerWarming)
+end
+
+function UCIController:shutdownSystem()
+    self.layerModule:updateLayerVisibility({"D01-ShutdownConfirm"}, true, "fade")
+    self.roomAutomationModule:powerOff()
+    self.progressModule:startLoadingBar(false)
+    self.varActiveLayer = self.kLayerCooling
+    self.layerModule:showLayer()
+    self:interlock()
 end
 
 -------------------[ Core Navigation Logic ]---------------

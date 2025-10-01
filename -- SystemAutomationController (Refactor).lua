@@ -177,6 +177,7 @@ function AudioModule.new(controller)
     self:init()
     return self
 end
+
 function AudioModule:setVolume(level, gainIndex)
     local update = function(i, gain)
         self:safeAccess(gain, "gain", "setPosition", level)
@@ -190,6 +191,7 @@ function AudioModule:setVolume(level, gainIndex)
     end
     self.controller:publishNotification()
 end
+
 function AudioModule:setMute(state, gainIndex)
     local mute = function(i, gain)
         self:safeAccess(gain, "mute", "set", state)
@@ -203,16 +205,22 @@ function AudioModule:setMute(state, gainIndex)
     end
     self.controller:publishNotification()
 end
+
 function AudioModule:setPrivacy(state)
     local callSync = self.controller.components.callSync
     self.controller:safeComponentAccess(callSync, "mute", "set", state)
     setProp(controls.btnAudioPrivacy, "Boolean", state)
+    if controls.btnAudioPrivacy then
+        setProp(controls.btnAudioPrivacy, "CssClass", state and "icon-mic_none" or "icon-mic_off")
+    end
     self.controller:publishNotification()
 end
+
 function AudioModule:setSystemMute(state)
     local systemMute = self.controller.components.systemMute
     if systemMute then self.controller:safeComponentAccess(systemMute, "mute", "set", state) end
 end
+
 function AudioModule:setVolumeUpDown(direction, state, gainIndex)
     local action = direction == "up" and "stepper.increase" or "stepper.decrease"
     local step = function(i, gain)
@@ -228,14 +236,17 @@ function AudioModule:setVolumeUpDown(direction, state, gainIndex)
     end
     self.controller:publishNotification()
 end
+
 function AudioModule:getGainLevel(i)
     local gain = self.controller:getGainComponent(i)
     return gain and self.controller:safeComponentAccess(gain, "gain", "getPosition") or 0
 end
+
 function AudioModule:getGainMute(i)
     local gain = self.controller:getGainComponent(i)
     return gain and self.controller:safeComponentAccess(gain, "mute", "get") or false
 end
+
 function AudioModule:getGainCount()
     local count = 0
     for _, gain in pairs(self.controller.components.gains) do
@@ -243,6 +254,7 @@ function AudioModule:getGainCount()
     end
     return count
 end
+
 function AudioModule:updateVolumeVisuals(i)
     -- Cache control references to reduce repeated lookups
     local fader = controls.knbVolumeFader and controls.knbVolumeFader[i]
@@ -253,7 +265,6 @@ function AudioModule:updateVolumeVisuals(i)
     local isMuted = mute.Boolean
     local gainType = self.controller:getGainType(i)
     
-    -- Set CSS class based on gain type
     if gainType == "Mic" then
         setProp(mute, "CssClass", isMuted and "icon-mic_none" or "icon-mic_off")
     else
@@ -305,12 +316,14 @@ function DisplayModule.new(controller)
     setmetatable(self, DisplayModule)
     return self
 end
+
 function DisplayModule:powerAll(state)
     local trig = state and "PowerOnTrigger" or "PowerOffTrigger"
     for _, display in pairs(self.controller.components.displays) do
         if display then self.controller:safeComponentAccess(display, trig, "trigger") end
     end
 end
+
 function DisplayModule:powerSingle(idx, state)
     local display = self.controller:getDisplayComponent(idx)
     if display then self.controller:safeComponentAccess(display, state and "PowerOnTrigger" or "PowerOffTrigger", "trigger") end
@@ -325,17 +338,20 @@ function PowerModule.new(controller)
     setmetatable(self, PowerModule)
     return self
 end
+
 function PowerModule:enableDisablePowerControls(state)
     for _, btn in ipairs({controls.btnSystemOnOff, controls.btnSystemOn, controls.btnSystemOff}) do
         setProp(btn, "IsDisabled", not state)
     end
 end
+
 function PowerModule:setSystemPowerFB(state)
     setProp(controls.ledSystemPower, "Boolean", state)
     setProp(controls.btnSystemOnOff, "Boolean", state)
     setProp(controls.btnSystemOn, "Boolean", state)
     setProp(controls.btnSystemOff, "Boolean", not state)
 end
+
 function PowerModule:powerOn()
     self:debug("Powering On")
     if controls.btnSystemOnTrig then controls.btnSystemOnTrig:Trigger() end
@@ -351,6 +367,7 @@ function PowerModule:powerOn()
     self.controller.displayModule:powerAll(true)
     self.controller:publishNotification()
 end
+
 function PowerModule:powerOff()
     self:debug("Powering Off")
     if controls.btnSystemOffTrig then controls.btnSystemOffTrig:Trigger() end
@@ -383,6 +400,7 @@ function MotionModule.new(controller)
     setmetatable(self, MotionModule)
     return self
 end
+
 function MotionModule:checkMotion()
     self:debug("Checking Motion")
     if controls.ledMotionIn and controls.ledMotionIn.Boolean then
@@ -452,6 +470,7 @@ function SystemAutomationController:getGainType(idx)
     if idx == 1 then return "Program" end
     return "Mic"
 end
+
 function SystemAutomationController:safeComponentAccess(component, control, action, value)
     if not component or not component[control] then return false end
     local success, result = pcall(function()
@@ -655,14 +674,17 @@ function SystemAutomationController:setComponent(ctrl, componentType)
     self:setComponentValid(componentType)
     return newComponent
 end
+
 function SystemAutomationController:setComponentInvalid(componentType)
     self.components.invalid[componentType] = true
     self:checkStatus()
 end
+
 function SystemAutomationController:setComponentValid(componentType)
     self.components.invalid[componentType] = false
     self:checkStatus()
 end
+
 function SystemAutomationController:checkStatus()
     for _, isInvalid in pairs(self.components.invalid) do
         if isInvalid then
@@ -797,6 +819,7 @@ function SystemAutomationController:videoBridgeCheckPrivacy(idx)
         end
     end
 end
+
 function SystemAutomationController:callSyncCheckConnection()
     local callSync = self.components.callSync
     if not callSync then return end
@@ -821,6 +844,7 @@ end
 function SystemAutomationController:updateVolumeVisuals(idx)
     self.audioModule:updateVolumeVisuals(idx)
 end
+
 function SystemAutomationController:getVolumeLvl(idx)
     local gain = self:getGainComponent(idx)
     if not gain then return end
@@ -831,6 +855,7 @@ function SystemAutomationController:getVolumeLvl(idx)
     self:updateVolumeVisuals(idx)
     self:publishNotification()
 end
+
 function SystemAutomationController:getVolumeMute(idx)
     local gain = self:getGainComponent(idx)
     if not gain then return end
