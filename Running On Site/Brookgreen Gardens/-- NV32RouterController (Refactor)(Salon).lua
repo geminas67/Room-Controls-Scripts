@@ -188,9 +188,9 @@ function NV32RouterController.new(config)
     
     -- UCI Layer to Input mapping
     self.uciLayerToInput = {
-        [7] = self.uciInputs[2], -- btnNav07.Boolean = HDMI2 (Graphic2)
-        [8] = self.uciInputs[1], -- btnNav08.Boolean = HDMI1 (Graphic1) 
-        [9] = self.uciInputs[3], -- btnNav09.Boolean = HDMI3 (Graphic3)
+        [7] = self.uciInputs[2], -- btnNav07.Boolean = HDMI2 
+        [8] = self.uciInputs[1], -- btnNav08.Boolean = HDMI1  
+        [9] = self.uciInputs[3], -- btnNav09.Boolean = HDMI3 
     }
     
     -- Instance-specific control references
@@ -497,12 +497,10 @@ function NV32RouterController:setRoomControlsComponent()
         return
     end
 
-    -- Cache frequently accessed objects
     local uciInputs = self.uciInputs
     local outputs = self.outputs
     local this = self  -- Capture self for use in handlers
 
-    -- System power handler
     local powerLED = roomControls["ledSystemPower"]
     if powerLED then
         powerLED.EventHandler = function(ctl)

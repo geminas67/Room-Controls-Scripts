@@ -53,7 +53,11 @@ local controls = {
     btnVolumeMute = Controls.btnVolumeMute,
     btnVolumeUp = Controls.btnVolumeUp,
     btnVolumeDn = Controls.btnVolumeDn,
-    txtNotificationID = Controls.txtNotificationID
+    txtNotificationID = Controls.txtNotificationID,
+    -- Display Power Controls
+    btnDisplayPowerAll = Controls.btnDisplayPowerAll,
+    btnDisplayPowerOn = Controls.btnDisplayPowerOn,
+    btnDisplayPowerOff = Controls.btnDisplayPowerOff
 }
 
 local function validateControls()
@@ -106,7 +110,7 @@ local function normalizeControlArrays()
     local arrayControls = {
         'compVideoBridge', 'compGains', 'devDisplays', 'typeGain', 
         'btnVideoPrivacy', 'knbVolumeFader', 'btnVolumeMute', 
-        'btnVolumeUp', 'btnVolumeDn'
+        'btnVolumeUp', 'btnVolumeDn', 'btnDisplayPowerOn', 'btnDisplayPowerOff'
     }
     
     for _, controlName in ipairs(arrayControls) do
@@ -363,7 +367,7 @@ function PowerModule:powerOn()
     self.controller:applyVolumeDefaults()
     self.controller.audioModule:setMute(false)
     self.controller.audioModule:setPrivacy(true)
-    self.controller.videoModule:setPrivacy(false, 1)
+    --self.controller.videoModule:setPrivacy(false, 1) -- setPrivacy for Video during Startup, this is handled on Hook State since the room uses ACPR
     self.controller.displayModule:powerAll(true)
     self.controller:publishNotification()
 end
@@ -513,7 +517,10 @@ function SystemAutomationController:registerEventHandlers()
         { ctrl = controls.ledMotionIn, handler = function() self.motionModule:checkMotion() end },
         { ctrl = controls.compCallSync, handler = function() self:setCallSyncComponent() end },
         { ctrl = controls.compSystemMute, handler = function() self:setSystemMuteComponent() end },
-        { ctrl = controls.compACPR, handler = function() self:setCamACPRComponent() end }
+        { ctrl = controls.compACPR, handler = function() self:setCamACPRComponent() end },
+        { ctrl = controls.btnDisplayPowerAll, handler = function(ctl) 
+            if ctl.Boolean then self.displayModule:powerAll(true) else self.displayModule:powerAll(false) end 
+        end }
     }
     
     -- Batch register single controls
@@ -521,7 +528,6 @@ function SystemAutomationController:registerEventHandlers()
         bind(mapping.ctrl, mapping.handler)
     end
     
-    -- Array control mappings with indexed handlers
     local arrayEventMap = {
         { ctrls = controls.btnVideoPrivacy, handler = function(i, ctl) 
             self.videoModule:setPrivacy(ctl.Boolean, i) 
@@ -537,6 +543,12 @@ function SystemAutomationController:registerEventHandlers()
         end },
         { ctrls = controls.btnVolumeDn, handler = function(i, ctl) 
             self.audioModule:setVolumeUpDown("down", ctl.Boolean, i) 
+        end },
+        { ctrls = controls.btnDisplayPowerOn, handler = function(i, ctl) 
+            self.displayModule:powerSingle(i, true) 
+        end },
+        { ctrls = controls.btnDisplayPowerOff, handler = function(i, ctl) 
+            self.displayModule:powerSingle(i, false) 
         end }
     }
     
@@ -787,7 +799,14 @@ end
 
 function SystemAutomationController:setDisplayComponent(idx)
     self:setComponentByType(controls.devDisplays, "Display", 
-        { key = "displays", index = idx })
+        { key = "displays", index = idx }, {
+        ["PowerIsOn"] = function(ctrl, i) 
+            ctrl:debugPrint("Display [" .. i .. "] powered ON")
+        end,
+        ["PowerIsOff"] = function(ctrl, i) 
+            ctrl:debugPrint("Display [" .. i .. "] powered OFF")
+        end
+    })
 end
 
 function SystemAutomationController:getVideoBridgePrivacy(idx)
