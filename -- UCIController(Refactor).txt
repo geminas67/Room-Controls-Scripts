@@ -37,9 +37,9 @@ local controls = {
     
     btnCloseHelpLaptop      = Controls.btnCloseHelpLaptop,
     btnCloseHelpPC          = Controls.btnCloseHelpPC,
-    btnCloseHelpWireless     = Controls.btnCloseHelpWireless,
-    btnCloseHelpRouting      = Controls.btnCloseHelpRouting,
-    btnCloseHelpStreamMusic  = Controls.btnCloseHelpStreamMusic,
+    btnCloseHelpWireless    = Controls.btnCloseHelpWireless,
+    btnCloseHelpRouting     = Controls.btnCloseHelpRouting,
+    btnCloseHelpStreamMusic = Controls.btnCloseHelpStreamMusic,
     
     -- Routing Buttons
     btnRouting01 = Controls.btnRouting01, btnRouting02 = Controls.btnRouting02,
@@ -62,8 +62,6 @@ local controls = {
     pinLEDHDMI02Connect     = Controls.pinLEDHDMI02Connect,
     pinLEDACPRBypassActive  = Controls.pinLEDACPRBypassActive,
     
-    -- System State
-    ledSystemPower = Controls.ledSystemPower
 }
 
 local function validateControls()
@@ -76,7 +74,7 @@ local function validateControls()
     
     -- Optional but recommended controls
     local optional = {
-        "knbProgressBar", "txtProgressBar", "ledSystemPower",
+        "knbProgressBar", "txtProgressBar",
         "btnOpenHelpLaptop", "btnOpenHelpPC", "btnOpenHelpWireless", "btnOpenHelpRouting", "btnOpenHelpStreamMusic",
         "btnCloseHelpLaptop", "btnCloseHelpPC", "btnCloseHelpWireless", "btnCloseHelpRouting", "btnCloseHelpStreamMusic",
         "btnRouting01", "btnRouting02", "btnRouting03", "btnRouting04", "btnRouting05"
@@ -108,11 +106,15 @@ local function validateControls()
         return false
     end
     
-    -- Report missing optional controls as warnings
+    -- Report missing optional controls as warnings with functionality notes
     if #warnings > 0 then
         print("WARNING: UCIController - Missing optional controls (reduced functionality):")
         for _, name in ipairs(warnings) do
-            print("  - " .. name)
+            local functionalityNote = ""
+            if name == "knbProgressBar" or name == "txtProgressBar" then
+                functionalityNote = " (progress bar animation disabled)"
+            end
+            print("  - " .. name .. functionalityNote)
         end
     end
     
@@ -464,9 +466,11 @@ function SublayerModule:updateHDMI01State()
     if isConnected then
         self.controller.layerModule:updateLayerVisibility({"L05-Laptop"}, true, "fade")
         self.controller.layerModule:updateLayerVisibility({"L01-HDMI01Disconnected"}, false, "none")
+        self:updateACPRBypassState()
+        self:updateConferenceState()
     else
         self.controller.layerModule:updateLayerVisibility({"L01-HDMI01Disconnected"}, true, "fade")
-        self.controller.layerModule:updateLayerVisibility({"L05-Laptop", "J05-ConferenceControls"}, false, "none")
+        self.controller.layerModule:updateLayerVisibility({"L05-Laptop", "J03-ACPRActive", "J05-ConferenceControls"}, false, "none")
     end
     self:debug("HDMI01: " .. (isConnected and "Connected" or "Disconnected") .. " L05-Laptop")
 end
@@ -478,9 +482,11 @@ function SublayerModule:updateHDMI02State()
     if isConnected then
         self.controller.layerModule:updateLayerVisibility({"P05-PC"}, true, "fade")
         self.controller.layerModule:updateLayerVisibility({"P01-HDMI02Disconnected"}, false, "none")
+        self:updateACPRBypassState()
+        self:updateConferenceState()
     else
         self.controller.layerModule:updateLayerVisibility({"P01-HDMI02Disconnected"}, true, "fade")
-        self.controller.layerModule:updateLayerVisibility({"P05-PC", "J05-ConferenceControls"}, false, "none")
+        self.controller.layerModule:updateLayerVisibility({"P05-PC", "J03-ACPRActive", "J05-ConferenceControls"}, false, "none")
     end
     self:debug("HDMI02: " .. (isConnected and "Connected" or "Disconnected") .. " P05-PC")
 end
@@ -490,6 +496,21 @@ function SublayerModule:updateACPRBypassState()
        self.controller.varActiveLayer ~= self.controller.kLayerPC then return end
 
     local isBypassActive = controls.pinLEDACPRBypassActive and controls.pinLEDACPRBypassActive.Boolean or false
+
+     if self.controller.varActiveLayer == self.controller.kLayerLaptop then
+        if not controls.pinLEDHDMI01Connect or not controls.pinLEDHDMI01Connect.Boolean then
+            self.controller.layerModule:updateLayerVisibility({"J03-ACPRActive"}, false, "none")
+            return
+        end
+    elseif self.controller.varActiveLayer == self.controller.kLayerPC then
+        if not controls.pinLEDHDMI02Connect or not controls.pinLEDHDMI02Connect.Boolean then
+            self.controller.layerModule:updateLayerVisibility({"J03-ACPRActive"}, false, "none")
+            return
+        end
+    else
+        return
+    end
+
     if not isBypassActive then
         self.controller.layerModule:updateLayerVisibility({"J03-ACPRActive"}, true, "fade")
         self.controller.layerModule:updateLayerVisibility({"J05-ConferenceControls"}, false, "none")
@@ -501,9 +522,22 @@ function SublayerModule:updateACPRBypassState()
 end
 
 function SublayerModule:updateConferenceState()
+    if self.controller.varActiveLayer == self.controller.kLayerLaptop then
+        if not controls.pinLEDHDMI01Connect or not controls.pinLEDHDMI01Connect.Boolean then
+            self.controller.layerModule:updateLayerVisibility({"J05-ConferenceControls"}, false, "none")
+            return
+        end
+    elseif self.controller.varActiveLayer == self.controller.kLayerPC then
+        if not controls.pinLEDHDMI02Connect or not controls.pinLEDHDMI02Connect.Boolean then
+            self.controller.layerModule:updateLayerVisibility({"J05-ConferenceControls"}, false, "none")
+            return
+        end
+    else
+        return
+    end
+    
     local usbConnected = false
     local usbNotConnectedLayer
-    
     if self.controller.varActiveLayer == self.controller.kLayerLaptop then
         usbConnected = controls.pinLEDUSBLaptop and controls.pinLEDUSBLaptop.Boolean or false
         usbNotConnectedLayer = "J01-ConnectUSBLaptop"
@@ -919,7 +953,7 @@ function ProgressModule:startLoadingBar(isPoweringOn)
             self:debug("Loading bar timeout reached")
             self.isAnimating = false
             if self.loadingTimer then self.loadingTimer:Stop(); self.loadingTimer = nil end
-            self.controller:btnNavEventHandler(isPoweringOn and self.controller.kLayerLaptop or self.controller.kLayerStart)
+            self.controller:btnNavEventHandler(isPoweringOn and self.controller.defaultActiveLayer or self.controller.kLayerStart)
         end
     end
     self.timeoutTimer:Start(300) -- 5-minute timeout
@@ -937,7 +971,7 @@ function ProgressModule:startLoadingBar(isPoweringOn)
             self.timeoutTimer:Stop()
             self.isAnimating = false
             
-            local targetLayer = isPoweringOn and self.controller.kLayerLaptop or self.controller.kLayerStart
+            local targetLayer = isPoweringOn and self.controller.defaultActiveLayer or self.controller.kLayerStart
             self.controller:btnNavEventHandler(targetLayer)
         else
             self.loadingTimer:Start(interval)
@@ -1044,9 +1078,7 @@ function UCIController:registerEventHandlers()
     -- System control handler map with direct object references
     local systemHandlerMap = {
         [controls.btnStartSystem] = function()
-            self.roomAutomationModule:powerOn()
-            self.progressModule:startLoadingBar(true)
-            self:btnNavEventHandler(self.kLayerWarming)
+            self:startSystem()
         end,
         [controls.btnNavShutdown] = function()
             self.layerModule:updateLayerVisibility({"D01-ShutdownConfirm"}, true, "fade")
@@ -1055,12 +1087,7 @@ function UCIController:registerEventHandlers()
             self.layerModule:updateLayerVisibility({"D01-ShutdownConfirm"}, false, "fade")
         end,
         [controls.btnShutdownConfirm] = function()
-            self.layerModule:updateLayerVisibility({"D01-ShutdownConfirm"}, false, "fade")
-            self.roomAutomationModule:powerOff()
-            self.progressModule:startLoadingBar(false)
-            self.varActiveLayer = self.kLayerCooling
-            self.layerModule:showLayer()
-            self:interlock()
+            self:shutdownSystem()
         end
     }
     
@@ -1075,30 +1102,40 @@ function UCIController:registerEventHandlers()
         bindPairedControls(pair.open, pair.close, pair.handler)
     end
     
+    -- Helper function to check and start system if needed
+    local function ensureSystemIsOn()
+        if self.roomControlsComponent and self.roomControlsComponent["btnSystemOnOff"] then
+            if not self.roomControlsComponent["btnSystemOnOff"].Boolean then
+                -- System is OFF, trigger start system
+                self:startSystem()
+            end
+        end
+    end
+    
     -- Pin state handler map
     local pinHandlerMap = {
         [controls.pinLEDUSBLaptop] = function(ctl)
-            if ctl.Boolean then self.varActiveLayer = self.kLayerLaptop end
+            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerLaptop end
             self.layerModule:showLayer(); self:interlock()
         end,
         [controls.pinLEDUSBPC] = function(ctl)
-            if ctl.Boolean then self.varActiveLayer = self.kLayerPC end
+            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerPC end
             self.layerModule:showLayer(); self:interlock()
         end,
         [controls.pinLEDOffHookLaptop] = function(ctl)
-            if ctl.Boolean then self.varActiveLayer = self.kLayerLaptop end
+            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerLaptop end
             self.layerModule:showLayer(); self:interlock()
         end,
         [controls.pinLEDOffHookPC] = function(ctl)
-            if ctl.Boolean then self.varActiveLayer = self.kLayerPC end
+            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerPC end
             self.layerModule:showLayer(); self:interlock()
         end,
         [controls.pinLEDHDMI01Active] = function(ctl)
-            if ctl.Boolean then self.varActiveLayer = self.kLayerLaptop end
+            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerLaptop end
             self.layerModule:showLayer(); self:interlock()
         end,
         [controls.pinLEDHDMI02Active] = function(ctl)
-            if ctl.Boolean then self.varActiveLayer = self.kLayerPC end
+            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerPC end
             self.layerModule:showLayer(); self:interlock()
         end,
         [controls.pinLEDPresetSaved] = function() self.sublayerModule:updatePresetSavedState() end,
@@ -1119,6 +1156,22 @@ function UCIController:registerEventHandlers()
     end
     
     self:debug("Event handlers registered using batch registration")
+end
+
+-------------------[ System Control Methods ]-------------
+function UCIController:startSystem()
+    self.roomAutomationModule:powerOn()
+    self.progressModule:startLoadingBar(true)
+    self:btnNavEventHandler(self.kLayerWarming)
+end
+
+function UCIController:shutdownSystem()
+    self.layerModule:updateLayerVisibility({"D01-ShutdownConfirm"}, false, "fade")
+    self.roomAutomationModule:powerOff()
+    self.progressModule:startLoadingBar(false)
+    self.varActiveLayer = self.kLayerCooling
+    self.layerModule:showLayer()
+    self:interlock()
 end
 
 -------------------[ Core Navigation Logic ]---------------
@@ -1214,7 +1267,8 @@ function UCIController:initializeLegendArrays()
         "txtAudSrc01", "txtAudSrc02", "txtAudSrc03", "txtAudSrc04",
         "txtAudSrc05", "txtAudSrc06", "txtAudSrc07", "txtAudSrc08",
         "txtAudSrc09", "txtAudSrc10", "txtAudSrc11", "txtAudSrc12",
-        "txtGainPGM", "txtGain01", "txtGain02", "txtGain03", "txtGain04",
+        "txtGainPGM", 
+        "txtGain01", "txtGain02", "txtGain03", "txtGain04",
         "txtGain05", "txtGain06", "txtGain07", "txtGain08", "txtGain09", "txtGain10",
         "txtDisplay01", "txtDisplay02", "txtDisplay03", "txtDisplay04",
     }
@@ -1240,7 +1294,8 @@ function UCIController:initializeLegendArrays()
         "txtLabelAudSrc01", "txtLabelAudSrc02", "txtLabelAudSrc03", "txtLabelAudSrc04",
         "txtLabelAudSrc05", "txtLabelAudSrc06", "txtLabelAudSrc07", "txtLabelAudSrc08",
         "txtLabelAudSrc09", "txtLabelAudSrc10", "txtLabelAudSrc11", "txtLabelAudSrc12",
-        "txtLabelGainPGM", "txtLabelGain01", "txtLabelGain02", "txtLabelGain03", "txtLabelGain04",
+        "txtLabelGainPGM", 
+        "txtLabelGain01", "txtLabelGain02", "txtLabelGain03", "txtLabelGain04",
         "txtLabelGain05", "txtLabelGain06", "txtLabelGain07", "txtLabelGain08", "txtLabelGain09", "txtLabelGain10",
         "txtLabelDisplay01", "txtLabelDisplay02", "txtLabelDisplay03", "txtLabelDisplay04",
     }

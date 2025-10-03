@@ -79,7 +79,7 @@ local controls = {
   txtStatus         = Controls.txtStatus,
   selCombination    = Controls.selRoomCombination,
   wallOpenButtons   = Controls.wallOpenButtons,
-  uciButtons        = Controls.uciButtons,
+  btnRoomSelector   = Controls.btnRoomSelector,
 }
 
 local function validateControls()
@@ -95,7 +95,7 @@ local function validateControls()
   local optional = {
     -- Optional controls for enhanced functionality
     selCombination = controls.selCombination,
-    uciButtons = controls.uciButtons
+    btnRoomSelector = controls.btnRoomSelector
   }
   
   local missing = {}
@@ -152,7 +152,7 @@ local function normalizeControlArrays()
   -- Normalize all array controls to consistent structures
   -- This ensures bindArray() receives properly structured control arrays
   local arrayControls = {
-    'compRoomControls', 'compAudioRouter', 'wallOpenButtons', 'uciButtons'
+    'compRoomControls', 'compAudioRouter', 'wallOpenButtons', 'btnRoomSelector'
   }
   
   for _, controlName in ipairs(arrayControls) do
@@ -302,7 +302,7 @@ function ComponentModule.new(controller)
   self.componentTypes = {
     roomCombiner = "room_combiner",
     roomControls = "device_controller_script",
-    uciButtons = "custom_controls",
+    btnRoomSelector = "custom_controls",
     audioRouter = "router_with_output"
   }
   self:init()
@@ -324,7 +324,7 @@ function ComponentModule:discoverComponents()
       table.insert(namesTable.AudioRouterNames, component.Name)
     elseif component.Type == self.componentTypes.roomCombiner then
       table.insert(namesTable.RoomCombinerNames, component.Name)
-    elseif component.Type == self.componentTypes.uciButtons then
+    elseif component.Type == self.componentTypes.btnRoomSelector then
       table.insert(namesTable.UciButtonsNames, component.Name)
     end
   end
@@ -337,22 +337,22 @@ function ComponentModule:discoverComponents()
   return namesTable
 end
 
--------------------[ UCI Visibility Module ]-------------------
-local UCIVisibilityModule = setmetatable({}, {__index = BaseModule})
-UCIVisibilityModule.__index = UCIVisibilityModule
+-------------------[ RoomSelector Visibility Module ]-------------------
+local RoomButtonVisibilityModule = setmetatable({}, {__index = BaseModule})
+RoomButtonVisibilityModule.__index = RoomButtonVisibilityModule
 
-function UCIVisibilityModule.new(controller)
-  local self = BaseModule.new(controller, "UCIVisibilityModule")
-  setmetatable(self, UCIVisibilityModule)
+function RoomButtonVisibilityModule.new(controller)
+  local self = BaseModule.new(controller, "RoomButtonVisibilityModule")
+  setmetatable(self, RoomButtonVisibilityModule)
   self:init()
   return self
 end
 
-function UCIVisibilityModule:updateAllUCIButtonVisibility()
-  self:debug("Updating UCI button visibility for all rooms...")
+function RoomButtonVisibilityModule:updateAllRoomButtonVisibility()
+  self:debug("Updating RoomSelector button visibility for all rooms...")
  
-  if not controls.uciButtons or #controls.uciButtons == 0 then
-      self:debug("No UCI buttons found - skipping visibility update")
+  if not controls.btnRoomSelector or #controls.btnRoomSelector == 0 then
+      self:debug("No RoomSelector buttons found - skipping visibility update")
       return
   end
  
@@ -366,30 +366,30 @@ function UCIVisibilityModule:updateAllUCIButtonVisibility()
       return
   end
  
-  self:debug("Applying UCI visibility based on " .. #roomGroups .. " groups")
+  self:debug("Applying RoomSelector visibility based on " .. #roomGroups .. " groups")
  
-  -- Update each room's UCI buttons based on groups
+  -- Update each room's RoomSelector buttons based on groups
   for i, roomName in ipairs(roomNames) do
-      self:updateRoomUCIVisibility(i, roomName, roomGroups)
+      self:updateRoomButtonVisibility(i, roomName, roomGroups)
   end
  
-  self:debug("UCI button visibility update complete")
+  self:debug("RoomSelector button visibility update complete")
 end
 
-function UCIVisibilityModule:updateRoomUCIVisibility(roomIndex, roomName, roomGroups)
-  local uciName = self.controller.uciButtons[roomIndex]
-  if not uciName or uciName == "" then
-      self:debug("No UCI component name for room " .. roomIndex .. " (" .. roomName .. ")")
+function RoomButtonVisibilityModule:updateRoomButtonVisibility(roomIndex, roomName, roomGroups)
+  local btnRoomName = self.controller.btnRoomSelector[roomIndex]
+  if not btnRoomName or btnRoomName == "" then
+      self:debug("No RoomSelector component name for room " .. roomIndex .. " (" .. roomName .. ")")
       return
   end
  
-  local uciComponent = Component.New(uciName)
-  if not uciComponent then
-      self:debug("Failed to create UCI component for " .. roomName .. " (" .. uciName .. ")")
+  local btnRoomSelector = Component.New(btnRoomName)
+  if not btnRoomSelector then
+      self:debug("Failed to create RoomSelector component for " .. roomName .. " (" .. btnRoomName .. ")")
       return
   end
  
-  self:debug("Updating UCI states for room " .. roomIndex .. " (" .. roomName .. ")")
+  self:debug("Updating RoomSelector states for room " .. roomIndex .. " (" .. roomName .. ")")
  
   -- Find the group containing this room (source room number)
   local sourceRoomNum = roomNumberMap[roomName]
@@ -406,11 +406,11 @@ function UCIVisibilityModule:updateRoomUCIVisibility(roomIndex, roomName, roomGr
       self:debug(" No group for " .. roomName .. " - setting as separate")
       for toggleIndex = 1, 8 do
           local toggleControlName = "toggle." .. toggleIndex
-          if uciComponent[toggleControlName] then
-              uciComponent[toggleControlName].Boolean = (toggleIndex == roomIndex)
+          if btnRoomSelector[toggleControlName] then
+              btnRoomSelector[toggleControlName].Boolean = (toggleIndex == roomIndex)
               self:debug(" " .. roomName .. " -> " .. toggleControlName .. ".Boolean = " .. tostring(toggleIndex == roomIndex) .. " (" .. roomNames[toggleIndex] .. ")")
           else
-              self:debug(" WARNING: " .. toggleControlName .. " control not found on UCI component for " .. roomName)
+              self:debug(" WARNING: " .. toggleControlName .. " control not found on RoomSelector component for " .. roomName)
           end
       end
       return
@@ -423,22 +423,22 @@ function UCIVisibilityModule:updateRoomUCIVisibility(roomIndex, roomName, roomGr
       local isInGroup = tableContains(sourceGroup, targetRoomNum)
      
       local toggleControlName = "toggle." .. toggleIndex
-      if uciComponent[toggleControlName] then
-          uciComponent[toggleControlName].Boolean = isInGroup
+      if btnRoomSelector[toggleControlName] then
+          btnRoomSelector[toggleControlName].Boolean = isInGroup
           self:debug(" " .. roomName .. " -> " .. toggleControlName .. ".Boolean = " .. tostring(isInGroup) .. " (" .. targetRoomName .. ")")
       else
-          self:debug(" WARNING: " .. toggleControlName .. " control not found on UCI component for " .. roomName)
+          self:debug(" WARNING: " .. toggleControlName .. " control not found on RoomSelector component for " .. roomName)
       end
   end
 end
 
-function UCIVisibilityModule:getConfigString()
+function RoomButtonVisibilityModule:getConfigString()
   if not self.controller.components.roomCombiner then return "" end
   local configControl = self.controller.components.roomCombiner["room.combiner.output.configuration"]
   return configControl and configControl.String or ""
 end
 
-function UCIVisibilityModule:shouldToggleBeVisible(sourceRoomName, targetRoomName, combination)
+function RoomButtonVisibilityModule:shouldToggleBeVisible(sourceRoomName, targetRoomName, combination)
   -- A room's own toggle should always be visible (true)
   if sourceRoomName == targetRoomName then
     return true
@@ -452,22 +452,22 @@ function UCIVisibilityModule:shouldToggleBeVisible(sourceRoomName, targetRoomNam
   return sourceActive and targetActive
 end
 
-function UCIVisibilityModule:setAllRoomsSeparate()
+function RoomButtonVisibilityModule:setAllRoomsSeparate()
   self:debug("Setting all rooms to separated state (own toggle only)")
  
   for i, roomName in ipairs(roomNames) do
-    local uciName = self.controller.uciButtons[i]
-    if uciName and uciName ~= "" then
-      local uciComponent = Component.New(uciName)
-      if uciComponent then
+    local btnRoomName = self.controller.btnRoomSelector[i]
+    if btnRoomName and btnRoomName ~= "" then
+      local btnRoomSelector = Component.New(btnRoomName)
+      if btnRoomSelector then
         for toggleIndex = 1, 8 do
           local toggleControlName = "toggle." .. toggleIndex .. ".Boolean"
-          if uciComponent[toggleControlName] then
+          if btnRoomSelector[toggleControlName] then
             -- Only the room's own toggle should be true
-            setProp(uciComponent, toggleControlName, (toggleIndex == i))
+            setProp(btnRoomSelector, toggleControlName, (toggleIndex == i))
           end
         end
-        self:debug("Set " .. roomName .. " UCI to separated state")
+        self:debug("Set " .. roomName .. " RoomSelector to separated state")
       end
     end
   end
@@ -704,11 +704,11 @@ function PowerSyncModule:separateGroup(group)
     self.controller.wallModule:syncWallButtonStates()
   end
  
-  -- Trigger audio routing, gain routing, and UCI visibility updates after separation
+  -- Trigger audio routing, gain routing, and Room Button visibility updates after separation
   self.controller:applyAudioRouting()
   self.controller:applyGainRouting()
-  if self.controller.uciVisibilityModule then
-    self.controller.uciVisibilityModule:updateAllUCIButtonVisibility()
+  if self.controller.btnVisibilityModule then
+    self.controller.btnVisibilityModule:updateAllRoomButtonVisibility()
   end
  
   return wallsClosed > 0
@@ -745,7 +745,7 @@ function WallModule:syncWallButtonStates()
   local syncedWalls = 0
   local syncErrors = {}
  
-  for i = 1, 7 do
+  for i = 1, 12 do
     local wallButton = controls.wallOpenButtons[i]
     if wallButton then
       local wallControlName = "wall." .. i .. ".open"
@@ -774,7 +774,7 @@ function WallModule:syncWallButtonStates()
     end
   end
  
-  self:debug("Wall button sync complete: " .. syncedWalls .. "/7 successful")
+  self:debug("Wall button sync complete: " .. syncedWalls .. "/12 successful")
   if #syncErrors > 0 then
     self:debug("Wall sync errors: " .. #syncErrors)
     for _, error in ipairs(syncErrors) do
@@ -792,8 +792,7 @@ function WallModule:setupWallControlEventHandlers()
   end
  
   local handlersSetup = 0
- 
-  for i = 1, 7 do
+  for i = 1, 12 do
     local wallControlName = "wall." .. i .. ".open"
     local wallControl = self.controller.components.roomCombiner[wallControlName]
    
@@ -822,7 +821,44 @@ function WallModule:setupWallControlEventHandlers()
     end
   end
  
-  self:debug("Wall control event handlers setup: " .. handlersSetup .. "/7 successful")
+  self:debug("Wall control event handlers setup: " .. handlersSetup .. "/12 successful")
+end
+
+function WallModule:interlockWallButtons(activeWallIndex)
+  self:debug("Interlocking wall buttons - active wall: " .. activeWallIndex)
+  
+  local interlockCount = 0
+  
+  -- Close all other enabled wall buttons
+  for i = 1, 12 do
+    if i ~= activeWallIndex then
+      local wallButton = controls.wallOpenButtons[i]
+      
+      if wallButton and not wallButton.IsDisabled then
+        -- Only interlock if button is enabled and currently true
+        if wallButton.Boolean then
+          setProp(wallButton, "Boolean", false)
+          
+          -- Also update the room combiner control
+          if self.controller.components.roomCombiner then
+            local wallControlName = "wall." .. i .. ".open"
+            local wallControl = self.controller.components.roomCombiner[wallControlName]
+            if wallControl then
+              setProp(wallControl, "Boolean", false)
+            end
+          end
+          
+          interlockCount = interlockCount + 1
+          local wallPair = wallRoomPairs[i]
+          if wallPair then
+            self:debug("Interlocked wall " .. i .. " (" .. wallPair[1] .. "/" .. wallPair[2] .. ") - set to CLOSED")
+          end
+        end
+      end
+    end
+  end
+  
+  self:debug("Interlock complete: " .. interlockCount .. " walls closed")
 end
 
 function WallModule:updateWallStates()
@@ -880,31 +916,31 @@ function DivisibleSpaceController.new(roomName, debugging)
     roomControls = {},
     audioRouter = {},
     gains = {},  -- Now handling gains similarly to audio routers for efficiency
-    uciButtons = {},
-    invalid = {roomCombiner = false, roomControls = false, audioRouter = false, gains = false, uciButtons = false}
+    btnRoomSelector = {},
+    invalid = {roomCombiner = false, roomControls = false, audioRouter = false, gains = false, btnRoomSelector = false}
   }
   
   -- Room component arrays - use state management utility
   self.roomComponents = {} -- Names
   self.audioRouters = {} -- Names
-  self.uciButtons = {} -- Names
+  self.btnRoomSelector = {} -- Names
   
   -- Initialize modules using BaseModule pattern
   self.componentModule = ComponentModule.new(self)
-  self.uciVisibilityModule = UCIVisibilityModule.new(self)
+  self.btnVisibilityModule = RoomButtonVisibilityModule.new(self)
   self.powerSyncModule = PowerSyncModule.new(self)
   self.wallModule = WallModule.new(self)
   
   -- Reset component arrays to ensure clean state
   resetComponentsArray(self.roomComponents, self.clearString)
   resetComponentsArray(self.audioRouters, self.clearString)
-  resetComponentsArray(self.uciButtons, self.clearString)
+  resetComponentsArray(self.btnRoomSelector, self.clearString)
   
   -- Initialize arrays
   for i, _ in ipairs(roomNames) do
     self.roomComponents[i] = nil
     self.audioRouters[i] = nil
-    self.uciButtons[i] = nil
+    self.btnRoomSelector[i] = nil
   end
   
   return self
@@ -945,8 +981,8 @@ function DivisibleSpaceController:init()
   if self.wallModule then self.wallModule:updateWallStates() end
   self:debugPrint("Initialization complete")
   
-  -- Add delayed UCI visibility update to ensure all components are settled
-  self:scheduleDelayedUCIVisibilityUpdate()
+  -- Add delayed RoomSelector visibility update to ensure all components are settled
+  self:scheduleDelayedRoomVisibilityUpdate()
 end
 
 function DivisibleSpaceController:setupCombinationSelector()
@@ -986,14 +1022,14 @@ function DivisibleSpaceController:loadInitialComponents()
     end
   end)
  
-  -- Load UCI buttons components
-  forEach(controls.uciButtons, function(i, control)
+  -- Load RoomSelector buttons components
+  forEach(controls.btnRoomSelector, function(i, control)
     if control.String and control.String ~= "" and control.String ~= self.clearString then
-      self:debugPrint("Loading UCI buttons " .. i .. ": " .. control.String)
-      local component = self:setComponent(control, "uciButtons")
+      self:debugPrint("Loading RoomSelector buttons " .. i .. ": " .. control.String)
+      local component = self:setComponent(control, "btnRoomSelector")
       if component then
-        self:updateUCIButtons(control.String, i)
-        self:debugPrint("Loaded UCI buttons " .. i .. " (" .. control.String .. ")")
+        self:updateBTNRoomSelector(control.String, i)
+        self:debugPrint("Loaded RoomSelector buttons " .. i .. " (" .. control.String .. ")")
       end
     end
   end)
@@ -1014,10 +1050,10 @@ function DivisibleSpaceController:loadInitialComponents()
             self:applyAudioRouting()
             self:applyGainRouting()
             
-            -- Update UCI button visibility when room configuration changes
-            if self.uciVisibilityModule then
-              self:debugPrint("Updating UCI button visibility due to configuration change")
-              self.uciVisibilityModule:updateAllUCIButtonVisibility()
+            -- Update RoomSelector button visibility when room configuration changes
+            if self.btnVisibilityModule then
+              self:debugPrint("Updating RoomSelector button visibility due to configuration change")
+              self.btnVisibilityModule:updateAllRoomButtonVisibility()
             end
           end)
        
@@ -1026,10 +1062,10 @@ function DivisibleSpaceController:loadInitialComponents()
         self:applyAudioRouting()
         self:applyGainRouting()
        
-        -- Apply initial UCI visibility
-        if self.uciVisibilityModule then
-          self:debugPrint("Applying initial UCI button visibility")
-          self.uciVisibilityModule:updateAllUCIButtonVisibility()
+        -- Apply initial RoomSelector visibility
+        if self.btnVisibilityModule then
+          self:debugPrint("Applying initial RoomSelector button visibility")
+          self.btnVisibilityModule:updateAllRoomButtonVisibility()
         end
       end
      
@@ -1067,7 +1103,7 @@ function DivisibleSpaceController:discoverComponents()
   forEach(controls.compAudioRouter, function(_, control)
     if control then control.Choices = namesTable.AudioRouterNames end
   end)
-  forEach(controls.uciButtons, function(_, control)
+  forEach(controls.btnRoomSelector, function(_, control)
     if control then control.Choices = namesTable.UciButtonsNames end
   end)
  
@@ -1150,9 +1186,9 @@ function DivisibleSpaceController:registerEventHandlers()
             self:applyAudioRouting()
             self:applyGainRouting()
             
-            if self.uciVisibilityModule then
-              self:debugPrint("Updating UCI button visibility due to configuration change")
-              self.uciVisibilityModule:updateAllUCIButtonVisibility()
+            if self.btnVisibilityModule then
+              self:debugPrint("Updating RoomSelector button visibility due to configuration change")
+              self.btnVisibilityModule:updateAllRoomButtonVisibility()
             end
           end)
           
@@ -1161,10 +1197,10 @@ function DivisibleSpaceController:registerEventHandlers()
           self:applyAudioRouting()
           self:applyGainRouting()
           
-          -- Apply initial UCI visibility
-          if self.uciVisibilityModule then
-            self:debugPrint("Applying initial UCI button visibility")
-            self.uciVisibilityModule:updateAllUCIButtonVisibility()
+          -- Apply initial RoomSelector visibility
+          if self.btnVisibilityModule then
+            self:debugPrint("Applying initial RoomSelector button visibility")
+            self.btnVisibilityModule:updateAllRoomButtonVisibility()
           end
         end
       end
@@ -1206,30 +1242,57 @@ function DivisibleSpaceController:registerEventHandlers()
         self:updateAudioRouter("", i)
       end
     end },
-    { ctrls = controls.uciButtons, handler = function(i, ctl) 
-      self:debugPrint("UCI buttons " .. i .. " changed to: " .. tostring(ctl.String))
-      local component = self:setComponent(ctl, "uciButtons")
+    { ctrls = controls.btnRoomSelector, handler = function(i, ctl) 
+      self:debugPrint("RoomSelector buttons " .. i .. " changed to: " .. tostring(ctl.String))
+      local component = self:setComponent(ctl, "btnRoomSelector")
       if component then
-        self:updateUCIButtons(ctl.String, i)
-        self:debugPrint("UCI buttons " .. i .. " (" .. ctl.String .. ") updated successfully")
+        self:updateBTNRoomSelector(ctl.String, i)
+        self:debugPrint("RoomSelector buttons " .. i .. " (" .. ctl.String .. ") updated successfully")
       else
-        self:updateUCIButtons("", i)
+        self:updateBTNRoomSelector("", i)
       end
     end },
     { ctrls = controls.wallOpenButtons, handler = function(i, wallButton)
+      -- FIRST: Check if button is disabled and immediately revert if so
+      if wallButton.IsDisabled then
+        self:debugPrint("SAFETY BLOCK: Wall " .. i .. " button is disabled - operation blocked")
+        -- Force button back to its combiner state
+        if self.components.roomCombiner then
+          local wallControlName = "wall." .. i .. ".open"
+          local wallControl = self.components.roomCombiner[wallControlName]
+          if wallControl then
+            setProp(wallButton, "Boolean", wallControl.Boolean)
+          end
+        end
+        return
+      end
+      
       local wallPair = wallRoomPairs[i]
       if wallPair then
         local room1, room2 = wallPair[1], wallPair[2]
         local uiState = wallButton.Boolean
         
-        -- Safety check - don't allow wall operation if either room is powered on
+        -- SECOND: Check power states regardless of disabled status (double safety)
         local room1On = self:isRoomPoweredOn(room1)
         local room2On = self:isRoomPoweredOn(room2)
         
         if room1On or room2On then
+          -- Revert the button to previous state (opposite of current)
           setProp(wallButton, "Boolean", not uiState)
-          self:debugPrint("SAFETY BLOCK: Wall " .. i .. " (" .. room1 .. "/" .. room2 .. ") operation blocked - " .. room1 .. ":" .. (room1On and "ON" or "OFF") .. ", " .. room2 .. ":" .. (room2On and "ON" or "OFF"))
+          self:debugPrint("SAFETY BLOCK: Wall " .. i .. " (" .. room1 .. "/" .. room2 .. ") operation blocked - " .. 
+                          room1 .. ":" .. (room1On and "ON" or "OFF") .. ", " .. 
+                          room2 .. ":" .. (room2On and "ON" or "OFF"))
+          
+          -- Ensure button stays disabled
+          setProp(wallButton, "IsDisabled", true)
           return
+        end
+        
+        -- If this wall is being opened (set to true), interlock other enabled walls
+        if uiState then
+          if self.wallModule then
+            self.wallModule:interlockWallButtons(i)
+          end
         end
         
         -- Update the actual wall control on compRoomCombiner
@@ -1238,7 +1301,9 @@ function DivisibleSpaceController:registerEventHandlers()
           local wallControl = self.components.roomCombiner[wallControlName]
           if wallControl then
             setProp(wallControl, "Boolean", uiState)
-            self:debugPrint("Wall " .. i .. " (" .. room1 .. "/" .. room2 .. ") control updated: " .. wallControlName .. " = " .. tostring(uiState) .. " (rooms " .. (uiState and "COMBINED" or "SEPARATED") .. ")")
+            self:debugPrint("Wall " .. i .. " (" .. room1 .. "/" .. room2 .. ") control updated: " .. 
+                            wallControlName .. " = " .. tostring(uiState) .. 
+                            " (rooms " .. (uiState and "COMBINED" or "SEPARATED") .. ")")
           else
             self:debugPrint("ERROR: Wall control " .. wallControlName .. " not found on room combiner")
             setProp(wallButton, "Boolean", not uiState)
@@ -1290,17 +1355,17 @@ function DivisibleSpaceController:updateAudioRouter(name, roomIndex)
   end
 end
 
-function DivisibleSpaceController:updateUCIButtons(name, roomIndex)
+function DivisibleSpaceController:updateBTNRoomSelector(name, roomIndex)
   if roomIndex < 1 or roomIndex > #roomNames then return end
-  local oldName = self.uciButtons[roomIndex]
-  self.uciButtons[roomIndex] = name
+  local oldName = self.btnRoomSelector[roomIndex]
+  self.btnRoomSelector[roomIndex] = name
   if name and name ~= "" then
-    self.components.uciButtons[roomIndex] = Component.New(name)
+    self.components.btnRoomSelector[roomIndex] = Component.New(name)
   else
-    self.components.uciButtons[roomIndex] = nil
+    self.components.btnRoomSelector[roomIndex] = nil
   end
   if oldName ~= name then
-    self:debugPrint("UCI buttons " .. roomIndex .. " (" .. roomNames[roomIndex] .. ") updated: '" .. (oldName or "") .. "' -> '" .. (name or "") .. "'")
+    self:debugPrint("RoomSelector buttons " .. roomIndex .. " (" .. roomNames[roomIndex] .. ") updated: '" .. (oldName or "") .. "' -> '" .. (name or "") .. "'")
     self:checkStatus()
   end
 end
@@ -1371,12 +1436,12 @@ function DivisibleSpaceController:setRoomStates(comboIdx)
   self:applyAudioRouting()
   self:applyGainRouting()
  
-  -- Update UCI button visibility
-  if self.uciVisibilityModule then
-    self:debugPrint("Updating UCI button visibility for combination...")
-    self.uciVisibilityModule:updateAllUCIButtonVisibility()
+  -- Update RoomSelector button visibility
+  if self.btnVisibilityModule then
+    self:debugPrint("Updating RoomSelector button visibility for combination...")
+    self.btnVisibilityModule:updateAllRoomButtonVisibility()
   else
-    self:debugPrint("SKIP: UCI visibility - module not available")
+    self:debugPrint("SKIP: RoomSelector visibility - module not available")
   end
  
   self:checkStatus()
@@ -1730,18 +1795,18 @@ function DivisibleSpaceController:checkStatus()
  
   -- Note: Gain components are now accessed through room components
  
-  -- Check UCI buttons
-  local connectedUCI = 0
+  -- Check RoomSelector buttons
+  local connectedRoomSelector = 0
   for i = 1, #roomNames do
-    if self.uciButtons[i] and self.uciButtons[i] ~= "" then
-      connectedUCI = connectedUCI + 1
+    if self.btnRoomSelector[i] and self.btnRoomSelector[i] ~= "" then
+      connectedRoomSelector = connectedRoomSelector + 1
     end
   end
  
   self:debugPrint("Status check: " .. validComponentCount .. "/" .. totalComponentCount .. " components valid")
   self:debugPrint("Connected room components: " .. connectedRooms .. "/" .. #roomNames)
   self:debugPrint("Connected audio routers: " .. connectedRouters .. "/" .. #roomNames)
-  self:debugPrint("Connected UCI buttons: " .. connectedUCI .. "/" .. #roomNames)
+  self:debugPrint("Connected RoomSelector buttons: " .. connectedRoomSelector .. "/" .. #roomNames)
  
   -- Update status control
   if controls.txtStatus then
@@ -1757,8 +1822,8 @@ function DivisibleSpaceController:checkStatus()
       if connectedRouters < #roomNames then
         statusMsg = statusMsg .. " (Routers: " .. connectedRouters .. "/" .. #roomNames .. ")"
       end
-      if connectedUCI < #roomNames then
-        statusMsg = statusMsg .. " (UCI: " .. connectedUCI .. "/" .. #roomNames .. ")"
+      if connectedRoomSelector < #roomNames then
+        statusMsg = statusMsg .. " (RoomSelector: " .. connectedRoomSelector .. "/" .. #roomNames .. ")"
       end
       controls.txtStatus.String = statusMsg
       controls.txtStatus.Value = 0
@@ -1767,41 +1832,41 @@ function DivisibleSpaceController:checkStatus()
   end
 end
 
-function DivisibleSpaceController:scheduleDelayedUCIVisibilityUpdate()
-  self:debugPrint("Scheduling delayed UCI visibility update...")
+function DivisibleSpaceController:scheduleDelayedRoomVisibilityUpdate()
+  self:debugPrint("Scheduling delayed RoomSelector visibility update...")
  
-  -- Create a timer to update UCI visibility after a short delay
+  -- Create a timer to update RoomSelector visibility after a short delay
   local delayTimer = Timer.New()
   delayTimer.EventHandler = function()
-    self:debugPrint("Executing delayed UCI visibility update...")
+    self:debugPrint("Executing delayed RoomSelector visibility update...")
    
     -- Stop the timer since it's a one-time update
     delayTimer:Stop()
    
-    -- Update UCI visibility based on current room combination
-    if self.uciVisibilityModule then
-      self:debugPrint("Delayed UCI visibility update - checking current room combination...")
+    -- Update RoomSelector visibility based on current room combination
+    if self.btnVisibilityModule then
+      self:debugPrint("Delayed RoomSelector visibility update - checking current room combination...")
       local currentCombination = self:getCurrentCombination()
       if currentCombination then
         self:debugPrint("Delayed update using combination: " .. currentCombination.name)
       else
         self:debugPrint("No combination found in delayed update - setting all separate")
       end
-      self.uciVisibilityModule:updateAllUCIButtonVisibility()
+      self.btnVisibilityModule:updateAllRoomButtonVisibility()
     else
-      self:debugPrint("SKIP: Delayed UCI visibility update - module not available")
+      self:debugPrint("SKIP: Delayed RoomSelector visibility update - module not available")
     end
   end
  
   -- Start timer with 2 second delay to allow components to settle
   delayTimer:Start(2.0)
-  self:debugPrint("Delayed UCI visibility update scheduled for 2 seconds")
+  self:debugPrint("Delayed RoomSelector visibility update scheduled for 2 seconds")
 end
 
 ----------------[ Cleanup ]--------------------------
 function DivisibleSpaceController:cleanup()
   -- Cleanup all modules
-  local modules = {self.componentModule, self.uciVisibilityModule, self.powerSyncModule, self.wallModule}
+  local modules = {self.componentModule, self.btnVisibilityModule, self.powerSyncModule, self.wallModule}
   for _, module in ipairs(modules) do
     if module and module.cleanup then module:cleanup() end
   end

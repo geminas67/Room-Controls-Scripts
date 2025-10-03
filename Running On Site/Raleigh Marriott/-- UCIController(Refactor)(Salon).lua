@@ -346,7 +346,7 @@ function LayerModule:showLayer()
         "J01-ConnectUSBLaptop", "J02-ConnectUSBPC", "J03-ACPRActive", "J04-CamPresetSaved","J05-CameraControls", 
         "L01-HDMI01Disconnected", "L05-Laptop",
         "P01-HDMI02Disconnected", "P05-PC", "W05-Wireless",
-        "R01-Routing-SalonA", "R02-Routing-SalonB", "R03-Routing-SalonC","R04-Routing-SalonD", "R05-Routing-SalonE","R06-Routing-SalonF", "R07-Routing-SalonG", "R08-Routing-SalonH", "R10-Routing",
+        "R01-Routing-SalonD", "R02-Routing-SalonE", "R03-Routing-SalonA","R04-Routing-SalonB", "R05-Routing-SalonC","R06-Routing-SalonF", "R07-Routing-SalonG", "R08-Routing-SalonH", "R10-Routing",
         "S10-StreamMusic", 
         "V05-Dialer", 
         "X01-ProgramVolume", 
@@ -628,8 +628,8 @@ function RoutingModule.new(controller)
     local self = BaseModule.new(controller, "Routing")
     setmetatable(self, RoutingModule)
     self.routingLayers = {
-        "R01-Routing-SalonA", "R02-Routing-SalonB", "R03-Routing-SalonC",
-        "R04-Routing-SalonD", "R05-Routing-SalonE", "R06-Routing-SalonF",
+        "R01-Routing-SalonD", "R02-Routing-SalonE", "R03-Routing-SalonA",
+        "R04-Routing-SalonB", "R05-Routing-SalonC", "R06-Routing-SalonF",
         "R07-Routing-SalonG", "R08-Routing-SalonH"
     }
     self.activeRoutingLayer = 1

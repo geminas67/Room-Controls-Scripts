@@ -466,12 +466,11 @@ function SublayerModule:updateHDMI01State()
     if isConnected then
         self.controller.layerModule:updateLayerVisibility({"L05-Laptop"}, true, "fade")
         self.controller.layerModule:updateLayerVisibility({"L01-HDMI01Disconnected"}, false, "none")
-        -- Only update ACPR and Conference state if HDMI is connected
         self:updateACPRBypassState()
         self:updateConferenceState()
     else
         self.controller.layerModule:updateLayerVisibility({"L01-HDMI01Disconnected"}, true, "fade")
-        self.controller.layerModule:updateLayerVisibility({"L05-Laptop", "J05-ConferenceControls"}, false, "none")
+        self.controller.layerModule:updateLayerVisibility({"L05-Laptop", "J03-ACPRActive", "J05-ConferenceControls"}, false, "none")
     end
     self:debug("HDMI01: " .. (isConnected and "Connected" or "Disconnected") .. " L05-Laptop")
 end
@@ -483,12 +482,11 @@ function SublayerModule:updateHDMI02State()
     if isConnected then
         self.controller.layerModule:updateLayerVisibility({"P05-PC"}, true, "fade")
         self.controller.layerModule:updateLayerVisibility({"P01-HDMI02Disconnected"}, false, "none")
-        -- Only update ACPR and Conference state if HDMI is connected
         self:updateACPRBypassState()
         self:updateConferenceState()
     else
         self.controller.layerModule:updateLayerVisibility({"P01-HDMI02Disconnected"}, true, "fade")
-        self.controller.layerModule:updateLayerVisibility({"P05-PC", "J05-ConferenceControls"}, false, "none")
+        self.controller.layerModule:updateLayerVisibility({"P05-PC", "J03-ACPRActive", "J05-ConferenceControls"}, false, "none")
     end
     self:debug("HDMI02: " .. (isConnected and "Connected" or "Disconnected") .. " P05-PC")
 end
@@ -498,6 +496,21 @@ function SublayerModule:updateACPRBypassState()
        self.controller.varActiveLayer ~= self.controller.kLayerPC then return end
 
     local isBypassActive = controls.pinLEDACPRBypassActive and controls.pinLEDACPRBypassActive.Boolean or false
+
+     if self.controller.varActiveLayer == self.controller.kLayerLaptop then
+        if not controls.pinLEDHDMI01Connect or not controls.pinLEDHDMI01Connect.Boolean then
+            self.controller.layerModule:updateLayerVisibility({"J03-ACPRActive"}, false, "none")
+            return
+        end
+    elseif self.controller.varActiveLayer == self.controller.kLayerPC then
+        if not controls.pinLEDHDMI02Connect or not controls.pinLEDHDMI02Connect.Boolean then
+            self.controller.layerModule:updateLayerVisibility({"J03-ACPRActive"}, false, "none")
+            return
+        end
+    else
+        return
+    end
+
     if not isBypassActive then
         self.controller.layerModule:updateLayerVisibility({"J03-ACPRActive"}, true, "fade")
         self.controller.layerModule:updateLayerVisibility({"J05-ConferenceControls"}, false, "none")
@@ -525,7 +538,6 @@ function SublayerModule:updateConferenceState()
     
     local usbConnected = false
     local usbNotConnectedLayer
-    
     if self.controller.varActiveLayer == self.controller.kLayerLaptop then
         usbConnected = controls.pinLEDUSBLaptop and controls.pinLEDUSBLaptop.Boolean or false
         usbNotConnectedLayer = "J01-ConnectUSBLaptop"
