@@ -264,12 +264,7 @@ function AudioModule:updateVolumeVisuals(i)
     -- Cache current state to avoid redundant property access
     local isMuted = mute.Boolean
     local gainType = self.controller:getGainType(i)
-    
-    if gainType == "Mic" then
-        setProp(mute, "CssClass", isMuted and "icon-mic_none" or "icon-mic_off")
-    else
-        setProp(mute, "CssClass", isMuted and "icon-volume_mute" or "icon-volume_off")
-    end
+    setProp(mute, "CssClass", isMuted and (gainType == "Mic" and "icon-mic_none" or "icon-volume_mute") or (gainType == "Mic" and "icon-mic_off" or "icon-volume_off"))
     setProp(fader, "Color", isMuted and "#CCCCCC" or "#0561A5")
 end
 
@@ -462,7 +457,7 @@ function SystemAutomationController:debugPrint(str)
     if self.debugging then print("["..self.roomName.." Debug] "..str) end
 end
 
-------------------[ Component Utility Helpers ]---------------------
+-------------------[ Component Utility Helpers ]-------------------
 function SystemAutomationController:getGainComponent(idx) return self.components.gains[idx] end
 function SystemAutomationController:getDisplayComponent(idx) return self.components.displays[idx] end
 function SystemAutomationController:getGainType(idx)
@@ -471,6 +466,7 @@ function SystemAutomationController:getGainType(idx)
     return "Mic"
 end
 
+------------------[ Component Access Helper ]---------------------
 function SystemAutomationController:safeComponentAccess(component, control, action, value)
     if not component or not component[control] then return false end
     local success, result = pcall(function()

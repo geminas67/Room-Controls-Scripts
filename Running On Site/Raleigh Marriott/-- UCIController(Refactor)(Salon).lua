@@ -1526,7 +1526,7 @@ end
 --------------[ Instance Creation ]-------------------------
 myUCI = createUCIController(
     Uci.Variables.txtUCIPageName.String,
-    tonumber(Uci.Variables.numDefaultRoutingLayer.Value) or 2,
+    tonumber(Uci.Variables.numDefaultRoutingLayer.Value) or 1,
     tonumber(Uci.Variables.numDefaultActiveLayer.Value) or 10,
     {} -- Hidden nav indices
 )
