@@ -131,14 +131,14 @@ function AudioRouterController.new(config)
     self.lastInput = {} -- Store the last input for each output
     
     self.inputs = {
-        xlr01 = 1,
-        trs01 = 2,
-        xlr02 = 3,
-        xlr03 = 4,
-        xlr04 = 5,
-        xlr05 = 6,
-        xlr06 = 7,
-        xlr07 = 8,
+        SalonD = 1,
+        SalonE = 2,
+        SalonA = 3,
+        SalonB = 4,
+        SalonC = 5,
+        SalonF = 6,
+        SalonG = 7,
+        SalonH = 8,
         none  = 9,
     }
     self.outputs = {
@@ -283,11 +283,15 @@ function AudioRouterController:setRoomControlsComponent()
     end
     
     -- Room controls handler map for batch registration
+    -- NOTE: ledSystemPower routing DISABLED - DivisibleSpaceController handles all audio routing
+    -- based on room combinations and priority rules
     local roomControlHandlers = {
+        --[[
         ledSystemPower = function(ctl)
             local route = ctl.Boolean and self.inputs.trs01 or self.inputs.none
             self:setRoute(route, self.outputs.output01)
         end,
+        ]]--
         
         ledFireAlarm = function(ctl)
             if ctl.Boolean then
@@ -295,10 +299,10 @@ function AudioRouterController:setRoomControlsComponent()
                 self:setRoute(self.inputs.none, self.outputs.output01)
             else
                 -- Fire alarm cleared: revert to last input or default
-                if Controls.ledSystemPower.Boolean then
+                --[[if Controls.ledSystemPower.Boolean then
                     local defaultRoute = self.lastInput[self.outputs.output01] or self.inputs.trs01
                     self:setRoute(defaultRoute, self.outputs.output01)
-                end
+                end]]--
             end
         end
     }

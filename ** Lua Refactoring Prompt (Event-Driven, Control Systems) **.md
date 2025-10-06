@@ -110,3 +110,34 @@ Refactor the following Lua code to make it faster and more responsive, with a fo
     - Provide clear success/failure messaging with specific error context.
     - Export both the class and instance globally for external access and multiple instance support.
     - Include graceful degradation when optional components are unavailable.
+21. **Implement Generic Component Update Patterns:**
+    - Create generic update functions that consolidate repetitive component assignment logic.
+    - Use parameterized functions with component type, name array, component array, and debug label parameters.
+    - Maintain backward compatibility by keeping specific wrapper functions that call the generic implementation.
+    - Example: Replace multiple updateRoomComponent(), updateAudioRouter(), updateBTNRoomSelector() functions with a single updateComponent() function.
+22. **Centralize Error and Status Reporting:**
+    - Implement centralized utilities for consistent operation result reporting across all modules.
+    - Create printOperationResult(operationType, successCount, totalCount, errorList) to eliminate repetitive summary print patterns.
+    - Use handleBatchResult(resultSuccess, operationType, index, itemName) for standardized batch operation error handling.
+    - Ensure all modules use the controller's centralized utilities for consistent output formatting.
+23. **Eliminate Repetitive Debug and Error Print Patterns:**
+    - Identify and consolidate repetitive error/debug print blocks that follow similar patterns.
+    - Replace manual error counting and printing with centralized utilities.
+    - Use consistent error message formatting across all operations (routing, synchronization, state updates).
+    - Reduce boilerplate code by extracting common print patterns into reusable functions.
+24. **Apply DRY Principles to Event Handler Registration:**
+    - Use configuration-driven handler maps to eliminate repetitive event binding code.
+    - Implement parameterized handler factories for similar event types that only differ in component references.
+    - Group related event handlers logically within maps for better organization and maintenance.
+    - Prefer handler factories over inline function definitions when multiple handlers perform variations of the same task.
+25. **Implement Consistent Module Integration Patterns:**
+    - Ensure all modules can access and use the controller's centralized utilities.
+    - Design modules to delegate common operations (error reporting, status updates) to the main controller.
+    - Use dependency injection to provide modules with access to centralized utilities.
+    - Maintain module independence while leveraging shared functionality.
+    - These additions would help future refactoring efforts by:
+    - Guiding developers to identify and consolidate repetitive patterns early
+    - Providing specific examples of how to implement generic update functions
+    - Establishing standards for error reporting and debug output consistency
+    - Encouraging the creation of reusable utilities rather than copy-paste code
+    - Ensuring all modules benefit from centralized improvements

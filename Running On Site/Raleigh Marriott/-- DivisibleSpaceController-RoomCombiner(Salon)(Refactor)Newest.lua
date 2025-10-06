@@ -1,7 +1,7 @@
 --[[
   Divisible Space Controller with Room Priority System (Refactored, Lean OOP, DRY Event Registration)
   Author: Nikolas Smith, Q-SYS
-  Version: 3.0 | Date: 2025-09-28
+  Version: 3.1 | Date: 2025-10-04
   Firmware Req: 10.0.1+
   Notes:
   - UPDATED: Now complies with latest Lua Refactoring Prompt specifications
@@ -14,6 +14,12 @@
   - All event registration is DRY and centralized using control/event maps.
   - Each logical domain is its own class; orchestrator is thin.
   - Debug/config standardized, all validation centralized.
+  
+  DRY Improvements (v3.1):
+  - Generic updateComponent() consolidates updateRoomComponent, updateAudioRouter, updateBTNRoomSelector
+  - Centralized printOperationResult() utility eliminates repetitive error/debug print patterns
+  - Generic handleBatchResult() for consistent batch operation error handling
+  - All modules use controller's centralized utilities for consistent reporting
   
   Room Priority Hierarchy:
   SalonD --> SalonE (D has priority over E)
@@ -56,19 +62,33 @@ local wallRoomPairs = {
   [9]   = {"SalonD", "SalonE", "SalonF", "SalonG", "SalonH"},
   [10]  = {"SalonA", "SalonB", "SalonC"},
   [11]  = {"SalonF", "SalonG", "SalonH"},
-  [12]  = {"SalonD", "SalonE", "SalonA", "SalonB", "SalonC", "SalonF", "SalonG", "SalonH"}
+  [12]  = {"SalonD", "SalonE", "SalonA", "SalonB", "SalonC", "SalonF", "SalonG", "SalonH"},
+  -- Individual room separation buttons (13-20)
+  [13]  = {"SalonD"},  -- Separate Salon D from all others
+  [14]  = {"SalonE"},  -- Separate Salon E from all others
+  [15]  = {"SalonA"},  -- Separate Salon A from all others
+  [16]  = {"SalonB"},  -- Separate Salon B from all others
+  [17]  = {"SalonC"},  -- Separate Salon C from all others
+  [18]  = {"SalonF"},  -- Separate Salon F from all others
+  [19]  = {"SalonG"},  -- Separate Salon G from all others
+  [20]  = {"SalonH"}   -- Separate Salon H from all others
 }
 
 local roomCombinations = {
-  { id=1, name="All Separated", activeRooms={SalonA=true, SalonB=true, SalonC=true, SalonD=true, SalonE=true, SalonF=true, SalonG=true, SalonH=true}, priority=nil },
+  { id=1, name="SalonD+SalonE Combined", activeRooms={SalonA=false, SalonB=false, SalonC=false, SalonD=true, SalonE=true, SalonF=false, SalonG=false, SalonH=false}, priority="SalonD" },
   { id=2, name="SalonA+SalonB Combined", activeRooms={SalonA=true, SalonB=true, SalonC=false, SalonD=false, SalonE=false, SalonF=false, SalonG=false, SalonH=false}, priority="SalonA" },
   { id=3, name="SalonB+SalonC Combined", activeRooms={SalonA=false, SalonB=true, SalonC=true, SalonD=false, SalonE=false, SalonF=false, SalonG=false, SalonH=false}, priority="SalonB" },
-  { id=4, name="SalonD+SalonE Combined", activeRooms={SalonA=false, SalonB=false, SalonC=false, SalonD=true, SalonE=true, SalonF=false, SalonG=false, SalonH=false}, priority="SalonD" },
-  { id=6, name="SalonF+SalonG Combined", activeRooms={SalonA=false, SalonB=false, SalonC=false, SalonD=false, SalonE=false, SalonF=true, SalonG=true, SalonH=false}, priority="SalonF" },
-  { id=7, name="SalonG+SalonH Combined", activeRooms={SalonA=false, SalonB=false, SalonC=false, SalonD=false, SalonE=false, SalonF=false, SalonG=true, SalonH=true}, priority="SalonG" },
-  { id=8, name="SalonA+SalonB+SalonC+SalonD Combined", activeRooms={SalonA=true, SalonB=true, SalonC=true, SalonD=true, SalonE=false, SalonF=false, SalonG=false, SalonH=false}, priority="SalonA" },
-  { id=9,name="SalonE+SalonF+SalonG+SalonH Combined", activeRooms={SalonA=false, SalonB=false, SalonC=false, SalonD=false, SalonE=true, SalonF=true, SalonG=true, SalonH=true}, priority="SalonE" },
-  { id=10,name="All Combined", activeRooms={SalonA=true, SalonB=true, SalonC=true, SalonD=true, SalonE=true, SalonF=true, SalonG=true, SalonH=true}, priority="SalonA" }
+  { id=4, name="SalonF+SalonG Combined", activeRooms={SalonA=false, SalonB=false, SalonC=false, SalonD=false, SalonE=false, SalonF=true, SalonG=true, SalonH=false}, priority="SalonF" },
+  { id=5, name="SalonG+SalonH Combined", activeRooms={SalonA=false, SalonB=false, SalonC=false, SalonD=false, SalonE=false, SalonF=false, SalonG=true, SalonH=true}, priority="SalonG" },
+  { id=6, name="SalonD+SalonA+SalonB+SalonC Combined", activeRooms={SalonA=true, SalonB=true, SalonC=true, SalonD=true, SalonE=false, SalonF=false, SalonG=false, SalonH=false}, priority="SalonD" },
+  { id=7, name="SalonE+SalonF+SalonG+SalonH Combined", activeRooms={SalonA=false, SalonB=false, SalonC=false, SalonD=false, SalonE=true, SalonF=true, SalonG=true, SalonH=true}, priority="SalonE" },
+  { id=8, name="SalonD+SalonE+SalonA+SalonB+SalonC Combined", activeRooms={SalonA=true, SalonB=true, SalonC=true, SalonD=true, SalonE=true, SalonF=false, SalonG=false, SalonH=false}, priority="SalonD" },
+  { id=9,name="SalonD+SalonE+SalonF+SalonG+SalonH Combined", activeRooms={SalonA=false, SalonB=false, SalonC=false, SalonD=true, SalonE=true, SalonF=true, SalonG=true, SalonH=true}, priority="SalonD" },
+  { id=10,name="SalonA+SalonB+SalonC Combined", activeRooms={SalonA=true, SalonB=true, SalonC=true, SalonD=false, SalonE=false, SalonF=false, SalonG=false, SalonH=false}, priority="SalonA" },
+  { id=11,name="SalonF+SalonG+SalonH Combined", activeRooms={SalonA=false, SalonB=false, SalonC=false, SalonD=false, SalonE=false, SalonF=true, SalonG=true, SalonH=true}, priority="SalonF" },
+  { id=12,name="All Combined", activeRooms={SalonA=true, SalonB=true, SalonC=true, SalonD=true, SalonE=true, SalonF=true, SalonG=true, SalonH=true}, priority="SalonD" },
+  { id=13, name="All Separated", activeRooms={SalonA=true, SalonB=true, SalonC=true, SalonD=true, SalonE=true, SalonF=true, SalonG=true, SalonH=true}, priority=nil },
+
 }
 
 -------------------[ Control References ]-------------------
@@ -514,15 +534,21 @@ function PowerSyncModule:onRoomPowerChanged(roomName, roomIndex)
     self:debug("Sync already in progress - ignoring power change for " .. roomName)
     return
   end
- 
+
   self:debug("Power state changed for " .. roomName .. " - checking for combined rooms...")
- 
+
   local configString = self:getConfigString()
-  if not configString then return end
- 
+  if not configString then 
+    -- Update wall states even if no config
+    if self.controller.wallModule then
+      self.controller.wallModule:updateWallStates()
+    end
+    return 
+  end
+
   local roomGroups = parseConfiguration(configString)
   local changedRoomNum = roomNumberMap[roomName]
- 
+
   local group = nil
   for _, g in ipairs(roomGroups) do
     if tableContains(g, changedRoomNum) then
@@ -530,26 +556,34 @@ function PowerSyncModule:onRoomPowerChanged(roomName, roomIndex)
       break
     end
   end
- 
+
   if not group or #group < 2 then
     self:debug(roomName .. " is not in a combined group - no sync needed")
+    -- Update wall states for standalone room power changes
+    if self.controller.wallModule then
+      self.controller.wallModule:updateWallStates()
+    end
     return
   end
- 
+
   -- Get the new power state of the changed room
   local newPowerState = self.controller:isRoomPoweredOn(roomName)
   self:debug(roomName .. " new power state: " .. (newPowerState and "ON" or "OFF"))
- 
+
   -- Check for automatic separation if room powered off
   if not newPowerState then
     self:debug("Room " .. roomName .. " powered OFF - checking if all combined rooms in group are now off...")
     if self:shouldAutoSeparateGroup(group) then
       self:debug("All rooms in group are OFF - automatically separating group")
       self:separateGroup(group)
+      -- Update wall states after separation
+      if self.controller.wallModule then
+        self.controller.wallModule:updateWallStates()
+      end
       return -- No need to sync power states if we're separating
     end
   end
- 
+
   -- Find all other rooms in the group to synchronize
   local roomsToSync = {}
   for _, num in ipairs(group) do
@@ -560,16 +594,25 @@ function PowerSyncModule:onRoomPowerChanged(roomName, roomIndex)
       end
     end
   end
- 
+
   if #roomsToSync == 0 then
     self:debug("No other rooms to sync with " .. roomName)
+    -- Update wall states even if no sync needed
+    if self.controller.wallModule then
+      self.controller.wallModule:updateWallStates()
+    end
     return
   end
- 
+
   self:debug("Synchronizing power state (" .. (newPowerState and "ON" or "OFF") .. ") to combined rooms in group: " .. table.concat(roomsToSync, ", "))
- 
+
   -- Perform the synchronization
   self:syncPowerToRooms(roomsToSync, newPowerState)
+  
+  -- Update wall states after power synchronization
+  if self.controller.wallModule then
+    self.controller.wallModule:updateWallStates()
+  end
 end
 
 function PowerSyncModule:getConfigString()
@@ -618,12 +661,8 @@ function PowerSyncModule:syncPowerToRooms(roomsToSync, powerState)
     end
   end
  
-  self:debug("Power sync complete: " .. syncedRooms .. "/" .. #roomsToSync .. " rooms synchronized")
-  if #syncErrors > 0 then
-    self:debug("Power sync errors: " .. #syncErrors)
-    for _, error in ipairs(syncErrors) do
-      self:debug(" - " .. error)
-    end
+  if self.controller.printOperationResult then
+    self.controller:printOperationResult("Power sync", syncedRooms, #roomsToSync, syncErrors)
   end
  
   self.syncInProgress = false -- Re-enable sync detection
@@ -669,34 +708,41 @@ function PowerSyncModule:separateGroup(group)
   -- Close all walls that connect rooms within this group
   local wallsClosed = 0
   local wallErrors = {}
- 
-  for wallIndex = 1, 7 do
+
+  for wallIndex = 1, 12 do -- Only process buttons 1-12 for room combiner walls
     local wallPair = wallRoomPairs[wallIndex]
-    if wallPair and groupRooms[wallPair[1]] and groupRooms[wallPair[2]] then
-      local wallControlName = "wall." .. wallIndex .. ".open"
-      local wallControl = self.controller.components.roomCombiner[wallControlName]
-     
-      if wallControl then
-        local currentState = wallControl.Boolean
-        if currentState then -- If wall is currently open, close it
-          setProp(wallControl, "Boolean", false)
-          wallsClosed = wallsClosed + 1
-          self:debug("SEPARATED: Wall " .. wallIndex .. " (" .. wallPair[1] .. "/" .. wallPair[2] .. ") - wall closed")
+    if wallPair then
+      -- Check if ALL rooms in this wall pair are in the powered-off group
+      local allRoomsInGroup = true
+      for _, roomName in ipairs(wallPair) do
+        if not groupRooms[roomName] then
+          allRoomsInGroup = false
+          break
         end
-      else
-        local errorMsg = "Wall " .. wallIndex .. ": " .. wallControlName .. " control not found"
-        table.insert(wallErrors, errorMsg)
-        self:debug("ERROR: " .. errorMsg)
+      end
+      
+      if allRoomsInGroup then
+        local wallControlName = "wall." .. wallIndex .. ".open"
+        local wallControl = self.controller.components.roomCombiner[wallControlName]
+       
+        if wallControl then
+          local currentState = wallControl.Boolean
+          if currentState then -- If wall is currently open, close it
+            setProp(wallControl, "Boolean", false)
+            wallsClosed = wallsClosed + 1
+            self:debug("SEPARATED: Wall " .. wallIndex .. " (" .. table.concat(wallPair, "/") .. ") - wall closed")
+          end
+        else
+          local errorMsg = "Wall " .. wallIndex .. ": " .. wallControlName .. " control not found"
+          table.insert(wallErrors, errorMsg)
+          self:debug("ERROR: " .. errorMsg)
+        end
       end
     end
   end
  
-  self:debug("Automatic group separation complete: " .. wallsClosed .. " walls closed")
-  if #wallErrors > 0 then
-    self:debug("Separation errors: " .. #wallErrors)
-    for _, error in ipairs(wallErrors) do
-      self:debug(" - " .. error)
-    end
+  if self.controller.printOperationResult then
+    self.controller:printOperationResult("Automatic group separation", wallsClosed, wallsClosed, wallErrors)
   end
  
   -- Sync UI wall buttons to match the room combiner state
@@ -745,27 +791,35 @@ function WallModule:syncWallButtonStates()
   local syncedWalls = 0
   local syncErrors = {}
  
-  for i = 1, 12 do
+  for i = 1, 20 do -- Extended range to include individual room separation buttons
     local wallButton = controls.wallOpenButtons[i]
     if wallButton then
-      local wallControlName = "wall." .. i .. ".open"
-      local wallControl = self.controller.components.roomCombiner[wallControlName]
-     
-      if wallControl then
-        local combinerState = wallControl.Boolean
-        setProp(wallButton, "Boolean", combinerState)
-        syncedWalls = syncedWalls + 1
-       
-        local wallPair = wallRoomPairs[i]
-        if wallPair then
-          self:debug("Synced wall " .. i .. " (" .. wallPair[1] .. "/" .. wallPair[2] .. "): " ..
-                          wallControlName .. " = " .. tostring(combinerState) .. " (rooms " ..
-                          (combinerState and "COMBINED" or "SEPARATED") .. ")")
+      local wallPair = wallRoomPairs[i]
+      if wallPair then
+        if i <= 12 then
+          -- Buttons 1-12: Sync with room combiner wall controls
+          local wallControlName = "wall." .. i .. ".open"
+          local wallControl = self.controller.components.roomCombiner[wallControlName]
+         
+          if wallControl then
+            local combinerState = wallControl.Boolean
+            setProp(wallButton, "Boolean", combinerState)
+            syncedWalls = syncedWalls + 1
+           
+            self:debug("Synced wall " .. i .. " (" .. wallPair[1] .. "/" .. wallPair[2] .. "): " ..
+                            wallControlName .. " = " .. tostring(combinerState) .. " (rooms " ..
+                            (combinerState and "COMBINED" or "SEPARATED") .. ")")
+          else
+            local errorMsg = "Wall " .. i .. ": " .. wallControlName .. " control not found on room combiner"
+            table.insert(syncErrors, errorMsg)
+            self:debug("ERROR: " .. errorMsg)
+          end
+        else
+          -- Buttons 13-20: Individual room separation buttons - no room combiner control to sync
+          -- These buttons maintain their current state based on wall states
+          syncedWalls = syncedWalls + 1
+          self:debug("Individual separation button " .. i .. " (" .. wallPair[1] .. ") - no room combiner sync needed")
         end
-      else
-        local errorMsg = "Wall " .. i .. ": " .. wallControlName .. " control not found on room combiner"
-        table.insert(syncErrors, errorMsg)
-        self:debug("ERROR: " .. errorMsg)
       end
     else
       local errorMsg = "Wall " .. i .. ": UI button not found"
@@ -774,12 +828,8 @@ function WallModule:syncWallButtonStates()
     end
   end
  
-  self:debug("Wall button sync complete: " .. syncedWalls .. "/12 successful")
-  if #syncErrors > 0 then
-    self:debug("Wall sync errors: " .. #syncErrors)
-    for _, error in ipairs(syncErrors) do
-      self:debug(" - " .. error)
-    end
+  if self.controller.printOperationResult then
+    self.controller:printOperationResult("Wall button sync", syncedWalls, 20, syncErrors)
   end
 end
 
@@ -792,7 +842,7 @@ function WallModule:setupWallControlEventHandlers()
   end
  
   local handlersSetup = 0
-  for i = 1, 12 do
+  for i = 1, 12 do -- Only buttons 1-12 have room combiner wall controls
     local wallControlName = "wall." .. i .. ".open"
     local wallControl = self.controller.components.roomCombiner[wallControlName]
    
@@ -824,43 +874,6 @@ function WallModule:setupWallControlEventHandlers()
   self:debug("Wall control event handlers setup: " .. handlersSetup .. "/12 successful")
 end
 
-function WallModule:interlockWallButtons(activeWallIndex)
-  self:debug("Interlocking wall buttons - active wall: " .. activeWallIndex)
-  
-  local interlockCount = 0
-  
-  -- Close all other enabled wall buttons
-  for i = 1, 12 do
-    if i ~= activeWallIndex then
-      local wallButton = controls.wallOpenButtons[i]
-      
-      if wallButton and not wallButton.IsDisabled then
-        -- Only interlock if button is enabled and currently true
-        if wallButton.Boolean then
-          setProp(wallButton, "Boolean", false)
-          
-          -- Also update the room combiner control
-          if self.controller.components.roomCombiner then
-            local wallControlName = "wall." .. i .. ".open"
-            local wallControl = self.controller.components.roomCombiner[wallControlName]
-            if wallControl then
-              setProp(wallControl, "Boolean", false)
-            end
-          end
-          
-          interlockCount = interlockCount + 1
-          local wallPair = wallRoomPairs[i]
-          if wallPair then
-            self:debug("Interlocked wall " .. i .. " (" .. wallPair[1] .. "/" .. wallPair[2] .. ") - set to CLOSED")
-          end
-        end
-      end
-    end
-  end
-  
-  self:debug("Interlock complete: " .. interlockCount .. " walls closed")
-end
-
 function WallModule:updateWallStates()
   self:debug("Updating wall states...")
  
@@ -868,21 +881,27 @@ function WallModule:updateWallStates()
   local wallStateErrors = {}
  
   for wallIndex, roomPair in pairs(wallRoomPairs) do
-    local room01 = roomPair[1]
-    local room02 = roomPair[2]
-    local isRoom01On = self.controller:isRoomPoweredOn(room01)
-    local isRoom02On = self.controller:isRoomPoweredOn(room02)
     local wallButton = controls.wallOpenButtons[wallIndex]
    
     if wallButton then
-      local shouldDisable = (isRoom01On or isRoom02On)
+      -- Check if ANY room in the pair is powered on
+      local shouldDisable = false
+      local roomStates = {}
+      
+      for _, roomName in ipairs(roomPair) do
+        local isRoomOn = self.controller:isRoomPoweredOn(roomName)
+        table.insert(roomStates, roomName .. ":" .. (isRoomOn and "ON" or "OFF"))
+        if isRoomOn then
+          shouldDisable = true
+        end
+      end
+      
       setProp(wallButton, "IsDisabled", shouldDisable)
       wallStatesUpdated = wallStatesUpdated + 1
      
-      self:debug("Wall " .. wallIndex .. " (" .. room01 .. "/" .. room02 .. "): " ..
+      self:debug("Wall " .. wallIndex .. " (" .. table.concat(roomPair, "/") .. "): " ..
                       (shouldDisable and "DISABLED" or "ENABLED") ..
-                      " [" .. room01 .. ":" .. (isRoom01On and "ON" or "OFF") ..
-                      ", " .. room02 .. ":" .. (isRoom02On and "ON" or "OFF") .. "]")
+                      " [" .. table.concat(roomStates, ", ") .. "]")
     else
       local errorMsg = "Wall " .. wallIndex .. ": Button control not found"
       table.insert(wallStateErrors, errorMsg)
@@ -890,12 +909,8 @@ function WallModule:updateWallStates()
     end
   end
  
-  self:debug("Wall states updated: " .. wallStatesUpdated .. "/" .. #wallRoomPairs .. " successful")
-  if #wallStateErrors > 0 then
-    self:debug("Wall state errors: " .. #wallStateErrors)
-    for _, error in ipairs(wallStateErrors) do
-      self:debug(" - " .. error)
-    end
+  if self.controller.printOperationResult then
+    self.controller:printOperationResult("Wall states update", wallStatesUpdated, #wallRoomPairs, wallStateErrors)
   end
 end
 
@@ -946,10 +961,31 @@ function DivisibleSpaceController.new(roomName, debugging)
   return self
 end
 
------------------[ Debug Helper ]----------------------
+-----------------[ Debug & Error Reporting Helpers (DRY Utilities) ]----------------------
 function DivisibleSpaceController:debugPrint(str)
   if self.debugging then
     print("[" .. (self.roomName or "DivisibleSpace") .. "] " .. str)
+  end
+end
+
+function DivisibleSpaceController:printOperationResult(operationType, successCount, totalCount, errorList)
+  self:debugPrint(operationType .. " complete: " .. successCount .. "/" .. totalCount .. " successful")
+  if errorList and #errorList > 0 then
+    self:debugPrint(operationType .. " errors: " .. #errorList)
+    for _, error in ipairs(errorList) do
+      self:debugPrint(" - " .. error)
+    end
+  end
+end
+
+-- Generic batch result handler for bind operations
+function DivisibleSpaceController:handleBatchResult(resultSuccess, operationType, index, itemName)
+  if resultSuccess then
+    self:debugPrint(operationType .. " handler set for " .. (itemName or ("index " .. index)))
+    return true
+  else
+    self:debugPrint("WARNING: Failed to bind " .. operationType .. " handler for " .. (itemName or ("index " .. index)))
+    return false
   end
 end
 
@@ -1253,57 +1289,147 @@ function DivisibleSpaceController:registerEventHandlers()
       end
     end },
     { ctrls = controls.wallOpenButtons, handler = function(i, wallButton)
-      -- FIRST: Check if button is disabled and immediately revert if so
-      if wallButton.IsDisabled then
-        self:debugPrint("SAFETY BLOCK: Wall " .. i .. " button is disabled - operation blocked")
-        -- Force button back to its combiner state
-        if self.components.roomCombiner then
-          local wallControlName = "wall." .. i .. ".open"
-          local wallControl = self.components.roomCombiner[wallControlName]
-          if wallControl then
-            setProp(wallButton, "Boolean", wallControl.Boolean)
-          end
-        end
-        return
-      end
-      
       local wallPair = wallRoomPairs[i]
       if wallPair then
-        local room1, room2 = wallPair[1], wallPair[2]
         local uiState = wallButton.Boolean
         
-        -- SECOND: Check power states regardless of disabled status (double safety)
-        local room1On = self:isRoomPoweredOn(room1)
-        local room2On = self:isRoomPoweredOn(room2)
-        
-        if room1On or room2On then
-          -- Revert the button to previous state (opposite of current)
-          setProp(wallButton, "Boolean", not uiState)
-          self:debugPrint("SAFETY BLOCK: Wall " .. i .. " (" .. room1 .. "/" .. room2 .. ") operation blocked - " .. 
-                          room1 .. ":" .. (room1On and "ON" or "OFF") .. ", " .. 
-                          room2 .. ":" .. (room2On and "ON" or "OFF"))
+        -- Handle individual room separation buttons (13-20)
+        if i >= 13 and i <= 20 then
+          -- For individual room separation, we need to close all walls that connect this room to others
+          local targetRoom = wallPair[1] -- Single room in the pair for individual separation
           
-          -- Ensure button stays disabled
-          setProp(wallButton, "IsDisabled", true)
+          -- Safety check - don't allow separation if the target room is powered on
+          local isTargetRoomOn = self:isRoomPoweredOn(targetRoom)
+          if isTargetRoomOn then
+            setProp(wallButton, "Boolean", not uiState)
+            self:debugPrint("SAFETY BLOCK: Individual room separation " .. i .. " (" .. targetRoom .. ") blocked - room is powered ON")
+            return
+          end
+          
+          -- When separating a room (uiState = true), close all walls that connect this room to others
+          if uiState == true then
+            self:debugPrint("Individual room separation: Separating " .. targetRoom .. " from all others")
+            
+            -- Find and close all walls that connect this room to other rooms
+            local wallsClosed = 0
+            for wallIndex, otherWallPair in pairs(wallRoomPairs) do
+              -- Skip individual separation buttons and check if this wall connects to our target room
+              if wallIndex < 13 and tableContains(otherWallPair, targetRoom) then
+                -- Check if any room in this wall pair (other than target) is powered on
+                local hasOtherRoomOn = false
+                for _, roomName in ipairs(otherWallPair) do
+                  if roomName ~= targetRoom and self:isRoomPoweredOn(roomName) then
+                    hasOtherRoomOn = true
+                    break
+                  end
+                end
+                
+                -- Only close if no other rooms in this wall pair are powered on
+                if not hasOtherRoomOn then
+                  local otherWallButton = controls.wallOpenButtons[wallIndex]
+                  if otherWallButton then
+                    setProp(otherWallButton, "Boolean", false)
+                    -- Also update the room combiner control
+                    if self.components.roomCombiner then
+                      local otherWallControlName = "wall." .. wallIndex .. ".open"
+                      local otherWallControl = self.components.roomCombiner[otherWallControlName]
+                      if otherWallControl then
+                        setProp(otherWallControl, "Boolean", false)
+                      end
+                    end
+                    wallsClosed = wallsClosed + 1
+                    self:debugPrint("INDIVIDUAL SEPARATION: Wall " .. wallIndex .. " (" .. table.concat(otherWallPair, "/") .. ") closed to separate " .. targetRoom)
+                  end
+                else
+                  self:debugPrint("INDIVIDUAL SEPARATION SKIP: Wall " .. wallIndex .. " (" .. table.concat(otherWallPair, "/") .. ") remains open (other rooms powered on)")
+                end
+              end
+            end
+            
+            self:debugPrint("Individual room separation complete: " .. wallsClosed .. " walls closed to separate " .. targetRoom)
+            
+            -- Apply routing updates after separation
+            self:applyAudioRouting()
+            self:applyGainRouting()
+            if self.btnVisibilityModule then
+              self.btnVisibilityModule:updateAllRoomButtonVisibility()
+            end
+          end
+          
+          -- Update wall states and return (no room combiner wall control for individual separation)
+          if self.wallModule then self.wallModule:updateWallStates() end
           return
         end
         
-        -- If this wall is being opened (set to true), interlock other enabled walls
-        if uiState then
-          if self.wallModule then
-            self.wallModule:interlockWallButtons(i)
+        -- Original logic for buttons 1-12 (multi-room walls)
+        -- Safety check - don't allow wall operation if ANY room is powered on
+        local anyRoomOn = false
+        local roomStates = {}
+        
+        for _, roomName in ipairs(wallPair) do
+          local isRoomOn = self:isRoomPoweredOn(roomName)
+          table.insert(roomStates, roomName .. ":" .. (isRoomOn and "ON" or "OFF"))
+          if isRoomOn then
+            anyRoomOn = true
           end
         end
         
-        -- Update the actual wall control on compRoomCombiner
+        if anyRoomOn then
+          setProp(wallButton, "Boolean", not uiState)
+          self:debugPrint("SAFETY BLOCK: Wall " .. i .. " (" .. table.concat(wallPair, "/") .. ") operation blocked - [" .. table.concat(roomStates, ", ") .. "]")
+          return
+        end
+        
+        -- Interlocking: When pressing to true (opening a wall), close all other walls
+        -- that don't have rooms powered on (shouldDisable == false)
+        if uiState == true then
+          for wallIndex, otherWallPair in pairs(wallRoomPairs) do
+            if wallIndex ~= i and wallIndex < 13 then -- Only affect buttons 1-12
+              -- Check if other wall has any rooms powered on
+              local otherShouldDisable = false
+              for _, roomName in ipairs(otherWallPair) do
+                if self:isRoomPoweredOn(roomName) then
+                  otherShouldDisable = true
+                  break
+                end
+              end
+              
+              -- Only set to false if no rooms are powered on (safe to separate)
+              if not otherShouldDisable then
+                local otherWallButton = controls.wallOpenButtons[wallIndex]
+                if otherWallButton then
+                  setProp(otherWallButton, "Boolean", false)
+                  -- Also update the room combiner control
+                  if self.components.roomCombiner then
+                    local otherWallControlName = "wall." .. wallIndex .. ".open"
+                    local otherWallControl = self.components.roomCombiner[otherWallControlName]
+                    if otherWallControl then
+                      setProp(otherWallControl, "Boolean", false)
+                    end
+                  end
+                  self:debugPrint("INTERLOCK: Wall " .. wallIndex .. " (" .. table.concat(otherWallPair, "/") .. ") closed by interlock")
+                end
+              else
+                self:debugPrint("INTERLOCK SKIP: Wall " .. wallIndex .. " (" .. table.concat(otherWallPair, "/") .. ") remains open (rooms powered on)")
+              end
+            end
+          end
+        end
+        
+        -- Update the actual wall control on compRoomCombiner (only for buttons 1-12)
         if self.components.roomCombiner then
           local wallControlName = "wall." .. i .. ".open"
           local wallControl = self.components.roomCombiner[wallControlName]
           if wallControl then
             setProp(wallControl, "Boolean", uiState)
-            self:debugPrint("Wall " .. i .. " (" .. room1 .. "/" .. room2 .. ") control updated: " .. 
-                            wallControlName .. " = " .. tostring(uiState) .. 
-                            " (rooms " .. (uiState and "COMBINED" or "SEPARATED") .. ")")
+            self:debugPrint("Wall " .. i .. " (" .. table.concat(wallPair, "/") .. ") control updated: " .. wallControlName .. " = " .. tostring(uiState) .. " (rooms " .. (uiState and "COMBINED" or "SEPARATED") .. ")")
+            
+            -- Auto-disable individual room separation buttons when room becomes part of a combination
+            if uiState == true then -- Wall is being opened (rooms becoming combined)
+              self:disableIndividualSeparationButtons(wallPair)
+            end
+            -- Note: When wall is closed (uiState = false), individual separation buttons remain in their current state
+            -- They will be updated when the user explicitly presses them or when other combinations are made
           else
             self:debugPrint("ERROR: Wall control " .. wallControlName .. " not found on room combiner")
             setProp(wallButton, "Boolean", not uiState)
@@ -1311,6 +1437,31 @@ function DivisibleSpaceController:registerEventHandlers()
         else
           self:debugPrint("ERROR: No room combiner component available")
           setProp(wallButton, "Boolean", not uiState)
+        end
+        
+        -- Bidirectional interlock: Set corresponding individual separation buttons to false when specific walls trigger separation
+        -- This provides consistent UX symmetry between combining and separating operations
+        -- Multiple buttons can be affected by a single wall button press
+        local interlockMap = {
+          -- [wall_button_index] = {list of individual_separation_buttons_to_force_false}
+          [1] = {13, 14},   -- Wall 1: SalonD/E → affects SalonD and SalonE separation buttons
+          [6] = {15, 13},   -- Wall 6: SalonD/A/B/C → affects SalonA and SalonD separation buttons
+          [7] = {14},       -- Wall 7: SalonE/F/G/H → affects SalonE separation button
+          [8] = {15, 13, 14}, -- Wall 8: SalonD/E/A/B/C → affects all three separation buttons
+          [9] = {13, 14},   -- Wall 9: SalonD/E/F/G/H → affects SalonD and SalonE separation buttons
+          [10] = {15},      -- Wall 10: SalonA/B/C → affects SalonA separation button
+          [12] = {15, 13, 14} -- Wall 12: All Combined → affects all three separation buttons
+        }
+        
+        local targetButtons = interlockMap[i]
+        if targetButtons then
+          for _, targetButtonIndex in ipairs(targetButtons) do
+            local targetWallButton = controls.wallOpenButtons[targetButtonIndex]
+            if targetWallButton then
+              setProp(targetWallButton, "Boolean", false)
+              self:debugPrint("BIDIRECTIONAL INTERLOCK: Wall " .. i .. " pressed → Individual separation button " .. targetButtonIndex .. " set to false")
+            end
+          end
         end
       end
       if self.wallModule then self.wallModule:updateWallStates() end
@@ -1325,49 +1476,34 @@ function DivisibleSpaceController:registerEventHandlers()
   self:debugPrint("Event handlers setup complete using batch registration")
 end
 
-function DivisibleSpaceController:updateRoomComponent(name, roomIndex)
+-- Generic component update function (DRY refactor)
+-- Consolidates updateRoomComponent, updateAudioRouter, updateBTNRoomSelector
+function DivisibleSpaceController:updateComponent(name, roomIndex, componentType, nameArray, componentArray, debugLabel)
   if roomIndex < 1 or roomIndex > #roomNames then return end
-  local oldName = self.roomComponents[roomIndex]
-  self.roomComponents[roomIndex] = name
+  local oldName = nameArray[roomIndex]
+  nameArray[roomIndex] = name
   if name and name ~= "" then
-    self.components.roomControls[roomIndex] = Component.New(name)
+    componentArray[roomIndex] = Component.New(name)
   else
-    self.components.roomControls[roomIndex] = nil
+    componentArray[roomIndex] = nil
   end
   if oldName ~= name then
-    self:debugPrint("Room component " .. roomIndex .. " (" .. roomNames[roomIndex] .. ") updated: '" .. (oldName or "") .. "' -> '" .. (name or "") .. "'")
+    self:debugPrint(debugLabel .. " " .. roomIndex .. " (" .. roomNames[roomIndex] .. ") updated: '" .. (oldName or "") .. "' -> '" .. (name or "") .. "'")
     self:checkStatus()
   end
+end
+
+-- Convenience wrappers for backward compatibility and clarity
+function DivisibleSpaceController:updateRoomComponent(name, roomIndex)
+  self:updateComponent(name, roomIndex, "roomControls", self.roomComponents, self.components.roomControls, "Room component")
 end
 
 function DivisibleSpaceController:updateAudioRouter(name, roomIndex)
-  if roomIndex < 1 or roomIndex > #roomNames then return end
-  local oldName = self.audioRouters[roomIndex]
-  self.audioRouters[roomIndex] = name
-  if name and name ~= "" then
-    self.components.audioRouter[roomIndex] = Component.New(name)
-  else
-    self.components.audioRouter[roomIndex] = nil
-  end
-  if oldName ~= name then
-    self:debugPrint("Audio router " .. roomIndex .. " (" .. roomNames[roomIndex] .. ") updated: '" .. (oldName or "") .. "' -> '" .. (name or "") .. "'")
-    self:checkStatus()
-  end
+  self:updateComponent(name, roomIndex, "audioRouter", self.audioRouters, self.components.audioRouter, "Audio router")
 end
 
 function DivisibleSpaceController:updateBTNRoomSelector(name, roomIndex)
-  if roomIndex < 1 or roomIndex > #roomNames then return end
-  local oldName = self.btnRoomSelector[roomIndex]
-  self.btnRoomSelector[roomIndex] = name
-  if name and name ~= "" then
-    self.components.btnRoomSelector[roomIndex] = Component.New(name)
-  else
-    self.components.btnRoomSelector[roomIndex] = nil
-  end
-  if oldName ~= name then
-    self:debugPrint("RoomSelector buttons " .. roomIndex .. " (" .. roomNames[roomIndex] .. ") updated: '" .. (oldName or "") .. "' -> '" .. (name or "") .. "'")
-    self:checkStatus()
-  end
+  self:updateComponent(name, roomIndex, "btnRoomSelector", self.btnRoomSelector, self.components.btnRoomSelector, "RoomSelector buttons")
 end
 
 function DivisibleSpaceController:getComboIndex(comboName)
@@ -1394,13 +1530,31 @@ function DivisibleSpaceController:setRoomStates(comboIdx)
   -- Set wall states first
   if self.components.roomCombiner then
     for wallIndex, roomPair in pairs(wallRoomPairs) do
-      local shouldOpen = self:shouldWallBeOpenForCombo(roomPair, combo)
-      local wallControlName = "wall." .. wallIndex .. ".open"
-      local wallControl = self.components.roomCombiner[wallControlName]
-      if wallControl then
-        setProp(wallControl, "Boolean", shouldOpen)
-        self:debugPrint("Wall " .. wallIndex .. " (" .. roomPair[1] .. "/" .. roomPair[2] .. ") set to " .. (shouldOpen and "OPEN" or "CLOSED"))
+      if wallIndex <= 12 then -- Only process buttons 1-12 for room combiner walls
+        local shouldOpen = self:shouldWallBeOpenForCombo(roomPair, combo)
+        local wallControlName = "wall." .. wallIndex .. ".open"
+        local wallControl = self.components.roomCombiner[wallControlName]
+        if wallControl then
+          setProp(wallControl, "Boolean", shouldOpen)
+          self:debugPrint("Wall " .. wallIndex .. " (" .. roomPair[1] .. "/" .. roomPair[2] .. ") set to " .. (shouldOpen and "OPEN" or "CLOSED"))
+        end
       end
+    end
+    
+    -- Update UI wall buttons to match room combiner state
+    if self.wallModule then
+      self.wallModule:syncWallButtonStates()
+    end
+    
+    -- Disable individual separation buttons for rooms that are part of this combination
+    local combinedRooms = {}
+    for roomName, isActive in pairs(combo.activeRooms) do
+      if isActive then
+        table.insert(combinedRooms, roomName)
+      end
+    end
+    if #combinedRooms > 0 then
+      self:disableIndividualSeparationButtons(combinedRooms)
     end
   else
     self:debugPrint("SKIP: Wall states - no room combiner component")
@@ -1424,13 +1578,7 @@ function DivisibleSpaceController:setRoomStates(comboIdx)
     end
   end
  
-  self:debugPrint("Room states applied: " .. successfulRoomStates .. "/" .. #roomNames .. " successful")
-  if #roomStateErrors > 0 then
-    self:debugPrint("Room state errors: " .. #roomStateErrors)
-    for _, error in ipairs(roomStateErrors) do
-      self:debugPrint(" - " .. error)
-    end
-  end
+  self:printOperationResult("Room states", successfulRoomStates, #roomNames, roomStateErrors)
  
   -- Apply audio and gain routing
   self:applyAudioRouting()
@@ -1488,7 +1636,7 @@ function DivisibleSpaceController:applyAudioRouting()
  
   local routingErrors = {}
   local successfulRoutings = 0
- 
+
   -- Apply audio router inputs for each room
   for i, roomName in ipairs(roomNames) do
     local router = self.components.audioRouter[i]
@@ -1515,15 +1663,8 @@ function DivisibleSpaceController:applyAudioRouting()
       self:debugPrint("SKIP: " .. roomName .. " - no router or control")
     end
   end
- 
-  -- Summary
-  self:debugPrint("Audio routing complete: " .. successfulRoutings .. "/" .. #roomNames .. " successful")
-  if #routingErrors > 0 then
-    self:debugPrint("Routing errors: " .. #routingErrors)
-    for _, error in ipairs(routingErrors) do
-      self:debugPrint(" - " .. error)
-    end
-  end
+
+  self:printOperationResult("Audio routing", successfulRoutings, #roomNames, routingErrors)
 end
 
 function DivisibleSpaceController:applyGainRouting()
@@ -1552,7 +1693,7 @@ function DivisibleSpaceController:applyGainRouting()
  
   local routingErrors = {}
   local successfulRoutings = 0
- 
+
   -- Apply gain control strings for each room
   for i, roomName in ipairs(roomNames) do
     local roomComp = self.components.roomControls[i]
@@ -1581,15 +1722,8 @@ function DivisibleSpaceController:applyGainRouting()
       self:debugPrint("ERROR: " .. errorMsg)
     end
   end
- 
-  -- Summary
-  self:debugPrint("Gain routing complete: " .. successfulRoutings .. "/" .. #roomNames .. " successful")
-  if #routingErrors > 0 then
-    self:debugPrint("Routing errors: " .. #routingErrors)
-    for _, error in ipairs(routingErrors) do
-      self:debugPrint(" - " .. error)
-    end
-  end
+
+  self:printOperationResult("Gain routing", successfulRoutings, #roomNames, routingErrors)
 end
 
 function DivisibleSpaceController:getGainControlForRoom(roomName, roomGroups, combinationPriority)
@@ -1679,7 +1813,7 @@ function DivisibleSpaceController:getCurrentCombination()
   local configControl = self.components.roomCombiner["room.combiner.output.configuration"]
   if not configControl then
     self:debugPrint("No configuration control found on room combiner")
-    return roomCombinations[1] -- Default to "All Separated"
+    return roomCombinations[13] -- Default to "All Separated"
   end
  
   local configString = configControl.String or ""
@@ -1702,7 +1836,7 @@ function DivisibleSpaceController:parseCombinationFromConfig(configString)
  
   -- If no match found, default to "All Separated"
   self:debugPrint("No combination match found - defaulting to 'All Separated'")
-  return roomCombinations[1]
+  return roomCombinations[13]
 end
 
 function DivisibleSpaceController:configMatchesCombination(roomGroups, combination)
@@ -1720,7 +1854,7 @@ function DivisibleSpaceController:configMatchesCombination(roomGroups, combinati
   -- Check if the room groups match the active rooms
   if #roomGroups == 0 then
     -- No groups means all separated - check if combination is "All Separated"
-    return combination.id == 1
+    return combination.id == 13
   end
  
   -- For combinations with groups, check if the groups match
@@ -1758,6 +1892,46 @@ function DivisibleSpaceController:isRoomPoweredOn(roomName)
     end
   end
   return false
+end
+
+function DivisibleSpaceController:disableIndividualSeparationButtons(roomList)
+  self:debugPrint("Auto-disabling individual separation buttons for rooms: " .. table.concat(roomList, ", "))
+  
+  local buttonsDisabled = 0
+  local disableErrors = {}
+  
+  -- Map room names to their corresponding individual separation button indices
+  local roomToButtonMap = {
+    SalonD = 13, SalonE = 14, SalonA = 15, SalonB = 16,
+    SalonC = 17, SalonF = 18, SalonG = 19, SalonH = 20
+  }
+  
+  for _, roomName in ipairs(roomList) do
+    local buttonIndex = roomToButtonMap[roomName]
+    if buttonIndex then
+      local individualButton = controls.wallOpenButtons[buttonIndex]
+      if individualButton then
+        local currentState = individualButton.Boolean
+        if currentState == true then
+          setProp(individualButton, "Boolean", false)
+          buttonsDisabled = buttonsDisabled + 1
+          self:debugPrint("AUTO-DISABLE: Individual separation button " .. buttonIndex .. " (" .. roomName .. ") set to false")
+        else
+          self:debugPrint("SKIP: Individual separation button " .. buttonIndex .. " (" .. roomName .. ") already false")
+        end
+      else
+        local errorMsg = "Individual separation button " .. buttonIndex .. " (" .. roomName .. ") not found"
+        table.insert(disableErrors, errorMsg)
+        self:debugPrint("ERROR: " .. errorMsg)
+      end
+    else
+      local errorMsg = "No individual separation button mapping for room: " .. roomName
+      table.insert(disableErrors, errorMsg)
+      self:debugPrint("ERROR: " .. errorMsg)
+    end
+  end
+  
+  self:printOperationResult("Individual separation button auto-disable", buttonsDisabled, #roomList, disableErrors)
 end
 
 function DivisibleSpaceController:checkStatus()
@@ -1943,19 +2117,15 @@ local function createDivisibleSpaceController(roomName, debugging)
   -- Controller creation with detailed error context
   local success, controller = pcall(function()
     print("Initializing DivisibleSpaceController for " .. roomName .. " (debugging: " .. tostring(debugging) .. ")")
-    
     -- Step 1: Validate controls
     if not validateControls() then
       error("Control validation failed - missing required controls")
     end
-    
     -- Step 2: Normalize control arrays
     normalizeControlArrays()
-    
     -- Step 3: Create controller object
     local object = DivisibleSpaceController.new(roomName, debugging)
     if not object then error("Controller constructor returned nil") end
-    
     -- Step 4: Initialize the controller
     object:init()
     
@@ -1973,7 +2143,6 @@ local function createDivisibleSpaceController(roomName, debugging)
     print("✗ ERROR: DivisibleSpaceController creation failed")
     print("  Room: " .. roomName .. " (debugging: " .. tostring(debugging) .. ")")
     print("  Error: " .. errorMsg)
-    
     -- Provide graceful degradation guidance
     if errorMsg:find("Control validation failed") then
       print("  Suggestion: Check that all required UI controls are properly named and connected")
@@ -1982,7 +2151,6 @@ local function createDivisibleSpaceController(roomName, debugging)
     else
       print("  Suggestion: Review script configuration and control mappings")
     end
-    
     -- Graceful degradation - set status if available
     if controls and controls.txtStatus then
       controls.txtStatus.String = "INIT FAILED"

@@ -85,6 +85,7 @@ local controls = {
     pinLEDIsVisibleBtn06       = Controls.pinLEDIsVisibleBtn06,
     pinLEDIsVisibleBtn07       = Controls.pinLEDIsVisibleBtn07,
     pinLEDIsVisibleBtn08       = Controls.pinLEDIsVisibleBtn08,
+    pinLEDTouchActivity       = Controls.pinLEDTouchActivity,
     
 }
 
@@ -102,7 +103,8 @@ local function validateControls()
         "btnOpenHelpLaptop", "btnOpenHelpPC", "btnOpenHelpWireless", "btnOpenHelpRouting","btnOpenHelpStreamMusic",
         "btnCloseHelpLaptop", "btnCloseHelpPC", "btnCloseHelpWireless", "btnCloseHelpRouting", "btnCloseHelpStreamMusic",
         "btnRouting01", "btnRouting02", "btnRouting03", "btnRouting04", "btnRouting05", "btnRouting06", "btnRouting07", "btnRouting08",
-        "txtRouting01", "txtRouting02", "txtRouting03", "txtRouting04", "txtRouting05", "txtRouting06", "txtRouting07", "txtRouting08"
+        "txtRouting01", "txtRouting02", "txtRouting03", "txtRouting04", "txtRouting05", "txtRouting06", "txtRouting07", "txtRouting08",
+        "pinLEDTouchActivity"
     }
     
     local missing = {}
@@ -439,7 +441,8 @@ function LayerModule:showLayer()
         [self.controller.kLayerRoomCombining] = {
             showLayers = {"H01-RoomCombining"},
             callLayerFunctions = {
-                function() self.controller.sublayerModule:updateCallActiveState() end
+                function() self.controller.sublayerModule:updateCallActiveState() end,
+                function() self.controller:resetTouchInactivityTimer() end
             }
         }
     }
@@ -794,6 +797,7 @@ function RoomAutomationModule.new(controller)
     local self = BaseModule.new(controller, "RoomAutomation")
     setmetatable(self, RoomAutomationModule)
     self.roomControlsComponent = nil
+    self.previousPowerState = nil
     return self
 end
 
@@ -822,6 +826,13 @@ function RoomAutomationModule:initializeComponent()
     if success and component then
         self.roomControlsComponent = component
         self:debug("Room Controls Component referenced: " .. componentName)
+        
+        -- Initialize previous state
+        if self.roomControlsComponent["btnSystemOnOff"] then
+            self.previousPowerState = self.roomControlsComponent["btnSystemOnOff"].Boolean
+            self:debug("Initial power state: " .. tostring(self.previousPowerState))
+        end
+        
         return true
     else
         self:debug("Room Controls Component not found: " .. componentName)
@@ -830,89 +841,43 @@ function RoomAutomationModule:initializeComponent()
 end
 
 function RoomAutomationModule:powerOn()
-    local success = false
-    
-    -- Method 1: Component Reference
-    if self.roomControlsComponent and self.roomControlsComponent["btnSystemOnOff"] then
-        local ok, result = pcall(function()
-            self.roomControlsComponent["btnSystemOnOff"].Boolean = true
-            return self.roomControlsComponent["btnSystemOnOff"].Boolean
-        end)
-        if ok and result then
-            self:debug("Room powered ON via component")
-            success = true
-        end
+    if not self.roomControlsComponent or not self.roomControlsComponent["btnSystemOnOff"] then
+        self:debug("Cannot power on: Room Controls component not available")
+        return false
     end
     
-    -- Method 2: Direct Control
-    if not success and controls.btnSystemOnOff then
-        local ok, result = pcall(function()
-            controls.btnSystemOnOff.Boolean = true
-            return controls.btnSystemOnOff.Boolean
-        end)
-        if ok and result then
-            self:debug("Room powered ON via direct control")
-            success = true
-        end
-    end
+    local ok, result = pcall(function()
+        self.roomControlsComponent["btnSystemOnOff"].Boolean = true
+        return self.roomControlsComponent["btnSystemOnOff"].Boolean
+    end)
     
-    -- Method 3: Global Controller
-    if not success and mySystemController and mySystemController.powerModule then
-        local ok = pcall(function() mySystemController.powerModule:powerOn() end)
-        if ok then
-            self:debug("Room powered ON via global controller")
-            success = true
-        end
-    end
-    
-    if not success then
+    if ok and result then
+        self:debug("Room powered ON")
+        return true
+    else
         self:debug("Failed to power on room automation")
+        return false
     end
-    
-    return success
 end
 
 function RoomAutomationModule:powerOff()
-    local success = false
-    
-    -- Method 1: Component Reference
-    if self.roomControlsComponent and self.roomControlsComponent["btnSystemOnOff"] then
-        local ok, result = pcall(function()
-            self.roomControlsComponent["btnSystemOnOff"].Boolean = false
-            return not self.roomControlsComponent["btnSystemOnOff"].Boolean
-        end)
-        if ok and result then
-            self:debug("Room powered OFF via component")
-            success = true
-        end
+    if not self.roomControlsComponent or not self.roomControlsComponent["btnSystemOnOff"] then
+        self:debug("Cannot power off: Room Controls component not available")
+        return false
     end
     
-    -- Method 2: Direct Control
-    if not success and controls.btnSystemOnOff then
-        local ok, result = pcall(function()
-            controls.btnSystemOnOff.Boolean = false
-            return not controls.btnSystemOnOff.Boolean
-        end)
-        if ok and result then
-            self:debug("Room powered OFF via direct control")
-            success = true
-        end
-    end
+    local ok, result = pcall(function()
+        self.roomControlsComponent["btnSystemOnOff"].Boolean = false
+        return not self.roomControlsComponent["btnSystemOnOff"].Boolean
+    end)
     
-    -- Method 3: Global Controller
-    if not success and mySystemController and mySystemController.powerModule then
-        local ok = pcall(function() mySystemController.powerModule:powerOff() end)
-        if ok then
-            self:debug("Room powered OFF via global controller")
-            success = true
-        end
-    end
-    
-    if not success then
+    if ok and result then
+        self:debug("Room powered OFF")
+        return true
+    else
         self:debug("Failed to power off room automation")
+        return false
     end
-    
-    return success
 end
 
 function RoomAutomationModule:getTiming(isPoweringOn)
@@ -938,6 +903,36 @@ function RoomAutomationModule:getTiming(isPoweringOn)
     
     self:debug("Using UCI timing: " .. duration .. " seconds")
     return duration
+end
+
+function RoomAutomationModule:syncRoomControlsState()
+    -- Guard clause: ensure component is available
+    if not self.roomControlsComponent or not self.roomControlsComponent["btnSystemOnOff"] then
+        return
+    end
+    
+    local currentState = self.roomControlsComponent["btnSystemOnOff"].Boolean
+    
+    -- Only react to state changes
+    if currentState == self.previousPowerState then
+        return
+    end
+    
+    self:debug("Power state changed: " .. tostring(self.previousPowerState) .. " -> " .. tostring(currentState))
+    self.previousPowerState = currentState
+    
+    -- Update UCI based on new state (without triggering automation logic)
+    if currentState then
+        -- System is powering on
+        self.controller.progressModule:startLoadingBar(true)
+        self.controller:btnNavEventHandler(self.controller.kLayerWarming)
+        self:debug("Synchronized to WARMING state")
+    else
+        -- System is powering off
+        self.controller.progressModule:startLoadingBar(false)
+        self.controller:btnNavEventHandler(self.controller.kLayerCooling)
+        self:debug("Synchronized to COOLING state")
+    end
 end
 
 -------------------[ Progress Module ]---------------------
@@ -1066,6 +1061,12 @@ function UCIController.new(uciPage, defaultRoutingLayer, defaultActiveLayer, hid
     self.roomAutomationModule   = RoomAutomationModule.new(self)
     self.progressModule         = ProgressModule.new(self)
     
+    -- Sync timer for monitoring Room Controls state
+    self.syncTimer              = nil
+    
+    -- Touch inactivity timer for H01-RoomCombining layer
+    self.uciTouchInactivityTimer = Timer.New()
+    
     -- Setup routing
     if defaultRoutingLayer then
         self.routingModule.activeRoutingLayer = defaultRoutingLayer
@@ -1081,6 +1082,26 @@ end
 function UCIController:debug(msg)
     if self.debugging then
         print("[" .. self.uciPage .. "] " .. msg)
+    end
+end
+
+-------------------[ Touch Inactivity Handler ]------------
+function UCIController:onRoomCombiningInactivity()
+    if self.layerModule and self.layerModule.layerStates["H01-RoomCombining"] then
+        self:debug("Touch inactivity timeout - hiding H01-RoomCombining, showing C05-Start")
+        self.layerModule:updateLayerVisibility({"H01-RoomCombining"}, false, "fade")
+        self.layerModule:updateLayerVisibility({"C05-Start"}, true, "fade")
+        self.varActiveLayer = self.kLayerStart
+        self:interlock()
+    end
+end
+
+function UCIController:resetTouchInactivityTimer()
+    if self.layerModule and self.layerModule.layerStates["H01-RoomCombining"] then
+        self.uciTouchInactivityTimer:Stop()
+        self.uciTouchInactivityTimer.EventHandler = function() self:onRoomCombiningInactivity() end
+        self.uciTouchInactivityTimer:Start(10)
+        self:debug("Touch inactivity timer reset (10s)")
     end
 end
 
@@ -1180,7 +1201,10 @@ function UCIController:registerEventHandlers()
         [controls.pinLEDIsVisibleBtn05] = function(ctl) self:updateRoutingControlVisibility(5, ctl.Boolean) end,
         [controls.pinLEDIsVisibleBtn06] = function(ctl) self:updateRoutingControlVisibility(6, ctl.Boolean) end,
         [controls.pinLEDIsVisibleBtn07] = function(ctl) self:updateRoutingControlVisibility(7, ctl.Boolean) end,
-        [controls.pinLEDIsVisibleBtn08] = function(ctl) self:updateRoutingControlVisibility(8, ctl.Boolean) end
+        [controls.pinLEDIsVisibleBtn08] = function(ctl) self:updateRoutingControlVisibility(8, ctl.Boolean) end,
+        
+        -- Touch Activity Monitor for H01-RoomCombining inactivity
+        [controls.pinLEDTouchActivity] = function(ctl) self:resetTouchInactivityTimer() end
     }
     
     -- Batch register all handler maps
@@ -1204,7 +1228,7 @@ function UCIController:startSystem()
 end
 
 function UCIController:shutdownSystem()
-    self.layerModule:updateLayerVisibility({"D01-ShutdownConfirm"}, true, "fade")
+    self.layerModule:updateLayerVisibility({"D01-ShutdownConfirm"}, false, "fade")
     self.roomAutomationModule:powerOff()
     self.progressModule:startLoadingBar(false)
     self.varActiveLayer = self.kLayerCooling
@@ -1426,12 +1450,50 @@ function UCIController:init()
     self.layerModule:showLayer()
     self:interlock()
     self:updateLegends()
+    
+    -- Start synchronization timer if Room Controls component is available
+    self:startSyncTimer()
+    
     self:debug("UCI Initialized for " .. self.uciPage)
     self.isInitialized = true
 end
 
+function UCIController:startSyncTimer()
+    if not self.roomAutomationModule.roomControlsComponent then
+        self:debug("Room Controls sync disabled (component not available)")
+        return
+    end
+    
+    -- Create and start periodic sync timer (every 1 second)
+    self.syncTimer = Timer.New()
+    self.syncTimer.EventHandler = function()
+        self.roomAutomationModule:syncRoomControlsState()
+        self.syncTimer:Start(1) -- Check every second
+    end
+    self.syncTimer:Start(1)
+    
+    self:debug("Room Controls state synchronization enabled (1s interval)")
+end
+
+function UCIController:stopSyncTimer()
+    if self.syncTimer then
+        self.syncTimer:Stop()
+        self.syncTimer = nil
+        self:debug("Room Controls sync timer stopped")
+    end
+end
+
 -------------------[ Cleanup ]------------------------------
 function UCIController:cleanup()
+    -- Stop sync timer
+    self:stopSyncTimer()
+    
+    -- Stop touch inactivity timer
+    if self.uciTouchInactivityTimer then
+        self.uciTouchInactivityTimer:Stop()
+        self:debug("Touch inactivity timer stopped")
+    end
+    
     -- Cleanup all modules
     local modules = {
         self.layerModule, self.sublayerModule, self.routingModule,
@@ -1533,17 +1595,7 @@ myUCI = createUCIController(
 
 if myUCI then
     print("UCIController created successfully!")
-    
-    -- Optional Room Automation sync timer
-    if mySystemController then
-        local syncTimer = Timer.New()
-        syncTimer.EventHandler = function()
-            -- Periodic sync logic here if needed
-            syncTimer:Start(5)
-        end
-        syncTimer:Start(5)
-        print("Room Automation sync enabled")
-    end
+    print("Event-driven Room Controls synchronization is active")
 else
     print("ERROR: UCIController NOT created.")
 end
@@ -1553,8 +1605,27 @@ end
 Public API:
     myUCI:btnNavEventHandler(layerIndex)
     myUCI:cleanup()
+    myUCI:startSyncTimer()
+    myUCI:stopSyncTimer()
     myUCI.videoSwitcherModule:switchToInput(inputNumber, uciButton)
     myUCI.roomAutomationModule:powerOn()
     myUCI.roomAutomationModule:powerOff()
+    myUCI.roomAutomationModule:syncRoomControlsState()
     myUCI.progressModule:startLoadingBar(isPoweringOn)
+
+UCI Variables (Component Discovery):
+    - compRoomControls: Name of System Automation Controller component
+    
+Touch Inactivity Feature:
+    - Monitors touch activity on H01-RoomCombining layer via pinLEDTouchActivity control
+    - After 10 seconds of no touch activity, automatically returns to C05-Start layer
+    - Uses standard pinLED pattern for consistency with existing architecture
+    - Registered in pinHandlerMap for centralized event management
+    - Optional control - gracefully degrades if not present
+
+Event-Driven Synchronization:
+    - Automatic monitoring of SystemAutomationController btnSystemOnOff state (1s interval)
+    - Updates UCI layers and progress bar when power state changes externally
+    - Prevents double-triggering of automation logic
+    - Can be manually invoked via myUCI.roomAutomationModule:syncRoomControlsState()
 ]]
