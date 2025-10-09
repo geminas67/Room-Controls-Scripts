@@ -80,7 +80,7 @@ local function validateControls()
             table.insert(missing, name) 
         end
     end
-    
+
     if #missing > 0 then
         print("ERROR: SystemAutomationController missing required controls:")
         for _, name in ipairs(missing) do
@@ -89,7 +89,7 @@ local function validateControls()
         print("Controller initialization aborted.")
         return false
     end
-    
+
     return true
 end
 
@@ -313,15 +313,15 @@ function DisplayModule.new(controller)
 end
 
 function DisplayModule:powerAll(state)
-    local trig = state and "PowerOnTrigger" or "PowerOffTrigger"
+    local control = state and "PowerOn" or "PowerOff"
     for _, display in pairs(self.controller.components.displays) do
-        if display then self.controller:safeComponentAccess(display, trig, "trigger") end
+        if display then self.controller:safeComponentAccess(display, control, "trigger") end
     end
 end
 
 function DisplayModule:powerSingle(idx, state)
     local display = self.controller:getDisplayComponent(idx)
-    if display then self.controller:safeComponentAccess(display, state and "PowerOnTrigger" or "PowerOffTrigger", "trigger") end
+    if display then self.controller:safeComponentAccess(display, state and "PowerOn" or "PowerOff", "trigger") end
 end
 
 -------------------[ Power Module ]------------------------
@@ -358,7 +358,7 @@ function PowerModule:powerOn()
     self.controller:applyVolumeDefaults()
     self.controller.audioModule:setMute(false)
     self.controller.audioModule:setPrivacy(true)
-    self.controller.videoModule:setPrivacy(false, 1)
+    --self.controller.videoModule:setPrivacy(false, 1) -- setPrivacy for Video during Startup, this is handled on Hook State since the room uses ACPR
     self.controller.displayModule:powerAll(true)
     self.controller:publishNotification()
 end
@@ -426,7 +426,7 @@ SystemAutomationController.__index = SystemAutomationController
 SystemAutomationController.clearString = "[Clear]"
 SystemAutomationController.componentTypes = {
     callSync    = "call_sync", videoBridge = "usb_uvc",
-    displays    = "%PLUGIN%_78a74df3-40bf-447b-a714-f564ebae238a_%FP%_bec481a6666b76b5249bbd12046c3920",
+    displays    = "%PLUGIN%_404F4311-A38D-4891-AF61-709B8F48A6E1_%FP%_77008e895ac50ad1242e3dee981c5e4a",
     gains       = "gain", systemMute = "system_mute",
     camACPR     = "%PLUGIN%_648260e3-c166-4b00-98ba-ba16ksnza4a63b0_%FP%_a4d2263b4380c424e16eebb67084f355"
 }
@@ -457,7 +457,7 @@ function SystemAutomationController:debugPrint(str)
     if self.debugging then print("["..self.roomName.." Debug] "..str) end
 end
 
--------------------[ Component Utility Helpers ]-------------------
+------------------[ Component Utility Helpers ]---------------------
 function SystemAutomationController:getGainComponent(idx) return self.components.gains[idx] end
 function SystemAutomationController:getDisplayComponent(idx) return self.components.displays[idx] end
 function SystemAutomationController:getGainType(idx)
@@ -777,7 +777,14 @@ end
 
 function SystemAutomationController:setDisplayComponent(idx)
     self:setComponentByType(controls.devDisplays, "Display", 
-        { key = "displays", index = idx })
+        { key = "displays", index = idx }, {
+        ["PowerIsOn"] = function(ctrl, i) 
+            ctrl:debugPrint("Display [" .. i .. "] powered ON")
+        end,
+        ["PowerIsOff"] = function(ctrl, i) 
+            ctrl:debugPrint("Display [" .. i .. "] powered OFF")
+        end
+    })
 end
 
 function SystemAutomationController:getVideoBridgePrivacy(idx)
@@ -824,11 +831,11 @@ function SystemAutomationController:callSyncCheckConnection()
         end 
         self:videoBridgeCheckPrivacy(1)
     end    
-    if self.components.camACPR then
+    if self.components.camACPR and self.components.camACPR["TrackingBypass"] then
+        -- Set IsDisabled FIRST, before setting the Boolean value
+        self.components.camACPR["TrackingBypass"].IsDisabled = not state
+        -- Now set the Boolean value - this triggers the event handler which will set the Legend
         self:safeComponentAccess(self.components.camACPR, "TrackingBypass", "set", not state)
-        if self.components.camACPR["TrackingBypass"] then
-            self.components.camACPR["TrackingBypass"].IsDisabled = not state
-        end
     end
 end
 
@@ -864,6 +871,15 @@ function SystemAutomationController:updateACPRTrackingBypass()
     if not camACPR then return end
     local state = self:safeComponentAccess(camACPR, "TrackingBypass", "get")
     self:debugPrint("ACPR Tracking Bypass: "..tostring(state))
+    
+    -- Update Legend based on IsDisabled state
+    if camACPR["TrackingBypass"] then
+        if camACPR["TrackingBypass"].IsDisabled then
+            camACPR["TrackingBypass"].Legend = "Disabled"
+        else
+            camACPR["TrackingBypass"].Legend = state and "Off" or "Auto"
+        end
+    end
 end
 
 function SystemAutomationController:endCalls()
@@ -1016,9 +1032,9 @@ function SystemAutomationController:setGainTypeAssignments(roomType)
     
     local gainTypeAssignments = {
         ["Conference Room"] = { "Program", "Mic", "Mic", "Mic", "Mic", "Mic", "Mic", "Mic", "Gain", "Gain", "Gain", "Gain" },
-        ["Huddle Room"] = { "Program", "Mic", "Mic", "Gain", "Gain" },
+        ["Huddle Room"] = { "Program", "Gain", "Gain", "Gain", "Mic", "Mic", "Mic" },
         ["Custom Room"] = { "Program", "Mic", "Mic", "Mic", "Gain", "Gain", "Gain", "Gain", "Gain" },
-        ["Default"] = { "Program", "Mic", "Mic", "Mic", "Mic", "Gain", "Gain", "Gain" }
+        ["Default"] = { "Program", "Gain", "Gain", "Gain", "Mic", "Mic", "Mic", "Mic" }
     }
     
     local assignments = gainTypeAssignments[roomType] or gainTypeAssignments["Default"]
@@ -1084,7 +1100,7 @@ function SystemAutomationController:cleanup()
     self:debugPrint("Cleanup completed for " .. self.roomName)
 end
 
-----------------[ Application Boot / Setup ]--------------------------
+------------------[ Application Boot / Setup ]------------------
 
 -- Factory function for default configurations
 local function getDefaultConfig(roomType)

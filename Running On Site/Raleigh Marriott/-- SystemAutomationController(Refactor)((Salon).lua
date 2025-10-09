@@ -289,8 +289,6 @@ function VideoModule:setPrivacy(state, idx)
     else
         for i, videoBridge in pairs(self.controller.components.videoBridge) do if videoBridge then apply(i, videoBridge) end end
     end
-    local camACPR = self.controller.components.camACPR
-    if camACPR then self.controller:safeComponentAccess(camACPR, "TrackingBypass", "set", state) end
     self.controller:publishNotification()
 end
 
@@ -313,12 +311,14 @@ function DisplayModule.new(controller)
     setmetatable(self, DisplayModule)
     return self
 end
+
 function DisplayModule:powerAll(state)
     local trig = state and "PowerOnTrigger" or "PowerOffTrigger"
     for _, display in pairs(self.controller.components.displays) do
         if display then self.controller:safeComponentAccess(display, trig, "trigger") end
     end
 end
+
 function DisplayModule:powerSingle(idx, state)
     local display = self.controller:getDisplayComponent(idx)
     if display then self.controller:safeComponentAccess(display, state and "PowerOnTrigger" or "PowerOffTrigger", "trigger") end
@@ -771,11 +771,7 @@ function SystemAutomationController:setCamACPRComponent()
     self:setComponentByType(controls.compACPR, "Camera ACPR", "camACPR", {
         ["TrackingBypass"] = function(ctrl) ctrl:updateACPRTrackingBypass() end
     }, function(ctrl, comp)
-        if ctrl.components.callSync then
-            local callState = ctrl:safeComponentAccess(ctrl.components.callSync, "off.hook", "get")
-            comp["TrackingBypass"].IsDisabled = not callState
-        end
-        comp["TrackingBypass"].Legend = " "
+        ctrl:callSyncCheckConnection()
     end)
 end
 
