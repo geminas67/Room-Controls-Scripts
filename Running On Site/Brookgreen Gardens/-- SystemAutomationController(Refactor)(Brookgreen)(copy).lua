@@ -80,6 +80,7 @@ local function validateControls()
             table.insert(missing, name) 
         end
     end
+
     if #missing > 0 then
         print("ERROR: SystemAutomationController missing required controls:")
         for _, name in ipairs(missing) do
@@ -88,6 +89,7 @@ local function validateControls()
         print("Controller initialization aborted.")
         return false
     end
+
     return true
 end
 
@@ -262,12 +264,7 @@ function AudioModule:updateVolumeVisuals(i)
     -- Cache current state to avoid redundant property access
     local isMuted = mute.Boolean
     local gainType = self.controller:getGainType(i)
-    
-    if gainType == "Mic" then
-        setProp(mute, "CssClass", isMuted and "icon-mic_none" or "icon-mic_off")
-    else
-        setProp(mute, "CssClass", isMuted and "icon-volume_mute" or "icon-volume_off")
-    end
+    setProp(mute, "CssClass", isMuted and (gainType == "Mic" and "icon-mic_none" or "icon-volume_mute") or (gainType == "Mic" and "icon-mic_off" or "icon-volume_off"))
     setProp(fader, "Color", isMuted and "#CCCCCC" or "#0561A5")
 end
 
@@ -292,8 +289,6 @@ function VideoModule:setPrivacy(state, idx)
     else
         for i, videoBridge in pairs(self.controller.components.videoBridge) do if videoBridge then apply(i, videoBridge) end end
     end
-    local camACPR = self.controller.components.camACPR
-    if camACPR then self.controller:safeComponentAccess(camACPR, "TrackingBypass", "set", state) end
     self.controller:publishNotification()
 end
 
@@ -430,11 +425,9 @@ local SystemAutomationController = {}
 SystemAutomationController.__index = SystemAutomationController
 SystemAutomationController.clearString = "[Clear]"
 SystemAutomationController.componentTypes = {
-    callSync    = "call_sync", 
-    videoBridge = "usb_uvc",
+    callSync    = "call_sync", videoBridge = "usb_uvc",
     displays    = "%PLUGIN%_404F4311-A38D-4891-AF61-709B8F48A6E1_%FP%_77008e895ac50ad1242e3dee981c5e4a",
-    gains       = "gain", 
-    systemMute = "system_mute",
+    gains       = "gain", systemMute = "system_mute",
     camACPR     = "%PLUGIN%_648260e3-c166-4b00-98ba-ba16ksnza4a63b0_%FP%_a4d2263b4380c424e16eebb67084f355"
 }
 function SystemAutomationController.new(roomName, config, defaultConfigs)
@@ -473,6 +466,7 @@ function SystemAutomationController:getGainType(idx)
     return "Mic"
 end
 
+------------------[ Component Access Helper ]---------------------
 function SystemAutomationController:safeComponentAccess(component, control, action, value)
     if not component or not component[control] then return false end
     local success, result = pcall(function()
@@ -777,11 +771,7 @@ function SystemAutomationController:setCamACPRComponent()
     self:setComponentByType(controls.compACPR, "Camera ACPR", "camACPR", {
         ["TrackingBypass"] = function(ctrl) ctrl:updateACPRTrackingBypass() end
     }, function(ctrl, comp)
-        if ctrl.components.callSync then
-            local callState = ctrl:safeComponentAccess(ctrl.components.callSync, "off.hook", "get")
-            comp["TrackingBypass"].IsDisabled = not callState
-        end
-        comp["TrackingBypass"].Legend = " "
+        ctrl:callSyncCheckConnection()
     end)
 end
 

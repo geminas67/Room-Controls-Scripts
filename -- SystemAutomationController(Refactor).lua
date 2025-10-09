@@ -277,6 +277,7 @@ function VideoModule.new(controller)
     setmetatable(self, VideoModule)
     return self
 end
+
 function VideoModule:setPrivacy(state, idx)
     local apply = function(i, videoBridge)
         self.controller:safeComponentAccess(videoBridge, "toggle.privacy", "set", state)
@@ -288,10 +289,9 @@ function VideoModule:setPrivacy(state, idx)
     else
         for i, videoBridge in pairs(self.controller.components.videoBridge) do if videoBridge then apply(i, videoBridge) end end
     end
-    local camACPR = self.controller.components.camACPR
-    if camACPR then self.controller:safeComponentAccess(camACPR, "TrackingBypass", "set", state) end
     self.controller:publishNotification()
 end
+
 function VideoModule:getPrivacyState(idx)
     idx = idx or 1
     local videoBridge = self.controller.components.videoBridge[idx]
@@ -771,11 +771,7 @@ function SystemAutomationController:setCamACPRComponent()
     self:setComponentByType(controls.compACPR, "Camera ACPR", "camACPR", {
         ["TrackingBypass"] = function(ctrl) ctrl:updateACPRTrackingBypass() end
     }, function(ctrl, comp)
-        if ctrl.components.callSync then
-            local callState = ctrl:safeComponentAccess(ctrl.components.callSync, "off.hook", "get")
-            comp["TrackingBypass"].IsDisabled = not callState
-        end
-        comp["TrackingBypass"].Legend = " "
+        ctrl:callSyncCheckConnection()
     end)
 end
 

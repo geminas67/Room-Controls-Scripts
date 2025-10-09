@@ -113,6 +113,12 @@ local function bindArray(ctrls, handler)
     end
 end
 
+local function setButtonLegend(ctrl, legend)
+    if ctrl and ctrl.Legend ~= legend then
+        ctrl.Legend = legend
+    end
+end
+
 -------------------[ State Management Utility ]-------------------
 local function resetComponentsArray()
     local componentState = {
@@ -490,6 +496,7 @@ function PlanarDisplayWallController:initPowerModule()
             selfRef:debugPrint("Powering on display " .. index)
             selfRef.displayModule.powerSingle(index, true)
             selfRef.powerModule.enableDisablePowerControlIndex(index, false)
+            selfRef.powerModule.setOppositePowerButtonLegend(index, true)
             selfRef.state.isWarming = true
             setProp(controls.ledDisplayWarming, "Boolean", true)
             selfRef.timers.warmup:Start(selfRef:getTimerConfig(true))
@@ -500,6 +507,7 @@ function PlanarDisplayWallController:initPowerModule()
             selfRef:debugPrint("Powering off display " .. index)
             selfRef.displayModule.powerSingle(index, false)
             selfRef.powerModule.enableDisablePowerControlIndex(index, false)
+            selfRef.powerModule.setOppositePowerButtonLegend(index, false)
             selfRef.state.isCooling = true
             setProp(controls.ledDisplayCooling, "Boolean", true)
             selfRef.timers.cooldown:Start(selfRef:getTimerConfig(false))
@@ -533,6 +541,26 @@ function PlanarDisplayWallController:initPowerModule()
                 if ctrl and ctrl[index] then
                     setProp(ctrl[index], "IsDisabled", not state)
                 end
+            end
+        end,
+        
+        setOppositePowerButtonLegend = function(index, poweringOn)
+            -- Set the opposite button's legend to "Please\nwait"
+            -- If powering ON, set the Power OFF button legend
+            -- If powering OFF, set the Power ON button legend
+            local targetControl = poweringOn and controls.btnDisplayPowerOff or controls.btnDisplayPowerOn
+            if targetControl and targetControl[index] then
+                setButtonLegend(targetControl[index], "Please\nwait")
+            end
+        end,
+        
+        resetPowerButtonLegends = function(index)
+            -- Reset both button legends to empty when re-enabled
+            if controls.btnDisplayPowerOn and controls.btnDisplayPowerOn[index] then
+                setButtonLegend(controls.btnDisplayPowerOn[index], "On")
+            end
+            if controls.btnDisplayPowerOff and controls.btnDisplayPowerOff[index] then
+                setButtonLegend(controls.btnDisplayPowerOff[index], "Off")
             end
         end
     }
@@ -739,6 +767,7 @@ function PlanarDisplayWallController:registerTimerHandlers()
         self.powerModule.enableDisablePowerControls(true)
         for i = 1, self.config.maxDisplays do
             self.powerModule.enableDisablePowerControlIndex(i, true)
+            self.powerModule.resetPowerButtonLegends(i)
         end
         self.state.isWarming = false
         setProp(controls.ledDisplayWarming, "Boolean", false)
@@ -750,6 +779,7 @@ function PlanarDisplayWallController:registerTimerHandlers()
         self.powerModule.enableDisablePowerControls(true)
         for i = 1, self.config.maxDisplays do
             self.powerModule.enableDisablePowerControlIndex(i, true)
+            self.powerModule.resetPowerButtonLegends(i)
         end
         self.state.isCooling = false
         setProp(controls.ledDisplayCooling, "Boolean", false)

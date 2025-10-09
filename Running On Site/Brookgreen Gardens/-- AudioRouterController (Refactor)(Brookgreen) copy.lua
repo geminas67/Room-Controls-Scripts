@@ -255,6 +255,19 @@ end
 function AudioRouterController:setupDefaultInputChoices()
     -- Create choices array from inputs table
     local inputChoices = {}
+    
+    -- Build mapping table: choice text -> input number
+    self.inputChoiceMap = {
+        ["Sonos 1"] = 1,
+        ["Sonos 2"] = 2,
+        ["Sonos 3"] = 3,
+        ["Rack plate"] = 4,
+        ["Great Hall"] = 5,
+        ["No Source"] = 6,
+        ["MPR"] = 7
+    }
+    
+    -- Build choices array in order
     local inputLabels = {
         [1] = "Sonos 1",
         [2] = "Sonos 2", 
@@ -265,7 +278,6 @@ function AudioRouterController:setupDefaultInputChoices()
         [7] = "MPR"
     }
     
-    -- Build choices array in order
     for i = 1, 7 do
         table.insert(inputChoices, inputLabels[i])
     end
@@ -273,9 +285,9 @@ function AudioRouterController:setupDefaultInputChoices()
     -- Set choices for defaultInput control
     setProp(self.controls.defaultInput, "Choices", inputChoices)
     
-    -- Set default selection to Input 7 if not already set (Brookgreen default)
-    if self.controls.defaultInput.Value == 0 then
-        setProp(self.controls.defaultInput, "Value", 7)
+    -- Set default selection to MPR if not already set (Brookgreen default)
+    if self.controls.defaultInput.String == "" then
+        setProp(self.controls.defaultInput, "String", "MPR")
     end
     
     self:debugPrint("Default input choices configured - " .. #inputChoices .. " options available")
@@ -283,8 +295,9 @@ end
 
 function AudioRouterController:getSelectedDefaultInput()
     -- Returns the numeric input value based on the defaultInput control selection
-    local selection = self.controls.defaultInput.Value
-    return selection > 0 and selection or 7 -- Default to input 7 if invalid (Brookgreen default)
+    local selectedText = self.controls.defaultInput.String
+    local inputNumber = self.inputChoiceMap[selectedText]
+    return inputNumber or 7 -- Default to input 7 (MPR) if invalid (Brookgreen default)
 end
 
 -----------------------------[ Component Setup ]-----------------------------
@@ -368,9 +381,18 @@ function AudioRouterController:registerEventHandlers()
         compAudioRouter = function() self:setAudioRouterComponent() end,
         compRoomControls = function() self:setRoomControlsComponent() end,
         defaultInput = function() 
-            local value = self.controls.defaultInput.Value
             local text = self.controls.defaultInput.String or "Unknown"
-            self:debugPrint("Default input selection changed - Value: " .. tostring(value) .. ", Text: '" .. text .. "'")
+            local inputNumber = self:getSelectedDefaultInput()
+            self:debugPrint("Default input selection changed - Input: " .. tostring(inputNumber) .. ", Text: '" .. text .. "'")
+            
+            -- Apply the new default input immediately if system is powered on and not in fire alarm
+            if self.roomControls and self.roomControls.ledSystemPower and self.roomControls.ledSystemPower.Boolean then
+                local fireAlarm = self.roomControls.ledFireAlarm and self.roomControls.ledFireAlarm.Boolean or false
+                if not fireAlarm then
+                    self:setRoute(inputNumber, self.outputs.output01)
+                    self:debugPrint("Applied new default input " .. inputNumber .. " (" .. text .. ") to Output 1")
+                end
+            end
         end
     }
     

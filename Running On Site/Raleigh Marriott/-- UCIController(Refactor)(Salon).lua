@@ -1340,7 +1340,7 @@ function UCIController:initializeLegendArrays()
         "txtNav01", "txtNav02", "txtNav03", "txtNav04",
         "txtNav05", "txtNav06", "txtNav07", "txtNav08",
         "txtNav09", "txtNav10", "txtNav11", "txtNav12", "txtNav13",
-        "txtNavShutdown", "txtRoomName", "txtRoomNameStart",
+        "txtNavShutdown", "txtRoomNameNav", "txtRoomNameStart",
         "txtRoutingRooms", "txtRouting01", "txtRouting02", "txtRouting03","txtRouting04", 
         "txtRouting05", "txtRouting06", "txtRouting07", "txtRouting08", "txtRoutingSources",
         "txtAudSrc01", "txtAudSrc02", "txtAudSrc03", "txtAudSrc04",
@@ -1369,7 +1369,7 @@ function UCIController:initializeLegendArrays()
         "txtLabelNav01", "txtLabelNav02", "txtLabelNav03", "txtLabelNav04",
         "txtLabelNav05", "txtLabelNav06", "txtLabelNav07", "txtLabelNav08",
         "txtLabelNav09", "txtLabelNav10", "txtLabelNav11", "txtLabelNav12", "txtLabelNav13",
-        "txtLabelNavShutdown", "txtLabelRoomName", "txtLabelRoomNameStart",
+        "txtLabelNavShutdown", "txtLabelRoomNameNav", "txtLabelRoomNameStart",
         "txtLabelRoutingRooms", "txtLabelRouting01", "txtLabelRouting02", "txtLabelRouting03","txtLabelRouting04", 
         "txtLabelRouting05", "txtLabelRouting06", "txtLabelRouting07", "txtLabelRouting08", "txtLabelRoutingSources",
         "txtLabelAudSrc01", "txtLabelAudSrc02", "txtLabelAudSrc03", "txtLabelAudSrc04",
@@ -1619,8 +1619,6 @@ UCI Variables (Component Discovery):
 Touch Inactivity Feature:
     - Monitors touch activity on H01-RoomCombining layer via pinLEDTouchActivity control
     - After 10 seconds of no touch activity, automatically returns to C05-Start layer
-    - Uses standard pinLED pattern for consistency with existing architecture
-    - Registered in pinHandlerMap for centralized event management
     - Optional control - gracefully degrades if not present
 
 Event-Driven Synchronization:

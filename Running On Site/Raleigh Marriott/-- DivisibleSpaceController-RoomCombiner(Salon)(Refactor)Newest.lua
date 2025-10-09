@@ -481,7 +481,7 @@ function RoomButtonVisibilityModule:setAllRoomsSeparate()
       local btnRoomSelector = Component.New(btnRoomName)
       if btnRoomSelector then
         for toggleIndex = 1, 8 do
-          local toggleControlName = "toggle." .. toggleIndex .. ".Boolean"
+          local toggleControlName = " " .. toggleIndex .. ".Boolean"
           if btnRoomSelector[toggleControlName] then
             -- Only the room's own toggle should be true
             setProp(btnRoomSelector, toggleControlName, (toggleIndex == i))
