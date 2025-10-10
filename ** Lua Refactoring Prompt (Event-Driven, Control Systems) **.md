@@ -141,3 +141,345 @@ Refactor the following Lua code to make it faster and more responsive, with a fo
     - Establishing standards for error reporting and debug output consistency
     - Encouraging the creation of reusable utilities rather than copy-paste code
     - Ensuring all modules benefit from centralized improvements
+
+---
+
+## **Advanced DRY Patterns for Event-Driven Control Systems**
+
+These patterns are demonstrated in UCIController and should be applied to all refactored scripts:
+
+### **26. Route State Changes Through Central Navigation Handler**
+
+**✅ BEST PRACTICE: Eliminate Duplicated State Logic**
+- Route ALL layer/navigation state changes through a single centralized handler (e.g., `btnNavEventHandler`)
+- This ensures `varActiveLayer`, video switching, button interlocking, and sublayer updates are ALWAYS synchronized
+- Prevents "stuck buttons" and state desynchronization bugs
+
+**Example Pattern:**
+```lua
+-- ✅ CORRECT: Pin handlers route to central navigation on positive edge
+[controls.pinLEDUSBLaptop] = function(ctl)
+    if ctl.Boolean then 
+        -- Only positive edge triggers full navigation state change
+        self:btnNavEventHandler(self.kLayerLaptop)
+    else
+        -- Negative edge only updates sublayers, no navigation change
+        self.sublayerModule:updateConferenceState()
+    end
+end
+
+-- ❌ WRONG: Direct layer/state manipulation bypasses central logic
+[controls.pinLEDUSBLaptop] = function(ctl)
+    if ctl.Boolean then
+        self.varActiveLayer = self.kLayerLaptop  -- ❌ Duplicates state logic
+        self.layerModule:showLayer()              -- ❌ Misses video switching
+        self:interlock()                          -- ❌ Repetitive pattern
+    end
+end
+```
+
+**Key Benefits:**
+- Single point of change for all navigation logic
+- Automatic synchronization of related state (buttons, layers, video)
+- Positive edge = full navigation; Negative edge = sublayer updates only
+- Eliminates race conditions and stuck UI states
+
+### **27. Enhanced setProp Utility with Redundancy Guard**
+
+**✅ BEST PRACTICE: Prevent Redundant Property Assignments**
+- Always use `setProp()` wrapper that checks current value before assignment
+- Reduces unnecessary UI updates and eliminates race conditions
+- Critical for high-frequency event handlers and pin state changes
+
+**Implementation:**
+```lua
+-- ✅ CORRECT: Guard logic prevents redundant assignments
+local function setProp(ctrl, prop, val)
+    if not ctrl or not prop then return false end
+    if ctrl[prop] == val then return false end  -- 🎯 Critical guard
+    ctrl[prop] = val
+    return true
+end
+
+-- Usage in interlocking:
+for i, btn in ipairs(navButtons) do
+    if btn then
+        local shouldBeActive = (i == activeButtonIndex)
+        setProp(btn, "Boolean", shouldBeActive)  -- Only updates if changed
+    end
+end
+
+-- ❌ WRONG: Direct assignment causes redundant UI updates
+btn.Boolean = shouldBeActive  -- Updates even if already same value
+```
+
+### **28. Batch Registration with Centralized Handler Maps**
+
+**✅ BEST PRACTICE: Eliminate Repetitive Event Binding Code**
+- Use object-reference-based handler maps for all event registration
+- Single loop to bind all handlers of same type
+- Provides single point of update when extending controls
+
+**Example Pattern:**
+```lua
+function Controller:registerEventHandlers()
+    -- 🎯 Centralized handler map with direct object references
+    local systemHandlerMap = {
+        [controls.btnStartSystem] = function() self:startSystem() end,
+        [controls.btnNavShutdown] = function() 
+            self.layerModule:updateLayerVisibility({"D01-ShutdownConfirm"}, true, "fade")
+        end,
+        [controls.btnShutdownCancel] = function() 
+            self.layerModule:updateLayerVisibility({"D01-ShutdownConfirm"}, false, "fade")
+        end,
+        [controls.btnShutdownConfirm] = function() self:shutdownSystem() end
+    }
+    
+    -- 🎯 Batch register all handlers in single loop
+    for ctrl, handler in pairs(systemHandlerMap) do
+        if ctrl then bind(ctrl, handler) end
+    end
+end
+
+-- ❌ WRONG: Repetitive individual binding
+if controls.btnStartSystem then
+    controls.btnStartSystem.EventHandler = function() self:startSystem() end
+end
+if controls.btnNavShutdown then
+    controls.btnNavShutdown.EventHandler = function() 
+        self.layerModule:updateLayerVisibility({"D01-ShutdownConfirm"}, true, "fade")
+    end
+end
+-- ... repeated for every control
+```
+
+### **29. Paired Controls Utility for Toggle Logic**
+
+**✅ BEST PRACTICE: DRY Toggle Logic for Open/Close, On/Off Pairs**
+- Use `bindPairedControls()` utility for all paired toggle controls
+- Automatically ensures mutual exclusivity and state synchronization
+- Reduces boilerplate code for help buttons, popups, modal dialogs
+
+**Implementation:**
+```lua
+-- ✅ Utility function for paired controls
+local function bindPairedControls(openCtrl, closeCtrl, updateHandler)
+    if openCtrl and updateHandler then
+        bind(openCtrl, function()
+            if closeCtrl then setProp(closeCtrl, "Boolean", false) end
+            updateHandler()
+        end)
+    end
+    if closeCtrl and updateHandler then
+        bind(closeCtrl, function()
+            if openCtrl then setProp(openCtrl, "Boolean", false) end
+            updateHandler()
+        end)
+    end
+end
+
+-- ✅ CORRECT: Batch registration of paired controls
+local helpControlPairs = {
+    {open = controls.btnOpenHelpLaptop, close = controls.btnCloseHelpLaptop, 
+     handler = function() self.sublayerModule:updateLaptopHelpState() end},
+    {open = controls.btnOpenHelpPC, close = controls.btnCloseHelpPC, 
+     handler = function() self.sublayerModule:updatePCHelpState() end},
+}
+for _, pair in ipairs(helpControlPairs) do
+    bindPairedControls(pair.open, pair.close, pair.handler)
+end
+
+-- ❌ WRONG: Repetitive individual paired logic
+if controls.btnOpenHelpLaptop then
+    controls.btnOpenHelpLaptop.EventHandler = function()
+        if controls.btnCloseHelpLaptop then 
+            controls.btnCloseHelpLaptop.Boolean = false 
+        end
+        self.sublayerModule:updateLaptopHelpState()
+    end
+end
+if controls.btnCloseHelpLaptop then
+    controls.btnCloseHelpLaptop.EventHandler = function()
+        if controls.btnOpenHelpLaptop then 
+            controls.btnOpenHelpLaptop.Boolean = false 
+        end
+        self.sublayerModule:updateLaptopHelpState()
+    end
+end
+-- ... repeated for every pair
+```
+
+### **30. Normalized Control Arrays at Initialization**
+
+**✅ BEST PRACTICE: Convert All Controls to Arrays for Consistent Processing**
+- Create `normalizeControlArrays()` function at initialization
+- Cache normalized arrays for use throughout script lifecycle
+- Enables batch operations with `forEach()` and `bindArray()` utilities
+
+**Example Pattern:**
+```lua
+-- ✅ CORRECT: Early normalization
+local function normalizeControlArrays()
+    local controlsToNormalize = {
+        navButtons = {},
+        routingButtons = {},
+        pinInputs = {}
+    }
+    
+    -- Build arrays from individual controls
+    for i = 1, 12 do
+        local btn = controls["btnNav" .. string.format("%02d", i)]
+        if btn then controlsToNormalize.navButtons[i] = btn end
+    end
+    
+    return controlsToNormalize
+end
+
+-- Cache at controller initialization
+function Controller.new()
+    local self = setmetatable({}, Controller)
+    self.normalizedControls = normalizeControlArrays()  -- 🎯 Cache early
+    -- ... rest of initialization
+end
+
+-- Use throughout with forEach utility
+forEach(self.normalizedControls.navButtons, function(i, btn)
+    bind(btn, function() self:btnNavEventHandler(i) end)
+end)
+
+-- ❌ WRONG: Repeated manual array building
+local navButtons = {}
+for i = 1, 12 do
+    navButtons[i] = controls["btnNav" .. string.format("%02d", i)]
+end
+-- ... same logic repeated in multiple functions
+```
+
+### **31. Guard Clauses for Positive/Negative Edge Handling**
+
+**✅ BEST PRACTICE: Minimize Redundant State Calls with Edge Detection**
+- Use positive edge (Boolean = true) for full state changes
+- Use negative edge (Boolean = false) for cleanup/sublayer updates only
+- Prevents infinite sync loops and redundant navigation calls
+
+**Example Pattern:**
+```lua
+-- ✅ CORRECT: Differentiate positive vs negative edge behavior
+[controls.pinLEDOffHookLaptop] = function(ctl)
+    if ctl.Boolean then 
+        -- Positive edge: Full navigation state change
+        ensureSystemIsOn()
+        self:btnNavEventHandler(self.kLayerLaptop)
+    end
+    -- Negative edge: No action needed, call state will be handled by pinCallActive
+end
+
+[controls.pinLEDUSBPC] = function(ctl)
+    if ctl.Boolean then 
+        -- Positive edge: Full navigation
+        self:btnNavEventHandler(self.kLayerPC)
+    else
+        -- Negative edge: Only update sublayer (conference controls hidden)
+        self.sublayerModule:updateConferenceState()
+    end
+end
+
+-- ❌ WRONG: No edge differentiation causes redundant calls
+[controls.pinLEDUSBPC] = function(ctl)
+    -- Triggers on both edges, causing double navigation calls
+    self:btnNavEventHandler(self.kLayerPC)
+    self.sublayerModule:updateConferenceState()
+end
+```
+
+### **32. Layer Configuration Tables for Batch Updates**
+
+**✅ BEST PRACTICE: Data-Driven Layer Management**
+- Use configuration tables to define layer behaviors declaratively
+- Enables adding new layers without changing control flow logic
+- Consolidates show/hide/function calls into single data structure
+
+**Example Pattern:**
+```lua
+-- ✅ CORRECT: Configuration-driven approach
+local layerConfigs = {
+    [self.kLayerLaptop] = {
+        showLayers = {"L05-Laptop"},
+        callLayerFunctions = {
+            function() self.sublayerModule:updateHDMI01State() end,
+            function() self.sublayerModule:updateConferenceState() end,
+            function() self.sublayerModule:updatePresetSavedState() end,
+            function() self.sublayerModule:updateACPRBypassState() end,
+            function() self.sublayerModule:updateLaptopHelpState() end,
+            function() self.sublayerModule:updateCallActiveState() end
+        }
+    },
+    [self.kLayerPC] = {
+        showLayers = {"P05-PC"},
+        callLayerFunctions = {
+            function() self.sublayerModule:updateHDMI02State() end,
+            function() self.sublayerModule:updateConferenceState() end,
+            function() self.sublayerModule:updateCallActiveState() end
+        }
+    }
+}
+
+-- Single generic processing loop
+local config = layerConfigs[self.varActiveLayer]
+if config then
+    for _, layer in ipairs(config.showLayers or {}) do
+        self:updateLayerVisibility({layer}, true, "fade")
+    end
+    for _, func in ipairs(config.callLayerFunctions or {}) do
+        func()
+    end
+end
+
+-- ❌ WRONG: Repetitive if/elseif blocks
+if self.varActiveLayer == self.kLayerLaptop then
+    self:updateLayerVisibility({"L05-Laptop"}, true, "fade")
+    self.sublayerModule:updateHDMI01State()
+    self.sublayerModule:updateConferenceState()
+    -- ... more calls
+elseif self.varActiveLayer == self.kLayerPC then
+    self:updateLayerVisibility({"P05-PC"}, true, "fade")
+    self.sublayerModule:updateHDMI02State()
+    self.sublayerModule:updateConferenceState()
+    -- ... more calls
+end
+-- ... repeated for every layer
+```
+
+---
+
+## **Summary: DRY Architecture Checklist**
+
+When refactoring or creating new Lua scripts, ensure:
+
+✅ **Centralized State Management**
+- [ ] All navigation/layer changes route through single handler function
+- [ ] State variables (`varActiveLayer`, etc.) updated in ONE place only
+- [ ] Related updates (video, buttons, layers) synchronized automatically
+
+✅ **Batch Operations**
+- [ ] Control arrays normalized at initialization
+- [ ] Event handlers registered via centralized maps
+- [ ] Paired controls use `bindPairedControls()` utility
+- [ ] Similar operations grouped into single loops
+
+✅ **Guarded Assignment**
+- [ ] `setProp()` used for all property updates
+- [ ] Current value checked before assignment
+- [ ] Positive/negative edge differentiation for pin handlers
+
+✅ **Configuration-Driven Logic**
+- [ ] Layer behaviors defined in configuration tables
+- [ ] Handler maps used instead of repetitive if/else chains
+- [ ] Generic processing loops replace case-by-case logic
+
+✅ **Single Responsibility**
+- [ ] Each module handles ONE domain (layers, routing, video, etc.)
+- [ ] Modules delegate to controller for shared utilities
+- [ ] Debug logging centralized via BaseModule pattern
+
+By following these patterns, the codebase remains **highly maintainable**, **DRY throughout**, and **easy to extend** with new features.

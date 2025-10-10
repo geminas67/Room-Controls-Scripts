@@ -832,9 +832,9 @@ function SystemAutomationController:callSyncCheckConnection()
         self:videoBridgeCheckPrivacy(1)
     end    
     if self.components.camACPR and self.components.camACPR["TrackingBypass"] then
-        -- Set IsDisabled FIRST, before setting the Boolean value
+        -- Set IsDisabled based on call state (enabled during call, disabled when no call)
         self.components.camACPR["TrackingBypass"].IsDisabled = not state
-        -- Now set the Boolean value - this triggers the event handler which will set the Legend
+        -- Set Boolean: false (Auto) when call active, true (Off) when no call
         self:safeComponentAccess(self.components.camACPR, "TrackingBypass", "set", not state)
     end
 end
@@ -1104,6 +1104,13 @@ end
 
 -- Factory function for default configurations
 local function getDefaultConfig(roomType)
+    -- Single source of truth for default volume values
+    local baseConfig = {
+        defaultProgramVolume = 0.7,
+        defaultMicVolume = 0.5, 
+        defaultGainVolume = 0.7
+    }
+    
     roomType = roomType or "Default"
     if roomType == "User Defined" then
         return {
@@ -1112,16 +1119,11 @@ local function getDefaultConfig(roomType)
             cooldownTime = controls.cooldownTime and controls.cooldownTime.Value or 5,
             motionTimeout = controls.motionTimeout and controls.motionTimeout.Value or 300,
             gracePeriod = controls.motionGracePeriod and controls.motionGracePeriod.Value or 30,
-            defaultProgramVolume = (controls.defaultProgramVolume and controls.defaultProgramVolume.Value) or 0.7,
-            defaultMicVolume = (controls.defaultMicVolume and controls.defaultMicVolume.Value) or 0.5,
-            defaultGainVolume = (controls.defaultGainVolume and controls.defaultGainVolume.Value) or 0.8,
+            defaultProgramVolume = (controls.defaultProgramVolume and controls.defaultProgramVolume.Value) or baseConfig.defaultProgramVolume,
+            defaultMicVolume = (controls.defaultMicVolume and controls.defaultMicVolume.Value) or baseConfig.defaultMicVolume,
+            defaultGainVolume = (controls.defaultGainVolume and controls.defaultGainVolume.Value) or baseConfig.defaultGainVolume,
         }
     end
-        local baseConfig = {
-        defaultProgramVolume = 0.7,
-        defaultMicVolume = 0.5, 
-        defaultGainVolume = 0.8
-    }
     
     local defaults = {
         ["Conference Room"] = { 
