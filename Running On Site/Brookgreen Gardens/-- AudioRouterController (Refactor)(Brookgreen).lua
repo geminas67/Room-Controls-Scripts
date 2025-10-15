@@ -18,7 +18,6 @@
 local controls = {
     compAudioRouter  = Controls.compAudioRouter,
     btnAudioSource   = Controls.btnAudioSource,
-    defaultInput     = Controls.defaultInput,
     defaultOutput    = Controls.defaultOutput,
     txtStatus        = Controls.txtStatus,
     compRoomControls = Controls.compRoomControls,
@@ -28,7 +27,6 @@ local function validateControls()
     local required = {
         compAudioRouter = controls.compAudioRouter,
         btnAudioSource = controls.btnAudioSource,
-        defaultInput = controls.defaultInput, 
         txtStatus = controls.txtStatus,
         compRoomControls = controls.compRoomControls
     }
@@ -251,42 +249,6 @@ function AudioRouterController:discoverComponents()
     self:debugPrint("Component discovery completed - Audio Router: " .. #audioRouterNames - 1 .. ", Room Controls: " .. #roomControlsNames - 1)
 end
 
------------------------------[ Default Input Setup ]-----------------------------
-function AudioRouterController:setupDefaultInputChoices()
-    -- Create choices array from inputs table
-    local inputChoices = {}
-    local inputLabels = {
-        [1] = "Sonos 1",
-        [2] = "Sonos 2", 
-        [3] = "Sonos 3",
-        [4] = "Rack plate",
-        [5] = "Great Hall",
-        [6] = "No Source",
-        [7] = "MPR"
-    }
-    
-    -- Build choices array in order
-    for i = 1, 7 do
-        table.insert(inputChoices, inputLabels[i])
-    end
-    
-    -- Set choices for defaultInput control
-    setProp(self.controls.defaultInput, "Choices", inputChoices)
-    
-    -- Set default selection to Input 7 if not already set (Brookgreen default)
-    if self.controls.defaultInput.Value == 0 then
-        setProp(self.controls.defaultInput, "Value", 7)
-    end
-    
-    self:debugPrint("Default input choices configured - " .. #inputChoices .. " options available")
-end
-
-function AudioRouterController:getSelectedDefaultInput()
-    -- Returns the numeric input value based on the defaultInput control selection
-    local selection = self.controls.defaultInput.Value
-    return selection > 0 and selection or 7 -- Default to input 7 if invalid (Brookgreen default)
-end
-
 -----------------------------[ Component Setup ]-----------------------------
 function AudioRouterController:setAudioRouterComponent()
     -- Clean up old event handlers if switching devices
@@ -321,7 +283,7 @@ function AudioRouterController:setRoomControlsComponent()
     -- Room controls handler map for batch registration
     local roomControlHandlers = {
         ledSystemPower = function(ctl)
-            local route = ctl.Boolean and self:getSelectedDefaultInput() or self.inputs.noSource
+            local route = ctl.Boolean and (self.lastInput[self.outputs.output01] or self.inputs.noSource) or self.inputs.noSource
             self:setRoute(route, self.outputs.output01)
             self:debugPrint("Power " .. (ctl.Boolean and "ON" or "OFF") .. " - Set Output 1 to Input " .. route)
         end,
@@ -332,11 +294,11 @@ function AudioRouterController:setRoomControlsComponent()
                 self:setRoute(self.inputs.noSource, self.outputs.output01)
                 self:debugPrint("Set Output 1 to Input None")
             else
-                -- Fire alarm cleared: revert to last input or default
-                if Controls.ledSystemPower.Boolean then
-                    local defaultRoute = self.lastInput[self.outputs.output01] or self:getSelectedDefaultInput()
-                    self:setRoute(defaultRoute, self.outputs.output01)
-                    self:debugPrint("Set Output 1 to Input " .. defaultRoute)
+                -- Fire alarm cleared: revert to last input
+                if self.roomControls.ledSystemPower then
+                    local lastRoute = self.lastInput[self.outputs.output01] or self.inputs.noSource
+                    self:setRoute(lastRoute, self.outputs.output01)
+                    self:debugPrint("Set Output 1 to Input " .. lastRoute)
                 end
             end
         end
@@ -366,12 +328,7 @@ function AudioRouterController:registerEventHandlers()
     -- Component selection handler map
     local componentHandlers = {
         compAudioRouter = function() self:setAudioRouterComponent() end,
-        compRoomControls = function() self:setRoomControlsComponent() end,
-        defaultInput = function() 
-            local value = self.controls.defaultInput.Value
-            local text = self.controls.defaultInput.String or "Unknown"
-            self:debugPrint("Default input selection changed - Value: " .. tostring(value) .. ", Text: '" .. text .. "'")
-        end
+        compRoomControls = function() self:setRoomControlsComponent() end
     }
     
     -- Register component handlers
@@ -390,7 +347,6 @@ function AudioRouterController:initialize()
     -- Batch initialization for better performance
     self:registerEventHandlers()
     self:discoverComponents()
-    self:setupDefaultInputChoices()
     self:setAudioRouterComponent()
     self:setRoomControlsComponent()
     self:debugPrint("Audio Router Controller Initialized")
@@ -416,7 +372,6 @@ function AudioRouterController:cleanup()
     -- Clean up component handlers
     bind(self.controls.compAudioRouter, nil)
     bind(self.controls.compRoomControls, nil)
-    bind(self.controls.defaultInput, nil)
     
     -- Clean up audio source button handlers
     forEach(self.controls.btnAudioSource, function(btn)

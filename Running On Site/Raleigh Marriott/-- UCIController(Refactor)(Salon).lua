@@ -392,7 +392,7 @@ function LayerModule:showLayer()
             showLayers = {"L05-Laptop"},
             callLayerFunctions = {
                 function() self.controller.sublayerModule:updateHDMI01State() end,
-                function() self.controller.sublayerModule:updateCameraState() end,
+                function() self.controller.sublayerModule:updateConferenceState() end,
                 function() self.controller.sublayerModule:updatePresetSavedState() end,
                 function() self.controller.sublayerModule:updateACPRBypassState() end,
                 function() self.controller.sublayerModule:updateLaptopHelpState() end,
@@ -403,7 +403,7 @@ function LayerModule:showLayer()
             showLayers = {"P05-PC"},
             callLayerFunctions = {
                 function() self.controller.sublayerModule:updateHDMI02State() end,
-                function() self.controller.sublayerModule:updateCameraState() end,
+                function() self.controller.sublayerModule:updateConferenceState() end,
                 function() self.controller.sublayerModule:updatePresetSavedState() end,
                 function() self.controller.sublayerModule:updateACPRBypassState() end,
                 function() self.controller.sublayerModule:updatePCHelpState() end,
@@ -553,7 +553,7 @@ function SublayerModule:updateACPRBypassState()
     self:debug("ACPR Bypass: " .. (isBypassActive and "Active" or "Inactive"))
 end
 
-function SublayerModule:updateCameraState()
+function SublayerModule:updateConferenceState()
     local usbConnected = false
     local usbNotConnectedLayer
     
@@ -584,7 +584,7 @@ function SublayerModule:updateLaptopHelpState()
         self.controller.layerModule:updateLayerVisibility({"J05-CameraControls", "J01-ConnectUSBLaptop", "J02-ConnectUSBPC"}, false, "none")
     else
         self.controller.layerModule:updateLayerVisibility({"I02-HelpLaptop"}, false, "none")
-        self:updateCameraState()
+        self:updateConferenceState()
     end
     self:debug("Laptop Help: " .. (isVisible and "Showing" or "Hiding"))
 end
@@ -596,7 +596,7 @@ function SublayerModule:updatePCHelpState()
         self.controller.layerModule:updateLayerVisibility({"J05-CameraControls", "J01-ConnectUSBLaptop", "J02-ConnectUSBPC"}, false, "none")
     else
         self.controller.layerModule:updateLayerVisibility({"I03-HelpPC"}, false, "none")
-        self:updateCameraState()
+        self:updateConferenceState()
     end
     self:debug("PC Help: " .. (isVisible and "Showing" or "Hiding"))
 end
@@ -1088,11 +1088,8 @@ end
 -------------------[ Touch Inactivity Handler ]------------
 function UCIController:onRoomCombiningInactivity()
     if self.layerModule and self.layerModule.layerStates["H01-RoomCombining"] then
-        self:debug("Touch inactivity timeout - hiding H01-RoomCombining, showing C05-Start")
-        self.layerModule:updateLayerVisibility({"H01-RoomCombining"}, false, "fade")
-        self.layerModule:updateLayerVisibility({"C05-Start"}, true, "fade")
-        self.varActiveLayer = self.kLayerStart
-        self:interlock()
+        self:debug("Touch inactivity timeout - returning to Start layer")
+        self:btnNavEventHandler(self.kLayerStart)
     end
 end
 
@@ -1100,8 +1097,9 @@ function UCIController:resetTouchInactivityTimer()
     if self.layerModule and self.layerModule.layerStates["H01-RoomCombining"] then
         self.uciTouchInactivityTimer:Stop()
         self.uciTouchInactivityTimer.EventHandler = function() self:onRoomCombiningInactivity() end
-        self.uciTouchInactivityTimer:Start(10)
-        self:debug("Touch inactivity timer reset (10s)")
+        local timeout = tonumber(Uci.Variables.numTouchInactivityTimer.Value) or 60
+        self.uciTouchInactivityTimer:Start(timeout)
+        self:debug("Touch inactivity timer reset (" .. timeout .. "s)")
     end
 end
 
@@ -1162,30 +1160,42 @@ function UCIController:registerEventHandlers()
     end
     
     -- Pin state handler map
+    -- BEST PRACTICE: Route all layer changes through btnNavEventHandler for centralized state management
+    -- This ensures varActiveLayer, video switching, and navButton interlocking are always synchronized
     local pinHandlerMap = {
         [controls.pinLEDUSBLaptop] = function(ctl)
-            if ctl.Boolean then ensureSystemIsOn()  self.varActiveLayer = self.kLayerLaptop end
-            self.layerModule:showLayer(); self:interlock()
+            if ctl.Boolean then ensureSystemIsOn() self.btnNavEventHandler(self.kLayerLaptop)
+            else
+                -- Pin went false - only update sublayers, don't change navigation state
+                self.sublayerModule:updateConferenceState()
+            end
         end,
         [controls.pinLEDUSBPC] = function(ctl)
-            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerPC end
-            self.layerModule:showLayer(); self:interlock()
+            if ctl.Boolean then ensureSystemIsOn() self.btnNavEventHandler(self.kLayerPC)
+            else
+                -- Pin went false - only update sublayers, don't change navigation state
+                self.sublayerModule:updateConferenceState()
+            end
         end,
         [controls.pinLEDOffHookLaptop] = function(ctl)
-            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerLaptop end
-            self.layerModule:showLayer(); self:interlock()
+            if ctl.Boolean then ensureSystemIsOn() self.btnNavEventHandler(self.kLayerLaptop)
+            end
+            -- When false, no action needed (call state change will be handled by pinCallActive)
         end,
         [controls.pinLEDOffHookPC] = function(ctl)
-            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerPC end
-            self.layerModule:showLayer(); self:interlock()
+            if ctl.Boolean then ensureSystemIsOn() self.btnNavEventHandler(self.kLayerPC)
+            end
+            -- When false, no action needed (call state change will be handled by pinCallActive)
         end,
         [controls.pinLEDHDMI01Active] = function(ctl)
-            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerLaptop end
-            self.layerModule:showLayer(); self:interlock()
+            if ctl.Boolean then ensureSystemIsOn() self.btnNavEventHandler(self.kLayerLaptop)
+            end
+            -- When false, HDMI disconnect will be handled by pinLEDHDMI01Connect
         end,
         [controls.pinLEDHDMI02Active] = function(ctl)
-            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerPC end
-            self.layerModule:showLayer(); self:interlock()
+            if ctl.Boolean then ensureSystemIsOn() self.btnNavEventHandler(self.kLayerPC)
+            end
+            -- When false, HDMI disconnect will be handled by pinLEDHDMI02Connect
         end,
         [controls.pinLEDPresetSaved] = function() self.sublayerModule:updatePresetSavedState() end,
         [controls.pinLEDHDMI01Connect] = function() self.sublayerModule:updateHDMI01State() end,
@@ -1590,6 +1600,7 @@ myUCI = createUCIController(
     Uci.Variables.txtUCIPageName.String,
     tonumber(Uci.Variables.numDefaultRoutingLayer.Value) or 1,
     tonumber(Uci.Variables.numDefaultActiveLayer.Value) or 10,
+    tonumber(Uci.Variables.numTouchInactivityTimer.Value) or 60,
     {} -- Hidden nav indices
 )
 
