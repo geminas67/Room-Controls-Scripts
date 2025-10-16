@@ -372,7 +372,7 @@ function CameraPresetController:initCameraModule()
     }
 end
 
---------** Preset Tolerance Helper **--------
+-------------------[ Preset Comparison ]------------------
 function CameraPresetController:comparePresetWithTolerance(currentPreset, savedPreset)
     -- Early return for exact match
     if currentPreset == savedPreset then return true end
@@ -403,7 +403,7 @@ function CameraPresetController:comparePresetWithTolerance(currentPreset, savedP
     return panMatch and tiltMatch and zoomMatch
 end
 
---------** Router Module **--------
+-------------------[ Router Module ]------------------
 function CameraPresetController:initRouterModule()
     self.routerModule = {
         discoverRouters = function()
@@ -558,7 +558,7 @@ function CameraPresetController:populateRoomControlsChoices()
     controls.compRoomControls.Choices = names
 end
 
---------** Event Handler Registration **--------
+-------------------[ Event Handler Registration ]------------------
 function CameraPresetController:registerEventHandlers()
     -- Batch register simple control handlers using handler map
     local controlHandlerMap = {
@@ -639,7 +639,7 @@ function CameraPresetController:registerPresetButtonHandlers()
     self:debugPrint(string.format("Registered %d preset button handlers", presetCount))
 end
 
---------** Initialization **--------
+-------------------[ Initialization ]------------------
 function CameraPresetController:initialize()
     -- Load saved presets from JSON
     self.jsonModule.load()
