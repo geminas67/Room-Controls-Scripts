@@ -77,6 +77,8 @@ local controls = {
     knbHoldTime = Controls.knbHoldTime,
     compcamRouter = Controls.compcamRouter,
     compRoomControls = Controls.compRoomControls,
+    compCallSync = Controls.compCallSync,
+    compVideoBridge = Controls.compVideoBridge,
     txtStatus = Controls.txtStatus,
 }
 
@@ -115,6 +117,8 @@ function CameraPresetController.new(config)
         cameras = {},
         presets = {},
         roomControls = nil,
+        callSync = nil,
+        videoBridge = nil,
         routers = {},
     }
     
