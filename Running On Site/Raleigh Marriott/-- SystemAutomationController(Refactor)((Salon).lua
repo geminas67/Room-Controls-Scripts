@@ -1098,13 +1098,13 @@ local function getDefaultConfig(roomType)
             gracePeriod = controls.motionGracePeriod and controls.motionGracePeriod.Value or 30,
             defaultProgramVolume = (controls.defaultProgramVolume and controls.defaultProgramVolume.Value) or 0.7,
             defaultMicVolume = (controls.defaultMicVolume and controls.defaultMicVolume.Value) or 0.5,
-            defaultGainVolume = (controls.defaultGainVolume and controls.defaultGainVolume.Value) or 0.8,
+            defaultGainVolume = (controls.defaultGainVolume and controls.defaultGainVolume.Value) or 0.7,
         }
     end
         local baseConfig = {
         defaultProgramVolume = 0.7,
         defaultMicVolume = 0.5, 
-        defaultGainVolume = 0.8
+        defaultGainVolume = 0.7
     }
     
     local defaults = {

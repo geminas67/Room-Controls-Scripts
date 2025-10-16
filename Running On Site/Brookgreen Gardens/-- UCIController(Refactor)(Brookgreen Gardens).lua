@@ -1139,30 +1139,54 @@ function UCIController:registerEventHandlers()
     end
     
     -- Pin state handler map
+    -- BEST PRACTICE: Route all layer changes through btnNavEventHandler for centralized state management
+    -- This ensures varActiveLayer, video switching, and navButton interlocking are always synchronized
     local pinHandlerMap = {
         [controls.pinLEDUSBLaptop] = function(ctl)
-            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerLaptop end
-            self.layerModule:showLayer(); self:interlock()
+            if ctl.Boolean then 
+                ensureSystemIsOn()
+                self:btnNavEventHandler(self.kLayerLaptop)
+            else
+                -- Pin went false - only update sublayers, don't change navigation state
+                self.sublayerModule:updateConferenceState()
+            end
         end,
         [controls.pinLEDUSBPC] = function(ctl)
-            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerPC end
-            self.layerModule:showLayer(); self:interlock()
+            if ctl.Boolean then 
+                ensureSystemIsOn()
+                self:btnNavEventHandler(self.kLayerPC)
+            else
+                -- Pin went false - only update sublayers, don't change navigation state
+                self.sublayerModule:updateConferenceState()
+            end
         end,
         [controls.pinLEDOffHookLaptop] = function(ctl)
-            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerLaptop end
-            self.layerModule:showLayer(); self:interlock()
+            if ctl.Boolean then 
+                ensureSystemIsOn()
+                self:btnNavEventHandler(self.kLayerLaptop)
+            end
+            -- When false, no action needed (call state change will be handled by pinCallActive)
         end,
         [controls.pinLEDOffHookPC] = function(ctl)
-            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerPC end
-            self.layerModule:showLayer(); self:interlock()
+            if ctl.Boolean then 
+                ensureSystemIsOn()
+                self:btnNavEventHandler(self.kLayerPC)
+            end
+            -- When false, no action needed (call state change will be handled by pinCallActive)
         end,
         [controls.pinLEDHDMI01Active] = function(ctl)
-            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerLaptop end
-            self.layerModule:showLayer(); self:interlock()
+            if ctl.Boolean then 
+                ensureSystemIsOn()
+                self:btnNavEventHandler(self.kLayerLaptop)
+            end
+            -- When false, HDMI disconnect will be handled by pinLEDHDMI01Connect
         end,
         [controls.pinLEDHDMI02Active] = function(ctl)
-            if ctl.Boolean then ensureSystemIsOn() self.varActiveLayer = self.kLayerPC end
-            self.layerModule:showLayer(); self:interlock()
+            if ctl.Boolean then 
+                ensureSystemIsOn()
+                self:btnNavEventHandler(self.kLayerPC)
+            end
+            -- When false, HDMI disconnect will be handled by pinLEDHDMI02Connect
         end,
         [controls.pinLEDPresetSaved] = function() self.sublayerModule:updatePresetSavedState() end,
         [controls.pinLEDHDMI01Connect] = function() self.sublayerModule:updateHDMI01State() end,
@@ -1195,9 +1219,7 @@ function UCIController:shutdownSystem()
     self.layerModule:updateLayerVisibility({"D01-ShutdownConfirm"}, false, "fade")
     self.roomAutomationModule:powerOff()
     self.progressModule:startLoadingBar(false)
-    self.varActiveLayer = self.kLayerCooling
-    self.layerModule:showLayer()
-    self:interlock()
+    self:btnNavEventHandler(self.kLayerCooling)
 end
 
 -------------------[ Core Navigation Logic ]---------------
@@ -1220,6 +1242,10 @@ function UCIController:btnNavEventHandler(argIndex)
 end
 
 function UCIController:interlock()
+    -- CRITICAL: This function depends on self.varActiveLayer being set BEFORE calling
+    -- BEST PRACTICE: Route all layer changes through btnNavEventHandler() for centralized state management
+    -- This ensures varActiveLayer is always synchronized with navButton states and prevents stuck buttons
+    
     -- Use cached control arrays to avoid repeated lookups
     local navButtons = self.normalizedControls.navButtons
     if not navButtons then return end

@@ -1203,19 +1203,19 @@ function UCIController:registerEventHandlers()
         [controls.pinLEDACPRBypassActive] = function() self.sublayerModule:updateACPRBypassState() end,
         [controls.pinCallActive] = function() self.sublayerModule:updateCallActiveState() end,
         
-        -- Routing Button Visibility Controls
-        [controls.pinLEDIsVisibleBtn01] = function(ctl) self:updateRoutingControlVisibility(1, ctl.Boolean) end,
-        [controls.pinLEDIsVisibleBtn02] = function(ctl) self:updateRoutingControlVisibility(2, ctl.Boolean) end,
-        [controls.pinLEDIsVisibleBtn03] = function(ctl) self:updateRoutingControlVisibility(3, ctl.Boolean) end,
-        [controls.pinLEDIsVisibleBtn04] = function(ctl) self:updateRoutingControlVisibility(4, ctl.Boolean) end,
-        [controls.pinLEDIsVisibleBtn05] = function(ctl) self:updateRoutingControlVisibility(5, ctl.Boolean) end,
-        [controls.pinLEDIsVisibleBtn06] = function(ctl) self:updateRoutingControlVisibility(6, ctl.Boolean) end,
-        [controls.pinLEDIsVisibleBtn07] = function(ctl) self:updateRoutingControlVisibility(7, ctl.Boolean) end,
-        [controls.pinLEDIsVisibleBtn08] = function(ctl) self:updateRoutingControlVisibility(8, ctl.Boolean) end,
-        
         -- Touch Activity Monitor for H01-RoomCombining inactivity
         [controls.pinLEDTouchActivity] = function(ctl) self:resetTouchInactivityTimer() end
     }
+    
+    -- Routing Button Visibility Controls - DRY batch registration
+    for i = 1, 8 do
+        local pin = controls["pinLEDIsVisibleBtn" .. string.format("%02d", i)]
+        if pin then
+            pinHandlerMap[pin] = function(ctl) 
+                self:updateRoutingControlVisibility(i, ctl.Boolean) 
+            end
+        end
+    end
     
     -- Batch register all handler maps
     local handlerMaps = {systemHandlerMap, pinHandlerMap}
@@ -1279,6 +1279,19 @@ function UCIController:updateRoutingControlVisibility(buttonIndex, isVisible)
     end
     
     self:debug("Routing controls " .. indexStr .. " visibility: " .. (isVisible and "shown" or "hidden"))
+end
+
+function UCIController:initializeRoutingControlVisibility()
+    -- Initialize routing button visibility based on pin states
+    for i = 1, 8 do
+        local pin = controls["pinLEDIsVisibleBtn" .. string.format("%02d", i)]
+        if pin then
+            local isVisible = pin.Boolean or false
+            self:updateRoutingControlVisibility(i, isVisible)
+        end
+    end
+    
+    self:debug("Routing control visibility initialized")
 end
 
 function UCIController:interlock()
@@ -1461,6 +1474,9 @@ function UCIController:init()
     self:interlock()
     self:updateLegends()
     
+    -- Initialize routing button visibility based on pin states
+    self:initializeRoutingControlVisibility()
+    
     -- Start synchronization timer if Room Controls component is available
     self:startSyncTimer()
     
@@ -1600,7 +1616,6 @@ myUCI = createUCIController(
     Uci.Variables.txtUCIPageName.String,
     tonumber(Uci.Variables.numDefaultRoutingLayer.Value) or 1,
     tonumber(Uci.Variables.numDefaultActiveLayer.Value) or 10,
-    tonumber(Uci.Variables.numTouchInactivityTimer.Value) or 60,
     {} -- Hidden nav indices
 )
 
