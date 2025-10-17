@@ -312,16 +312,31 @@ function DisplayModule.new(controller)
     return self
 end
 
+function DisplayModule:sendRs232Command(display, command)
+    self.controller:safeComponentAccess(display, "Rs232Tx", "String", command)
+    self.controller:safeComponentAccess(display, "Rs232TxSend", "Boolean", true)
+    self.controller:safeComponentAccess(display, "Rs232TxSend", "Boolean", false, 0.2)
+end
+
 function DisplayModule:powerAll(state)
-    local trig = state and "PowerOnTrigger" or "PowerOffTrigger"
+    local rs232Cmd = self:getPowerCommand(state)
     for _, display in pairs(self.controller.components.displays) do
-        if display then self.controller:safeComponentAccess(display, trig, "trigger") end
+        if display then 
+            self:sendRs232Command(display, rs232Cmd)
+        end
     end
 end
 
 function DisplayModule:powerSingle(idx, state)
     local display = self.controller:getDisplayComponent(idx)
-    if display then self.controller:safeComponentAccess(display, state and "PowerOnTrigger" or "PowerOffTrigger", "trigger") end
+    if display then 
+        local rs232Cmd = self:getPowerCommand(state)
+        self:sendRs232Command(display, rs232Cmd)
+    end
+end
+
+function DisplayModule:getPowerCommand(state)
+    return state and "ka 00 01\x0d" or "ka 00 00\x0d"
 end
 
 -------------------[ Power Module ]------------------------
@@ -426,7 +441,7 @@ SystemAutomationController.__index = SystemAutomationController
 SystemAutomationController.clearString = "[Clear]"
 SystemAutomationController.componentTypes = {
     callSync    = "call_sync", videoBridge = "usb_uvc",
-    displays    = "%PLUGIN%_e9ef4a50-ba74-4653-a22e-a58c02839313_%FP%_c7165c3b15ead5f69821d69583f73c8b", -- LG Display
+    displays    = "%PLUGIN%_e186d86c-9fb0-426e-bd59-d1fe9e133519_%FP%_fcf39981477f1a1b8959d1e6c5b43832", -- MXNet Display control
     gains       = "gain", systemMute = "system_mute",
     camACPR     = "%PLUGIN%_648260e3-c166-4b00-98ba-ba16ksnza4a63b0_%FP%_a4d2263b4380c424e16eebb67084f355"
 }
@@ -467,12 +482,17 @@ function SystemAutomationController:getGainType(idx)
 end
 
 ------------------[ Component Access Helper ]---------------------
-function SystemAutomationController:safeComponentAccess(component, control, action, value)
+function SystemAutomationController:safeComponentAccess(component, control, action, value, delay)
     if not component or not component[control] then return false end
     local success, result = pcall(function()
         if      action == "set"         then component[control].Boolean = value; return true
         elseif  action == "setPosition" then component[control].Position = value; return true
         elseif  action == "setString"   then component[control].String = value; return true
+        elseif  action == "String"      then component[control].String = value; return true
+        elseif  action == "Boolean"     then 
+            if delay then  Timer.CallAfter(function() component[control].Boolean = value end, delay)
+            else component[control].Boolean = value end
+            return true
         elseif  action == "trigger"     then component[control]:Trigger(); return true
         elseif  action == "get"         then return component[control].Boolean
         elseif  action == "getPosition" then return component[control].Position
@@ -1032,7 +1052,7 @@ function SystemAutomationController:setGainTypeAssignments(roomType)
             if i == 1 then
                 -- First gain control is always Program and should remain disabled
                 controls.typeGain[i].String = "Program"
-                controls.typeGain[i].IsDisabled = true
+                controls.typeGain[i].IsDisabled = false
             else
                 controls.typeGain[i].String = gainType
             end
@@ -1055,7 +1075,7 @@ function SystemAutomationController:init()
                 if i == 1 then
                     -- First gain control is always Program and should be disabled
                     gainControl.String = "Program"
-                    gainControl.IsDisabled = true
+                    gainControl.IsDisabled = false
                 end
             end
         end
