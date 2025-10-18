@@ -1,23 +1,26 @@
 --[[
-  MXNet DisplayController (Refactored) - Q-SYS Control Script for LG MXNet Display Control
+  MXNet DisplayWallController (Refactored) - Q-SYS Control Script for LG MXNet Display Wall Control
   Author: Nikolas Smith, Q-SYS
-  Date: 2025-10-16
-  Version: 2.1 (RS232 Command-Based Control)
+  Date: 2025-10-17
+  Version: 2.2 (RS232 Command-Based Control + Video Wall Integration)
   Firmware Req: 10.0.0
-  Description: Controls LG MXNet display components via RS232 commands with power management 
-  and input switching. Integrates with SystemAutomationController.
+  Description: Controls LG MXNet display components via RS232 commands with power management,
+  input switching, and video wall control integration. Supports Shure MXA Video Wall 4x4 
+  component with 12 encoder sources (ENC-01 through ENC-12). Integrates with SystemAutomationController.
   
   REFACTORED FEATURES:
   - Enhanced validation with descriptive error messages
   - Array normalization for consistent control structures
   - Batch event registration using handler maps
-  - Modular architecture with simplified modules
+  - Modular architecture with Display, Power, and Wall modules
   - Efficient utility functions with standard patterns
   - State management utilities following SystemAutomationController patterns
   - Factory functions with comprehensive error handling
   - Follows Lua Refactoring Prompt specifications for event-driven, OOP architecture
   - RS232 command-based control using MXNet protocol
   - DRY helper function for RS232 transmission (sendRs232Command)
+  - Video wall control with layout selection and source routing
+  - Support for 12 encoder sources mapped to button array
 ]]--
 
 -- Display Control Configuration (easily changeable for different manufacturers)
@@ -52,6 +55,7 @@ local displayControls = {
 local controls = {
     txtStatus = Controls.txtStatus,
     devDisplays = Controls.devDisplays,
+    compWallControls = Controls.compWallControls,
     compRoomControls = Controls.compRoomControls,
     roomName = Controls.roomName,
     ledDisplayPower = Controls.ledDisplayPower,
@@ -62,7 +66,8 @@ local controls = {
     btnDisplayPowerOn = Controls.btnDisplayPowerOn,
     btnDisplayPowerOff = Controls.btnDisplayPowerOff,
     btnDisplayPowerSingle = Controls.btnDisplayPowerSingle,
-    btnDisplayInputAll = Controls.btnDisplayInputAll
+    btnDisplayInputAll = Controls.btnDisplayInputAll,
+    btnSource = Controls.btnSource
 }
 
 -------------------[ Control Validation ]-------------------
@@ -131,6 +136,8 @@ end
 local function resetComponentsArray()
     local componentState = {
         displays = {},
+        usbDisplays = {},
+        wallControls = {},
         roomControls = {},
         initialized = false
     }
@@ -172,12 +179,16 @@ function MXNetDisplayController.new(roomName, config)
 
     self.componentTypes = {
         displays = "%PLUGIN%_e9ef4a50-ba74-4653-a22e-a58c02839313_%FP%_c7165c3b15ead5f69821d69583f73c8b",
+        usbDisplays = "%PLUGIN%_a49702fc-e17d-418e-8984-2839e1417b24_%FP%_8c3c5ad17f1728918575785b65988ca3",
+        wallControls = "%PLUG1N%_a49702fc-e17d-418e-8984-2839e1417b24_%FP%_8c3c5ad17f1728918575785b65988ca3",
         roomControls = "device_controller_script"
     }
     
     -- Component storage
     self.components = {
         displays = {},
+        usbDisplays = {},
+        wallControls = {},
         compRoomControls = nil,
         invalid = {}
     }
@@ -193,9 +204,16 @@ function MXNetDisplayController.new(roomName, config)
     -- Configuration
     self.config = {
         maxDisplays = config and config.maxDisplays or 9,
+        maxSources = config and config.maxSources or 12,
         defaultInput = "HDMI1",
-        inputChoices = {"HDMI1", "HDMI2", "DisplayPort", "USB-C"}
+        inputChoices = {"HDMI1", "HDMI2", "DisplayPort", "USB-C"},
+        layoutChoices = {} -- Will be populated with ENC-01 through ENC-12
     }
+    
+    -- Populate layout choices
+    for i = 1, self.config.maxSources do
+        table.insert(self.config.layoutChoices, string.format("ENC-%02d", i))
+    end
     
     -- Input to button mapping
     self.inputButtonMap = {
@@ -218,6 +236,7 @@ function MXNetDisplayController.new(roomName, config)
     -- Initialize modules
     self:initDisplayModule()
     self:initPowerModule()
+    self:initWallModule()
     self:updateTimerConfigFromComponent()
     
     return self
@@ -536,6 +555,47 @@ function MXNetDisplayController:initPowerModule()
     }
 end
 
+-----------------------------[ Wall Module ]-----------------------------
+function MXNetDisplayController:initWallModule()
+    local selfRef = self
+    self.wallModule = {
+        setLayoutChoices = function(wallControls)
+            if not wallControls or not wallControls.layoutSelect then
+                selfRef:debugPrint("WARNING: Wall controls layoutSelect not found")
+                return
+            end
+            wallControls.layoutSelect.Choices = selfRef.config.layoutChoices
+            selfRef:debugPrint("Set layoutSelect choices: ENC-01 through ENC-" .. 
+                             string.format("%02d", selfRef.config.maxSources))
+        end,
+        
+        selectSource = function(sourceIndex)
+            local wallControls = selfRef.components.wallControls
+            if not wallControls or not wallControls.layoutSelect then
+                selfRef:debugPrint("WARNING: Cannot select source - wall controls not available")
+                return
+            end
+            
+            -- Map button index (1-12) to layout choice (ENC-01 through ENC-12)
+            local sourceName = selfRef.config.layoutChoices[sourceIndex]
+            if sourceName then
+                wallControls.layoutSelect.String = sourceName
+                selfRef:debugPrint("Selected wall source: " .. sourceName)
+            else
+                selfRef:debugPrint("WARNING: Invalid source index: " .. tostring(sourceIndex))
+            end
+        end,
+        
+        getCurrentSource = function()
+            local wallControls = selfRef.components.wallControls
+            if wallControls and wallControls.layoutSelect then
+                return wallControls.layoutSelect.String
+            end
+            return nil
+        end
+    }
+end
+
 -----------------------------[ Component Management ]-----------------------------
 function MXNetDisplayController:setComponent(ctrl, componentType)
     local componentName = ctrl and ctrl.String or nil
@@ -605,6 +665,26 @@ function MXNetDisplayController:setRoomControlsComponent()
     end
 end
 
+function MXNetDisplayController:setUSBDisplayComponent()
+    self.components.usbDisplays = self:setComponent(Controls.compUSBDisplays, "USB Displays")
+    if self.components.usbDisplays then
+        self:debugPrint("USB displays component set successfully")
+    else
+        self:debugPrint("USB displays component not available")
+    end
+end
+
+function MXNetDisplayController:setWallControlsComponent()
+    self.components.wallControls = self:setComponent(Controls.compWallControls, "Wall Controls")
+    if self.components.wallControls then
+        self:debugPrint("Wall controls component set successfully")
+        -- Set layout choices after component is assigned
+        self.wallModule.setLayoutChoices(self.components.wallControls)
+    else
+        self:debugPrint("Wall controls component not available")
+    end
+end
+
 function MXNetDisplayController:setDisplayComponent(index)
     if not Controls.devDisplays or not Controls.devDisplays[index] then
         self:debugPrint("Display control " .. index .. " not found")
@@ -667,12 +747,18 @@ end
 function MXNetDisplayController:getComponentNames()
     local namesTable = {
         DisplayNames = {},
+        USBDisplayNames = {},
+        WallControlsNames = {},
         RoomControlsNames = {},
     }
 
     for _, comp in pairs(Component.GetComponents()) do
         if comp.Type == self.componentTypes.displays then
             table.insert(namesTable.DisplayNames, comp.Name)
+        elseif comp.Type == self.componentTypes.usbDisplays then
+            table.insert(namesTable.USBDisplayNames, comp.Name)
+        elseif comp.Type == self.componentTypes.wallControls then
+            table.insert(namesTable.WallControlsNames, comp.Name)
         elseif comp.Type == self.componentTypes.roomControls and string.match(comp.Name, "^compRoomControls") then
             table.insert(namesTable.RoomControlsNames, comp.Name)
         end
@@ -692,8 +778,18 @@ function MXNetDisplayController:getComponentNames()
         self:debugPrint("Found " .. #namesTable.DisplayNames .. " display components")
     end
     
+    if Controls.compWallControls then
+        Controls.compWallControls.Choices = namesTable.WallControlsNames
+        self:debugPrint("Found " .. #namesTable.WallControlsNames .. " wall control components")
+    end
+    
     if Controls.compRoomControls then
         Controls.compRoomControls.Choices = namesTable.RoomControlsNames
+    end
+
+    if Controls.compUSBDisplays then
+        Controls.compUSBDisplays.Choices = namesTable.USBDisplayNames
+        self:debugPrint("Found " .. #namesTable.USBDisplayNames .. " USB display components")
     end
 end
 
@@ -744,6 +840,8 @@ function MXNetDisplayController:registerEventHandlers()
     -- Single control event handler map
     local singleControlHandlers = {
         compRoomControls = function() self:setRoomControlsComponent() end,
+        compUSBDisplays = function() self:setUSBDisplayComponent() end,
+        compWallControls = function() self:setWallControlsComponent() end,
         btnDisplayPowerAll = function(ctl) 
             if ctl.Boolean then self.powerModule.powerOnAll() else self.powerModule.powerOffAll() end 
         end,
@@ -762,7 +860,11 @@ function MXNetDisplayController:registerEventHandlers()
         btnDisplayPowerSingle = function(index, ctl)
             if ctl.Boolean then self.powerModule.powerOnDisplay(index) else self.powerModule.powerOffDisplay(index) end
         end,
-        devDisplays = function(index, ctl) self:setDisplayComponent(index) end
+        devDisplays = function(index, ctl) self:setDisplayComponent(index) end,
+        btnSource = function(index, ctl) 
+            self:debugPrint("Source button " .. index .. " pressed")
+            self.wallModule.selectSource(index) 
+        end
     }
     
     -- Register array control handlers
@@ -773,10 +875,12 @@ end
 
 -----------------------------[ Initialization ]-----------------------------
 function MXNetDisplayController:funcInit()
-    self:debugPrint("Starting MXNet DisplayController initialization...")
+    self:debugPrint("Starting MXNet DisplayWallController initialization...")
     
     self:getComponentNames()
     self:setRoomControlsComponent()
+    self:setWallControlsComponent()
+    self:setUSBDisplayComponent()
     self:setupDisplayComponents()
     self:registerEventHandlers()
     self:registerTimerHandlers()
@@ -785,8 +889,9 @@ function MXNetDisplayController:funcInit()
     self.powerModule.updatePowerFeedbackFromDisplays()
     self:updateTimerConfigFromComponent()
     
-    self:debugPrint("MXNet DisplayController Initialized with " .. 
-                   self.displayModule.getDisplayCount() .. " displays")
+    self:debugPrint("MXNet DisplayWallController Initialized with " .. 
+                   self.displayModule.getDisplayCount() .. " displays and " ..
+                   (self.components.wallControls and "wall controls" or "no wall controls"))
 end
 
 -----------------------------[ Cleanup ]-----------------------------
@@ -813,8 +918,15 @@ function MXNetDisplayController:cleanup()
         end
     end
     
+    -- Clean up wall controls component reference
+    if self.components.wallControls then
+        self.components.wallControls = nil
+    end
+    
     self.components = {
         displays = {},
+        usbDisplays = {},
+        wallControls = nil,
         compRoomControls = nil,
         invalid = {}
     }
@@ -823,9 +935,9 @@ function MXNetDisplayController:cleanup()
 end
 
 -----------------------------[ Factory Function ]-----------------------------
-local function createMXNetDisplayController(roomName, config)
-    local defaultRoomName = roomName or "[MXNet Display]"
-    print("Creating MXNet DisplayController for: " .. defaultRoomName)
+local function createMXNetDisplayWallController(roomName, config)
+    local defaultRoomName = roomName or "[MXNet Display Wall]"
+    print("Creating MXNet DisplayWallController for: " .. defaultRoomName)
     
     local success, controller = pcall(function()
         local instance = MXNetDisplayController.new(defaultRoomName, config)
@@ -837,11 +949,11 @@ local function createMXNetDisplayController(roomName, config)
     end)
     
     if not success then
-        print("ERROR: Failed to create MXNet DisplayController: " .. tostring(controller))
+        print("ERROR: Failed to create MXNet DisplayWallController: " .. tostring(controller))
         return nil
     end
     
-    print("Successfully created and initialized MXNet DisplayController for " .. defaultRoomName)
+    print("Successfully created and initialized MXNet DisplayWallController for " .. defaultRoomName)
     return controller
 end
 
@@ -865,24 +977,25 @@ local function getRoomNameFromComponent()
         return "["..Controls.roomName.String.."]"
     end
     
-    return "[MXNet Display]"
+    return "[MXNet Display Wall]"
 end
 
 -- Create instance
 local roomName = getRoomNameFromComponent()
-local config = { debugging = true, maxDisplays = 9 }
+local config = { debugging = true, maxDisplays = 9, maxSources = 12 }
 
-myMXNetDisplayController = createMXNetDisplayController(roomName, config)
+myMXNetDisplayWallController = createMXNetDisplayWallController(roomName, config)
 
-if myMXNetDisplayController then
-    print("SUCCESS: MXNet DisplayController created and initialized!")
+if myMXNetDisplayWallController then
+    print("SUCCESS: MXNet DisplayWallController created and initialized!")
     print("Room: " .. roomName)
-    print("Display count: " .. myMXNetDisplayController.displayModule.getDisplayCount())
+    print("Display count: " .. myMXNetDisplayWallController.displayModule.getDisplayCount())
+    print("Wall controls: " .. (myMXNetDisplayWallController.components.wallControls and "Connected" or "Not connected"))
     
     -- Export instance globally for external access
-    MXNetDisplayControllerInstance = myMXNetDisplayController
+    MXNetDisplayWallControllerInstance = myMXNetDisplayWallController
 else
-    print("ERROR: Failed to create MXNet DisplayController!")
+    print("ERROR: Failed to create MXNet DisplayWallController!")
 end
 
 --[[
@@ -890,17 +1003,23 @@ end
   ✓ Comprehensive control validation with descriptive error messages
   ✓ Control array normalization for consistent data structures
   ✓ Essential utility functions (isArr, setProp, bind, bindArray)
-  ✓ Modular architecture with Display and Power modules
+  ✓ Modular architecture with Display, Power, and Wall modules
   ✓ Batch event registration using handler maps
   ✓ State management utility for dynamic component arrays
   ✓ Factory function with enhanced error handling
   ✓ Optimized property access with cached references
   ✓ Follows Lua Refactoring Prompt specifications for event-driven, OOP architecture
   ✓ Uses setProp() throughout to prevent redundant property assignments
-  ✓ Power and Input control only (v2.0)
+  ✓ Power and Input control for individual displays
   ✓ RS232 command-based control (MXNet protocol)
   ✓ DRY helper function for RS232 command transmission
   ✓ Power commands: ka 00 01\x0D (on), ka 00 00\x0D (off)
   ✓ Input commands: xb 00 <hex>\x0D for HDMI1, HDMI2, DisplayPort, USB-C, DVI, VGA
   ✓ Automatic Rs232Tx string population and Rs232TxSend pulse control
+  ✓ Video wall control integration (v2.2)
+  ✓ Support for Shure MXA Video Wall 4x4 component
+  ✓ 12 encoder sources (ENC-01 through ENC-12)
+  ✓ Source selection via button array (btnSource[1-12])
+  ✓ Dynamic layout selection control population
+  ✓ Component discovery for wall controls
 ]]
