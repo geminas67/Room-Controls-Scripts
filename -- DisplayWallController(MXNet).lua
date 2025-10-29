@@ -1,18 +1,19 @@
 --[[
   MXNet DisplayWallController (Refactored) - Q-SYS Control Script for LG MXNet Display Wall Control
   Author: Nikolas Smith, Q-SYS
-  Date: 2025-10-17
-  Version: 2.2 (RS232 Command-Based Control + Video Wall Integration)
+  Date: 2025-10-23
+  Version: 2.3 (RS232 Command-Based Control + Video Wall + Matrix Decoder Routing)
   Firmware Req: 10.0.0
   Description: Controls LG MXNet display components via RS232 commands with power management,
-  input switching, and video wall control integration. Supports Shure MXA Video Wall 4x4 
-  component with 12 encoder sources (ENC-01 through ENC-12). Integrates with SystemAutomationController.
+  input switching, video wall control integration, and individual decoder routing. Supports 
+  MX Net Video Wall 4x4 component with 12 encoder sources (ENC-01 through ENC-12) and 
+  MXNet matrix routing to 35 decoders. Integrates with SystemAutomationController.
   
   REFACTORED FEATURES:
   - Enhanced validation with descriptive error messages
   - Array normalization for consistent control structures
   - Batch event registration using handler maps
-  - Modular architecture with Display, Power, and Wall modules
+  - Modular architecture with Display, Power, Wall, and Matrix modules
   - Efficient utility functions with standard patterns
   - State management utilities following SystemAutomationController patterns
   - Factory functions with comprehensive error handling
@@ -21,41 +22,42 @@
   - DRY helper function for RS232 transmission (sendRs232Command)
   - Video wall control with layout selection and source routing
   - Support for 12 encoder sources mapped to button array
+  - Individual decoder routing via matrix controls (35 decoders)
+  - Multiple decoder selection via compDecoderSelect array controls
+  - Intelligent routing: wall mode when available, direct matrix routing otherwise
+  - Batch routing to multiple selected decoders with single source button press
 ]]--
 
--- Display Control Configuration (easily changeable for different manufacturers)
+-- Display Controls Names
 local displayControls = {
-    -- Power Controls (RS232 String Commands)
-    powerOn = "ka 00 01\x0D",
-    powerOff = "ka 00 00\x0D", 
-    powerStatus = "PowerStatus",
-    
-    -- Input Controls (RS232 String Commands)
-    -- MXNet input commands: xb 00 <input>\x0D where input is:
-    inputCommands = {
-        HDMI1 = "xb 00 90\x0D",
-        HDMI2 = "xb 00 91\x0D",
-        DisplayPort = "xb 00 C0\x0D",
-        ["USB-C"] = "xb 00 92\x0D",
-        DVI = "xb 00 70\x0D",
-        VGA = "xb 00 60\x0D"
-    },
-    
     -- RS232 Controls
     rs232Tx = "Rs232Tx",
     rs232TxSend = "Rs232TxSend",
     
     -- Status feedback
+    powerStatus = "PowerStatus",
     inputStatusLED = "HotPlugDetect",
     inputNames = "InputNames ",
     currentInput = "CurrentInput "
+}
+
+-- Default RS232 Commands (LG MXNet Protocol) for fallback values if control strings are not configured
+local defaultCommands = {
+    powerOff = "ka 00 00\x0D",
+    powerOn = "ka 00 01\x0D",
+    HDMI1 = "xb 00 90\x0D",
+    HDMI2 = "xb 00 91\x0D",
 }
 
 -------------------[ Control References ]-------------------
 local controls = {
     txtStatus = Controls.txtStatus,
     devDisplays = Controls.devDisplays,
+    strPowerOffOn = Controls.strPowerOffOn,
+    strHDMIInput = Controls.strHDMIInput,
     compWallControls = Controls.compWallControls,
+    compMatrixControls = Controls.compMatrixControls,
+    compDecoderSelect = Controls.compDecoderSelect,
     compRoomControls = Controls.compRoomControls,
     roomName = Controls.roomName,
     ledDisplayPower = Controls.ledDisplayPower,
@@ -67,12 +69,14 @@ local controls = {
     btnDisplayPowerOff = Controls.btnDisplayPowerOff,
     btnDisplayPowerSingle = Controls.btnDisplayPowerSingle,
     btnDisplayInputAll = Controls.btnDisplayInputAll,
-    btnSource = Controls.btnSource
+    btnSource = Controls.btnSource,
+    numLastDecoder = Controls.numLastDecoder
 }
 
 -------------------[ Control Validation ]-------------------
 local function validateControls()
-    local required = { "txtStatus", "devDisplays" }
+    local required = { "txtStatus", "devDisplays", "btnSource" }
+    local optional = { "numLastDecoder" }
     local missing = {}
     
     for _, name in ipairs(required) do
@@ -89,6 +93,13 @@ local function validateControls()
         return false
     end
     
+    -- Warn about missing optional controls
+    for _, name in ipairs(optional) do
+        if not controls[name] then
+            print("WARNING: Optional control '" .. name .. "' not found - related features may be limited")
+        end
+    end
+    
     print("MXNetDisplayController validation passed")
     return true
 end
@@ -99,7 +110,10 @@ local function isArr(t)
 end
 
 local function normalizeControlArrays()
-    local arrayControls = { 'devDisplays', 'btnDisplayPowerOn', 'btnDisplayPowerOff', 'btnDisplayPowerSingle' }
+    local arrayControls = { 
+        'devDisplays', 'btnDisplayPowerOn', 'btnDisplayPowerOff', 'btnDisplayPowerSingle', 
+        'compDecoderSelect', 'strPowerOffOn', 'strHDMIInput' 
+    }
     
     for _, controlName in ipairs(arrayControls) do
         local ctrl = controls[controlName]
@@ -176,20 +190,23 @@ function MXNetDisplayController.new(roomName, config)
     self.roomName = roomName or "Default Room"
     self.debugging = (config and config.debugging) or true
     self.clearString = "[Clear]"
+    
+    -- Store controls reference for access in methods
+    self.controls = controls
 
     self.componentTypes = {
-        displays = "%PLUGIN%_e9ef4a50-ba74-4653-a22e-a58c02839313_%FP%_c7165c3b15ead5f69821d69583f73c8b",
-        usbDisplays = "%PLUGIN%_a49702fc-e17d-418e-8984-2839e1417b24_%FP%_8c3c5ad17f1728918575785b65988ca3",
-        wallControls = "%PLUG1N%_a49702fc-e17d-418e-8984-2839e1417b24_%FP%_8c3c5ad17f1728918575785b65988ca3",
+        displays = "%PLUGIN%_e186d86c-9fb0-426e-bd59-d1fe9e133519_%FP%_e578be77683e876fb741dc5e1344b6eb",
+        wallControls = "%PLUGIN%_a49702fc-e17d-418e-8984-2839e1417b24_%FP%_5a40bd11f25eee8d56f8be6c8c922912",
+        matrixControls = "%PLUGIN%_9c080b8a-681e-4cbc-b69d-17765330eeae_%FP%_01723ed5d0faac6a3e3e0d72276f6d9d",
         roomControls = "device_controller_script"
     }
     
     -- Component storage
     self.components = {
         displays = {},
-        usbDisplays = {},
         wallControls = {},
-        compRoomControls = nil,
+        matrixControls = nil,
+        roomControls = nil,
         invalid = {}
     }
     
@@ -205,9 +222,24 @@ function MXNetDisplayController.new(roomName, config)
     self.config = {
         maxDisplays = config and config.maxDisplays or 9,
         maxSources = config and config.maxSources or 12,
+        maxDecoders = config and config.maxDecoders or 35,
         defaultInput = "HDMI1",
-        inputChoices = {"HDMI1", "HDMI2", "DisplayPort", "USB-C"},
-        layoutChoices = {} -- Will be populated with ENC-01 through ENC-12
+        inputChoices = {"HDMI1", "HDMI2", "DisplayPort"},
+        layoutChoices = {}, -- Will be populated with ENC-01 through ENC-12
+        sourceToEncoderMap = {
+            [1] = 1,   -- DispatchPC 1
+            [2] = 2,   -- DispatchPC 2
+            [3] = 3,   -- BoardroomHDMI 1
+            [4] = 4,   -- BoardroomHDMI 2
+            [5] = 5,   -- TRWirelessPres 1
+            [6] = 6,   -- TRWirelessPres 2
+            [7] = 7,   -- TRRackPC 1
+            [8] = 8,   -- TRRackPC 2
+            [9] = 9,   -- TRWallplate 1
+            [10] = 10, -- TRWallplate 2
+            [11] = 11, -- MediaPlayer 1
+            [12] = 12  -- MediaPlayer 2
+        }
     }
     
     -- Populate layout choices
@@ -216,10 +248,33 @@ function MXNetDisplayController.new(roomName, config)
     end
     
     -- Input to button mapping
-    self.inputButtonMap = {
-        HDMI1 = 1, HDMI2 = 2, DisplayPort = 3, USB_C = 4,
-        DVI = 5, VGA = 6, Component = 7, Composite = 8, S_Video = 9, RF = 10
+    self.displayInputMap = {
+        HDMI1 = 1, HDMI2 = 2,
     }
+    
+    -- Display Commands (configurable via control strings for different display types)
+    -- Falls back to default LG MXNet commands if controls are empty
+    self.displayCommands = {}
+    
+    -- Power commands using array: [1]=Off, [2]=On
+    local powerCommandTypes = {"powerOff", "powerOn"}
+    for i, cmdType in ipairs(powerCommandTypes) do
+        if controls.strPowerOffOn and controls.strPowerOffOn[i] and controls.strPowerOffOn[i].String ~= "" then
+            self.displayCommands[cmdType] = controls.strPowerOffOn[i].String
+        else
+            self.displayCommands[cmdType] = defaultCommands[cmdType]
+        end
+    end
+    
+    -- HDMI input commands using array: [1]=HDMI1, [2]=HDMI2
+    local hdmiInputs = {"HDMI1", "HDMI2"}
+    for i, inputName in ipairs(hdmiInputs) do
+        if controls.strHDMIInput and controls.strHDMIInput[i] and controls.strHDMIInput[i].String ~= "" then
+            self.displayCommands[inputName] = controls.strHDMIInput[i].String
+        else
+            self.displayCommands[inputName] = defaultCommands[inputName]
+        end
+    end
     
     -- Timers
     self.timers = {
@@ -237,6 +292,7 @@ function MXNetDisplayController.new(roomName, config)
     self:initDisplayModule()
     self:initPowerModule()
     self:initWallModule()
+    self:initMatrixModule()
     self:updateTimerConfigFromComponent()
     
     return self
@@ -251,14 +307,14 @@ end
 function MXNetDisplayController:updateTimerConfigFromComponent()
     local defaultWarmupTime, defaultCooldownTime = 7, 5
     
-    if not self.components.compRoomControls then
+    if not self.components.roomControls then
         self.timerConfig.warmupTime = defaultWarmupTime
         self.timerConfig.cooldownTime = defaultCooldownTime
         self:debugPrint("Using default timing values")
         return
     end
 
-    local comp = self.components.compRoomControls
+    local comp = self.components.roomControls
     local warmupTime = comp.warmupTime and comp.warmupTime.Value or nil
     self.timerConfig.warmupTime = (warmupTime and warmupTime > 0) and warmupTime or defaultWarmupTime
     
@@ -276,7 +332,7 @@ end
 -----------------------------[ Input Button Mapping ]-----------------------------
 function MXNetDisplayController:getInputButtonNumber(input)
     local normalizedInput = input:gsub("USB%-C", "USB_C")
-    local buttonNumber = self.inputButtonMap[normalizedInput]
+    local buttonNumber = self.displayInputMap[normalizedInput]
     if not buttonNumber then
         self:debugPrint("WARNING: No button mapping found for input: " .. input)
     end
@@ -337,7 +393,7 @@ function MXNetDisplayController:initDisplayModule()
     self.displayModule = {
         powerAll = function(state)
             selfRef:debugPrint("Powering all displays: " .. tostring(state))
-            local rs232Cmd = state and displayControls.powerOn or displayControls.powerOff
+            local rs232Cmd = state and selfRef.displayCommands.powerOn or selfRef.displayCommands.powerOff
             for i, display in pairs(selfRef.components.displays) do
                 if display then
                     selfRef:sendRs232Command(display, rs232Cmd)
@@ -350,7 +406,7 @@ function MXNetDisplayController:initDisplayModule()
         powerSingle = function(index, state)
             local display = selfRef.components.displays[index]
             if display then
-                local rs232Cmd = state and displayControls.powerOn or displayControls.powerOff
+                local rs232Cmd = state and selfRef.displayCommands.powerOn or selfRef.displayCommands.powerOff
                 selfRef:sendRs232Command(display, rs232Cmd)
                 selfRef:debugPrint("Display " .. index .. " power: " .. tostring(state))
             end
@@ -358,7 +414,7 @@ function MXNetDisplayController:initDisplayModule()
         
         setInputAll = function(input)
             selfRef:debugPrint("Setting all displays to input: " .. input)
-            local rs232Cmd = displayControls.inputCommands[input]
+            local rs232Cmd = selfRef.displayCommands[input]
             if not rs232Cmd then
                 selfRef:debugPrint("WARNING: No RS232 command found for input: " .. input)
                 return
@@ -376,7 +432,7 @@ function MXNetDisplayController:initDisplayModule()
         setInputSingle = function(index, input)
             local display = selfRef.components.displays[index]
             if display then
-                local rs232Cmd = displayControls.inputCommands[input]
+                local rs232Cmd = selfRef.displayCommands[input]
                 if not rs232Cmd then
                     selfRef:debugPrint("WARNING: No RS232 command found for input: " .. input)
                     return
@@ -596,6 +652,123 @@ function MXNetDisplayController:initWallModule()
     }
 end
 
+-----------------------------[ Source Button Interlocking ]-----------------------------
+function MXNetDisplayController:interlockSourceButtons(activeIndex)
+    if not controls.btnSource then return end
+    
+    local btnArray = isArr(controls.btnSource) and controls.btnSource or {controls.btnSource}
+    for i, btn in ipairs(btnArray) do
+        if btn then
+            setProp(btn, "Boolean", i == activeIndex)
+        end
+    end
+end
+
+-----------------------------[ Matrix Module ]-----------------------------
+function MXNetDisplayController:initMatrixModule()
+    local selfRef = self
+    self.matrixModule = {
+        setDecoderChoices = function()
+            if not controls.compDecoderSelect then
+                selfRef:debugPrint("WARNING: compDecoderSelect controls not found")
+                return
+            end
+            
+            local choices = {}
+            for i = 1, selfRef.config.maxDecoders do
+                table.insert(choices, tostring(i))
+            end
+            
+            local decoderArray = isArr(controls.compDecoderSelect) and controls.compDecoderSelect or {controls.compDecoderSelect}
+            selfRef:debugPrint("Setting decoder choices for " .. #decoderArray .. " decoder select controls")
+            
+            for i, ctrl in ipairs(decoderArray) do
+                if ctrl then
+                    ctrl.Choices = choices
+                    selfRef:debugPrint("Set choices for decoder select control " .. i .. ": " .. table.concat(choices, ", "))
+                else
+                    selfRef:debugPrint("WARNING: Decoder select control " .. i .. " is nil")
+                end
+            end
+            selfRef:debugPrint("Set decoder choices: 1 through " .. selfRef.config.maxDecoders)
+        end,
+        
+        getSelectedDecoders = function()
+            local decoders = {}
+            if not controls.compDecoderSelect then 
+                return decoders 
+            end
+            
+            local decoderArray = isArr(controls.compDecoderSelect) and controls.compDecoderSelect or {controls.compDecoderSelect}
+            for i, ctrl in ipairs(decoderArray) do
+                if ctrl then
+                    local decoderStr = ctrl.String
+                    local decoderNum = tonumber(decoderStr)
+                    if decoderNum and decoderNum >= 1 and decoderNum <= selfRef.config.maxDecoders then
+                        table.insert(decoders, decoderNum)
+                        selfRef:debugPrint("Decoder selector " .. i .. " has decoder " .. decoderNum .. " selected")
+                    end
+                end
+            end
+            return decoders
+        end,
+        
+        routeSourceToSingleDecoder = function(sourceIndex, decoderIndex)
+            if not selfRef.components.matrixControls then
+                selfRef:debugPrint("WARNING: Matrix controls component not available")
+                return false
+            end
+            
+            local encoderNum = selfRef.config.sourceToEncoderMap[sourceIndex]
+            if not encoderNum then
+                selfRef:debugPrint("WARNING: Invalid source index: " .. tostring(sourceIndex))
+                return false
+            end
+            
+            local controlName = "MatrixTieSelectedAV " .. decoderIndex
+            local matrixControl = selfRef.components.matrixControls[controlName]
+            if matrixControl then
+                matrixControl.Value = encoderNum
+                selfRef:debugPrint("Routed source " .. sourceIndex .. " (encoder " .. encoderNum .. ") to decoder " .. decoderIndex)
+                return true
+            else
+                selfRef:debugPrint("WARNING: Matrix control not found: " .. controlName)
+                return false
+            end
+        end,
+        
+        routeSourceToDecoders = function(sourceIndex)
+            local selectedDecoders = selfRef.matrixModule.getSelectedDecoders()
+            
+            if #selectedDecoders == 0 then
+                selfRef:debugPrint("No decoders selected for routing")
+                return
+            end
+            
+            if not selfRef.components.matrixControls then
+                selfRef:debugPrint("WARNING: Matrix controls component not available")
+                return
+            end
+            
+            local encoderNum = selfRef.config.sourceToEncoderMap[sourceIndex]
+            if not encoderNum then
+                selfRef:debugPrint("WARNING: Invalid source index: " .. tostring(sourceIndex))
+                return
+            end
+            
+            local successCount = 0
+            for _, decoderNum in ipairs(selectedDecoders) do
+                if selfRef.matrixModule.routeSourceToSingleDecoder(sourceIndex, decoderNum) then
+                    successCount = successCount + 1
+                end
+            end
+            
+            selfRef:debugPrint("Routed source " .. sourceIndex .. " (encoder " .. encoderNum .. ") to " .. 
+                             successCount .. " of " .. #selectedDecoders .. " selected decoders")
+        end
+    }
+end
+
 -----------------------------[ Component Management ]-----------------------------
 function MXNetDisplayController:setComponent(ctrl, componentType)
     local componentName = ctrl and ctrl.String or nil
@@ -659,20 +832,12 @@ function MXNetDisplayController:setupDisplayComponents()
 end
 
 function MXNetDisplayController:setRoomControlsComponent()
-    self.components.compRoomControls = self:setComponent(Controls.compRoomControls, "Room Controls")
-    if self.components.compRoomControls then
+    self.components.roomControls = self:setComponent(Controls.compRoomControls, "Room Controls")
+    if self.components.roomControls then
         self:updateTimerConfigFromComponent()
     end
 end
 
-function MXNetDisplayController:setUSBDisplayComponent()
-    self.components.usbDisplays = self:setComponent(Controls.compUSBDisplays, "USB Displays")
-    if self.components.usbDisplays then
-        self:debugPrint("USB displays component set successfully")
-    else
-        self:debugPrint("USB displays component not available")
-    end
-end
 
 function MXNetDisplayController:setWallControlsComponent()
     self.components.wallControls = self:setComponent(Controls.compWallControls, "Wall Controls")
@@ -682,6 +847,17 @@ function MXNetDisplayController:setWallControlsComponent()
         self.wallModule.setLayoutChoices(self.components.wallControls)
     else
         self:debugPrint("Wall controls component not available")
+    end
+end
+
+function MXNetDisplayController:setMatrixControlsComponent()
+    self.components.matrixControls = self:setComponent(Controls.compMatrixControls, "Matrix Controls")
+    if self.components.matrixControls then
+        self:debugPrint("Matrix controls component set successfully")
+        -- Set decoder choices after component is assigned
+        self.matrixModule.setDecoderChoices()
+    else
+        self:debugPrint("Matrix controls component not available")
     end
 end
 
@@ -747,18 +923,18 @@ end
 function MXNetDisplayController:getComponentNames()
     local namesTable = {
         DisplayNames = {},
-        USBDisplayNames = {},
         WallControlsNames = {},
         RoomControlsNames = {},
+        MatrixControlsNames = {},
     }
 
     for _, comp in pairs(Component.GetComponents()) do
         if comp.Type == self.componentTypes.displays then
             table.insert(namesTable.DisplayNames, comp.Name)
-        elseif comp.Type == self.componentTypes.usbDisplays then
-            table.insert(namesTable.USBDisplayNames, comp.Name)
         elseif comp.Type == self.componentTypes.wallControls then
             table.insert(namesTable.WallControlsNames, comp.Name)
+        elseif comp.Type == self.componentTypes.matrixControls then
+            table.insert(namesTable.MatrixControlsNames, comp.Name)
         elseif comp.Type == self.componentTypes.roomControls and string.match(comp.Name, "^compRoomControls") then
             table.insert(namesTable.RoomControlsNames, comp.Name)
         end
@@ -783,20 +959,20 @@ function MXNetDisplayController:getComponentNames()
         self:debugPrint("Found " .. #namesTable.WallControlsNames .. " wall control components")
     end
     
+    if Controls.compMatrixControls then
+        Controls.compMatrixControls.Choices = namesTable.MatrixControlsNames
+        self:debugPrint("Found " .. #namesTable.MatrixControlsNames .. " matrix control components")
+    end
+    
     if Controls.compRoomControls then
         Controls.compRoomControls.Choices = namesTable.RoomControlsNames
-    end
-
-    if Controls.compUSBDisplays then
-        Controls.compUSBDisplays.Choices = namesTable.USBDisplayNames
-        self:debugPrint("Found " .. #namesTable.USBDisplayNames .. " USB display components")
     end
 end
 
 -----------------------------[ Room Name Management ]-----------------------------
 function MXNetDisplayController:updateRoomNameFromComponent()
-    if self.components.compRoomControls then
-        local roomNameControl = self.components.compRoomControls["roomName"]
+    if self.components.roomControls then
+        local roomNameControl = self.components.roomControls["roomName"]
         if roomNameControl and roomNameControl.String and roomNameControl.String ~= "" then
             local newRoomName = "["..roomNameControl.String.."]"
             if newRoomName ~= self.roomName then
@@ -840,8 +1016,8 @@ function MXNetDisplayController:registerEventHandlers()
     -- Single control event handler map
     local singleControlHandlers = {
         compRoomControls = function() self:setRoomControlsComponent() end,
-        compUSBDisplays = function() self:setUSBDisplayComponent() end,
         compWallControls = function() self:setWallControlsComponent() end,
+        compMatrixControls = function() self:setMatrixControlsComponent() end,
         btnDisplayPowerAll = function(ctl) 
             if ctl.Boolean then self.powerModule.powerOnAll() else self.powerModule.powerOffAll() end 
         end,
@@ -860,10 +1036,52 @@ function MXNetDisplayController:registerEventHandlers()
         btnDisplayPowerSingle = function(index, ctl)
             if ctl.Boolean then self.powerModule.powerOnDisplay(index) else self.powerModule.powerOffDisplay(index) end
         end,
+
         devDisplays = function(index, ctl) self:setDisplayComponent(index) end,
+
         btnSource = function(index, ctl) 
             self:debugPrint("Source button " .. index .. " pressed")
-            self.wallModule.selectSource(index) 
+            
+            -- Interlock source buttons (only one active at a time)
+            self:interlockSourceButtons(index)
+            
+            -- Check if this is the last decoder using the configurable control
+            local lastDecoderNum = self.controls.numLastDecoder and tonumber(self.controls.numLastDecoder.Value) or nil
+            local isLastDecoder = lastDecoderNum and (index == lastDecoderNum)
+            
+            -- Route based on decoder type
+            if self.components.wallControls and not isLastDecoder then
+                -- Use wall controls for all decoders except the last one
+                self.wallModule.selectSource(index)
+            elseif isLastDecoder then
+                -- Use matrix routing only for the last decoder
+                self.matrixModule.routeSourceToDecoders(index)
+            end
+            
+            -- TODO: Add feedback from compMatrixControls component
+            -- Challenge: Reference point changes per selected decoder
+            -- Will need to monitor MatrixTieSelectedAV controls for selected decoders
+            -- and update button states based on which encoder is routed to those decoders
+             
+        end,
+
+        compDecoderSelect = function(index, ctl)
+            -- Ensure choices are set if they weren't set during initialization
+            if not ctl.Choices or #ctl.Choices == 0 then
+                self:debugPrint("Setting decoder choices for control " .. index .. " (late initialization)")
+                local choices = {}
+                for i = 1, self.config.maxDecoders do
+                    table.insert(choices, tostring(i))
+                end
+                ctl.Choices = choices
+            end
+            
+            local decoderNum = tonumber(ctl.String)
+            if decoderNum and decoderNum >= 1 and decoderNum <= self.config.maxDecoders then
+                self:debugPrint("Decoder selector " .. index .. " changed to decoder " .. decoderNum)
+            else
+                self:debugPrint("Decoder selector " .. index .. " has invalid selection")
+            end
         end
     }
     
@@ -880,18 +1098,22 @@ function MXNetDisplayController:funcInit()
     self:getComponentNames()
     self:setRoomControlsComponent()
     self:setWallControlsComponent()
-    self:setUSBDisplayComponent()
+    self:setMatrixControlsComponent()
     self:setupDisplayComponents()
     self:registerEventHandlers()
     self:registerTimerHandlers()
     self:updateRoomNameFromComponent()
     
+    -- Set decoder choices independently of matrix component availability
+    self.matrixModule.setDecoderChoices()
+    
     self.powerModule.updatePowerFeedbackFromDisplays()
     self:updateTimerConfigFromComponent()
     
     self:debugPrint("MXNet DisplayWallController Initialized with " .. 
-                   self.displayModule.getDisplayCount() .. " displays and " ..
-                   (self.components.wallControls and "wall controls" or "no wall controls"))
+                   self.displayModule.getDisplayCount() .. " displays, " ..
+                   (self.components.wallControls and "wall controls, " or "no wall controls, ") ..
+                   (self.components.matrixControls and "matrix controls" or "no matrix controls"))
 end
 
 -----------------------------[ Cleanup ]-----------------------------
@@ -923,11 +1145,16 @@ function MXNetDisplayController:cleanup()
         self.components.wallControls = nil
     end
     
+    -- Clean up matrix controls component reference
+    if self.components.matrixControls then
+        self.components.matrixControls = nil
+    end
+    
     self.components = {
         displays = {},
-        usbDisplays = {},
         wallControls = nil,
-        compRoomControls = nil,
+        matrixControls = nil,
+        roomControls = nil,
         invalid = {}
     }
     
@@ -991,6 +1218,7 @@ if myMXNetDisplayWallController then
     print("Room: " .. roomName)
     print("Display count: " .. myMXNetDisplayWallController.displayModule.getDisplayCount())
     print("Wall controls: " .. (myMXNetDisplayWallController.components.wallControls and "Connected" or "Not connected"))
+    print("Matrix controls: " .. (myMXNetDisplayWallController.components.matrixControls and "Connected" or "Not connected"))
     
     -- Export instance globally for external access
     MXNetDisplayWallControllerInstance = myMXNetDisplayWallController
@@ -1003,7 +1231,7 @@ end
   ✓ Comprehensive control validation with descriptive error messages
   ✓ Control array normalization for consistent data structures
   ✓ Essential utility functions (isArr, setProp, bind, bindArray)
-  ✓ Modular architecture with Display, Power, and Wall modules
+  ✓ Modular architecture with Display, Power, Wall, and Matrix modules
   ✓ Batch event registration using handler maps
   ✓ State management utility for dynamic component arrays
   ✓ Factory function with enhanced error handling
@@ -1014,12 +1242,19 @@ end
   ✓ RS232 command-based control (MXNet protocol)
   ✓ DRY helper function for RS232 command transmission
   ✓ Power commands: ka 00 01\x0D (on), ka 00 00\x0D (off)
-  ✓ Input commands: xb 00 <hex>\x0D for HDMI1, HDMI2, DisplayPort, USB-C, DVI, VGA
+  ✓ Input commands: xb 00 <hex>\x0D for HDMI1, HDMI2
   ✓ Automatic Rs232Tx string population and Rs232TxSend pulse control
   ✓ Video wall control integration (v2.2)
-  ✓ Support for Shure MXA Video Wall 4x4 component
+  ✓ Support for MX Net Video Wall 4x4 component
   ✓ 12 encoder sources (ENC-01 through ENC-12)
   ✓ Source selection via button array (btnSource[1-12])
   ✓ Dynamic layout selection control population
   ✓ Component discovery for wall controls
+  ✓ Individual decoder routing via matrix controls (v2.3)
+  ✓ Support for 35 MXNet decoders (MatrixTieSelectedAV 1-35)
+  ✓ Multiple decoder selection via compDecoderSelect array
+  ✓ Source to encoder mapping (1-12 sources to encoders)
+  ✓ Intelligent routing: wall controls when present, matrix routing when absent
+  ✓ Batch routing to multiple selected decoders
+  ✓ Optional simultaneous wall + individual routing (commented)
 ]]
