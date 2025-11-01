@@ -7,25 +7,7 @@
   Description: Controls LG MXNet display components via RS232 commands with power management,
   input switching, video wall control integration, and individual decoder routing. Supports 
   MX Net Video Wall 4x4 component with 12 encoder sources (ENC-01 through ENC-12) and 
-  MXNet matrix routing to 35 decoders. Integrates with SystemAutomationController.
-  
-  REFACTORED FEATURES:
-  - Enhanced validation with descriptive error messages
-  - Array normalization for consistent control structures
-  - Batch event registration using handler maps
-  - Modular architecture with Display, Power, Wall, and Matrix modules
-  - Efficient utility functions with standard patterns
-  - State management utilities following SystemAutomationController patterns
-  - Factory functions with comprehensive error handling
-  - Follows Lua Refactoring Prompt specifications for event-driven, OOP architecture
-  - RS232 command-based control using MXNet protocol
-  - DRY helper function for RS232 transmission (sendRs232Command)
-  - Video wall control with layout selection and source routing
-  - Support for 12 encoder sources mapped to button array
-  - Individual decoder routing via matrix controls (35 decoders)
-  - Multiple decoder selection via compDecoderSelect array controls
-  - Intelligent routing: wall mode when available, direct matrix routing otherwise
-  - Batch routing to multiple selected decoders with single source button press
+  MXNet matrix routing to 35 decoders. Integrates with SystemAutomationController.  
 ]]--
 
 -- Display Controls Names
@@ -64,7 +46,7 @@ local controls = {
     ledDisplayInput = Controls.ledDisplayInput,
     ledDisplayWarming = Controls.ledDisplayWarming,
     ledDisplayCooling = Controls.ledDisplayCooling,
-    btnDisplayPowerAll = Controls.btnDisplayPowerAll,
+    btnDisplayAllOffOn = Controls.btnDisplayAllOffOn,
     btnDisplayPowerOn = Controls.btnDisplayPowerOn,
     btnDisplayPowerOff = Controls.btnDisplayPowerOff,
     btnDisplayPowerSingle = Controls.btnDisplayPowerSingle,
@@ -112,7 +94,7 @@ end
 local function normalizeControlArrays()
     local arrayControls = { 
         'devDisplays', 'btnDisplayPowerOn', 'btnDisplayPowerOff', 'btnDisplayPowerSingle', 
-        'compDecoderSelect', 'strPowerOffOn', 'strHDMIInput' 
+        'btnDisplayAllOffOn', 'compDecoderSelect', 'strPowerOffOn', 'strHDMIInput' 
     }
     
     for _, controlName in ipairs(arrayControls) do
@@ -146,6 +128,57 @@ local function setButtonLegend(ctrl, legend)
     end
 end
 
+local function forEach(array, func)
+    if not array then return end
+    local arr = isArr(array) and array or { array }
+    for i, item in ipairs(arr) do
+        if item then func(i, item) end
+    end
+end
+
+-------------------[ Centralized Error/Status Reporting ]-------------------
+local function printOperationResult(operationType, successCount, totalCount, errorList)
+    local status = successCount == totalCount and "SUCCESS" or "PARTIAL"
+    print(string.format("[%s] %s: %d/%d completed", status, operationType, successCount, totalCount))
+    if errorList and #errorList > 0 then
+        print("  Errors:")
+        for _, err in ipairs(errorList) do
+            print("    - " .. err)
+        end
+    end
+end
+
+local function handleBatchResult(resultSuccess, operationType, index, itemName)
+    if not resultSuccess then
+        return string.format("%s [%d] %s failed", operationType, index, itemName or "")
+    end
+    return nil
+end
+
+-------------------[ Generic Button Legend Utilities ]-------------------
+local function setButtonLegends(controlArray, legends, index)
+    -- Set button legends for single index or all buttons
+    -- legends = {on = "On", off = "Off"} or legends = {[1] = "Off", [2] = "On"}
+    if not controlArray or not legends then return end
+    
+    if index then
+        -- Set individual button legends (e.g., btnDisplayPowerOn[index])
+        for key, legend in pairs(legends) do
+            local ctrl = type(key) == "string" and controlArray[key] or nil
+            if ctrl and ctrl[index] then
+                setButtonLegend(ctrl[index], legend)
+            end
+        end
+    else
+        -- Set all buttons legends using numeric indices
+        for i, legend in pairs(legends) do
+            if type(i) == "number" and controlArray[i] then
+                setButtonLegend(controlArray[i], legend)
+            end
+        end
+    end
+end
+
 -------------------[ State Management Utility ]-------------------
 local function resetComponentsArray()
     local componentState = {
@@ -166,6 +199,23 @@ local function resetComponentsArray()
     
     componentState.initialized = true
     return componentState
+end
+
+-------------------[ BaseModule Pattern ]-------------------
+local BaseModule = {}
+BaseModule.__index = BaseModule
+
+function BaseModule.new(controller, moduleName)
+    local self = setmetatable({}, BaseModule)
+    self.controller = controller
+    self.moduleName = moduleName or "BaseModule"
+    return self
+end
+
+function BaseModule:debugPrint(str)
+    if self.controller and self.controller.debugging then
+        print("["..self.controller.roomName.." "..self.moduleName.."] "..str)
+    end
 end
 
 -------------------[ Class Definition ]-------------------
@@ -227,18 +277,18 @@ function MXNetDisplayController.new(roomName, config)
         inputChoices = {"HDMI1", "HDMI2", "DisplayPort"},
         layoutChoices = {}, -- Will be populated with ENC-01 through ENC-12
         sourceToEncoderMap = {
-            [1] = 1,   -- DispatchPC 1
-            [2] = 2,   -- DispatchPC 2
-            [3] = 3,   -- BoardroomHDMI 1
-            [4] = 4,   -- BoardroomHDMI 2
-            [5] = 5,   -- TRWirelessPres 1
-            [6] = 6,   -- TRWirelessPres 2
-            [7] = 7,   -- TRRackPC 1
-            [8] = 8,   -- TRRackPC 2
-            [9] = 9,   -- TRWallplate 1
-            [10] = 10, -- TRWallplate 2
-            [11] = 11, -- MediaPlayer 1
-            [12] = 12  -- MediaPlayer 2
+            [1] = 1,   -- DispatchPC01
+            [2] = 2,   -- DispatchPC02
+            [3] = 3,   -- BRHDMI01
+            [4] = 4,   -- BRHDMI02
+            [5] = 5,   -- WrlsPresRmA
+            [6] = 6,   -- WrlsPresRmB
+            [7] = 7,   -- TeamsPCRmA
+            [8] = 8,   -- TeamsPCRmB
+            [9] = 9,   -- LaptopRmA
+            [10] = 10, -- LaptopRmB
+            [11] = 11, -- EESignage
+            [12] = 12  -- MediaPlayer
         }
     }
     
@@ -331,6 +381,7 @@ end
 
 -----------------------------[ Input Button Mapping ]-----------------------------
 function MXNetDisplayController:getInputButtonNumber(input)
+    if not input then return nil end
     local normalizedInput = input:gsub("USB%-C", "USB_C")
     local buttonNumber = self.displayInputMap[normalizedInput]
     if not buttonNumber then
@@ -339,317 +390,407 @@ function MXNetDisplayController:getInputButtonNumber(input)
     return buttonNumber
 end
 
------------------------------[ Safe Component Access ]-----------------------------
-function MXNetDisplayController:safeComponentAccess(component, control, action, value, delay)
-    local success, result = pcall(function()
-        if component and component[control] then
-            if action == "set" then 
-                component[control].Boolean = value
-                return true
-            elseif action == "setString" then
-                component[control].String = value
-                return true
-            elseif action == "String" then
-                component[control].String = value
-                return true
-            elseif action == "Boolean" then
-                if delay then 
-                    Timer.CallAfter(function()
-                        component[control].Boolean = value
-                    end, delay)
-                else
-                    component[control].Boolean = value
-                end
-                return true
-            elseif action == "trigger" then
-                component[control]:Trigger()
-                return true
-            elseif action == "get" then
-                return component[control].Boolean
-            elseif action == "getString" then
-                return component[control].String
-            end
-        end
-        return false
-    end)
-    
-    if not success then
-        self:debugPrint("Component access error: " .. tostring(result))
-        return false
-    end
-    return result
-end
-
 -----------------------------[ RS232 Command Helper ]-----------------------------
 function MXNetDisplayController:sendRs232Command(display, command)
-    self:safeComponentAccess(display, displayControls.rs232Tx, "String", command)
-    self:safeComponentAccess(display, displayControls.rs232TxSend, "Boolean", true)
-    self:safeComponentAccess(display, displayControls.rs232TxSend, "Boolean", false, 0.2)
+    if not display or not command then return false end
+    
+    -- Direct access with guard clauses
+    if display[displayControls.rs232Tx] then
+        display[displayControls.rs232Tx].String = command
+    else
+        return false
+    end
+    
+    if display[displayControls.rs232TxSend] then
+        display[displayControls.rs232TxSend].Boolean = true
+        Timer.CallAfter(function()
+            if display[displayControls.rs232TxSend] then
+                display[displayControls.rs232TxSend].Boolean = false
+            end
+        end, 0.2)
+    else
+        return false
+    end
+    
+    return true
+end
+
+-----------------------------[ Generic Timer Completion Handler ]-----------------------------
+function MXNetDisplayController:handleTimerCompletion(isWarmup)
+    local timerType = isWarmup and "Warmup" or "Cooldown"
+    local stateKey = isWarmup and "isWarming" or "isCooling"
+    local ledControl = isWarmup and controls.ledDisplayWarming or controls.ledDisplayCooling
+    local timer = isWarmup and self.timers.warmup or self.timers.cooldown
+    
+    self:debugPrint(timerType .. " Period Has Ended")
+    self.powerModule:enableDisablePowerControls(true)
+    
+    for i = 1, self.config.maxDisplays do
+        self.powerModule:enableDisablePowerControlIndex(i, true)
+        self.powerModule:resetPowerButtonLegends(i)
+    end
+    
+    self.powerModule:resetPowerButtonLegends(nil)  -- Reset all buttons
+    self.state[stateKey] = false
+    setProp(ledControl, "Boolean", false)
+    timer:Stop()
 end
 
 -----------------------------[ Display Module ]-----------------------------
-function MXNetDisplayController:initDisplayModule()
-    local selfRef = self
-    self.displayModule = {
-        powerAll = function(state)
-            selfRef:debugPrint("Powering all displays: " .. tostring(state))
-            local rs232Cmd = state and selfRef.displayCommands.powerOn or selfRef.displayCommands.powerOff
-            for i, display in pairs(selfRef.components.displays) do
-                if display then
-                    selfRef:sendRs232Command(display, rs232Cmd)
-                end
-            end
-            selfRef.state.powerState = state
-            setProp(controls.ledDisplayPower, "Boolean", state)
-        end,
-        
-        powerSingle = function(index, state)
-            local display = selfRef.components.displays[index]
-            if display then
-                local rs232Cmd = state and selfRef.displayCommands.powerOn or selfRef.displayCommands.powerOff
-                selfRef:sendRs232Command(display, rs232Cmd)
-                selfRef:debugPrint("Display " .. index .. " power: " .. tostring(state))
-            end
-        end,
-        
-        setInputAll = function(input)
-            selfRef:debugPrint("Setting all displays to input: " .. input)
-            local rs232Cmd = selfRef.displayCommands[input]
-            if not rs232Cmd then
-                selfRef:debugPrint("WARNING: No RS232 command found for input: " .. input)
-                return
-            end
-            
-            for i, display in pairs(selfRef.components.displays) do
-                if display then
-                    selfRef:sendRs232Command(display, rs232Cmd)
-                end
-            end
-            selfRef.state.lastInput = input
-            setProp(controls.ledDisplayInput, "String", input)
-        end,
-        
-        setInputSingle = function(index, input)
-            local display = selfRef.components.displays[index]
-            if display then
-                local rs232Cmd = selfRef.displayCommands[input]
-                if not rs232Cmd then
-                    selfRef:debugPrint("WARNING: No RS232 command found for input: " .. input)
-                    return
-                end
-                
-                selfRef:sendRs232Command(display, rs232Cmd)
-                selfRef:debugPrint("Display " .. index .. " input: " .. input)
-            end
-        end,
-        
-        getDisplayCount = function()
-            local count = 0
-            for _, display in pairs(selfRef.components.displays) do
-                if display then count = count + 1 end
-            end
-            return count
-        end,
-        
-        getCurrentInput = function(displayIndex)
-            local display = selfRef.components.displays[displayIndex]
-            if not display then return nil end
-            
-            -- Check CurrentInput LEDs to find active input (feedback from display)
-            for i = 1, 10 do
-                local currentInputControl = display[displayControls.currentInput .. i]
-                if currentInputControl then
-                    local isActive = selfRef:safeComponentAccess(display, displayControls.currentInput .. i, "get")
-                    if isActive then
-                        local inputNameControl = display[displayControls.inputNames .. i]
-                        if inputNameControl then
-                            return selfRef:safeComponentAccess(display, displayControls.inputNames .. i, "getString")
-                        else
-                            return "Input " .. i
-                        end
-                    end
-                end
-            end
-            return nil
+local DisplayModule = setmetatable({}, {__index = BaseModule})
+DisplayModule.__index = DisplayModule
+
+function DisplayModule.new(controller)
+    local self = setmetatable(BaseModule.new(controller, "DisplayModule"), DisplayModule)
+    return self
+end
+
+function DisplayModule:powerAll(state)
+    self:debugPrint("Powering all displays: " .. tostring(state))
+    local rs232Cmd = state and self.controller.displayCommands.powerOn or self.controller.displayCommands.powerOff
+    
+    for i, display in pairs(self.controller.components.displays) do
+        if display then
+            self.controller:sendRs232Command(display, rs232Cmd)
         end
-    }
+    end
+    
+    self.controller.state.powerState = state
+    setProp(controls.ledDisplayPower, "Boolean", state)
+end
+
+function DisplayModule:powerSingle(index, state)
+    local display = self.controller.components.displays[index]
+    if not display then return end
+    
+    local rs232Cmd = state and self.controller.displayCommands.powerOn or self.controller.displayCommands.powerOff
+    self.controller:sendRs232Command(display, rs232Cmd)
+    self:debugPrint("Display " .. index .. " power: " .. tostring(state))
+end
+
+function DisplayModule:setInputAll(input)
+    self:debugPrint("Setting all displays to input: " .. input)
+    local rs232Cmd = self.controller.displayCommands[input]
+    if not rs232Cmd then
+        self:debugPrint("WARNING: No RS232 command found for input: " .. input)
+        return
+    end
+    
+    for i, display in pairs(self.controller.components.displays) do
+        if display then
+            self.controller:sendRs232Command(display, rs232Cmd)
+        end
+    end
+    
+    self.controller.state.lastInput = input
+    setProp(controls.ledDisplayInput, "String", input)
+end
+
+function DisplayModule:setInputSingle(index, input)
+    local display = self.controller.components.displays[index]
+    if not display then return end
+    
+    local rs232Cmd = self.controller.displayCommands[input]
+    if not rs232Cmd then
+        self:debugPrint("WARNING: No RS232 command found for input: " .. input)
+        return
+    end
+    
+    self.controller:sendRs232Command(display, rs232Cmd)
+    self:debugPrint("Display " .. index .. " input: " .. input)
+end
+
+function DisplayModule:getDisplayCount()
+    local count = 0
+    for _, display in pairs(self.controller.components.displays) do
+        if display then count = count + 1 end
+    end
+    return count
+end
+
+function DisplayModule:getCurrentInput(displayIndex)
+    local display = self.controller.components.displays[displayIndex]
+    if not display then return nil end
+    
+    -- Check CurrentInput LEDs to find active input (feedback from display)
+    for i = 1, 10 do
+        local currentInputControl = display[displayControls.currentInput .. i]
+        if currentInputControl and currentInputControl.Boolean then
+            local inputNameControl = display[displayControls.inputNames .. i]
+            if inputNameControl and inputNameControl.String then
+                return inputNameControl.String
+            else
+                return "Input " .. i
+            end
+        end
+    end
+    return nil
+end
+
+function MXNetDisplayController:initDisplayModule()
+    self.displayModule = DisplayModule.new(self)
 end
 
 -----------------------------[ Power Module ]-----------------------------
-function MXNetDisplayController:initPowerModule()
-    local selfRef = self
-    self.powerModule = {
-        enableDisablePowerControls = function(state)
-            local allPowerControls = {
-                "btnDisplayPowerOn", "btnDisplayPowerOff", "btnDisplayPowerSingle",
-                "btnDisplayPowerAll", "btnDisplayInputAll"
-            }
-            
-            for _, controlName in ipairs(allPowerControls) do
-                local ctrl = controls[controlName]
-                if ctrl then
-                    if isArr(ctrl) then
-                        for i, btn in ipairs(ctrl) do 
-                            setProp(btn, "IsDisabled", not state) 
-                        end
-                    else
-                        setProp(ctrl, "IsDisabled", not state)
-                    end
-                end
-            end
-        end,
-        
-        setDisplayPowerFB = function(state)
-            setProp(controls.ledDisplayPower, "Boolean", state)
-            setProp(controls.btnDisplayPowerAll, "Boolean", state)
-        end,
-        
-        updatePowerFeedbackFromDisplays = function()
-            local allPoweredOn, anyPoweredOn, poweredOnCount, totalDisplays = true, false, 0, 0
-            
-            for i, display in pairs(selfRef.components.displays) do
-                if display then
-                    totalDisplays = totalDisplays + 1
-                    local powerStatus = selfRef:safeComponentAccess(display, displayControls.powerStatus, "get")
-                    if powerStatus then
-                        poweredOnCount = poweredOnCount + 1
-                        anyPoweredOn = true
-                        if controls.btnDisplayPowerSingle and controls.btnDisplayPowerSingle[i] then
-                            setProp(controls.btnDisplayPowerSingle[i], "Boolean", true)
-                        end
-                    else
-                        allPoweredOn = false
-                        if controls.btnDisplayPowerSingle and controls.btnDisplayPowerSingle[i] then
-                            setProp(controls.btnDisplayPowerSingle[i], "Boolean", false)
-                        end
-                    end
-                end
-            end
-            
-            if totalDisplays > 0 then
-                selfRef.powerModule.setDisplayPowerFB(allPoweredOn)
-                selfRef.state.powerState = allPoweredOn
-                selfRef:debugPrint("Power feedback updated - Powered: " .. poweredOnCount .. "/" .. totalDisplays)
-            end
-        end,
-        
-        powerOnDisplay = function(index)
-            selfRef:debugPrint("Powering on display " .. index)
-            selfRef.displayModule.powerSingle(index, true)
-            selfRef.powerModule.enableDisablePowerControlIndex(index, false)
-            selfRef.powerModule.setOppositePowerButtonLegend(index, true)
-            selfRef.state.isWarming = true
-            setProp(controls.ledDisplayWarming, "Boolean", true)
-            selfRef.timers.warmup:Start(selfRef:getTimerConfig(true))
-            if controls.btnDisplayPowerSingle and controls.btnDisplayPowerSingle[index] then
-                setProp(controls.btnDisplayPowerSingle[index], "Boolean", true)
-            end
-        end,
-        
-        powerOffDisplay = function(index)
-            selfRef:debugPrint("Powering off display " .. index)
-            selfRef.displayModule.powerSingle(index, false)
-            selfRef.powerModule.enableDisablePowerControlIndex(index, false)
-            selfRef.powerModule.setOppositePowerButtonLegend(index, false)
-            selfRef.state.isCooling = true
-            setProp(controls.ledDisplayCooling, "Boolean", true)
-            selfRef.timers.cooldown:Start(selfRef:getTimerConfig(false))
-            if controls.btnDisplayPowerSingle and controls.btnDisplayPowerSingle[index] then
-                setProp(controls.btnDisplayPowerSingle[index], "Boolean", false)
-            end
-        end,
-        
-        powerOnAll = function()
-            selfRef:debugPrint("Powering on all displays")
-            selfRef.displayModule.powerAll(true)
-            selfRef.powerModule.enableDisablePowerControls(false)
-            selfRef.state.isWarming = true
-            setProp(controls.ledDisplayWarming, "Boolean", true)
-            selfRef.timers.warmup:Start(selfRef:getTimerConfig(true))
-            selfRef.powerModule.setDisplayPowerFB(true)
-        end,
-        
-        powerOffAll = function()
-            selfRef:debugPrint("Powering off all displays")
-            selfRef.displayModule.powerAll(false)
-            selfRef.powerModule.enableDisablePowerControls(false)
-            selfRef.state.isCooling = true
-            setProp(controls.ledDisplayCooling, "Boolean", true)
-            selfRef.timers.cooldown:Start(selfRef:getTimerConfig(false))
-            selfRef.powerModule.setDisplayPowerFB(false)
-        end,
-        
-        enableDisablePowerControlIndex = function(index, state)
-            local individualPowerControls = {"btnDisplayPowerOn", "btnDisplayPowerOff", "btnDisplayPowerSingle"}
-            for _, controlName in ipairs(individualPowerControls) do
-                local ctrl = controls[controlName]
-                if ctrl and ctrl[index] then
-                    setProp(ctrl[index], "IsDisabled", not state)
-                end
-            end
-        end,
-        
-        setOppositePowerButtonLegend = function(index, poweringOn)
-            -- Set the opposite button's legend to "Please\nwait"
-            -- If powering ON, set the Power OFF button legend
-            -- If powering OFF, set the Power ON button legend
-            local targetControl = poweringOn and controls.btnDisplayPowerOff or controls.btnDisplayPowerOn
-            if targetControl and targetControl[index] then
-                setButtonLegend(targetControl[index], "Please\nwait")
-            end
-        end,
-        
-        resetPowerButtonLegends = function(index)
-            -- Reset both button legends to default when re-enabled
-            if controls.btnDisplayPowerOn and controls.btnDisplayPowerOn[index] then
-                setButtonLegend(controls.btnDisplayPowerOn[index], "On")
-            end
-            if controls.btnDisplayPowerOff and controls.btnDisplayPowerOff[index] then
-                setButtonLegend(controls.btnDisplayPowerOff[index], "Off")
+local PowerModule = setmetatable({}, {__index = BaseModule})
+PowerModule.__index = PowerModule
+
+function PowerModule.new(controller)
+    local self = setmetatable(BaseModule.new(controller, "PowerModule"), PowerModule)
+    
+    -- Power operation configuration
+    self.powerOpConfig = {
+        powerOn = {
+            state = true,
+            interlockControl = "btnDisplayPowerOff",
+            timerKey = "isWarming",
+            ledControl = controls.ledDisplayWarming,
+            timer = controller.timers.warmup,
+            isWarmup = true,
+            debugMsg = "Powering on display"
+        },
+        powerOff = {
+            state = false,
+            interlockControl = "btnDisplayPowerOn",
+            timerKey = "isCooling",
+            ledControl = controls.ledDisplayCooling,
+            timer = controller.timers.cooldown,
+            isWarmup = false,
+            debugMsg = "Powering off display"
+        }
+    }
+    
+    return self
+end
+
+function PowerModule:enableDisablePowerControls(state)
+    local allPowerControls = {
+        "btnDisplayPowerOn", "btnDisplayPowerOff", "btnDisplayPowerSingle",
+        "btnDisplayAllOffOn", "btnDisplayInputAll"
+    }
+    
+    for _, controlName in ipairs(allPowerControls) do
+        local ctrl = controls[controlName]
+        if ctrl then
+            if isArr(ctrl) then
+                forEach(ctrl, function(i, btn) setProp(btn, "IsDisabled", not state) end)
+            else
+                setProp(ctrl, "IsDisabled", not state)
             end
         end
-    }
+    end
+end
+
+function PowerModule:setDisplayPowerFB(state)
+    setProp(controls.ledDisplayPower, "Boolean", state)
+    if controls.btnDisplayAllOffOn then
+        setProp(controls.btnDisplayAllOffOn[1], "Boolean", not state)
+        setProp(controls.btnDisplayAllOffOn[2], "Boolean", state)
+    end
+end
+
+function PowerModule:updatePowerFeedbackFromDisplays()
+    local allPoweredOn, poweredOnCount, totalDisplays = true, 0, 0
+    
+    for i, display in pairs(self.controller.components.displays) do
+        if display and display[displayControls.powerStatus] then
+            totalDisplays = totalDisplays + 1
+            local powerStatus = display[displayControls.powerStatus].Boolean
+            
+            if powerStatus then
+                poweredOnCount = poweredOnCount + 1
+            else
+                allPoweredOn = false
+            end
+            
+            if controls.btnDisplayPowerSingle and controls.btnDisplayPowerSingle[i] then
+                setProp(controls.btnDisplayPowerSingle[i], "Boolean", powerStatus)
+            end
+        end
+    end
+    
+    if totalDisplays > 0 then
+        self:setDisplayPowerFB(allPoweredOn)
+        self.controller.state.powerState = allPoweredOn
+        self:debugPrint("Power feedback updated - Powered: " .. poweredOnCount .. "/" .. totalDisplays)
+    end
+end
+
+function PowerModule:executePowerOperation(opType, index)
+    local config = self.powerOpConfig[opType]
+    if not config then return end
+    
+    local isIndividual = index ~= nil
+    self:debugPrint(config.debugMsg .. (isIndividual and (" " .. index) or " all"))
+    
+    -- Interlock opposite button
+    if isIndividual then
+        local interlockBtn = controls[config.interlockControl]
+        if interlockBtn and interlockBtn[index] then
+            setProp(interlockBtn[index], "Boolean", false)
+        end
+    else
+        -- All buttons: [1] = All Off, [2] = All On
+        local interlockIndex = config.state and 1 or 2
+        if controls.btnDisplayAllOffOn and controls.btnDisplayAllOffOn[interlockIndex] then
+            setProp(controls.btnDisplayAllOffOn[interlockIndex], "Boolean", false)
+        end
+    end
+    
+    -- Execute power command
+    if isIndividual then
+        self.controller.displayModule:powerSingle(index, config.state)
+        self:enableDisablePowerControlIndex(index, false)
+    else
+        self.controller.displayModule:powerAll(config.state)
+        self:enableDisablePowerControls(false)
+    end
+    
+    -- Set waiting legend on opposite button
+    self:setOppositePowerButtonLegend(index, config.state)
+    
+    -- Update state and LED
+    self.controller.state[config.timerKey] = true
+    setProp(config.ledControl, "Boolean", true)
+    
+    -- Start timer
+    config.timer:Start(self.controller:getTimerConfig(config.isWarmup))
+    
+    -- Update feedback buttons
+    if isIndividual and controls.btnDisplayPowerSingle and controls.btnDisplayPowerSingle[index] then
+        setProp(controls.btnDisplayPowerSingle[index], "Boolean", config.state)
+    else
+        self:setDisplayPowerFB(config.state)
+    end
+end
+
+function PowerModule:powerOnDisplay(index)
+    self:executePowerOperation("powerOn", index)
+end
+
+function PowerModule:powerOffDisplay(index)
+    self:executePowerOperation("powerOff", index)
+end
+
+function PowerModule:powerOnAll()
+    self:executePowerOperation("powerOn", nil)
+end
+
+function PowerModule:powerOffAll()
+    self:executePowerOperation("powerOff", nil)
+end
+
+function PowerModule:enableDisablePowerControlIndex(index, state)
+    local individualPowerControls = {"btnDisplayPowerOn", "btnDisplayPowerOff", "btnDisplayPowerSingle"}
+    for _, controlName in ipairs(individualPowerControls) do
+        local ctrl = controls[controlName]
+        if ctrl and ctrl[index] then
+            setProp(ctrl[index], "IsDisabled", not state)
+        end
+    end
+end
+
+function PowerModule:setOppositePowerButtonLegend(index, poweringOn)
+    if index then
+        -- Individual display button
+        local targetControl = poweringOn and controls.btnDisplayPowerOff or controls.btnDisplayPowerOn
+        if targetControl and targetControl[index] then
+            setButtonLegend(targetControl[index], "Please\nwait")
+        end
+    else
+        -- All buttons: [1] = All Off, [2] = All On
+        local targetIndex = poweringOn and 1 or 2
+        if controls.btnDisplayAllOffOn and controls.btnDisplayAllOffOn[targetIndex] then
+            setButtonLegend(controls.btnDisplayAllOffOn[targetIndex], "Please\nwait")
+        end
+    end
+end
+
+function PowerModule:resetPowerButtonLegends(index)
+    if index then
+        -- Individual display buttons
+        if controls.btnDisplayPowerOn and controls.btnDisplayPowerOn[index] then
+            setButtonLegend(controls.btnDisplayPowerOn[index], "On")
+        end
+        if controls.btnDisplayPowerOff and controls.btnDisplayPowerOff[index] then
+            setButtonLegend(controls.btnDisplayPowerOff[index], "Off")
+        end
+    else
+        -- All buttons: [1] = All Off, [2] = All On
+        if controls.btnDisplayAllOffOn then
+            setButtonLegend(controls.btnDisplayAllOffOn[1], "Off")
+            setButtonLegend(controls.btnDisplayAllOffOn[2], "On")
+        end
+    end
+end
+
+function PowerModule:resetAllPowerButtonLegends()
+    for i = 1, self.controller.config.maxDisplays do
+        self:resetPowerButtonLegends(i)
+    end
+    self:resetPowerButtonLegends(nil)
+end
+
+function MXNetDisplayController:initPowerModule()
+    self.powerModule = PowerModule.new(self)
 end
 
 -----------------------------[ Wall Module ]-----------------------------
-function MXNetDisplayController:initWallModule()
-    local selfRef = self
-    self.wallModule = {
-        setLayoutChoices = function(wallControls)
-            if not wallControls or not wallControls.layoutSelect then
-                selfRef:debugPrint("WARNING: Wall controls layoutSelect not found")
-                return
-            end
-            wallControls.layoutSelect.Choices = selfRef.config.layoutChoices
-            selfRef:debugPrint("Set layoutSelect choices: ENC-01 through ENC-" .. 
-                             string.format("%02d", selfRef.config.maxSources))
-        end,
-        
-        selectSource = function(sourceIndex)
-            local wallControls = selfRef.components.wallControls
-            if not wallControls or not wallControls.layoutSelect then
-                selfRef:debugPrint("WARNING: Cannot select source - wall controls not available")
-                return
-            end
-            
-            -- Map button index (1-12) to layout choice (ENC-01 through ENC-12)
-            local sourceName = selfRef.config.layoutChoices[sourceIndex]
-            if sourceName then
-                wallControls.layoutSelect.String = sourceName
-                selfRef:debugPrint("Selected wall source: " .. sourceName)
-            else
-                selfRef:debugPrint("WARNING: Invalid source index: " .. tostring(sourceIndex))
-            end
-        end,
-        
-        getCurrentSource = function()
-            local wallControls = selfRef.components.wallControls
-            if wallControls and wallControls.layoutSelect then
-                return wallControls.layoutSelect.String
-            end
-            return nil
+local WallModule = setmetatable({}, {__index = BaseModule})
+WallModule.__index = WallModule
+
+function WallModule.new(controller)
+    local self = setmetatable(BaseModule.new(controller, "WallModule"), WallModule)
+    return self
+end
+
+function WallModule:validateLayoutControl(wallControls)
+    if not wallControls or not wallControls.LayoutSelectCombo then
+        self:debugPrint("WARNING: Wall controls LayoutSelectCombo not found")
+        return false
+    end
+    self:debugPrint("LayoutSelectCombo control validated successfully")
+    return true
+end
+
+function WallModule:selectSource(sourceIndex)
+    local wallControls = self.controller.components.wallControls
+    if not wallControls or not wallControls.LayoutSelectCombo then
+        self:debugPrint("WARNING: Cannot select source - wall controls not available")
+        return false
+    end
+    
+    local expectedEncoderName = string.format("ENC-%02d", sourceIndex)
+    local choices = wallControls.LayoutSelectCombo.Choices
+    
+    if not choices or #choices == 0 then
+        self:debugPrint("WARNING: LayoutSelectCombo has no choices available")
+        return false
+    end
+    
+    -- Search for matching encoder
+    for _, choice in ipairs(choices) do
+        if choice == expectedEncoderName then
+            wallControls.LayoutSelectCombo.String = choice
+            self:debugPrint("Selected wall source: " .. choice)
+            return true
         end
-    }
+    end
+    
+    self:debugPrint("WARNING: Encoder " .. expectedEncoderName .. " not found in choices: " .. table.concat(choices, ", "))
+    return false
+end
+
+function WallModule:getCurrentSource()
+    local wallControls = self.controller.components.wallControls
+    if wallControls and wallControls.LayoutSelectCombo then
+        return wallControls.LayoutSelectCombo.String
+    end
+    return nil
+end
+
+function MXNetDisplayController:initWallModule()
+    self.wallModule = WallModule.new(self)
 end
 
 -----------------------------[ Source Button Interlocking ]-----------------------------
@@ -665,108 +806,121 @@ function MXNetDisplayController:interlockSourceButtons(activeIndex)
 end
 
 -----------------------------[ Matrix Module ]-----------------------------
-function MXNetDisplayController:initMatrixModule()
-    local selfRef = self
-    self.matrixModule = {
-        setDecoderChoices = function()
-            if not controls.compDecoderSelect then
-                selfRef:debugPrint("WARNING: compDecoderSelect controls not found")
-                return
-            end
-            
-            local choices = {}
-            for i = 1, selfRef.config.maxDecoders do
-                table.insert(choices, tostring(i))
-            end
-            
-            local decoderArray = isArr(controls.compDecoderSelect) and controls.compDecoderSelect or {controls.compDecoderSelect}
-            selfRef:debugPrint("Setting decoder choices for " .. #decoderArray .. " decoder select controls")
-            
-            for i, ctrl in ipairs(decoderArray) do
-                if ctrl then
-                    ctrl.Choices = choices
-                    selfRef:debugPrint("Set choices for decoder select control " .. i .. ": " .. table.concat(choices, ", "))
-                else
-                    selfRef:debugPrint("WARNING: Decoder select control " .. i .. " is nil")
-                end
-            end
-            selfRef:debugPrint("Set decoder choices: 1 through " .. selfRef.config.maxDecoders)
-        end,
-        
-        getSelectedDecoders = function()
-            local decoders = {}
-            if not controls.compDecoderSelect then 
-                return decoders 
-            end
-            
-            local decoderArray = isArr(controls.compDecoderSelect) and controls.compDecoderSelect or {controls.compDecoderSelect}
-            for i, ctrl in ipairs(decoderArray) do
-                if ctrl then
-                    local decoderStr = ctrl.String
-                    local decoderNum = tonumber(decoderStr)
-                    if decoderNum and decoderNum >= 1 and decoderNum <= selfRef.config.maxDecoders then
-                        table.insert(decoders, decoderNum)
-                        selfRef:debugPrint("Decoder selector " .. i .. " has decoder " .. decoderNum .. " selected")
-                    end
-                end
-            end
-            return decoders
-        end,
-        
-        routeSourceToSingleDecoder = function(sourceIndex, decoderIndex)
-            if not selfRef.components.matrixControls then
-                selfRef:debugPrint("WARNING: Matrix controls component not available")
-                return false
-            end
-            
-            local encoderNum = selfRef.config.sourceToEncoderMap[sourceIndex]
-            if not encoderNum then
-                selfRef:debugPrint("WARNING: Invalid source index: " .. tostring(sourceIndex))
-                return false
-            end
-            
-            local controlName = "MatrixTieSelectedAV " .. decoderIndex
-            local matrixControl = selfRef.components.matrixControls[controlName]
-            if matrixControl then
-                matrixControl.Value = encoderNum
-                selfRef:debugPrint("Routed source " .. sourceIndex .. " (encoder " .. encoderNum .. ") to decoder " .. decoderIndex)
-                return true
-            else
-                selfRef:debugPrint("WARNING: Matrix control not found: " .. controlName)
-                return false
-            end
-        end,
-        
-        routeSourceToDecoders = function(sourceIndex)
-            local selectedDecoders = selfRef.matrixModule.getSelectedDecoders()
-            
-            if #selectedDecoders == 0 then
-                selfRef:debugPrint("No decoders selected for routing")
-                return
-            end
-            
-            if not selfRef.components.matrixControls then
-                selfRef:debugPrint("WARNING: Matrix controls component not available")
-                return
-            end
-            
-            local encoderNum = selfRef.config.sourceToEncoderMap[sourceIndex]
-            if not encoderNum then
-                selfRef:debugPrint("WARNING: Invalid source index: " .. tostring(sourceIndex))
-                return
-            end
-            
-            local successCount = 0
-            for _, decoderNum in ipairs(selectedDecoders) do
-                if selfRef.matrixModule.routeSourceToSingleDecoder(sourceIndex, decoderNum) then
-                    successCount = successCount + 1
-                end
-            end
-            
-            selfRef:debugPrint("Routed source " .. sourceIndex .. " (encoder " .. encoderNum .. ") to " .. 
-                             successCount .. " of " .. #selectedDecoders .. " selected decoders")
+local MatrixModule = setmetatable({}, {__index = BaseModule})
+MatrixModule.__index = MatrixModule
+
+function MatrixModule.new(controller)
+    local self = setmetatable(BaseModule.new(controller, "MatrixModule"), MatrixModule)
+    return self
+end
+
+function MatrixModule:setDecoderChoices()
+    if not controls.compDecoderSelect then
+        self:debugPrint("WARNING: compDecoderSelect controls not found")
+        return
+    end
+    
+    local choices = {}
+    for i = 1, self.controller.config.maxDecoders do
+        table.insert(choices, tostring(i))
+    end
+    
+    local decoderArray = isArr(controls.compDecoderSelect) and controls.compDecoderSelect or {controls.compDecoderSelect}
+    self:debugPrint("Setting decoder choices for " .. #decoderArray .. " decoder select controls")
+    
+    forEach(decoderArray, function(i, ctrl)
+        if ctrl then
+            ctrl.Choices = choices
+            self:debugPrint("Set choices for decoder select control " .. i)
+        else
+            self:debugPrint("WARNING: Decoder select control " .. i .. " is nil")
         end
-    }
+    end)
+    
+    self:debugPrint("Set decoder choices: 1 through " .. self.controller.config.maxDecoders)
+end
+
+function MatrixModule:getSelectedDecoders()
+    local decoders = {}
+    if not controls.compDecoderSelect then 
+        return decoders 
+    end
+    
+    local decoderArray = isArr(controls.compDecoderSelect) and controls.compDecoderSelect or {controls.compDecoderSelect}
+    forEach(decoderArray, function(i, ctrl)
+        if ctrl then
+            local decoderNum = tonumber(ctrl.String)
+            if decoderNum and decoderNum >= 1 and decoderNum <= self.controller.config.maxDecoders then
+                table.insert(decoders, decoderNum)
+                self:debugPrint("Decoder selector " .. i .. " has decoder " .. decoderNum .. " selected")
+            end
+        end
+    end)
+    
+    return decoders
+end
+
+function MatrixModule:routeSourceToSingleDecoder(sourceIndex, decoderIndex)
+    if not self.controller.components.matrixControls then
+        self:debugPrint("WARNING: Matrix controls component not available")
+        return false
+    end
+    
+    local encoderNum = self.controller.config.sourceToEncoderMap[sourceIndex]
+    if not encoderNum then
+        self:debugPrint("WARNING: Invalid source index: " .. tostring(sourceIndex))
+        return false
+    end
+    
+    local controlName = "MatrixTieSelectedAV " .. decoderIndex
+    local matrixControl = self.controller.components.matrixControls[controlName]
+    
+    if not matrixControl then
+        self:debugPrint("WARNING: Matrix control not found: " .. controlName)
+        return false
+    end
+    
+    matrixControl.Value = encoderNum
+    self:debugPrint("Routed source " .. sourceIndex .. " (encoder " .. encoderNum .. ") to decoder " .. decoderIndex)
+    return true
+end
+
+function MatrixModule:routeSourceToDecoders(sourceIndex)
+    local selectedDecoders = self:getSelectedDecoders()
+    
+    if #selectedDecoders == 0 then
+        self:debugPrint("No decoders selected for routing")
+        return
+    end
+    
+    if not self.controller.components.matrixControls then
+        self:debugPrint("WARNING: Matrix controls component not available")
+        return
+    end
+    
+    local encoderNum = self.controller.config.sourceToEncoderMap[sourceIndex]
+    if not encoderNum then
+        self:debugPrint("WARNING: Invalid source index: " .. tostring(sourceIndex))
+        return
+    end
+    
+    local successCount = 0
+    local errorList = {}
+    
+    for _, decoderNum in ipairs(selectedDecoders) do
+        if self:routeSourceToSingleDecoder(sourceIndex, decoderNum) then
+            successCount = successCount + 1
+        else
+            local err = handleBatchResult(false, "Matrix routing", decoderNum, "Decoder " .. decoderNum)
+            if err then table.insert(errorList, err) end
+        end
+    end
+    
+    printOperationResult("Matrix routing source " .. sourceIndex, successCount, #selectedDecoders, errorList)
+end
+
+function MXNetDisplayController:initMatrixModule()
+    self.matrixModule = MatrixModule.new(self)
 end
 
 -----------------------------[ Component Management ]-----------------------------
@@ -843,8 +997,8 @@ function MXNetDisplayController:setWallControlsComponent()
     self.components.wallControls = self:setComponent(Controls.compWallControls, "Wall Controls")
     if self.components.wallControls then
         self:debugPrint("Wall controls component set successfully")
-        -- Set layout choices after component is assigned
-        self.wallModule.setLayoutChoices(self.components.wallControls)
+        -- Validate LayoutSelectCombo exists (don't overwrite choices - component sets them)
+        self.wallModule:validateLayoutControl(self.components.wallControls)
     else
         self:debugPrint("Wall controls component not available")
     end
@@ -855,7 +1009,7 @@ function MXNetDisplayController:setMatrixControlsComponent()
     if self.components.matrixControls then
         self:debugPrint("Matrix controls component set successfully")
         -- Set decoder choices after component is assigned
-        self.matrixModule.setDecoderChoices()
+        self.matrixModule:setDecoderChoices()
     else
         self:debugPrint("Matrix controls component not available")
     end
@@ -873,7 +1027,7 @@ function MXNetDisplayController:setDisplayComponent(index)
     if self.components.displays[index] then
         self:debugPrint("Successfully set up display component " .. index)
         self:setupDisplayEvents(index)
-        self.powerModule.updatePowerFeedbackFromDisplays()
+        self.powerModule:updatePowerFeedbackFromDisplays()
     else
         self:debugPrint("Failed to set up display component " .. index)
     end
@@ -884,22 +1038,20 @@ function MXNetDisplayController:setupDisplayEvents(index)
     local display = self.components.displays[index]
     if not display then return end
     
-    -- Set up power status monitoring
+    local componentName = Controls.devDisplays and Controls.devDisplays[index] and Controls.devDisplays[index].String or "Unknown"
+    
+    -- Set up power status monitoring with direct access
     if display[displayControls.powerStatus] then
-        display[displayControls.powerStatus].EventHandler = function()
-            local powerState = self:safeComponentAccess(display, displayControls.powerStatus, "get")
-            local componentName = Controls.devDisplays and Controls.devDisplays[index] and Controls.devDisplays[index].String or "Unknown"
-            self:debugPrint("Display " .. componentName .. " power status: " .. tostring(powerState))
-            self.powerModule.updatePowerFeedbackFromDisplays()
+        display[displayControls.powerStatus].EventHandler = function(ctl)
+            self:debugPrint("Display " .. componentName .. " power status: " .. tostring(ctl.Boolean))
+            self.powerModule:updatePowerFeedbackFromDisplays()
         end
     end
     
     -- Set up input status monitoring (feedback from display)
     if display[displayControls.inputStatusLED] then
-        display[displayControls.inputStatusLED].EventHandler = function()
-            local inputActive = self:safeComponentAccess(display, displayControls.inputStatusLED, "get")
-            local componentName = Controls.devDisplays and Controls.devDisplays[index] and Controls.devDisplays[index].String or "Unknown"
-            self:debugPrint("Display " .. componentName .. " input active: " .. tostring(inputActive))
+        display[displayControls.inputStatusLED].EventHandler = function(ctl)
+            self:debugPrint("Display " .. componentName .. " input active: " .. tostring(ctl.Boolean))
         end
     end
     
@@ -907,11 +1059,9 @@ function MXNetDisplayController:setupDisplayEvents(index)
     for i = 1, 10 do
         local currentInputControl = display[displayControls.currentInput .. i]
         if currentInputControl then
-            currentInputControl.EventHandler = function()
-                local inputActive = self:safeComponentAccess(display, displayControls.currentInput .. i, "get")
-                if inputActive then
-                    local inputName = self.displayModule.getCurrentInput(index)
-                    local componentName = Controls.devDisplays and Controls.devDisplays[index] and Controls.devDisplays[index].String or "Unknown"
+            currentInputControl.EventHandler = function(ctl)
+                if ctl.Boolean then
+                    local inputName = self.displayModule:getCurrentInput(index)
                     self:debugPrint("Display " .. componentName .. " input changed to: " .. tostring(inputName))
                 end
             end
@@ -987,27 +1137,11 @@ end
 -----------------------------[ Timer Event Handlers ]-----------------------------
 function MXNetDisplayController:registerTimerHandlers()
     self.timers.warmup.EventHandler = function()
-        self:debugPrint("Warmup Period Has Ended")
-        self.powerModule.enableDisablePowerControls(true)
-        for i = 1, self.config.maxDisplays do
-            self.powerModule.enableDisablePowerControlIndex(i, true)
-            self.powerModule.resetPowerButtonLegends(i)
-        end
-        self.state.isWarming = false
-        setProp(controls.ledDisplayWarming, "Boolean", false)
-        self.timers.warmup:Stop()
+        self:handleTimerCompletion(true)
     end
 
     self.timers.cooldown.EventHandler = function()
-        self:debugPrint("Cooldown Period Has Ended")
-        self.powerModule.enableDisablePowerControls(true)
-        for i = 1, self.config.maxDisplays do
-            self.powerModule.enableDisablePowerControlIndex(i, true)
-            self.powerModule.resetPowerButtonLegends(i)
-        end
-        self.state.isCooling = false
-        setProp(controls.ledDisplayCooling, "Boolean", false)
-        self.timers.cooldown:Stop()
+        self:handleTimerCompletion(false)
     end
 end
 
@@ -1018,10 +1152,7 @@ function MXNetDisplayController:registerEventHandlers()
         compRoomControls = function() self:setRoomControlsComponent() end,
         compWallControls = function() self:setWallControlsComponent() end,
         compMatrixControls = function() self:setMatrixControlsComponent() end,
-        btnDisplayPowerAll = function(ctl) 
-            if ctl.Boolean then self.powerModule.powerOnAll() else self.powerModule.powerOffAll() end 
-        end,
-        btnDisplayInputAll = function() self.displayModule.setInputAll(self.config.defaultInput) end
+        btnDisplayInputAll = function() self.displayModule:setInputAll(self.config.defaultInput) end
     }
     
     -- Register single control handlers
@@ -1031,10 +1162,21 @@ function MXNetDisplayController:registerEventHandlers()
     
     -- Array control event handler map
     local arrayControlHandlers = {
-        btnDisplayPowerOn = function(index, ctl) self.powerModule.powerOnDisplay(index) end,
-        btnDisplayPowerOff = function(index, ctl) self.powerModule.powerOffDisplay(index) end,
+        btnDisplayPowerOn = function(index, ctl) self.powerModule:powerOnDisplay(index) end,
+        btnDisplayPowerOff = function(index, ctl) self.powerModule:powerOffDisplay(index) end,
         btnDisplayPowerSingle = function(index, ctl)
-            if ctl.Boolean then self.powerModule.powerOnDisplay(index) else self.powerModule.powerOffDisplay(index) end
+            if ctl.Boolean then 
+                self.powerModule:powerOnDisplay(index) 
+            else 
+                self.powerModule:powerOffDisplay(index) 
+            end
+        end,
+        btnDisplayAllOffOn = function(index, ctl)
+            if index == 1 then
+                self.powerModule:powerOffAll()
+            elseif index == 2 then
+                self.powerModule:powerOnAll()
+            end
         end,
 
         devDisplays = function(index, ctl) self:setDisplayComponent(index) end,
@@ -1052,10 +1194,10 @@ function MXNetDisplayController:registerEventHandlers()
             -- Route based on decoder type
             if self.components.wallControls and not isLastDecoder then
                 -- Use wall controls for all decoders except the last one
-                self.wallModule.selectSource(index)
+                self.wallModule:selectSource(index)
             elseif isLastDecoder then
                 -- Use matrix routing only for the last decoder
-                self.matrixModule.routeSourceToDecoders(index)
+                self.matrixModule:routeSourceToDecoders(index)
             end
             
             -- TODO: Add feedback from compMatrixControls component
@@ -1069,11 +1211,7 @@ function MXNetDisplayController:registerEventHandlers()
             -- Ensure choices are set if they weren't set during initialization
             if not ctl.Choices or #ctl.Choices == 0 then
                 self:debugPrint("Setting decoder choices for control " .. index .. " (late initialization)")
-                local choices = {}
-                for i = 1, self.config.maxDecoders do
-                    table.insert(choices, tostring(i))
-                end
-                ctl.Choices = choices
+                self.matrixModule:setDecoderChoices()
             end
             
             local decoderNum = tonumber(ctl.String)
@@ -1105,13 +1243,13 @@ function MXNetDisplayController:funcInit()
     self:updateRoomNameFromComponent()
     
     -- Set decoder choices independently of matrix component availability
-    self.matrixModule.setDecoderChoices()
+    self.matrixModule:setDecoderChoices()
     
-    self.powerModule.updatePowerFeedbackFromDisplays()
+    self.powerModule:updatePowerFeedbackFromDisplays()
     self:updateTimerConfigFromComponent()
     
     self:debugPrint("MXNet DisplayWallController Initialized with " .. 
-                   self.displayModule.getDisplayCount() .. " displays, " ..
+                   self.displayModule:getDisplayCount() .. " displays, " ..
                    (self.components.wallControls and "wall controls, " or "no wall controls, ") ..
                    (self.components.matrixControls and "matrix controls" or "no matrix controls"))
 end
@@ -1216,7 +1354,7 @@ myMXNetDisplayWallController = createMXNetDisplayWallController(roomName, config
 if myMXNetDisplayWallController then
     print("SUCCESS: MXNet DisplayWallController created and initialized!")
     print("Room: " .. roomName)
-    print("Display count: " .. myMXNetDisplayWallController.displayModule.getDisplayCount())
+    print("Display count: " .. myMXNetDisplayWallController.displayModule:getDisplayCount())
     print("Wall controls: " .. (myMXNetDisplayWallController.components.wallControls and "Connected" or "Not connected"))
     print("Matrix controls: " .. (myMXNetDisplayWallController.components.matrixControls and "Connected" or "Not connected"))
     
@@ -1230,16 +1368,24 @@ end
   REFACTORING SUMMARY:
   ✓ Comprehensive control validation with descriptive error messages
   ✓ Control array normalization for consistent data structures
-  ✓ Essential utility functions (isArr, setProp, bind, bindArray)
-  ✓ Modular architecture with Display, Power, Wall, and Matrix modules
-  ✓ Batch event registration using handler maps
+  ✓ Essential utility functions (isArr, setProp, bind, bindArray, forEach)
+  ✓ BaseModule pattern for modular architecture (Principle 18)
+  ✓ Display, Power, Wall, and Matrix modules inherit from BaseModule
+  ✓ Batch event registration using handler maps (Principles 17, 24)
   ✓ State management utility for dynamic component arrays
   ✓ Factory function with enhanced error handling
   ✓ Optimized property access with cached references
   ✓ Follows Lua Refactoring Prompt specifications for event-driven, OOP architecture
   ✓ Uses setProp() throughout to prevent redundant property assignments
+  ✓ Removed safeComponentAccess wrapper - direct access with guards (Principle 4)
+  ✓ Configuration-driven power operations (Principle 32)
+  ✓ Generic timer completion handler eliminates duplication (Principle 23)
+  ✓ Centralized error/status reporting utilities (Principles 22, 23)
+  ✓ Generic button legend utilities for DRY code (Principle 21)
+  ✓ Flattened control flow with early returns (Principle 2)
+  ✓ forEach utility for cleaner iteration patterns
   ✓ Power and Input control for individual displays
-  ✓ RS232 command-based control (MXNet protocol)
+  ✓ RS232 command-based control (MXNet protocol) with direct access
   ✓ DRY helper function for RS232 command transmission
   ✓ Power commands: ka 00 01\x0D (on), ka 00 00\x0D (off)
   ✓ Input commands: xb 00 <hex>\x0D for HDMI1, HDMI2
@@ -1255,6 +1401,15 @@ end
   ✓ Multiple decoder selection via compDecoderSelect array
   ✓ Source to encoder mapping (1-12 sources to encoders)
   ✓ Intelligent routing: wall controls when present, matrix routing when absent
-  ✓ Batch routing to multiple selected decoders
+  ✓ Batch routing to multiple selected decoders with error reporting
   ✓ Optional simultaneous wall + individual routing (commented)
+  
+  ADVANCED PATTERNS IMPLEMENTED:
+  ✓ BaseModule class with inheritance (metatable-based OOP)
+  ✓ Configuration tables for power operations eliminate code duplication
+  ✓ Generic executePowerOperation() replaces 4 nearly-identical functions
+  ✓ Centralized handleTimerCompletion() eliminates timer handler duplication
+  ✓ Direct component access replaces 40+ lines of safeComponentAccess wrapper
+  ✓ printOperationResult() and handleBatchResult() for consistent error reporting
+  ✓ forEach() utility enables cleaner functional patterns throughout
 ]]

@@ -1371,10 +1371,7 @@ function UCIController:initializeLegendArrays()
         "txtAudSrc05", "txtAudSrc06", "txtAudSrc07", "txtAudSrc08",
         "txtGainPGM", 
         "txtGain01", "txtGain02", "txtGain03", "txtGain04","txtGain05", "txtGain06", "txtGain07", "txtGain08", "txtGain09", "txtGain10",
-        "txtGain11", "txtGain12", "txtGain13", "txtGain14","txtGain15", "txtGain16", "txtGain17", "txtGain18", "txtGain19", "txtGain20",
-        "txtGain21", "txtGain22", "txtGain23", "txtGain24","txtGain25", "txtGain26", "txtGain27", "txtGain28", "txtGain29", "txtGain30",
-        "txtGain31", "txtGain32", "txtGain33", "txtGain34","txtGain35", "txtGain36", "txtGain37", "txtGain38", "txtGain39", "txtGain40",
-        "txtDisplay01", "txtDisplay02", "txtDisplay03", "txtDisplay04"
+        "txtDisplay01", "txtDisplay02", "txtDisplay03", "txtDisplay04", "txtDisplay05", "txtDisplay06", "txtDisplay07", "txtDisplay08", "txtDisplay09", "txtDisplay10",
     }
     
     for i, controlName in ipairs(legendControls) do
@@ -1400,10 +1397,7 @@ function UCIController:initializeLegendArrays()
         "txtLabelAudSrc05", "txtLabelAudSrc06", "txtLabelAudSrc07", "txtLabelAudSrc08",
         "txtLabelGainPGM", 
         "txtLabelGain01", "txtLabelGain02", "txtLabelGain03", "txtLabelGain04","txtLabelGain05", "txtLabelGain06", "txtLabelGain07", "txtLabelGain08", "txtLabelGain09", "txtLabelGain10",
-        "txtLabelGain11", "txtLabelGain12", "txtLabelGain13", "txtLabelGain14","txtLabelGain15", "txtLabelGain16", "txtLabelGain17", "txtLabelGain18", "txtLabelGain19", "txtLabelGain20",
-        "txtLabelGain21", "txtLabelGain22", "txtLabelGain23", "txtLabelGain24","txtLabelGain25", "txtLabelGain26", "txtLabelGain27", "txtLabelGain28", "txtLabelGain29", "txtLabelGain30",
-        "txtLabelGain31", "txtLabelGain32", "txtLabelGain33", "txtLabelGain34","txtLabelGain35", "txtLabelGain36", "txtLabelGain37", "txtLabelGain38", "txtLabelGain39", "txtLabelGain40",
-        "txtLabelDisplay01", "txtLabelDisplay02", "txtLabelDisplay03", "txtLabelDisplay04"
+        "txtLabelDisplay01", "txtLabelDisplay02", "txtLabelDisplay03", "txtLabelDisplay04", "txtLabelDisplay05", "txtLabelDisplay06", "txtLabelDisplay07", "txtLabelDisplay08", "txtLabelDisplay09", "txtLabelDisplay10",
     }
     
     for i, varLabel in ipairs(userLabelVariables) do

@@ -441,7 +441,7 @@ SystemAutomationController.__index = SystemAutomationController
 SystemAutomationController.clearString = "[Clear]"
 SystemAutomationController.componentTypes = {
     callSync    = "call_sync", videoBridge = "usb_uvc",
-    displays    = "%PLUGIN%_e186d86c-9fb0-426e-bd59-d1fe9e133519_%FP%_fcf39981477f1a1b8959d1e6c5b43832", -- MXNet Display control
+    displays    = "%PLUGIN%_e186d86c-9fb0-426e-bd59-d1fe9e133519_%FP%_e578be77683e876fb741dc5e1344b6eb", -- MXNet Display control
     gains       = "gain", systemMute = "system_mute",
     camACPR     = "%PLUGIN%_648260e3-c166-4b00-98ba-ba16ksnza4a63b0_%FP%_a4d2263b4380c424e16eebb67084f355"
 }
