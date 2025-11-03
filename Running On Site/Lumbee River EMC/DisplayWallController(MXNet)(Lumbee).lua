@@ -589,6 +589,16 @@ function PowerModule:setDisplayPowerFB(state)
     end
 end
 
+function PowerModule:setIndividualPowerButtonFeedback(index, powerState)
+    -- DRY helper: Updates btnDisplayPowerOn[i] and btnDisplayPowerOff[i] based on power state
+    if controls.btnDisplayPowerOn and controls.btnDisplayPowerOn[index] then
+        setProp(controls.btnDisplayPowerOn[index], "Boolean", powerState)
+    end
+    if controls.btnDisplayPowerOff and controls.btnDisplayPowerOff[index] then
+        setProp(controls.btnDisplayPowerOff[index], "Boolean", not powerState)
+    end
+end
+
 function PowerModule:updatePowerFeedbackFromDisplays()
     local allPoweredOn, poweredOnCount, totalDisplays = true, 0, 0
     
@@ -606,6 +616,9 @@ function PowerModule:updatePowerFeedbackFromDisplays()
             if controls.btnDisplayPowerSingle and controls.btnDisplayPowerSingle[i] then
                 setProp(controls.btnDisplayPowerSingle[i], "Boolean", powerStatus)
             end
+            
+            -- Update btnDisplayPowerOn[i] and btnDisplayPowerOff[i] feedback
+            self:setIndividualPowerButtonFeedback(i, powerStatus)
         end
     end
     
@@ -623,12 +636,10 @@ function PowerModule:executePowerOperation(opType, index)
     local isIndividual = index ~= nil
     self:debugPrint(config.debugMsg .. (isIndividual and (" " .. index) or " all"))
     
-    -- Interlock opposite button
+    -- Set immediate button feedback (before timer completes)
     if isIndividual then
-        local interlockBtn = controls[config.interlockControl]
-        if interlockBtn and interlockBtn[index] then
-            setProp(interlockBtn[index], "Boolean", false)
-        end
+        -- Set both On/Off buttons for immediate feedback
+        self:setIndividualPowerButtonFeedback(index, config.state)
     else
         -- All buttons: [1] = All Off, [2] = All On
         local interlockIndex = config.state and 1 or 2
@@ -820,7 +831,7 @@ function MatrixModule:setDecoderChoices()
         return
     end
     
-    local choices = {}
+    local choices = {self.controller.clearString}  -- Add [Clear] as first option
     for i = 1, self.controller.config.maxDecoders do
         table.insert(choices, tostring(i))
     end
@@ -837,7 +848,7 @@ function MatrixModule:setDecoderChoices()
         end
     end)
     
-    self:debugPrint("Set decoder choices: 1 through " .. self.controller.config.maxDecoders)
+    self:debugPrint("Set decoder choices: [Clear] and 1 through " .. self.controller.config.maxDecoders)
 end
 
 function MatrixModule:getSelectedDecoders()
@@ -849,10 +860,14 @@ function MatrixModule:getSelectedDecoders()
     local decoderArray = isArr(controls.compDecoderSelect) and controls.compDecoderSelect or {controls.compDecoderSelect}
     forEach(decoderArray, function(i, ctrl)
         if ctrl then
-            local decoderNum = tonumber(ctrl.String)
-            if decoderNum and decoderNum >= 1 and decoderNum <= self.controller.config.maxDecoders then
-                table.insert(decoders, decoderNum)
-                self:debugPrint("Decoder selector " .. i .. " has decoder " .. decoderNum .. " selected")
+            local selection = ctrl.String
+            -- Skip if cleared or empty
+            if selection ~= self.controller.clearString and selection ~= "" then
+                local decoderNum = tonumber(selection)
+                if decoderNum and decoderNum >= 1 and decoderNum <= self.controller.config.maxDecoders then
+                    table.insert(decoders, decoderNum)
+                    self:debugPrint("Decoder selector " .. i .. " has decoder " .. decoderNum .. " selected")
+                end
             end
         end
     end)
@@ -1214,11 +1229,20 @@ function MXNetDisplayController:registerEventHandlers()
                 self.matrixModule:setDecoderChoices()
             end
             
-            local decoderNum = tonumber(ctl.String)
-            if decoderNum and decoderNum >= 1 and decoderNum <= self.config.maxDecoders then
-                self:debugPrint("Decoder selector " .. index .. " changed to decoder " .. decoderNum)
+            -- Set color based on selection
+            local selection = ctl.String
+            if selection == self.clearString or selection == "" then
+                ctl.Color = "white"  -- Cleared state
+                self:debugPrint("Decoder selector " .. index .. " cleared")
             else
-                self:debugPrint("Decoder selector " .. index .. " has invalid selection")
+                local decoderNum = tonumber(selection)
+                if decoderNum and decoderNum >= 1 and decoderNum <= self.config.maxDecoders then
+                    ctl.Color = "white"  -- Valid selection
+                    self:debugPrint("Decoder selector " .. index .. " changed to decoder " .. decoderNum)
+                else
+                    ctl.Color = "pink"  -- Invalid selection
+                    self:debugPrint("Decoder selector " .. index .. " has invalid selection")
+                end
             end
         end
     }

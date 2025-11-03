@@ -1311,17 +1311,19 @@ function UCIController:initializeLegendArrays()
     -- Initialize legend controls array
     self.arrUCILegends = {}
     local legendControls = {
-        "txtNav01", "txtNav02", "txtNav03", "txtNav04",
-        "txtNav05", "txtNav06", "txtNav07", "txtNav08",
-        "txtNav09", "txtNav10", "txtNav11", "txtNav12",
+        "txtNav01", "txtNav02", "txtNav03", "txtNav04", "txtNav05", "txtNav06", 
+        "txtNav07", "txtNav08", "txtNav09", "txtNav10", "txtNav11", "txtNav12", "txtNav13",
         "txtNavShutdown", "txtRoomNameNav", "txtRoomNameStart",
-        "txtRoutingRooms", "txtRouting01", "txtRouting02", "txtRouting03","txtRouting04", "txtRouting05", "txtRouting06","txtRouting07", "txtRouting08", "txtRouting09", "txtRouting10","txtRoutingSources",
-        "txtAudSrc01", "txtAudSrc02", "txtAudSrc03", "txtAudSrc04",
-        "txtAudSrc05", "txtAudSrc06", "txtAudSrc07", "txtAudSrc08",
+        "txtRoutingRooms", "txtRoutingSources",
+        "txtRouting01", "txtRouting02", "txtRouting03","txtRouting04", "txtRouting05", "txtRouting06",
+        "txtRouting07", "txtRouting08", "txtRouting09", "txtRouting10", "txtRouting11", "txtRouting12",
+        "txtVidSrc01", "txtVidSrc02", "txtVidSrc03", "txtVidSrc04", "txtVidSrc05", "txtVidSrc06",
+        "txtVidSrc07", "txtVidSrc08", "txtVidSrc09", "txtVidSrc10", "txtVidSrc11", "txtVidSrc12",
         "txtGainPGM", 
-        "txtGain01", "txtGain02", "txtGain03", "txtGain04",
-        "txtGain05", "txtGain06", "txtGain07", "txtGain08", "txtGain09", "txtGain10",
-        "txtDisplay01", "txtDisplay02", "txtDisplay03", "txtDisplay04",
+        "txtGain01", "txtGain02", "txtGain03", "txtGain04", "txtGain05", "txtGain06", 
+        "txtGain07", "txtGain08", "txtGain09", "txtGain10", "txtGain11", "txtGain12",
+        "txtDisplay01", "txtDisplay02", "txtDisplay03", "txtDisplay04", "txtDisplay05", 
+        "txtDisplay06", "txtDisplay07", "txtDisplay08", "txtDisplay09", "txtDisplay10",
     }
     
     for i, controlName in ipairs(legendControls) do
@@ -1337,17 +1339,19 @@ function UCIController:initializeLegendArrays()
     -- Initialize UCI user label variables array
     self.arrUCIUserLabels = {}
     local userLabelVariables = {
-        "txtLabelNav01", "txtLabelNav02", "txtLabelNav03", "txtLabelNav04",
-        "txtLabelNav05", "txtLabelNav06", "txtLabelNav07", "txtLabelNav08",
-        "txtLabelNav09", "txtLabelNav10", "txtLabelNav11", "txtLabelNav12",
+        "txtLabelNav01", "txtLabelNav02", "txtLabelNav03", "txtLabelNav04", "txtLabelNav05", "txtLabelNav06", 
+        "txtLabelNav07", "txtLabelNav08", "txtLabelNav09", "txtLabelNav10", "txtLabelNav11", "txtLabelNav12", "txtLabelNav13",
         "txtLabelNavShutdown", "txtLabelRoomNameNav", "txtLabelRoomNameStart",
-        "txtLabelRoutingRooms", "txtLabelRouting01", "txtLabelRouting02", "txtLabelRouting03","txtLabelRouting04", "txtLabelRouting05", "txtLabelRouting06","txtLabelRouting07", "txtLabelRouting08", "txtLabelRouting09", "txtLabelRouting10","txtLabelRoutingSources",
-        "txtLabelAudSrc01", "txtLabelAudSrc02", "txtLabelAudSrc03", "txtLabelAudSrc04",
-        "txtLabelAudSrc05", "txtLabelAudSrc06", "txtLabelAudSrc07", "txtLabelAudSrc08",
+        "txtLabelRoutingRooms", "txtLabelRoutingSources",
+        "txtLabelRouting01", "txtLabelRouting02", "txtLabelRouting03","txtLabelRouting04", "txtLabelRouting05", "txtLabelRouting06",
+        "txtLabelRouting07", "txtLabelRouting08", "txtLabelRouting09", "txtLabelRouting10", "txtLabelRouting11", "txtLabelRouting12", 
+        "txtLabelVidSrc01", "txtLabelVidSrc02", "txtLabelVidSrc03", "txtLabelVidSrc04", "txtLabelVidSrc05", "txtLabelVidSrc06",
+        "txtLabelVidSrc07", "txtLabelVidSrc08", "txtLabelVidSrc09", "txtLabelVidSrc10", "txtLabelVidSrc11", "txtLabelVidSrc12",
         "txtLabelGainPGM", 
-        "txtLabelGain01", "txtLabelGain02", "txtLabelGain03", "txtLabelGain04",
-        "txtLabelGain05", "txtLabelGain06", "txtLabelGain07", "txtLabelGain08", "txtLabelGain09", "txtLabelGain10",
-        "txtLabelDisplay01", "txtLabelDisplay02", "txtLabelDisplay03", "txtLabelDisplay04",
+        "txtLabelGain01", "txtLabelGain02", "txtLabelGain03", "txtLabelGain04", "txtLabelGain05", "txtLabelGain06", 
+        "txtLabelGain07", "txtLabelGain08", "txtLabelGain09", "txtLabelGain10", "txtLabelGain11", "txtLabelGain12",
+        "txtLabelDisplay01", "txtLabelDisplay02", "txtLabelDisplay03", "txtLabelDisplay04", "txtLabelDisplay05", 
+        "txtLabelDisplay06", "txtLabelDisplay07", "txtLabelDisplay08", "txtLabelDisplay09", "txtLabelDisplay10",
     }
     
     for i, varLabel in ipairs(userLabelVariables) do
@@ -1526,7 +1530,7 @@ end
 myUCI = createUCIController(
     Uci.Variables.txtUCIPageName.String,
     tonumber(Uci.Variables.numDefaultRoutingLayer.Value) or 4,
-    tonumber(Uci.Variables.numDefaultActiveLayer.Value) or 8,
+    tonumber(Uci.Variables.numDefaultActiveLayer.Value) or 12,
     {} -- Hidden nav indices
 )
 
