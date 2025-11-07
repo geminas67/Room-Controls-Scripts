@@ -802,9 +802,9 @@ function RoomAutomationModule:initializeComponent()
         self.roomControlsComponent = component
         self:debug("Room Controls Component referenced: " .. componentName)
         
-        -- Initialize previous state
-        if self.roomControlsComponent["btnSystemOnOff"] then
-            self.previousPowerState = self.roomControlsComponent["btnSystemOnOff"].Boolean
+        -- Initialize previous state (use ledSystemPower as authoritative status indicator)
+        if self.roomControlsComponent["ledSystemPower"] then
+            self.previousPowerState = self.roomControlsComponent["ledSystemPower"].Boolean
             self:debug("Initial power state: " .. tostring(self.previousPowerState))
         end
         
@@ -816,6 +816,7 @@ function RoomAutomationModule:initializeComponent()
 end
 
 function RoomAutomationModule:powerOn()
+    -- Set btnSystemOnOff control to trigger power on (ledSystemPower will update via SystemAutomationController)
     if not self.roomControlsComponent or not self.roomControlsComponent["btnSystemOnOff"] then
         self:debug("Cannot power on: Room Controls component not available")
         return false
@@ -836,6 +837,7 @@ function RoomAutomationModule:powerOn()
 end
 
 function RoomAutomationModule:powerOff()
+    -- Set btnSystemOnOff control to trigger power off (ledSystemPower will update via SystemAutomationController)
     if not self.roomControlsComponent or not self.roomControlsComponent["btnSystemOnOff"] then
         self:debug("Cannot power off: Room Controls component not available")
         return false
@@ -881,12 +883,12 @@ function RoomAutomationModule:getTiming(isPoweringOn)
 end
 
 function RoomAutomationModule:syncRoomControlsState()
-    -- Guard clause: ensure component is available
-    if not self.roomControlsComponent or not self.roomControlsComponent["btnSystemOnOff"] then
+    -- Guard clause: ensure component is available (use ledSystemPower as authoritative status)
+    if not self.roomControlsComponent or not self.roomControlsComponent["ledSystemPower"] then
         return
     end
     
-    local currentState = self.roomControlsComponent["btnSystemOnOff"].Boolean
+    local currentState = self.roomControlsComponent["ledSystemPower"].Boolean
     
     -- Only react to state changes
     if currentState == self.previousPowerState then
@@ -1128,10 +1130,10 @@ function UCIController:registerEventHandlers()
         bindPairedControls(pair.open, pair.close, pair.handler)
     end
     
-    -- Helper function to check and start system if needed
+    -- Helper function to check and start system if needed (check ledSystemPower status)
     local function ensureSystemIsOn()
-        if self.roomControlsComponent and self.roomControlsComponent["btnSystemOnOff"] then
-            if not self.roomControlsComponent["btnSystemOnOff"].Boolean then
+        if self.roomAutomationModule.roomControlsComponent and self.roomAutomationModule.roomControlsComponent["ledSystemPower"] then
+            if not self.roomAutomationModule.roomControlsComponent["ledSystemPower"].Boolean then
                 -- System is OFF, trigger start system
                 self:startSystem()
             end
@@ -1314,7 +1316,7 @@ function UCIController:initializeLegendArrays()
         "txtNav01", "txtNav02", "txtNav03", "txtNav04", "txtNav05", "txtNav06", 
         "txtNav07", "txtNav08", "txtNav09", "txtNav10", "txtNav11", "txtNav12", "txtNav13",
         "txtNavShutdown", "txtRoomNameNav", "txtRoomNameStart",
-        "txtRoutingRooms", "txtRoutingSources",
+        "txtRoutingRooms01", "txtRoutingRooms02", "txtWallSources",
         "txtRouting01", "txtRouting02", "txtRouting03","txtRouting04", "txtRouting05", "txtRouting06",
         "txtRouting07", "txtRouting08", "txtRouting09", "txtRouting10", "txtRouting11", "txtRouting12",
         "txtVidSrc01", "txtVidSrc02", "txtVidSrc03", "txtVidSrc04", "txtVidSrc05", "txtVidSrc06",
@@ -1342,7 +1344,7 @@ function UCIController:initializeLegendArrays()
         "txtLabelNav01", "txtLabelNav02", "txtLabelNav03", "txtLabelNav04", "txtLabelNav05", "txtLabelNav06", 
         "txtLabelNav07", "txtLabelNav08", "txtLabelNav09", "txtLabelNav10", "txtLabelNav11", "txtLabelNav12", "txtLabelNav13",
         "txtLabelNavShutdown", "txtLabelRoomNameNav", "txtLabelRoomNameStart",
-        "txtLabelRoutingRooms", "txtLabelRoutingSources",
+        "txtLabelRoutingRooms01", "txtLabelRoutingRooms02","txtLabelWallSources",
         "txtLabelRouting01", "txtLabelRouting02", "txtLabelRouting03","txtLabelRouting04", "txtLabelRouting05", "txtLabelRouting06",
         "txtLabelRouting07", "txtLabelRouting08", "txtLabelRouting09", "txtLabelRouting10", "txtLabelRouting11", "txtLabelRouting12", 
         "txtLabelVidSrc01", "txtLabelVidSrc02", "txtLabelVidSrc03", "txtLabelVidSrc04", "txtLabelVidSrc05", "txtLabelVidSrc06",
@@ -1555,7 +1557,10 @@ Public API:
     myUCI.progressModule:startLoadingBar(isPoweringOn)
 
 Event-Driven Synchronization:
-    - Automatic monitoring of SystemAutomationController btnSystemOnOff state (1s interval)
+    - Automatic monitoring of SystemAutomationController ledSystemPower status (1s interval)
+    - Uses ledSystemPower as authoritative status indicator (not btnSystemOnOff)
+    - Sets btnSystemOnOff to trigger power changes (control)
+    - Monitors ledSystemPower to detect actual system state changes (status)
     - Updates UCI layers and progress bar when power state changes externally
     - Prevents double-triggering of automation logic
     - Can be manually invoked via myUCI.roomAutomationModule:syncRoomControlsState()

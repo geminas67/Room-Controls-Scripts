@@ -2,7 +2,7 @@
   MXNet DisplayWallController (Refactored) - Q-SYS Control Script for LG MXNet Display Wall Control
   Author: Nikolas Smith, Q-SYS
   Date: 2025-10-23
-  Version: 2.3 (RS232 Command-Based Control + Video Wall + Matrix Decoder Routing)
+  Version: 2.4 (RS232 Command-Based Control + Video Wall + Matrix Decoder Routing + Auto Source Selection)
   Firmware Req: 10.0.0
   Description: Controls LG MXNet display components via RS232 commands with power management,
   input switching, video wall control integration, and individual decoder routing. Supports 
@@ -15,9 +15,11 @@ local displayControls = {
     -- RS232 Controls
     rs232Tx = "Rs232Tx",
     rs232TxSend = "Rs232TxSend",
+    rs232Rx = "Rs232Rx",
     
     -- Status feedback
-    powerStatus = "PowerStatus",
+    -- NOTE: PowerStatus control does not exist on MXNet Decoder component
+    -- Display status feedback would need to be parsed from Rs232Rx.String control
     inputStatusLED = "HotPlugDetect",
     inputNames = "InputNames ",
     currentInput = "CurrentInput "
@@ -25,10 +27,10 @@ local displayControls = {
 
 -- Default RS232 Commands (LG MXNet Protocol) for fallback values if control strings are not configured
 local defaultCommands = {
-    powerOff = "ka 00 00\x0D",
-    powerOn = "ka 00 01\x0D",
-    HDMI1 = "xb 00 90\x0D",
-    HDMI2 = "xb 00 91\x0D",
+    powerOff = "ka 00 00\r",
+    powerOn = "ka 00 01\r",
+    HDMI1 = "xb 00 90\r",
+    HDMI2 = "xb 00 91\r",
 }
 
 -------------------[ Control References ]-------------------
@@ -50,15 +52,16 @@ local controls = {
     btnDisplayPowerOn = Controls.btnDisplayPowerOn,
     btnDisplayPowerOff = Controls.btnDisplayPowerOff,
     btnDisplayPowerSingle = Controls.btnDisplayPowerSingle,
-    btnDisplayInputAll = Controls.btnDisplayInputAll,
     btnSource = Controls.btnSource,
-    numLastDecoder = Controls.numLastDecoder
+    numLastDecoder = Controls.numLastDecoder,
+    defaultSourceIndex = Controls.defaultSourceIndex,
+    defaultInputSelect = Controls.defaultInputSelect
 }
 
 -------------------[ Control Validation ]-------------------
 local function validateControls()
     local required = { "txtStatus", "devDisplays", "btnSource" }
-    local optional = { "numLastDecoder" }
+    local optional = { "numLastDecoder", "defaultSourceIndex", "defaultInputSelect" }
     local missing = {}
     
     for _, name in ipairs(required) do
@@ -179,6 +182,38 @@ local function setButtonLegends(controlArray, legends, index)
     end
 end
 
+-------------------[ Generic Combo Box Validation Utilities ]-------------------
+local function validateNumericComboBoxSelection(ctl, minValue, maxValue, clearString, controlName)
+    -- Generic validation for numeric combo box selections
+    -- Returns: isValid (boolean), value (number or nil)
+    local selection = ctl.String
+    
+    if selection == clearString or selection == "" then
+        ctl.Color = "white"  -- Cleared state
+        return true, nil
+    end
+    
+    local numValue = tonumber(selection)
+    if numValue and numValue >= minValue and numValue <= maxValue then
+        ctl.Color = "white"  -- Valid selection
+        return true, numValue
+    else
+        ctl.Color = "pink"  -- Invalid selection
+        return false, nil
+    end
+end
+
+local function ensureChoicesInitialized(ctl, initFunction, controlName)
+    -- Ensure choices are set if they weren't set during initialization
+    if not ctl.Choices or #ctl.Choices == 0 then
+        if initFunction then
+            initFunction()
+        end
+        return false  -- Was not initialized
+    end
+    return true  -- Already initialized
+end
+
 -------------------[ State Management Utility ]-------------------
 local function resetComponentsArray()
     local componentState = {
@@ -274,6 +309,7 @@ function MXNetDisplayController.new(roomName, config)
         maxSources = config and config.maxSources or 12,
         maxDecoders = config and config.maxDecoders or 35,
         defaultInput = "HDMI1",
+        displayInputDelay = 3, -- Delay in seconds before sending input commands after power on
         inputChoices = {"HDMI1", "HDMI2", "DisplayPort"},
         layoutChoices = {}, -- Will be populated with ENC-01 through ENC-12
         sourceToEncoderMap = {
@@ -452,11 +488,19 @@ function DisplayModule:powerAll(state)
     for i, display in pairs(self.controller.components.displays) do
         if display then
             self.controller:sendRs232Command(display, rs232Cmd)
+            -- Set individual LED feedback for each display
+            if controls.ledDisplayPower and controls.ledDisplayPower[i] then
+                setProp(controls.ledDisplayPower[i], "Boolean", state)
+            end
         end
     end
     
     self.controller.state.powerState = state
-    setProp(controls.ledDisplayPower, "Boolean", state)
+    
+    -- EventHandlers don't fire on programmatic changes - directly call auto source selection
+    if state then
+        self.controller:handleAutoDefaultSourceSelection(1)
+    end
 end
 
 function DisplayModule:powerSingle(index, state)
@@ -465,6 +509,23 @@ function DisplayModule:powerSingle(index, state)
     
     local rs232Cmd = state and self.controller.displayCommands.powerOn or self.controller.displayCommands.powerOff
     self.controller:sendRs232Command(display, rs232Cmd)
+    
+    -- Set individual LED feedback for this display
+    if controls.ledDisplayPower and controls.ledDisplayPower[index] then
+        setProp(controls.ledDisplayPower[index], "Boolean", state)
+        
+        -- EventHandlers don't fire on programmatic changes - directly call input and source selection
+        if state then
+            -- Set display to default input after power on
+            self:setInputSingleDelayed(index, self.controller:getDefaultInput(), self.controller.config.displayInputDelay)
+            
+            -- Trigger auto source selection for display 1
+            if index == 1 then
+                self.controller:handleAutoDefaultSourceSelection(index)
+            end
+        end
+    end
+    
     self:debugPrint("Display " .. index .. " power: " .. tostring(state))
 end
 
@@ -487,8 +548,13 @@ function DisplayModule:setInputAll(input)
 end
 
 function DisplayModule:setInputSingle(index, input)
+    self:debugPrint("setInputSingle called - index: " .. tostring(index) .. ", input: " .. tostring(input))
+    
     local display = self.controller.components.displays[index]
-    if not display then return end
+    if not display then 
+        self:debugPrint("WARNING: Display component [" .. index .. "] not found")
+        return 
+    end
     
     local rs232Cmd = self.controller.displayCommands[input]
     if not rs232Cmd then
@@ -496,8 +562,25 @@ function DisplayModule:setInputSingle(index, input)
         return
     end
     
-    self.controller:sendRs232Command(display, rs232Cmd)
-    self:debugPrint("Display " .. index .. " input: " .. input)
+    self:debugPrint("Sending RS232 command to display " .. index .. ": " .. rs232Cmd)
+    local success = self.controller:sendRs232Command(display, rs232Cmd)
+    self:debugPrint("Display " .. index .. " input set to " .. input .. " - Success: " .. tostring(success))
+end
+
+function DisplayModule:setInputAllDelayed(input, delay)
+    delay = delay or 3  -- Default 3 second delay
+    self:debugPrint("Scheduling input change to " .. input .. " for all displays in " .. delay .. " seconds")
+    Timer.CallAfter(function()
+        self:setInputAll(input)
+    end, delay)
+end
+
+function DisplayModule:setInputSingleDelayed(index, input, delay)
+    delay = delay or 3  -- Default 3 second delay
+    self:debugPrint("Scheduling input change to " .. input .. " for display " .. index .. " in " .. delay .. " seconds")
+    Timer.CallAfter(function()
+        self:setInputSingle(index, input)
+    end, delay)
 end
 
 function DisplayModule:getDisplayCount()
@@ -566,7 +649,7 @@ end
 function PowerModule:enableDisablePowerControls(state)
     local allPowerControls = {
         "btnDisplayPowerOn", "btnDisplayPowerOff", "btnDisplayPowerSingle",
-        "btnDisplayAllOffOn", "btnDisplayInputAll"
+        "btnDisplayAllOffOn"
     }
     
     for _, controlName in ipairs(allPowerControls) do
@@ -582,7 +665,8 @@ function PowerModule:enableDisablePowerControls(state)
 end
 
 function PowerModule:setDisplayPowerFB(state)
-    setProp(controls.ledDisplayPower, "Boolean", state)
+    -- ledDisplayPower is an array - individual LEDs are set per display
+    -- This function only handles button feedback for "All Off/On" buttons
     if controls.btnDisplayAllOffOn then
         setProp(controls.btnDisplayAllOffOn[1], "Boolean", not state)
         setProp(controls.btnDisplayAllOffOn[2], "Boolean", state)
@@ -602,10 +686,16 @@ end
 function PowerModule:updatePowerFeedbackFromDisplays()
     local allPoweredOn, poweredOnCount, totalDisplays = true, 0, 0
     
+    -- NOTE: MXNet Decoder component doesn't have PowerStatus control
+    -- Power feedback is managed through local ledDisplayPower controls instead
     for i, display in pairs(self.controller.components.displays) do
-        if display and display[displayControls.powerStatus] then
+        if display then
             totalDisplays = totalDisplays + 1
-            local powerStatus = display[displayControls.powerStatus].Boolean
+            -- Check local LED feedback instead
+            local powerStatus = false
+            if controls.ledDisplayPower and controls.ledDisplayPower[i] then
+                powerStatus = controls.ledDisplayPower[i].Boolean
+            end
             
             if powerStatus then
                 poweredOnCount = poweredOnCount + 1
@@ -645,6 +735,11 @@ function PowerModule:executePowerOperation(opType, index)
         local interlockIndex = config.state and 1 or 2
         if controls.btnDisplayAllOffOn and controls.btnDisplayAllOffOn[interlockIndex] then
             setProp(controls.btnDisplayAllOffOn[interlockIndex], "Boolean", false)
+        end
+        
+        -- Set all individual display power button feedback
+        for i = 1, self.controller.config.maxDisplays do
+            self:setIndividualPowerButtonFeedback(i, config.state)
         end
     end
     
@@ -816,6 +911,158 @@ function MXNetDisplayController:interlockSourceButtons(activeIndex)
     end
 end
 
+-----------------------------[ Source Selection Logic ]-----------------------------
+function MXNetDisplayController:performSourceRouting(sourceIndex)
+    -- Core routing logic without button manipulation
+    -- This can be called programmatically or from button event handlers
+    
+    -- Validate source index
+    if not sourceIndex or sourceIndex < 1 or sourceIndex > self.config.maxSources then
+        self:debugPrint("WARNING: Invalid source index: " .. tostring(sourceIndex))
+        return false
+    end
+    
+    self:debugPrint("Performing source routing for source: " .. sourceIndex)
+    
+    -- Route to wall controls if present
+    if self.components.wallControls then
+        self.wallModule:selectSource(sourceIndex)
+        self:debugPrint("Routed source " .. sourceIndex .. " to wall controls")
+    end
+    
+    -- Route to matrix controls if present and decoders are selected
+    -- getSelectedDecoders() includes both numLastDecoder and compDecoderSelect
+    if self.components.matrixControls then
+        local selectedDecoders = self.matrixModule:getSelectedDecoders()
+        if #selectedDecoders > 0 then
+            self.matrixModule:routeSourceToDecoders(sourceIndex)
+            self:debugPrint("Routed source " .. sourceIndex .. " to " .. #selectedDecoders .. " matrix decoders")
+        else
+            self:debugPrint("Matrix controls present but no decoders selected")
+        end
+    end
+    
+    return true
+end
+
+function MXNetDisplayController:selectSource(sourceIndex)
+    -- User-initiated source selection (includes button interlocking + routing)
+    -- Called from button event handlers
+    
+    -- Validate source index
+    if not sourceIndex or sourceIndex < 1 or sourceIndex > self.config.maxSources then
+        self:debugPrint("WARNING: Invalid source index: " .. tostring(sourceIndex))
+        return false
+    end
+    
+    self:debugPrint("Selecting source: " .. sourceIndex)
+    
+    -- Interlock source buttons (only one active at a time)
+    self:interlockSourceButtons(sourceIndex)
+    
+    -- Perform the actual routing
+    return self:performSourceRouting(sourceIndex)
+end
+
+-----------------------------[ Automatic Default Source Selection ]-----------------------------
+function MXNetDisplayController:setDefaultSourceIndexChoices()
+    if not controls.defaultSourceIndex then
+        self:debugPrint("WARNING: defaultSourceIndex control not found")
+        return
+    end
+    
+    -- Build choices: [Clear] plus keys from sourceToEncoderMap (1-12)
+    local choices = {self.clearString}
+    for sourceIndex = 1, self.config.maxSources do
+        if self.config.sourceToEncoderMap[sourceIndex] then
+            table.insert(choices, tostring(sourceIndex))
+        end
+    end
+    
+    controls.defaultSourceIndex.Choices = choices
+    self:debugPrint("Set defaultSourceIndex choices: " .. table.concat(choices, ", "))
+end
+
+-----------------------------[ Default Input Selection ]-----------------------------
+function MXNetDisplayController:setDefaultInputSelectChoices()
+    if not controls.defaultInputSelect then
+        self:debugPrint("WARNING: defaultInputSelect control not found")
+        return
+    end
+    
+    -- Build choices from inputChoices config (HDMI1, HDMI2, DisplayPort)
+    local choices = {}
+    for _, input in ipairs(self.config.inputChoices) do
+        -- Only include inputs that have RS232 commands configured
+        if self.displayCommands[input] then
+            table.insert(choices, input)
+        end
+    end
+    
+    controls.defaultInputSelect.Choices = choices
+    self:debugPrint("Set defaultInputSelect choices: " .. table.concat(choices, ", "))
+end
+
+function MXNetDisplayController:getDefaultInput()
+    -- Get the selected default input from UI control, or fallback to hardcoded default
+    if controls.defaultInputSelect and controls.defaultInputSelect.String ~= "" then
+        local selectedInput = controls.defaultInputSelect.String
+        -- Validate that this input has a command configured
+        if self.displayCommands[selectedInput] then
+            return selectedInput
+        else
+            self:debugPrint("WARNING: Selected input '" .. selectedInput .. "' has no RS232 command configured")
+        end
+    end
+    
+    -- Fallback to hardcoded default
+    return self.config.defaultInput
+end
+
+function MXNetDisplayController:handleAutoDefaultSourceSelection(displayIndex)
+    -- Only auto-select for display 1
+    if displayIndex ~= 1 then return end
+    
+    -- Check if defaultSourceIndex control exists
+    if not controls.defaultSourceIndex then
+        self:debugPrint("defaultSourceIndex control not found - skipping auto source selection")
+        return
+    end
+    
+    -- Get selected value from combo box
+    local selectedValue = controls.defaultSourceIndex.String
+    
+    -- If [Clear] or empty, skip auto-selection (user has disabled this feature)
+    if not selectedValue or selectedValue == "" or selectedValue == self.clearString then
+        return
+    end
+    
+    -- Convert to number and validate
+    local defaultSourceIndex = tonumber(selectedValue)
+    if not defaultSourceIndex or defaultSourceIndex < 1 or defaultSourceIndex > self.config.maxSources then
+        self:debugPrint("WARNING: Invalid defaultSourceIndex value: " .. tostring(selectedValue))
+        return
+    end
+    
+    -- Check if source button exists
+    if not controls.btnSource then
+        self:debugPrint("WARNING: btnSource control not found - cannot auto-select")
+        return
+    end
+    
+    local btnArray = isArr(controls.btnSource) and controls.btnSource or {controls.btnSource}
+    if not btnArray[defaultSourceIndex] then
+        self:debugPrint("WARNING: Source button " .. defaultSourceIndex .. " not found in btnArray")
+        return
+    end
+    
+    self:debugPrint("Auto-selecting default source " .. defaultSourceIndex .. " for display 1")
+    
+    -- Update button feedback and perform routing
+    self:interlockSourceButtons(defaultSourceIndex)
+    self:performSourceRouting(defaultSourceIndex)
+end
+
 -----------------------------[ Matrix Module ]-----------------------------
 local MatrixModule = setmetatable({}, {__index = BaseModule})
 MatrixModule.__index = MatrixModule
@@ -826,51 +1073,78 @@ function MatrixModule.new(controller)
 end
 
 function MatrixModule:setDecoderChoices()
-    if not controls.compDecoderSelect then
-        self:debugPrint("WARNING: compDecoderSelect controls not found")
-        return
-    end
-    
-    local choices = {self.controller.clearString}  -- Add [Clear] as first option
+    -- Build choices list: [Clear] plus 1 through maxDecoders
+    local choices = {self.controller.clearString}
     for i = 1, self.controller.config.maxDecoders do
         table.insert(choices, tostring(i))
     end
     
-    local decoderArray = isArr(controls.compDecoderSelect) and controls.compDecoderSelect or {controls.compDecoderSelect}
-    self:debugPrint("Setting decoder choices for " .. #decoderArray .. " decoder select controls")
+    -- Set choices for compDecoderSelect array
+    if controls.compDecoderSelect then
+        local decoderArray = isArr(controls.compDecoderSelect) and controls.compDecoderSelect or {controls.compDecoderSelect}
+        self:debugPrint("Setting decoder choices for " .. #decoderArray .. " decoder select controls")
+        
+        forEach(decoderArray, function(i, ctrl)
+            if ctrl then
+                ctrl.Choices = choices
+                self:debugPrint("Set choices for decoder select control " .. i)
+            else
+                self:debugPrint("WARNING: Decoder select control " .. i .. " is nil")
+            end
+        end)
+    else
+        self:debugPrint("WARNING: compDecoderSelect controls not found")
+    end
     
-    forEach(decoderArray, function(i, ctrl)
-        if ctrl then
-            ctrl.Choices = choices
-            self:debugPrint("Set choices for decoder select control " .. i)
-        else
-            self:debugPrint("WARNING: Decoder select control " .. i .. " is nil")
-        end
-    end)
+    -- Set choices for numLastDecoder
+    if controls.numLastDecoder then
+        controls.numLastDecoder.Choices = choices
+        self:debugPrint("Set choices for numLastDecoder control")
+    else
+        self:debugPrint("WARNING: numLastDecoder control not found")
+    end
     
     self:debugPrint("Set decoder choices: [Clear] and 1 through " .. self.controller.config.maxDecoders)
 end
 
 function MatrixModule:getSelectedDecoders()
     local decoders = {}
-    if not controls.compDecoderSelect then 
-        return decoders 
-    end
+    local decoderSet = {}  -- Track unique decoders to avoid duplicates
     
-    local decoderArray = isArr(controls.compDecoderSelect) and controls.compDecoderSelect or {controls.compDecoderSelect}
-    forEach(decoderArray, function(i, ctrl)
-        if ctrl then
-            local selection = ctrl.String
-            -- Skip if cleared or empty
-            if selection ~= self.controller.clearString and selection ~= "" then
-                local decoderNum = tonumber(selection)
-                if decoderNum and decoderNum >= 1 and decoderNum <= self.controller.config.maxDecoders then
-                    table.insert(decoders, decoderNum)
-                    self:debugPrint("Decoder selector " .. i .. " has decoder " .. decoderNum .. " selected")
-                end
+    -- Get decoder from numLastDecoder (single selection)
+    if controls.numLastDecoder then
+        local selection = controls.numLastDecoder.String
+        if selection ~= self.controller.clearString and selection ~= "" then
+            local decoderNum = tonumber(selection)
+            if decoderNum and decoderNum >= 1 and decoderNum <= self.controller.config.maxDecoders then
+                table.insert(decoders, decoderNum)
+                decoderSet[decoderNum] = true
+                self:debugPrint("numLastDecoder has decoder " .. decoderNum .. " selected")
             end
         end
-    end)
+    end
+    
+    -- Get decoders from compDecoderSelect array (multiple selections)
+    if controls.compDecoderSelect then
+        local decoderArray = isArr(controls.compDecoderSelect) and controls.compDecoderSelect or {controls.compDecoderSelect}
+        forEach(decoderArray, function(i, ctrl)
+            if ctrl then
+                local selection = ctrl.String
+                -- Skip if cleared or empty
+                if selection ~= self.controller.clearString and selection ~= "" then
+                    local decoderNum = tonumber(selection)
+                    if decoderNum and decoderNum >= 1 and decoderNum <= self.controller.config.maxDecoders then
+                        -- Only add if not already in the list (avoid duplicates)
+                        if not decoderSet[decoderNum] then
+                            table.insert(decoders, decoderNum)
+                            decoderSet[decoderNum] = true
+                            self:debugPrint("Decoder selector " .. i .. " has decoder " .. decoderNum .. " selected")
+                        end
+                    end
+                end
+            end
+        end)
+    end
     
     return decoders
 end
@@ -887,11 +1161,20 @@ function MatrixModule:routeSourceToSingleDecoder(sourceIndex, decoderIndex)
         return false
     end
     
-    local controlName = "MatrixTieSelectedAV " .. decoderIndex
+    local controlName = "MatrixTiePinAV " .. decoderIndex
+    self:debugPrint("Looking for control: '" .. controlName .. "'")  -- ADD THIS
+    
     local matrixControl = self.controller.components.matrixControls[controlName]
     
     if not matrixControl then
         self:debugPrint("WARNING: Matrix control not found: " .. controlName)
+        -- ADD THIS: List available controls
+        self:debugPrint("Available controls in matrix component:")
+        for name, ctrl in pairs(self.controller.components.matrixControls) do
+            if type(ctrl) == "table" and type(name) == "string" and name:match("MatrixTiePinAV") then
+                self:debugPrint("  - '" .. name .. "'")
+            end
+        end
         return false
     end
     
@@ -899,7 +1182,6 @@ function MatrixModule:routeSourceToSingleDecoder(sourceIndex, decoderIndex)
     self:debugPrint("Routed source " .. sourceIndex .. " (encoder " .. encoderNum .. ") to decoder " .. decoderIndex)
     return true
 end
-
 function MatrixModule:routeSourceToDecoders(sourceIndex)
     local selectedDecoders = self:getSelectedDecoders()
     
@@ -1055,13 +1337,9 @@ function MXNetDisplayController:setupDisplayEvents(index)
     
     local componentName = Controls.devDisplays and Controls.devDisplays[index] and Controls.devDisplays[index].String or "Unknown"
     
-    -- Set up power status monitoring with direct access
-    if display[displayControls.powerStatus] then
-        display[displayControls.powerStatus].EventHandler = function(ctl)
-            self:debugPrint("Display " .. componentName .. " power status: " .. tostring(ctl.Boolean))
-            self.powerModule:updatePowerFeedbackFromDisplays()
-        end
-    end
+    -- NOTE: MXNet Decoder component doesn't have PowerStatus control
+    -- Power status monitoring is handled through ledDisplayPower EventHandler instead
+    -- (See arrayControlHandlers in registerEventHandlers)
     
     -- Set up input status monitoring (feedback from display)
     if display[displayControls.inputStatusLED] then
@@ -1105,31 +1383,39 @@ function MXNetDisplayController:getComponentNames()
         end
     end
 
+    -- Sort all lists
     for _, list in pairs(namesTable) do
         table.sort(list)
-        table.insert(list, self.clearString)
     end
 
     -- Access Controls directly to ensure we see them when they become available
     if Controls.devDisplays then
+        self:debugPrint("Found " .. #namesTable.DisplayNames .. " display components")
+        -- Add [Clear] option after reporting count
+        table.insert(namesTable.DisplayNames, self.clearString)
         for i, _ in ipairs(Controls.devDisplays) do
             Controls.devDisplays[i].Choices = namesTable.DisplayNames
         end
         self:debugPrint("Set choices for " .. #Controls.devDisplays .. " display controls")
-        self:debugPrint("Found " .. #namesTable.DisplayNames .. " display components")
     end
     
     if Controls.compWallControls then
-        Controls.compWallControls.Choices = namesTable.WallControlsNames
         self:debugPrint("Found " .. #namesTable.WallControlsNames .. " wall control components")
+        -- Add [Clear] option after reporting count
+        table.insert(namesTable.WallControlsNames, self.clearString)
+        Controls.compWallControls.Choices = namesTable.WallControlsNames
     end
     
     if Controls.compMatrixControls then
-        Controls.compMatrixControls.Choices = namesTable.MatrixControlsNames
         self:debugPrint("Found " .. #namesTable.MatrixControlsNames .. " matrix control components")
+        -- Add [Clear] option after reporting count
+        table.insert(namesTable.MatrixControlsNames, self.clearString)
+        Controls.compMatrixControls.Choices = namesTable.MatrixControlsNames
     end
     
     if Controls.compRoomControls then
+        -- Add [Clear] option for consistency
+        table.insert(namesTable.RoomControlsNames, self.clearString)
         Controls.compRoomControls.Choices = namesTable.RoomControlsNames
     end
 end
@@ -1167,7 +1453,34 @@ function MXNetDisplayController:registerEventHandlers()
         compRoomControls = function() self:setRoomControlsComponent() end,
         compWallControls = function() self:setWallControlsComponent() end,
         compMatrixControls = function() self:setMatrixControlsComponent() end,
-        btnDisplayInputAll = function() self.displayModule:setInputAll(self.config.defaultInput) end
+        -- btnDisplayInputAll removed - no longer in UI
+        defaultSourceIndex = function(ctl)
+            local isValid, value = validateNumericComboBoxSelection(
+                ctl, 1, self.config.maxSources, self.clearString, "defaultSourceIndex"
+            )
+            
+            if value == nil then
+                self:debugPrint("defaultSourceIndex cleared - auto source selection disabled")
+            elseif isValid then
+                self:debugPrint("defaultSourceIndex changed to source " .. value)
+            else
+                self:debugPrint("defaultSourceIndex has invalid selection")
+            end
+        end,
+        defaultInputSelect = function(ctl)
+            local selectedInput = ctl.String
+            
+            if not selectedInput or selectedInput == "" then
+                self:debugPrint("defaultInputSelect cleared - using fallback default: " .. self.config.defaultInput)
+                ctl.Color = "white"
+            elseif self.displayCommands[selectedInput] then
+                self:debugPrint("defaultInputSelect changed to: " .. selectedInput)
+                ctl.Color = "white"
+            else
+                self:debugPrint("defaultInputSelect has invalid selection: " .. selectedInput)
+                ctl.Color = "pink"
+            end
+        end
     }
     
     -- Register single control handlers
@@ -1191,6 +1504,22 @@ function MXNetDisplayController:registerEventHandlers()
                 self.powerModule:powerOffAll()
             elseif index == 2 then
                 self.powerModule:powerOnAll()
+                -- Set all displays to default input after power on
+                self.displayModule:setInputAllDelayed(self:getDefaultInput(), self.config.displayInputDelay)
+            end
+        end,
+        
+        ledDisplayPower = function(index, ctl)
+            -- NOTE: EventHandler only fires on external changes (UCI, other scripts, component feedback)
+            -- For internal script power changes, auto-selection is called directly in powerSingle/powerAll
+            if ctl.Boolean then
+                -- Set individual display to default input when powered on
+                self.displayModule:setInputSingleDelayed(index, self:getDefaultInput(), self.config.displayInputDelay)
+                
+                -- Trigger auto source selection for display 1
+                if index == 1 then
+                    self:handleAutoDefaultSourceSelection(index)
+                end
             end
         end,
 
@@ -1198,51 +1527,60 @@ function MXNetDisplayController:registerEventHandlers()
 
         btnSource = function(index, ctl) 
             self:debugPrint("Source button " .. index .. " pressed")
-            
-            -- Interlock source buttons (only one active at a time)
-            self:interlockSourceButtons(index)
-            
-            -- Check if this is the last decoder using the configurable control
-            local lastDecoderNum = self.controls.numLastDecoder and tonumber(self.controls.numLastDecoder.Value) or nil
-            local isLastDecoder = lastDecoderNum and (index == lastDecoderNum)
-            
-            -- Route based on decoder type
-            if self.components.wallControls and not isLastDecoder then
-                -- Use wall controls for all decoders except the last one
-                self.wallModule:selectSource(index)
-            elseif isLastDecoder then
-                -- Use matrix routing only for the last decoder
-                self.matrixModule:routeSourceToDecoders(index)
-            end
+            self:selectSource(index)
             
             -- TODO: Add feedback from compMatrixControls component
             -- Challenge: Reference point changes per selected decoder
-            -- Will need to monitor MatrixTieSelectedAV controls for selected decoders
+            -- Will need to monitor MatrixTiePinAV controls for selected decoders
             -- and update button states based on which encoder is routed to those decoders
              
         end,
 
         compDecoderSelect = function(index, ctl)
-            -- Ensure choices are set if they weren't set during initialization
-            if not ctl.Choices or #ctl.Choices == 0 then
+            local wasInitialized = ensureChoicesInitialized(
+                ctl, 
+                function() self.matrixModule:setDecoderChoices() end,
+                "compDecoderSelect"
+            )
+            
+            if not wasInitialized then
                 self:debugPrint("Setting decoder choices for control " .. index .. " (late initialization)")
-                self.matrixModule:setDecoderChoices()
             end
             
-            -- Set color based on selection
-            local selection = ctl.String
-            if selection == self.clearString or selection == "" then
-                ctl.Color = "white"  -- Cleared state
+            local isValid, value = validateNumericComboBoxSelection(
+                ctl, 1, self.config.maxDecoders, self.clearString, "compDecoderSelect"
+            )
+            
+            if value == nil then
                 self:debugPrint("Decoder selector " .. index .. " cleared")
+            elseif isValid then
+                self:debugPrint("Decoder selector " .. index .. " changed to decoder " .. value)
             else
-                local decoderNum = tonumber(selection)
-                if decoderNum and decoderNum >= 1 and decoderNum <= self.config.maxDecoders then
-                    ctl.Color = "white"  -- Valid selection
-                    self:debugPrint("Decoder selector " .. index .. " changed to decoder " .. decoderNum)
-                else
-                    ctl.Color = "pink"  -- Invalid selection
-                    self:debugPrint("Decoder selector " .. index .. " has invalid selection")
-                end
+                self:debugPrint("Decoder selector " .. index .. " has invalid selection")
+            end
+        end,
+        
+        numLastDecoder = function(ctl)
+            local wasInitialized = ensureChoicesInitialized(
+                ctl,
+                function() self.matrixModule:setDecoderChoices() end,
+                "numLastDecoder"
+            )
+            
+            if not wasInitialized then
+                self:debugPrint("Setting decoder choices for numLastDecoder (late initialization)")
+            end
+            
+            local isValid, value = validateNumericComboBoxSelection(
+                ctl, 1, self.config.maxDecoders, self.clearString, "numLastDecoder"
+            )
+            
+            if value == nil then
+                self:debugPrint("numLastDecoder cleared")
+            elseif isValid then
+                self:debugPrint("numLastDecoder changed to decoder " .. value)
+            else
+                self:debugPrint("numLastDecoder has invalid selection")
             end
         end
     }
@@ -1269,7 +1607,14 @@ function MXNetDisplayController:funcInit()
     -- Set decoder choices independently of matrix component availability
     self.matrixModule:setDecoderChoices()
     
+    -- Set default source index choices for auto-selection combo box
+    self:setDefaultSourceIndexChoices()
+    
+    -- Set default input choices for input selection combo box
+    self:setDefaultInputSelectChoices()
+    
     self.powerModule:updatePowerFeedbackFromDisplays()
+    self.powerModule:resetAllPowerButtonLegends()
     self:updateTimerConfigFromComponent()
     
     self:debugPrint("MXNet DisplayWallController Initialized with " .. 
@@ -1282,10 +1627,7 @@ end
 function MXNetDisplayController:cleanup()
     for i, display in pairs(self.components.displays) do
         if display then
-            -- Clean up power status event handler
-            if display[displayControls.powerStatus] then
-                display[displayControls.powerStatus].EventHandler = nil
-            end
+            -- NOTE: MXNet Decoder doesn't have PowerStatus control - no cleanup needed
             
             -- Clean up input status event handler
             if display[displayControls.inputStatusLED] then
@@ -1371,7 +1713,11 @@ end
 
 -- Create instance
 local roomName = getRoomNameFromComponent()
-local config = { debugging = true, maxDisplays = 9, maxSources = 12 }
+local config = { 
+    debugging = true, 
+    maxDisplays = 9, 
+    maxSources = 12
+}
 
 myMXNetDisplayWallController = createMXNetDisplayWallController(roomName, config)
 
@@ -1411,22 +1757,26 @@ end
   ✓ Power and Input control for individual displays
   ✓ RS232 command-based control (MXNet protocol) with direct access
   ✓ DRY helper function for RS232 command transmission
-  ✓ Power commands: ka 00 01\x0D (on), ka 00 00\x0D (off)
-  ✓ Input commands: xb 00 <hex>\x0D for HDMI1, HDMI2
+  ✓ Power commands: ka 00 01\r (on), ka 00 00\r (off)
+  ✓ Input commands: xb 00 <hex>\r for HDMI1, HDMI2
   ✓ Automatic Rs232Tx string population and Rs232TxSend pulse control
-  ✓ Video wall control integration (v2.2)
   ✓ Support for MX Net Video Wall 4x4 component
   ✓ 12 encoder sources (ENC-01 through ENC-12)
   ✓ Source selection via button array (btnSource[1-12])
   ✓ Dynamic layout selection control population
   ✓ Component discovery for wall controls
   ✓ Individual decoder routing via matrix controls (v2.3)
-  ✓ Support for 35 MXNet decoders (MatrixTieSelectedAV 1-35)
+  ✓ Support for 35 MXNet decoders (MatrixTiePinAV 1-35)
   ✓ Multiple decoder selection via compDecoderSelect array
   ✓ Source to encoder mapping (1-12 sources to encoders)
   ✓ Intelligent routing: wall controls when present, matrix routing when absent
   ✓ Batch routing to multiple selected decoders with error reporting
   ✓ Optional simultaneous wall + individual routing (commented)
+  ✓ Automatic default source selection when display 1 turns on (v2.4)
+  ✓ UI-based defaultSourceIndex combo box control for per-instance configuration
+  ✓ Choices: [Clear], 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12
+  ✓ Auto-selection disabled when set to [Clear]
+  ✓ DRY source selection logic extracted into reusable selectSource() method
   
   ADVANCED PATTERNS IMPLEMENTED:
   ✓ BaseModule class with inheritance (metatable-based OOP)

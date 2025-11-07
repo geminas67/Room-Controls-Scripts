@@ -312,16 +312,17 @@ function DisplayModule.new(controller)
     return self
 end
 
+function DisplayModule:sendRs232Command(display, command)
+    self.controller:safeComponentAccess(display, "Rs232Tx", "String", command)
+    self.controller:safeComponentAccess(display, "Rs232TxSend", "Boolean", true)
+    self.controller:safeComponentAccess(display, "Rs232TxSend", "Boolean", false, 0.2)
+end
+
 function DisplayModule:powerAll(state)
-    -- Set power button states on all display controller components
-    -- state: true = power on (index 2), false = power off (index 1)
-    local buttonIndex = state and 2 or 1
-    local controlName = "btnDisplayAllOffOn " .. buttonIndex
-    
+    local rs232Cmd = self:getPowerCommand(state)
     for _, display in pairs(self.controller.components.displays) do
         if display then 
-            -- Set the appropriate button on the display controller script
-            self.controller:safeComponentAccess(display, controlName, "set", true)
+            self:sendRs232Command(display, rs232Cmd)
         end
     end
 end
@@ -329,10 +330,13 @@ end
 function DisplayModule:powerSingle(idx, state)
     local display = self.controller:getDisplayComponent(idx)
     if display then 
-        local buttonIndex = state and 2 or 1
-        local controlName = "btnDisplayAllOffOn " .. buttonIndex
-        self.controller:safeComponentAccess(display, controlName, "set", true)
+        local rs232Cmd = self:getPowerCommand(state)
+        self:sendRs232Command(display, rs232Cmd)
     end
+end
+
+function DisplayModule:getPowerCommand(state)
+    return state and "ka 00 01\r" or "ka 00 00\r"
 end
 
 -------------------[ Power Module ]------------------------
@@ -437,7 +441,7 @@ SystemAutomationController.__index = SystemAutomationController
 SystemAutomationController.clearString = "[Clear]"
 SystemAutomationController.componentTypes = {
     callSync    = "call_sync", videoBridge = "usb_uvc",
-    displays    = "device_controller_script", -- Display controller scripts (CEC, RS-232, etc.)
+    displays    = "%PLUGIN%_e186d86c-9fb0-426e-bd59-d1fe9e133519_%FP%_e578be77683e876fb741dc5e1344b6eb", -- MXNet Display control
     gains       = "gain", systemMute = "system_mute",
     camACPR     = "%PLUGIN%_648260e3-c166-4b00-98ba-ba16ksnza4a63b0_%FP%_a4d2263b4380c424e16eebb67084f355"
 }
@@ -633,8 +637,7 @@ function SystemAutomationController:getComponentNames()
             table.insert(namesTable.namesCallSync, comp.Name)
         elseif comp.Type == compType.videoBridge then
             table.insert(namesTable.namesVideoBridge, comp.Name)
-        elseif comp.Type == compType.displays and string.match(comp.Name, "compDisplayControls") then
-            -- Only include device_controller_script components that match the naming pattern
+        elseif comp.Type == compType.displays then
             table.insert(namesTable.namesDisplay, comp.Name)
         elseif comp.Type == compType.gains then
             table.insert(namesTable.namesGain, comp.Name)
@@ -1266,4 +1269,3 @@ Public API:
     mySystemController.powerModule:powerOn()
     mySystemController.powerModule:powerOff()
 ]]
-
