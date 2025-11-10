@@ -1,13 +1,16 @@
 --[[
   MXNet DisplayWallController (Refactored) - Q-SYS Control Script for LG MXNet Display Wall Control
   Author: Nikolas Smith, Q-SYS
-  Date: 2025-10-23
-  Version: 2.4 (RS232 Command-Based Control + Video Wall + Matrix Decoder Routing + Auto Source Selection)
+  Date: 2025-11-08
+  Version: 2.5 (RS232 Command-Based Control + Simplified Mode Operation)
   Firmware Req: 10.0.0
   Description: Controls LG MXNet display components via RS232 commands with power management,
-  input switching, video wall control integration, and individual decoder routing. Supports 
-  MX Net Video Wall 4x4 component with 12 encoder sources (ENC-01 through ENC-12) and 
-  MXNet matrix routing to 35 decoders. Integrates with SystemAutomationController.  
+  input switching, and source routing. Operates in either wallControls mode OR matrixControls mode:
+  - wallControls mode: Routes to MX Net Video Wall 4x4 component (12 encoder sources ENC-01 through ENC-12)
+  - matrixControls mode: Routes to MXNet Matrix decoders (1-35 decoders)
+  - If both are configured, wallControls has priority
+  - External routing to separate decoders should be handled outside this script
+  Integrates with SystemAutomationController.  
 ]]--
 
 -- Display Controls Names
@@ -53,7 +56,6 @@ local controls = {
     btnDisplayPowerOff = Controls.btnDisplayPowerOff,
     btnDisplayPowerSingle = Controls.btnDisplayPowerSingle,
     btnSource = Controls.btnSource,
-    numLastDecoder = Controls.numLastDecoder,
     defaultSourceIndex = Controls.defaultSourceIndex,
     defaultInputSelect = Controls.defaultInputSelect
 }
@@ -61,7 +63,7 @@ local controls = {
 -------------------[ Control Validation ]-------------------
 local function validateControls()
     local required = { "txtStatus", "devDisplays", "btnSource" }
-    local optional = { "numLastDecoder", "defaultSourceIndex", "defaultInputSelect" }
+    local optional = { "defaultSourceIndex", "defaultInputSelect" }
     local missing = {}
     
     for _, name in ipairs(required) do
@@ -308,6 +310,7 @@ function MXNetDisplayController.new(roomName, config)
         maxDisplays = config and config.maxDisplays or 9,
         maxSources = config and config.maxSources or 12,
         maxDecoders = config and config.maxDecoders or 35,
+        excludedDecoders = config and config.excludedDecoders or {19, 20}, -- Decoders managed by BlockController/external logic
         defaultInput = "HDMI1",
         displayInputDelay = 3, -- Delay in seconds before sending input commands after power on
         inputChoices = {"HDMI1", "HDMI2", "DisplayPort"},
@@ -915,6 +918,7 @@ end
 function MXNetDisplayController:performSourceRouting(sourceIndex)
     -- Core routing logic without button manipulation
     -- This can be called programmatically or from button event handlers
+    -- Operates in either wallControls mode OR matrixControls mode (wallControls has priority)
     
     -- Validate source index
     if not sourceIndex or sourceIndex < 1 or sourceIndex > self.config.maxSources then
@@ -924,25 +928,29 @@ function MXNetDisplayController:performSourceRouting(sourceIndex)
     
     self:debugPrint("Performing source routing for source: " .. sourceIndex)
     
-    -- Route to wall controls if present
+    -- wallControls mode (priority) - route to wall controls only
     if self.components.wallControls then
         self.wallModule:selectSource(sourceIndex)
-        self:debugPrint("Routed source " .. sourceIndex .. " to wall controls")
+        self:debugPrint("wallControls mode: Routed source " .. sourceIndex .. " to wall controls")
+        return true
     end
     
-    -- Route to matrix controls if present and decoders are selected
-    -- getSelectedDecoders() includes both numLastDecoder and compDecoderSelect
+    -- matrixControls mode - route to matrix controls only (wallControls not present)
     if self.components.matrixControls then
         local selectedDecoders = self.matrixModule:getSelectedDecoders()
         if #selectedDecoders > 0 then
             self.matrixModule:routeSourceToDecoders(sourceIndex)
-            self:debugPrint("Routed source " .. sourceIndex .. " to " .. #selectedDecoders .. " matrix decoders")
+            self:debugPrint("matrixControls mode: Routed source " .. sourceIndex .. " to " .. #selectedDecoders .. " matrix decoders")
+            return true
         else
-            self:debugPrint("Matrix controls present but no decoders selected")
+            self:debugPrint("matrixControls mode: Matrix controls present but no decoders selected")
+            return false
         end
     end
     
-    return true
+    -- Neither mode configured
+    self:debugPrint("WARNING: No routing target configured (no wallControls or matrixControls)")
+    return false
 end
 
 function MXNetDisplayController:selectSource(sourceIndex)
@@ -1096,14 +1104,6 @@ function MatrixModule:setDecoderChoices()
         self:debugPrint("WARNING: compDecoderSelect controls not found")
     end
     
-    -- Set choices for numLastDecoder
-    if controls.numLastDecoder then
-        controls.numLastDecoder.Choices = choices
-        self:debugPrint("Set choices for numLastDecoder control")
-    else
-        self:debugPrint("WARNING: numLastDecoder control not found")
-    end
-    
     self:debugPrint("Set decoder choices: [Clear] and 1 through " .. self.controller.config.maxDecoders)
 end
 
@@ -1111,17 +1111,14 @@ function MatrixModule:getSelectedDecoders()
     local decoders = {}
     local decoderSet = {}  -- Track unique decoders to avoid duplicates
     
-    -- Get decoder from numLastDecoder (single selection)
-    if controls.numLastDecoder then
-        local selection = controls.numLastDecoder.String
-        if selection ~= self.controller.clearString and selection ~= "" then
-            local decoderNum = tonumber(selection)
-            if decoderNum and decoderNum >= 1 and decoderNum <= self.controller.config.maxDecoders then
-                table.insert(decoders, decoderNum)
-                decoderSet[decoderNum] = true
-                self:debugPrint("numLastDecoder has decoder " .. decoderNum .. " selected")
+    -- Helper to check if decoder is excluded
+    local function isExcluded(decoderNum)
+        for _, excluded in ipairs(self.controller.config.excludedDecoders) do
+            if decoderNum == excluded then
+                return true
             end
         end
+        return false
     end
     
     -- Get decoders from compDecoderSelect array (multiple selections)
@@ -1134,11 +1131,13 @@ function MatrixModule:getSelectedDecoders()
                 if selection ~= self.controller.clearString and selection ~= "" then
                     local decoderNum = tonumber(selection)
                     if decoderNum and decoderNum >= 1 and decoderNum <= self.controller.config.maxDecoders then
-                        -- Only add if not already in the list (avoid duplicates)
-                        if not decoderSet[decoderNum] then
+                        -- Only add if not already in the list (avoid duplicates) and not excluded
+                        if not decoderSet[decoderNum] and not isExcluded(decoderNum) then
                             table.insert(decoders, decoderNum)
                             decoderSet[decoderNum] = true
                             self:debugPrint("Decoder selector " .. i .. " has decoder " .. decoderNum .. " selected")
+                        elseif isExcluded(decoderNum) then
+                            self:debugPrint("Decoder selector " .. i .. " decoder " .. decoderNum .. " excluded (managed externally)")
                         end
                     end
                 end
@@ -1227,7 +1226,11 @@ function MXNetDisplayController:setComponent(ctrl, componentType)
         if ctrl then ctrl.Color = "white" end
         self:setComponentValid(componentType)
         return nil
-    elseif #Component.GetControls(Component.New(componentName)) < 1 then
+    end
+    
+    -- Create component reference once and reuse it
+    local component = Component.New(componentName)
+    if not component or #Component.GetControls(component) < 1 then
         if ctrl then
             ctrl.String = "[Invalid Component Selected]"
             ctrl.Color = "pink"
@@ -1237,7 +1240,7 @@ function MXNetDisplayController:setComponent(ctrl, componentType)
     else
         if ctrl then ctrl.Color = "white" end
         self:setComponentValid(componentType)
-        return Component.New(componentName)
+        return component
     end
 end
 
@@ -1286,6 +1289,22 @@ function MXNetDisplayController:setRoomControlsComponent()
     self.components.roomControls = self:setComponent(Controls.compRoomControls, "Room Controls")
     if self.components.roomControls then
         self:updateTimerConfigFromComponent()
+        
+        -- Set up event handler for ledSystemPower to turn off all source buttons when system powers off
+        if self.components.roomControls["ledSystemPower"] then
+            self.components.roomControls["ledSystemPower"].EventHandler = function(ctl)
+                if ctl.Boolean == false and controls.btnSource then
+                    -- Turn off all source buttons when system power goes off
+                    local btnArray = isArr(controls.btnSource) and controls.btnSource or {controls.btnSource}
+                    for i, btn in ipairs(btnArray) do
+                        if btn then
+                            setProp(btn, "Boolean", false)
+                        end
+                    end
+                    self:debugPrint("System power off - cleared all source buttons")
+                end
+            end
+        end
     end
 end
 
@@ -1558,30 +1577,6 @@ function MXNetDisplayController:registerEventHandlers()
             else
                 self:debugPrint("Decoder selector " .. index .. " has invalid selection")
             end
-        end,
-        
-        numLastDecoder = function(ctl)
-            local wasInitialized = ensureChoicesInitialized(
-                ctl,
-                function() self.matrixModule:setDecoderChoices() end,
-                "numLastDecoder"
-            )
-            
-            if not wasInitialized then
-                self:debugPrint("Setting decoder choices for numLastDecoder (late initialization)")
-            end
-            
-            local isValid, value = validateNumericComboBoxSelection(
-                ctl, 1, self.config.maxDecoders, self.clearString, "numLastDecoder"
-            )
-            
-            if value == nil then
-                self:debugPrint("numLastDecoder cleared")
-            elseif isValid then
-                self:debugPrint("numLastDecoder changed to decoder " .. value)
-            else
-                self:debugPrint("numLastDecoder has invalid selection")
-            end
         end
     }
     
@@ -1617,10 +1612,21 @@ function MXNetDisplayController:funcInit()
     self.powerModule:resetAllPowerButtonLegends()
     self:updateTimerConfigFromComponent()
     
-    self:debugPrint("MXNet DisplayWallController Initialized with " .. 
-                   self.displayModule:getDisplayCount() .. " displays, " ..
-                   (self.components.wallControls and "wall controls, " or "no wall controls, ") ..
-                   (self.components.matrixControls and "matrix controls" or "no matrix controls"))
+    -- Determine operating mode
+    local operatingMode = "No routing configured"
+    if self.components.wallControls then
+        operatingMode = "wallControls mode"
+    elseif self.components.matrixControls then
+        operatingMode = "matrixControls mode"
+    end
+    
+    self:debugPrint("MXNet DisplayWallController Initialized")
+    self:debugPrint("  Displays: " .. self.displayModule:getDisplayCount())
+    self:debugPrint("  Operating mode: " .. operatingMode)
+    
+    if self.components.wallControls and self.components.matrixControls then
+        self:debugPrint("  WARNING: Both wallControls and matrixControls configured - wallControls has priority")
+    end
 end
 
 -----------------------------[ Cleanup ]-----------------------------
@@ -1725,8 +1731,19 @@ if myMXNetDisplayWallController then
     print("SUCCESS: MXNet DisplayWallController created and initialized!")
     print("Room: " .. roomName)
     print("Display count: " .. myMXNetDisplayWallController.displayModule:getDisplayCount())
-    print("Wall controls: " .. (myMXNetDisplayWallController.components.wallControls and "Connected" or "Not connected"))
-    print("Matrix controls: " .. (myMXNetDisplayWallController.components.matrixControls and "Connected" or "Not connected"))
+    
+    -- Determine operating mode
+    local operatingMode = "No routing configured"
+    if myMXNetDisplayWallController.components.wallControls then
+        operatingMode = "wallControls mode"
+    elseif myMXNetDisplayWallController.components.matrixControls then
+        operatingMode = "matrixControls mode"
+    end
+    print("Operating mode: " .. operatingMode)
+    
+    if myMXNetDisplayWallController.components.wallControls and myMXNetDisplayWallController.components.matrixControls then
+        print("WARNING: Both wallControls and matrixControls configured - wallControls has priority")
+    end
     
     -- Export instance globally for external access
     MXNetDisplayWallControllerInstance = myMXNetDisplayWallController
@@ -1769,9 +1786,10 @@ end
   ✓ Support for 35 MXNet decoders (MatrixTiePinAV 1-35)
   ✓ Multiple decoder selection via compDecoderSelect array
   ✓ Source to encoder mapping (1-12 sources to encoders)
-  ✓ Intelligent routing: wall controls when present, matrix routing when absent
+  ✓ Simplified mode operation: wallControls OR matrixControls (v2.5)
+  ✓ wallControls has priority if both are configured
+  ✓ External decoder routing should be handled outside this script
   ✓ Batch routing to multiple selected decoders with error reporting
-  ✓ Optional simultaneous wall + individual routing (commented)
   ✓ Automatic default source selection when display 1 turns on (v2.4)
   ✓ UI-based defaultSourceIndex combo box control for per-instance configuration
   ✓ Choices: [Clear], 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12
