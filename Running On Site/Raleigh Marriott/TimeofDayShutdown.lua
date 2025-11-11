@@ -64,7 +64,7 @@ local function validateRoomControl(roomControlName, missing)
         return
     end
     
-    local requiredControls = {'btnSystemOffTrig'}
+    local requiredControls = {'btnSystemOff'}
     for _, controlName in ipairs(requiredControls) do
         if not roomControl[controlName] then
             table.insert(missing, roomControlName .. " " .. controlName .. " control")
@@ -109,8 +109,11 @@ end
 
 -------------------[ Event Handlers ]-------------------
 local function handleTimeOfDayShutdown()
+    print("DEBUG: handleTimeOfDayShutdown called - active state: " .. tostring(components.todShutdownReset['active'].Boolean))
+    
     -- Only execute when todShutdownReset active becomes true
     if not components.todShutdownReset['active'].Boolean then
+        print("DEBUG: Active is false, returning early")
         return
     end
     
@@ -119,11 +122,21 @@ local function handleTimeOfDayShutdown()
     -- Loop through all room controls and trigger power off
     for _, config in ipairs(roomConfig) do
         local roomControl = components[config.roomControlName]
-        if roomControl and roomControl['btnSystemOffTrig'] then
+        if roomControl and roomControl['btnSystemOff'] then
             print("  Triggering power off for " .. config.roomName)
-            roomControl['btnSystemOffTrig']:Trigger()
+            local success, err = pcall(function()
+                roomControl['btnSystemOff']:Trigger()
+            end)
+            if not success then
+                print("  ERROR: Failed to trigger power off for " .. config.roomName .. ": " .. tostring(err))
+            end
         else
-            print("  WARNING: Could not trigger power off for " .. config.roomName)
+            print("  WARNING: Could not access btnSystemOff for " .. config.roomName)
+            if roomControl then
+                print("    Component exists but btnSystemOff control not found")
+            else
+                print("    Component reference is nil")
+            end
         end
     end
 end
@@ -132,8 +145,12 @@ end
 local function registerEventHandlers()
     -- Bind Time of Day shutdown trigger
     if components.todShutdownReset and components.todShutdownReset['active'] then
+        print("DEBUG: Registering event handler for todShutdownReset['active']")
+        print("DEBUG: Initial state of todShutdownReset['active'].Boolean: " .. tostring(components.todShutdownReset['active'].Boolean))
         bind(components.todShutdownReset['active'], handleTimeOfDayShutdown)
-        print("Time of Day shutdown handler registered")
+        print("Time of Day shutdown handler registered successfully")
+    else
+        print("ERROR: Cannot register event handler - component or control missing")
     end
 end
 
