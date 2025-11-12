@@ -121,7 +121,7 @@ local controls = {
   txtStatus         = Controls.txtStatus,
   selCombination    = Controls.selRoomCombination,
   wallOpenButtons   = Controls.wallOpenButtons,
-  btnRoomSelector   = Controls.btnRoomSelector,
+  uciButtons        = Controls.uciButtons,
 }
 
 local function validateControls()
@@ -132,7 +132,7 @@ local function validateControls()
     compRoomCombiner  = controls.compRoomCombiner,
     txtStatus         = controls.txtStatus,
     wallOpenButtons   = controls.wallOpenButtons,
-    btnRoomSelector   = controls.btnRoomSelector
+    uciButtons        = controls.uciButtons
   }
   
   local optional = {
@@ -194,7 +194,7 @@ local function normalizeControlArrays()
   -- Normalize all array controls to consistent structures
   -- This ensures bindArray() receives properly structured control arrays
   local arrayControls = {
-    'compRoomControls', 'compAudioRouter', 'wallOpenButtons', 'btnRoomSelector'
+    'compRoomControls', 'compAudioRouter', 'wallOpenButtons', 'uciButtons'
   }
   
   for _, controlName in ipairs(arrayControls) do
@@ -312,7 +312,7 @@ function ComponentModule.new(controller)
   self.componentTypes = {
     roomCombiner = "room_combiner",
     roomControls = "device_controller_script",
-    btnRoomSelector = "custom_controls",
+    uciController = "device_controller_script",
     audioRouter = "router_with_output"
   }
   self:init()
@@ -334,7 +334,7 @@ function ComponentModule:discoverComponents()
       table.insert(namesTable.AudioRouterNames, component.Name)
     elseif component.Type == self.componentTypes.roomCombiner then
       table.insert(namesTable.RoomCombinerNames, component.Name)
-    elseif component.Type == self.componentTypes.btnRoomSelector then
+    elseif component.Type == self.componentTypes.uciController and string.match(component.Name, "^uciControllerSalon") then
       table.insert(namesTable.UciButtonsNames, component.Name)
     end
   end
@@ -361,7 +361,7 @@ end
 function RoomButtonVisibilityModule:updateAllRoomButtonVisibility()
   self:debug("Updating RoomSelector button visibility for all rooms...")
  
-  if not controls.btnRoomSelector or #controls.btnRoomSelector == 0 then
+  if not controls.uciButtons or #controls.uciButtons == 0 then
       self:debug("No RoomSelector buttons found - skipping visibility update")
       return
   end
@@ -388,18 +388,18 @@ end
 
 function RoomButtonVisibilityModule:updateRoomButtonVisibility(roomIndex, roomName, roomGroups)
   -- Try cached component first (efficient), fallback to Component.New if not cached yet (robust)
-  local btnRoomSelector = self.controller.components.btnRoomSelector[roomIndex]
+  local uciButton = self.controller.components.uciButtons[roomIndex]
   
-  if not btnRoomSelector then
+  if not uciButton then
       -- Cache miss - create component from name
-      local btnRoomName = self.controller.btnRoomSelector[roomIndex]
+      local btnRoomName = self.controller.uciButtons[roomIndex]
       if not btnRoomName or btnRoomName == "" then
           self:debug("No RoomSelector component name for room " .. roomIndex .. " (" .. roomName .. ")")
           return
       end
       
-      btnRoomSelector = Component.New(btnRoomName)
-      if not btnRoomSelector then
+      uciButton = Component.New(btnRoomName)
+      if not uciButton then
           self:debug("Failed to create RoomSelector component for " .. roomName .. " (" .. btnRoomName .. ")")
           return
       end
@@ -422,9 +422,9 @@ function RoomButtonVisibilityModule:updateRoomButtonVisibility(roomIndex, roomNa
   if not sourceGroup then
       self:debug(" No group for " .. roomName .. " - setting as separate")
       for toggleIndex = 1, 8 do
-          local toggleControlName = "toggle." .. toggleIndex
-          if btnRoomSelector[toggleControlName] then
-              btnRoomSelector[toggleControlName].Boolean = (toggleIndex == roomIndex)
+          local toggleControlName = "pinLEDIsVisibleBtn" .. string.format("%02d", toggleIndex)
+          if uciButton[toggleControlName] then
+              uciButton[toggleControlName].Boolean = (toggleIndex == roomIndex)
               self:debug(" " .. roomName .. " -> " .. toggleControlName .. ".Boolean = " .. tostring(toggleIndex == roomIndex) .. " (" .. roomNames[toggleIndex] .. ")")
           else
               self:debug(" WARNING: " .. toggleControlName .. " control not found on RoomSelector component for " .. roomName)
@@ -439,9 +439,9 @@ function RoomButtonVisibilityModule:updateRoomButtonVisibility(roomIndex, roomNa
       local targetRoomNum = roomNumberMap[targetRoomName]
       local isInGroup = tableContains(sourceGroup, targetRoomNum)
      
-      local toggleControlName = "toggle." .. toggleIndex
-      if btnRoomSelector[toggleControlName] then
-          btnRoomSelector[toggleControlName].Boolean = isInGroup
+      local toggleControlName = "pinLEDIsVisibleBtn" .. string.format("%02d", toggleIndex)
+      if uciButton[toggleControlName] then
+          uciButton[toggleControlName].Boolean = isInGroup
           self:debug(" " .. roomName .. " -> " .. toggleControlName .. ".Boolean = " .. tostring(isInGroup) .. " (" .. targetRoomName .. ")")
       else
           self:debug(" WARNING: " .. toggleControlName .. " control not found on RoomSelector component for " .. roomName)
@@ -474,22 +474,22 @@ function RoomButtonVisibilityModule:setAllRoomsSeparate()
  
   for i, roomName in ipairs(roomNames) do
     -- Try cached component first (efficient), fallback to Component.New if not cached yet (robust)
-    local btnRoomSelector = self.controller.components.btnRoomSelector[i]
+    local uciButton = self.controller.components.uciButtons[i]
     
-    if not btnRoomSelector then
+    if not uciButton then
       -- Cache miss - create component from name
-      local btnRoomName = self.controller.btnRoomSelector[i]
+      local btnRoomName = self.controller.uciButtons[i]
       if btnRoomName and btnRoomName ~= "" then
-        btnRoomSelector = Component.New(btnRoomName)
+        uciButton = Component.New(btnRoomName)
       end
     end
     
-    if btnRoomSelector then
+    if uciButton then
       for toggleIndex = 1, 8 do
-        local toggleControlName = "toggle." .. toggleIndex .. ".Boolean"
-        if btnRoomSelector[toggleControlName] then
+        local toggleControlName = "pinLEDIsVisibleBtn" .. string.format("%02d", toggleIndex)
+        if uciButton[toggleControlName] then
           -- Only the room's own toggle should be true
-          setProp(btnRoomSelector, toggleControlName, (toggleIndex == i))
+          setProp(uciButton, toggleControlName, (toggleIndex == i))
         end
       end
       self:debug("Set " .. roomName .. " RoomSelector to separated state")
@@ -923,14 +923,14 @@ function DivisibleSpaceController.new(roomName, debugging)
     roomControls = {},
     audioRouter = {},
     gains = {},  -- Now handling gains similarly to audio routers for efficiency
-    btnRoomSelector = {},
-    invalid = {roomCombiner = false, roomControls = false, audioRouter = false, gains = false, btnRoomSelector = false}
+    uciButtons = {},
+    invalid = {roomCombiner = false, roomControls = false, audioRouter = false, gains = false, uciButtons = false}
   }
   
   -- Room component arrays - use state management utility
   self.roomComponents = {} -- Names
   self.audioRouters = {} -- Names
-  self.btnRoomSelector = {} -- Names
+  self.uciButtons = {} -- Names
   
   -- Initialize modules using BaseModule pattern
   self.componentModule = ComponentModule.new(self)
@@ -941,13 +941,13 @@ function DivisibleSpaceController.new(roomName, debugging)
   -- Reset component arrays to ensure clean state
   resetComponentsArray(self.roomComponents, self.clearString)
   resetComponentsArray(self.audioRouters, self.clearString)
-  resetComponentsArray(self.btnRoomSelector, self.clearString)
+  resetComponentsArray(self.uciButtons, self.clearString)
   
   -- Initialize arrays
   for i, _ in ipairs(roomNames) do
     self.roomComponents[i] = nil
     self.audioRouters[i] = nil
-    self.btnRoomSelector[i] = nil
+    self.uciButtons[i] = nil
   end
   
   return self
@@ -1289,10 +1289,10 @@ function DivisibleSpaceController:loadInitialComponents()
   end)
  
   -- Load RoomSelector buttons components
-  forEach(controls.btnRoomSelector, function(i, control)
+  forEach(controls.uciButtons, function(i, control)
     if control.String and control.String ~= "" and control.String ~= self.clearString then
       self:debugPrint("Loading RoomSelector buttons " .. i .. ": " .. control.String)
-      local component = self:setComponent(control, "btnRoomSelector")
+      local component = self:setComponent(control, "uciButtons")
       if component then
         self:updateBTNRoomSelector(control.String, i)
         self:debugPrint("Loaded RoomSelector buttons " .. i .. " (" .. control.String .. ")")
@@ -1365,7 +1365,7 @@ function DivisibleSpaceController:discoverComponents()
   forEach(controls.compAudioRouter, function(_, control)
     if control then control.Choices = namesTable.AudioRouterNames end
   end)
-  forEach(controls.btnRoomSelector, function(_, control)
+  forEach(controls.uciButtons, function(_, control)
     if control then control.Choices = namesTable.UciButtonsNames end
   end)
  
@@ -1500,9 +1500,9 @@ function DivisibleSpaceController:registerEventHandlers()
         self:updateAudioRouter("", i)
       end
     end },
-    { ctrls = controls.btnRoomSelector, handler = function(i, ctl) 
+    { ctrls = controls.uciButtons, handler = function(i, ctl) 
       self:debugPrint("RoomSelector buttons " .. i .. " changed to: " .. tostring(ctl.String))
-      local component = self:setComponent(ctl, "btnRoomSelector")
+      local component = self:setComponent(ctl, "uciButtons")
       if component then
         self:updateBTNRoomSelector(ctl.String, i)
         self:debugPrint("RoomSelector buttons " .. i .. " (" .. ctl.String .. ") updated successfully")
@@ -1550,7 +1550,7 @@ function DivisibleSpaceController:updateAudioRouter(name, roomIndex)
 end
 
 function DivisibleSpaceController:updateBTNRoomSelector(name, roomIndex)
-  self:updateComponent(name, roomIndex, "btnRoomSelector", self.btnRoomSelector, self.components.btnRoomSelector, "RoomSelector buttons")
+  self:updateComponent(name, roomIndex, "uciButtons", self.uciButtons, self.components.uciButtons, "RoomSelector buttons")
 end
 
 function DivisibleSpaceController:getComboIndex(comboName)
@@ -2013,7 +2013,7 @@ function DivisibleSpaceController:checkStatus()
   -- Check RoomSelector buttons
   local connectedRoomSelector = 0
   for i = 1, #roomNames do
-    if self.btnRoomSelector[i] and self.btnRoomSelector[i] ~= "" then
+    if self.uciButtons[i] and self.uciButtons[i] ~= "" then
       connectedRoomSelector = connectedRoomSelector + 1
     end
   end
