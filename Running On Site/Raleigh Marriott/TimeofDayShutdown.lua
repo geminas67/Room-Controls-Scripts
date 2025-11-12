@@ -30,7 +30,7 @@ end
 
 -------------------[ Control References ]-------------------
 local controls = {
-    -- Controls accessed via components
+    btnResetEnabled = Controls.btnResetEnabled
 }
 
 -------------------[ Utility Functions ]-------------------
@@ -80,6 +80,13 @@ local function validateControls()
         table.insert(missing, "todShutdownReset component")
     elseif not components.todShutdownReset['active'] then
         table.insert(missing, "todShutdownReset 'active' control")
+    elseif not components.todShutdownReset['enable'] then
+        table.insert(missing, "todShutdownReset 'enable' control")
+    end
+    
+    -- Validate script control
+    if not controls.btnResetEnabled then
+        table.insert(missing, "btnResetEnabled script control")
     end
     
     -- Validate configured room controls
@@ -111,7 +118,12 @@ end
 local function handleTimeOfDayShutdown()
     print("DEBUG: handleTimeOfDayShutdown called - active state: " .. tostring(components.todShutdownReset['active'].Boolean))
     
-    -- Only execute when todShutdownReset active becomes true
+    -- Only execute when todShutdownReset active becomes true AND enable is true
+    if not controls.btnResetEnabled.Boolean then
+        print("DEBUG: Enable is false, shutdown is disabled")
+        return
+    end
+    
     if not components.todShutdownReset['active'].Boolean then
         print("DEBUG: Active is false, returning early")
         return
@@ -141,6 +153,40 @@ local function handleTimeOfDayShutdown()
     end
 end
 
+local function handleEnableChange()
+    local enableCtrl = controls.btnResetEnabled
+    
+    -- Update the legend based on state
+    if enableCtrl.Boolean then
+        setProp(enableCtrl, 'Legend', 'Enabled')
+        print("Time of Day shutdown enabled")
+    else
+        setProp(enableCtrl, 'Legend', 'Disabled\nEnabled at 7:00AM')
+        print("Time of Day shutdown disabled - will re-enable at 7:00 AM")
+    end
+    
+    -- Sync the state to the component control to enable/disable the todShutdownReset component
+    if components.todShutdownReset['enable'] then
+        components.todShutdownReset['enable'].Boolean = enableCtrl.Boolean
+    end
+end
+
+local function checkAndEnableAt7AM()
+    local currentTime = os.date("*t")
+    
+    -- Check if it's 7:00 AM (hour 7, minute 0)
+    if currentTime.hour == 7 and currentTime.min == 0 then
+        if controls.btnResetEnabled and not controls.btnResetEnabled.Boolean then
+            print("7:00 AM reached - enabling Time of Day shutdown")
+            controls.btnResetEnabled.Boolean = true
+            -- Sync to component control
+            if components.todShutdownReset['enable'] then
+                components.todShutdownReset['enable'].Boolean = true
+            end
+        end
+    end
+end
+
 -------------------[ Initialization ]-------------------
 local function registerEventHandlers()
     -- Bind Time of Day shutdown trigger
@@ -152,6 +198,21 @@ local function registerEventHandlers()
     else
         print("ERROR: Cannot register event handler - component or control missing")
     end
+    
+    -- Bind Enable control
+    if controls.btnResetEnabled then
+        bind(controls.btnResetEnabled, handleEnableChange)
+        -- Initialize the legend on startup
+        handleEnableChange()
+        print("Time of Day enable handler registered successfully")
+    else
+        print("ERROR: Cannot register enable event handler - script control missing")
+    end
+    
+    -- Setup timer to check for 7:00 AM every minute
+    Timer.New():Start(function()
+        checkAndEnableAt7AM()
+    end, 60)
 end
 
 local function funcInit()

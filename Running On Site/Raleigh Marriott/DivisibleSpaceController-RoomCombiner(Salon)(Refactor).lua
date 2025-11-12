@@ -131,13 +131,13 @@ local function validateControls()
     compAudioRouter   = controls.compAudioRouter,
     compRoomCombiner  = controls.compRoomCombiner,
     txtStatus         = controls.txtStatus,
-    wallOpenButtons   = controls.wallOpenButtons
+    wallOpenButtons   = controls.wallOpenButtons,
+    btnRoomSelector   = controls.btnRoomSelector
   }
   
   local optional = {
     -- Optional controls for enhanced functionality
     selCombination = controls.selCombination,
-    btnRoomSelector = controls.btnRoomSelector
   }
   
   local missing = {}

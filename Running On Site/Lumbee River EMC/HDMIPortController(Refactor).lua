@@ -118,6 +118,9 @@ function HDMIPortController:safeComponentAccess(component, control, action, valu
                 component[control].Boolean = value
             end
             return true
+        elseif action == "Trigger" then
+            component[control]:Trigger()
+            return true
         elseif action == "get" then
             return component[control].Boolean
         end
@@ -148,8 +151,7 @@ function HDMIPortController:setHdmiPort(decoderIndex, state)
     local controlName = state and "HdmiPortOn" or "HdmiPortOff"
     local stateText = state and "On" or "Off"
     
-    self:safeComponentAccess(decoder, controlName, "Boolean", true)
-    self:safeComponentAccess(decoder, controlName, "Boolean", false, 0.2)
+    self:safeComponentAccess(decoder, controlName, "Trigger")
     self:debugPrint("HDMI Port " .. stateText .. " - " .. config.name)
 end
 

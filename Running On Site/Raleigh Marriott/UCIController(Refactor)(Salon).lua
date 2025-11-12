@@ -343,7 +343,7 @@ function LayerModule:showLayer()
         "C05-Start", 
         "D01-ShutdownConfirm",
         "E01-SystemProgressWarming", "E02-SystemProgressCooling", "E05-SystemProgress",
-        "H04-RoomCombining", "H05-RoomControls",
+        "H01-PasscodeEntry", "H04-RoomCombining", "H05-RoomControls",
         "I01-CallActive", "I02-HelpLaptop", "I03-HelpPC","I04-HelpWireless", "I05-HelpRouting", "I06-HelpDialer", "I07-HelpStreamMusic",
         "J01-ConnectUSBLaptop", "J02-ConnectUSBPC", "J03-ACPRActive", "J04-CamPresetSaved","J05-CameraControls", 
         "L01-HDMI01Disconnected", "L05-Laptop",
@@ -439,10 +439,18 @@ function LayerModule:showLayer()
             }
         },
         [self.controller.kLayerRoomCombining] = {
-            showLayers = {"H04-RoomCombining"},
+            showLayers = {"H01-PasscodeEntry"},
             callLayerFunctions = {
-                function() self.controller.sublayerModule:updateCallActiveState() end,
-                function() self.controller:resetTouchInactivityTimer() end
+                function() self:hideBaseLayers() end,
+                function()
+                    -- Reset timer to give user time to enter passcode
+                    self.controller:resetTouchInactivityTimer()
+                    -- Check if passcode is already correct or disabled
+                    if self.controller.passcodeModule:isPasscodeCorrect() then
+                        self.controller.passcodeModule:onPasscodeCorrect(true)
+                    end
+                end,
+                function() self.controller.sublayerModule:updateCallActiveState() end
             }
         }
     }
@@ -483,6 +491,103 @@ else
         setProp(controls.btnNav10, "IsInvisible", false)
         self:debug("Routing button enabled")
     end
+end
+
+-------------------[ Passcode Module ]--------------------
+local PasscodeModule = setmetatable({}, BaseModule); PasscodeModule.__index = PasscodeModule
+function PasscodeModule.new(controller)
+    local self = BaseModule.new(controller, "Passcode")
+    setmetatable(self, PasscodeModule)
+    self.compPasscode = nil
+    self.roomIdentifier = nil
+    self.isEnabled = false
+    return self
+end
+
+function PasscodeModule:extractRoomFromPageName()
+    -- Extract room identifier from UCI page name (e.g., "uci Salon D (Touch)" -> "SalonD")
+    local pageName = self.controller.uciPage
+    local room = pageName:match("Salon%s*([A-H])")
+    if room then
+        self.roomIdentifier = "Salon" .. room
+        self:debug("Extracted room identifier: " .. self.roomIdentifier)
+        return self.roomIdentifier
+    end
+    self:debug("Could not extract room identifier from: " .. pageName)
+    return nil
+end
+
+function PasscodeModule:initializeComponent()
+    local roomId = self:extractRoomFromPageName()
+    if not roomId then
+        self:debug("Cannot initialize without room identifier")
+        return false
+    end
+    
+    -- Build component name with room identifier appended
+    local componentName = "passcode" .. roomId  -- e.g., "passcodeSalonD"
+    
+    local success, component = pcall(function() 
+        return Component.New(componentName) 
+    end)
+    
+    if success and component then
+        self.compPasscode = component
+        self.isEnabled = true
+        self:debug("Passcode component initialized: " .. componentName)
+        self:registerPasscodeHandler()
+        return true
+    else
+        self:debug("Passcode component not found: " .. componentName .. " (feature disabled)")
+        return false
+    end
+end
+
+function PasscodeModule:registerPasscodeHandler()
+    if not self.compPasscode or not self.compPasscode["PasscodeCorrect"] then
+        self:debug("PasscodeCorrect control not found")
+        return false
+    end
+    
+    -- Monitor the PasscodeCorrect Boolean property
+    self.compPasscode["PasscodeCorrect"].EventHandler = function(ctl)
+        self:onPasscodeCorrect(ctl.Boolean)
+    end
+    
+    self:debug("PasscodeCorrect EventHandler registered for " .. self.roomIdentifier)
+    return true
+end
+
+function PasscodeModule:onPasscodeCorrect(isCorrect)
+    if not isCorrect then return end
+    
+    self:debug("Correct passcode entered for " .. self.roomIdentifier)
+    
+    -- Hide passcode entry layer and show room combining layer
+    self.controller.layerModule:updateLayerVisibility({"H01-PasscodeEntry"}, false, "fade")
+    self.controller.layerModule:updateLayerVisibility({"H04-RoomCombining"}, true, "fade")
+    
+    -- Reset touch inactivity timer when room combining is shown
+    self.controller:resetTouchInactivityTimer()
+end
+
+function PasscodeModule:isPasscodeCorrect()
+    if not self.isEnabled or not self.compPasscode then
+        return true -- If no passcode component, allow access
+    end
+    
+    if self.compPasscode["PasscodeCorrect"] then
+        return self.compPasscode["PasscodeCorrect"].Boolean
+    end
+    
+    return true -- Default to allowing access if control doesn't exist
+end
+
+function PasscodeModule:cleanup()
+    if self.compPasscode and self.compPasscode["PasscodeCorrect"] then
+        self.compPasscode["PasscodeCorrect"].EventHandler = nil
+    end
+    BaseModule.cleanup(self)
 end
 
 -------------------[ Sublayer Module ]---------------------
@@ -1062,6 +1167,7 @@ function UCIController.new(uciPage, defaultRoutingLayer, defaultActiveLayer, hid
     self.videoSwitcherModule    = VideoSwitcherModule.new(self)
     self.roomAutomationModule   = RoomAutomationModule.new(self)
     self.progressModule         = ProgressModule.new(self)
+    self.passcodeModule         = PasscodeModule.new(self)
     
     -- Sync timer for monitoring Room Controls state
     self.syncTimer              = nil
@@ -1444,6 +1550,9 @@ function UCIController:init()
     -- Initialize video switcher
     self.videoSwitcherModule:initialize()
     
+    -- Initialize passcode module
+    self.passcodeModule:initializeComponent()
+    
     -- Sync with Room Automation state if available
     if mySystemController and mySystemController.state then
         local systemPowerState = controls.ledSystemPower and controls.ledSystemPower.Boolean
@@ -1525,7 +1634,8 @@ function UCIController:cleanup()
     -- Cleanup all modules
     local modules = {
         self.layerModule, self.sublayerModule, self.routingModule,
-        self.videoSwitcherModule, self.roomAutomationModule, self.progressModule
+        self.videoSwitcherModule, self.roomAutomationModule, self.progressModule,
+        self.passcodeModule
     }
     
     for _, module in ipairs(modules) do
@@ -1640,9 +1750,20 @@ Public API:
     myUCI.roomAutomationModule:powerOff()
     myUCI.roomAutomationModule:syncRoomControlsState()
     myUCI.progressModule:startLoadingBar(isPoweringOn)
+    myUCI.passcodeModule:isPasscodeCorrect()
 
 UCI Variables (Component Discovery):
     - compRoomControls: Name of System Automation Controller component
+    
+Passcode Protection Feature:
+    - Extracts room identifier from UCI page name (e.g., "uci Salon D (Touch)" -> "SalonD")
+    - Dynamically references room-specific passcode components (e.g., "passcodeSalonD")
+    - When kLayerRoomCombining is accessed:
+      * If passcode component not found: Grants access (graceful degradation)
+      * If passcode already correct: Skips H01-PasscodeEntry, shows H04-RoomCombining directly
+      * If passcode needed: Shows H01-PasscodeEntry layer first
+    - When correct passcode entered: Automatically transitions from H01-PasscodeEntry to H04-RoomCombining
+    - Optional feature - gracefully degrades if component not present
     
 Touch Inactivity Feature:
     - Monitors touch activity on H04-RoomCombining layer via pinLEDTouchActivity control
