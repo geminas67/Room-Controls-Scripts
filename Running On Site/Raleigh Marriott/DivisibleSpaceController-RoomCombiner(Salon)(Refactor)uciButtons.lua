@@ -16,7 +16,7 @@
   - Debug/config standardized, all validation centralized.
   
   DRY Improvements (v3.1):
-  - Generic updateComponent() consolidates updateRoomComponent, updateAudioRouter, updateBTNRoomSelector
+  - Generic updateComponent() consolidates updateRoomComponent, updateAudioRouter, updateButtonRoomSelector
   - Centralized printOperationResult() utility eliminates repetitive error/debug print patterns
   - Generic handleBatchResult() for consistent batch operation error handling
   - All modules use controller's centralized utilities for consistent reporting
@@ -1064,7 +1064,7 @@ function DivisibleSpaceController:loadInitialComponents()
       self:debugPrint("Loading RoomSelector buttons " .. i .. ": " .. control.String)
       local component = self:setComponent(control, "uciButtons")
       if component then
-        self:updateBTNRoomSelector(control.String, i)
+        self:updateButtonRoomSelector(control.String, i)
         self:debugPrint("Loaded RoomSelector buttons " .. i .. " (" .. control.String .. ")")
       end
     end
@@ -1282,10 +1282,10 @@ function DivisibleSpaceController:registerEventHandlers()
       self:debugPrint("RoomSelector buttons " .. i .. " changed to: " .. tostring(ctl.String))
       local component = self:setComponent(ctl, "uciButtons")
       if component then
-        self:updateBTNRoomSelector(ctl.String, i)
+        self:updateButtonRoomSelector(ctl.String, i)
         self:debugPrint("RoomSelector buttons " .. i .. " (" .. ctl.String .. ") updated successfully")
       else
-        self:updateBTNRoomSelector("", i)
+        self:updateButtonRoomSelector("", i)
       end
     end },
     { ctrls = controls.wallOpenButtons, handler = function(i, wallButton)
@@ -1477,7 +1477,7 @@ function DivisibleSpaceController:registerEventHandlers()
 end
 
 -- Generic component update function (DRY refactor)
--- Consolidates updateRoomComponent, updateAudioRouter, updateBTNRoomSelector
+-- Consolidates updateRoomComponent, updateAudioRouter, updateButtonRoomSelector
 function DivisibleSpaceController:updateComponent(name, roomIndex, componentType, nameArray, componentArray, debugLabel)
   if roomIndex < 1 or roomIndex > #roomNames then return end
   local oldName = nameArray[roomIndex]
@@ -1502,7 +1502,7 @@ function DivisibleSpaceController:updateAudioRouter(name, roomIndex)
   self:updateComponent(name, roomIndex, "audioRouter", self.audioRouters, self.components.audioRouter, "Audio router")
 end
 
-function DivisibleSpaceController:updateBTNRoomSelector(name, roomIndex)
+function DivisibleSpaceController:updateButtonRoomSelector(name, roomIndex)
   self:updateComponent(name, roomIndex, "uciButtons", self.uciButtons, self.components.uciButtons, "RoomSelector buttons")
 end
 

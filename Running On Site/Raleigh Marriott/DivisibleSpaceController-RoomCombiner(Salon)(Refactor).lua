@@ -16,21 +16,11 @@
   - Debug/config standardized, all validation centralized.
   
   DRY Improvements (v3.1):
-  - Generic updateComponent() consolidates updateRoomComponent, updateAudioRouter, updateBTNRoomSelector
+  - Generic updateComponent() consolidates updateRoomComponent, updateAudioRouter, updateButtonRoomSelector
   - Centralized printOperationResult() utility eliminates repetitive error/debug print patterns
   - Generic handleBatchResult() for consistent batch operation error handling
   - All modules use controller's centralized utilities for consistent reporting
-  
-  Performance & Efficiency Improvements (v3.2):
-  - Extracted 177-line wall button handler into focused methods for maintainability
-  - Module wrapper methods eliminate 11+ repetitive conditional checks
-  - parseConfiguration moved from global function to controller method
-  - checkRoomsPowerState utility eliminates duplicated safety check patterns
-  - wallInterlockMap moved to top-level configuration for clarity
-  - All module calls now go through centralized wrapper methods
-  - Fixed: Hybrid caching for btnRoomSelector - uses cache when available, falls back to Component.New()
-  - This prevents nil references while maintaining performance benefits of caching
-  
+    
   Room Priority Hierarchy:
   SalonD --> SalonE (D has priority over E)
   SalonA --> SalonB --> SalonC (A has highest priority in group)
@@ -136,7 +126,6 @@ local function validateControls()
   }
   
   local optional = {
-    -- Optional controls for enhanced functionality
     selCombination = controls.selCombination,
   }
   
@@ -1294,7 +1283,7 @@ function DivisibleSpaceController:loadInitialComponents()
       self:debugPrint("Loading RoomSelector buttons " .. i .. ": " .. control.String)
       local component = self:setComponent(control, "uciButtons")
       if component then
-        self:updateBTNRoomSelector(control.String, i)
+        self:updateButtonRoomSelector(control.String, i)
         self:debugPrint("Loaded RoomSelector buttons " .. i .. " (" .. control.String .. ")")
       end
     end
@@ -1504,10 +1493,10 @@ function DivisibleSpaceController:registerEventHandlers()
       self:debugPrint("RoomSelector buttons " .. i .. " changed to: " .. tostring(ctl.String))
       local component = self:setComponent(ctl, "uciButtons")
       if component then
-        self:updateBTNRoomSelector(ctl.String, i)
+        self:updateButtonRoomSelector(ctl.String, i)
         self:debugPrint("RoomSelector buttons " .. i .. " (" .. ctl.String .. ") updated successfully")
       else
-        self:updateBTNRoomSelector("", i)
+        self:updateButtonRoomSelector("", i)
       end
     end },
     { ctrls = controls.wallOpenButtons, handler = function(i, wallButton)
@@ -1524,7 +1513,7 @@ function DivisibleSpaceController:registerEventHandlers()
 end
 
 -- Generic component update function (DRY refactor)
--- Consolidates updateRoomComponent, updateAudioRouter, updateBTNRoomSelector
+-- Consolidates updateRoomComponent, updateAudioRouter, updateButtonRoomSelector
 function DivisibleSpaceController:updateComponent(name, roomIndex, componentType, nameArray, componentArray, debugLabel)
   if roomIndex < 1 or roomIndex > #roomNames then return end
   local oldName = nameArray[roomIndex]
@@ -1549,7 +1538,7 @@ function DivisibleSpaceController:updateAudioRouter(name, roomIndex)
   self:updateComponent(name, roomIndex, "audioRouter", self.audioRouters, self.components.audioRouter, "Audio router")
 end
 
-function DivisibleSpaceController:updateBTNRoomSelector(name, roomIndex)
+function DivisibleSpaceController:updateButtonRoomSelector(name, roomIndex)
   self:updateComponent(name, roomIndex, "uciButtons", self.uciButtons, self.components.uciButtons, "RoomSelector buttons")
 end
 

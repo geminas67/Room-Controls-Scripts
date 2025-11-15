@@ -454,64 +454,65 @@ end
 function ClockAudioCDTMicController:registerEventHandlers()
     local selfRef = self
     
-    -- Room Controls handler map
-    local roomControlsMap = {
-        ledSystemPower = function(ctl)
-            selfRef.state.systemPower = ctl.Boolean
-            if not ctl.Boolean then
-                selfRef.state.globalMute = true
-                selfRef.cdtModule.setHookState(false)
-            end
-        end,
-        ledFireAlarm = function(ctl)
-            selfRef.state.fireAlarm = ctl.Boolean
-            if ctl.Boolean then
-                selfRef.cdtModule.startLEDToggle()
-                selfRef.state.globalMute = true
-                selfRef.cdtModule.setHookState(false)
-            else
-                selfRef.cdtModule.stopLEDToggle()
-                if selfRef.state.offHook then
-                    selfRef.cdtModule.setHookState(true)
+    -- 🎯 Pattern #28: Handler map with direct object references as keys
+    local systemHandlerMap = {}
+    
+    -- Room Controls handlers
+    if self.components.roomControls then
+        if self.components.roomControls.ledSystemPower then
+            systemHandlerMap[self.components.roomControls.ledSystemPower] = function(ctl)
+                selfRef.state.systemPower = ctl.Boolean
+                if not ctl.Boolean then
+                    selfRef.state.globalMute = true
+                    selfRef.cdtModule.setHookState(false)
                 end
             end
         end
-    }
-    
-    -- Call Sync handler map
-    local callSyncMap = {
-        ["off.hook"] = function(ctl)
-            selfRef.cdtModule.setHookState(ctl.Boolean)
-        end,
-        mute = function(ctl)
-            selfRef.cdtModule.setGlobalMute(ctl.Boolean)
+        
+        if self.components.roomControls.ledFireAlarm then
+            systemHandlerMap[self.components.roomControls.ledFireAlarm] = function(ctl)
+                selfRef.state.fireAlarm = ctl.Boolean
+                if ctl.Boolean then
+                    selfRef.cdtModule.startLEDToggle()
+                    selfRef.state.globalMute = true
+                    selfRef.cdtModule.setHookState(false)
+                else
+                    selfRef.cdtModule.stopLEDToggle()
+                    if selfRef.state.offHook then
+                        selfRef.cdtModule.setHookState(true)
+                    end
+                end
+            end
         end
-    }
+    end
     
-    -- Batch register room controls handlers
-    self:batchRegisterHandlers(self.components.roomControls, roomControlsMap)
+    -- Call Sync handlers
+    if self.components.callSync then
+        if self.components.callSync["off.hook"] then
+            systemHandlerMap[self.components.callSync["off.hook"]] = function(ctl)
+                selfRef.cdtModule.setHookState(ctl.Boolean)
+            end
+        end
+        
+        if self.components.callSync["mute"] then
+            systemHandlerMap[self.components.callSync["mute"]] = function(ctl)
+                selfRef.cdtModule.setGlobalMute(ctl.Boolean)
+            end
+        end
+    end
     
-    -- Batch register call sync handlers  
-    self:batchRegisterHandlers(self.components.callSync, callSyncMap)
+    -- 🎯 Batch register all handlers in single loop
+    local registeredCount = 0
+    for ctrl, handler in pairs(systemHandlerMap) do
+        if bind(ctrl, handler) then
+            registeredCount = registeredCount + 1
+        end
+    end
+    self:debugPrint("Registered " .. registeredCount .. " system handlers")
     
     -- Register mic and privacy button handlers
     self:registerMicHandlers()
     self:registerPrivacyButtonHandlers()
-end
-
-function ClockAudioCDTMicController:batchRegisterHandlers(component, handlerMap)
-    if not component or not handlerMap then return 0 end
-    
-    local registeredCount = 0
-    for controlName, handler in pairs(handlerMap) do
-        local control = component[controlName]
-        if bind(control, handler) then
-            registeredCount = registeredCount + 1
-            self:debugPrint("Registered handler for " .. controlName)
-        end
-    end
-    
-    return registeredCount
 end
 
 -----------------[ Table-Driven Mic Button Registration ]-------------------
@@ -524,25 +525,32 @@ function ClockAudioCDTMicController:registerMicHandlers()
         {box = 4, buttons = {{6,1,12}, {8,2,13}, {10,3,14}}}
     }    
     
-    local registeredCount = 0
+    -- 🎯 Pattern #28: Build handler map with direct object references
+    local micHandlerMap = {}
     for _, config in ipairs(buttonConfigs) do
         local box = self.components.micBoxes[config.box]
         if not box then goto continue end
         
-        -- Create handler map for this box
-        local handlerMap = {}
+        -- Add handlers for each button in this box
         for _, btn in ipairs(config.buttons) do
-            local buttonName = 'ButtonState '..btn[1]
-            local boxIdx, ledIdx, mixerIdx = config.box, btn[2], btn[3]
-            handlerMap[buttonName] = function()
-                selfRef.cdtModule.toggleMic(boxIdx, ledIdx, mixerIdx)
+            local buttonControl = box['ButtonState '..btn[1]]
+            if buttonControl then
+                local boxIdx, ledIdx, mixerIdx = config.box, btn[2], btn[3]
+                micHandlerMap[buttonControl] = function()
+                    selfRef.cdtModule.toggleMic(boxIdx, ledIdx, mixerIdx)
+                end
             end
         end
         
-        -- Batch register handlers for this box
-        registeredCount = registeredCount + self:batchRegisterHandlers(box, handlerMap)
-        
         ::continue::
+    end
+    
+    -- 🎯 Batch register all mic handlers in single loop
+    local registeredCount = 0
+    for ctrl, handler in pairs(micHandlerMap) do
+        if bind(ctrl, handler) then
+            registeredCount = registeredCount + 1
+        end
     end
     
     self:debugPrint("Registered " .. registeredCount .. " mic button handlers")
@@ -560,44 +568,52 @@ function ClockAudioCDTMicController:registerPrivacyButtonHandlers()
         {box = 4, buttons = {1, 2, 3}}
     }
     
-    local registeredCount = 0
+    -- 🎯 Pattern #28: Build handler map with direct object references
+    local privacyHandlerMap = {}
     for _, config in ipairs(privacyConfigs) do
         local box = self.components.micBoxes[config.box]
         if not box then goto continue end
         
-        -- Create handler map for privacy buttons
-        local handlerMap = {}
+        -- Add handlers for each privacy button in this box
         for _, buttonNum in ipairs(config.buttons) do
-            local buttonName = 'ButtonState '..buttonNum
-            handlerMap[buttonName] = function(ctl)
-                -- Early return for non-press events
-                if not ctl.Boolean then return end
-                
-                -- Early return for disabled buttons
-                if ctl.IsDisabled then
-                    selfRef:debugPrint("Privacy button "..buttonNum.." on box "..config.box.." is disabled - ignoring press")
-                    return
-                end            
-                
-                -- Handle valid button press
-                local callSync = selfRef.components.callSync
-                if not callSync or not callSync["mute"] then return end                
-                
-                -- Toggle mute state directly
-                callSync["mute"].Boolean = not callSync["mute"].Boolean
-                selfRef:debugPrint("Privacy button "..buttonNum.." on box "..config.box.." toggled mute to "..tostring(callSync["mute"].Boolean))                
-                
-                -- Update LED states to reflect the new privacy state
-                if selfRef.state.offHook then
-                    selfRef.cdtModule.updateIndividualLEDs()
+            local buttonControl = box['ButtonState '..buttonNum]
+            if buttonControl then
+                local boxIndex = config.box  -- Capture for closure
+                privacyHandlerMap[buttonControl] = function(ctl)
+                    -- Early return for non-press events
+                    if not ctl.Boolean then return end
+                    
+                    -- Early return for disabled buttons
+                    if ctl.IsDisabled then
+                        selfRef:debugPrint("Privacy button "..buttonNum.." on box "..boxIndex.." is disabled - ignoring press")
+                        return
+                    end            
+                    
+                    -- Handle valid button press
+                    local callSync = selfRef.components.callSync
+                    if not callSync or not callSync["mute"] then return end                
+                    
+                    -- Toggle mute state directly
+                    callSync["mute"].Boolean = not callSync["mute"].Boolean
+                    selfRef:debugPrint("Privacy button "..buttonNum.." on box "..boxIndex.." toggled mute to "..tostring(callSync["mute"].Boolean))                
+                    
+                    -- Update LED states to reflect the new privacy state
+                    if selfRef.state.offHook then
+                        selfRef.cdtModule.updateIndividualLEDs()
+                    end
                 end
             end
         end
         
-        -- Batch register privacy button handlers for this box
-        registeredCount = registeredCount + self:batchRegisterHandlers(box, handlerMap)
-        
         ::continue::
+    end
+    
+    -- 🎯 Batch register all privacy handlers in single loop
+    local registeredCount = 0
+    for ctrl, handler in pairs(privacyHandlerMap) do
+        if bind(ctrl, handler) then
+            registeredCount = registeredCount + 1
+        end
     end
     
     self:debugPrint("Registered " .. registeredCount .. " privacy button handlers")

@@ -74,8 +74,8 @@ function HDMIPortController.new(config)
             decoderComponent = "devDecoder19",
             encoderComponent = "devEncoder09",
             uciSelectors = {
-                {component = "EMC_TR_UCI_Layer_Selector", control = "selector.5", name = "EMC Layer 6"},
-                {component = "RmMNAMNUCI_Layer_Selector", control = "selector.4", name = "Rm-A Layer 5"}
+                {component = "uciLayerSelectorEMC", control = "selector.5", name = "EMC Layer 6"},
+                {component = "uciLayerSelectorRmA", control = "selector.4", name = "Rm-A Layer 5"}
             }
         },
         {
@@ -83,8 +83,8 @@ function HDMIPortController.new(config)
             decoderComponent = "devDecoder20",
             encoderComponent = "devEncoder10",
             uciSelectors = {
-                {component = "EMC_TR_UCI_Layer_Selector", control = "selector.7", name = "EMC Layer 8"},
-                {component = "RmMNBMNUCI_Layer_Selector", control = "selector.4", name = "Rm-B Layer 5"}
+                {component = "uciLayerSelectorEMC", control = "selector.7", name = "EMC Layer 8"},
+                {component = "uciLayerSelectorRmB", control = "selector.4", name = "Rm-B Layer 5"}
             }
         }
     }

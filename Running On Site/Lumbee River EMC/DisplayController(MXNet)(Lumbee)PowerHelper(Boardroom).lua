@@ -9,10 +9,8 @@
 
 -------------------[ Component References ]-------------------
 local components = {
-    selBoardroomPowerState = Component.New('BDRM Power State_SEL'),
-    compDisplayControlsDec28 = Component.New('compDisplayControlsDec28'),
-    compDisplayControlsDec29 = Component.New('compDisplayControlsDec29'),
-    compDisplayControlsDec30 = Component.New('compDisplayControlsDec30')
+    selBoardroomPowerState = Component.New('selBoardroomPowerState'),
+    compDisplayControlsMain = Component.New('compDisplayControlsMain'),
 }
 
 -------------------[ Control References ]-------------------
@@ -78,9 +76,7 @@ end
 
 -------------------[ Core Logic ]-------------------
 local displayComponents = {
-    components.compDisplayControlsDec28,
-    components.compDisplayControlsDec29,
-    components.compDisplayControlsDec30
+    components.compDisplayControlsMain
 }
 
 local function applyPowerState(index)

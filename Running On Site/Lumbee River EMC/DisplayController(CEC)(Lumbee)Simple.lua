@@ -116,23 +116,8 @@ local function sendCecCommand(decoder, powerOn)
     
     if not cecCmd or not cecTxSend then return end
     
-    -- Set CEC command (On or Off)
-    setProp(cecCmd, "Boolean", true)
-    
-    -- Clear CEC command after 0.2s
-    Timer.CallAfter(function()
-        setProp(cecCmd, "Boolean", false)
-        
-        -- Send CEC command after 0.4s total
-        Timer.CallAfter(function()
-            setProp(cecTxSend, "Boolean", true)
-            
-            -- Clear send after 0.2s more (0.6s total)
-            Timer.CallAfter(function()
-                setProp(cecTxSend, "Boolean", false)
-            end, 0.2)
-        end, 0.2)
-    end, 0.2)
+    cecCmd:Trigger()
+    cecTxSend:Trigger()
 end
 
 -------------------[ Event Handlers ]-------------------
