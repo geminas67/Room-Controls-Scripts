@@ -47,25 +47,6 @@ local controls = {
     btnCloseHelpWirelessB    = Controls.btnCloseHelpWirelessB,
     btnCloseHelpRouting     = Controls.btnCloseHelpRouting,
     btnCloseHelpStreamMusic = Controls.btnCloseHelpStreamMusic,
-
-    -- Routing Buttons
-    btnRouting01 = Controls.btnRouting01, 
-    btnRouting02 = Controls.btnRouting02,
-    btnRouting03 = Controls.btnRouting03, 
-    btnRouting04 = Controls.btnRouting04, 
-    btnRouting05 = Controls.btnRouting05,
-    btnRouting06 = Controls.btnRouting06,
-    btnRouting07 = Controls.btnRouting07,
-    btnRouting08 = Controls.btnRouting08,
-    -- Routing Text Labels
-    txtRouting01 = Controls.txtRouting01, 
-    txtRouting02 = Controls.txtRouting02,
-    txtRouting03 = Controls.txtRouting03, 
-    txtRouting04 = Controls.txtRouting04, 
-    txtRouting05 = Controls.txtRouting05,
-    txtRouting06 = Controls.txtRouting06,
-    txtRouting07 = Controls.txtRouting07,
-    txtRouting08 = Controls.txtRouting08,
     
     -- Progress Controls
     knbProgressBar = Controls.knbProgressBar,
@@ -83,14 +64,6 @@ local controls = {
     pinLEDHDMI01Connect     = Controls.pinLEDHDMI01Connect,
     pinLEDHDMI02Connect     = Controls.pinLEDHDMI02Connect,
     pinLEDACPRBypassActive  = Controls.pinLEDACPRBypassActive,
-    pinLEDIsVisibleBtn01    = Controls.pinLEDIsVisibleBtn01,
-    pinLEDIsVisibleBtn02    = Controls.pinLEDIsVisibleBtn02,
-    pinLEDIsVisibleBtn03    = Controls.pinLEDIsVisibleBtn03,
-    pinLEDIsVisibleBtn04    = Controls.pinLEDIsVisibleBtn04,
-    pinLEDIsVisibleBtn05    = Controls.pinLEDIsVisibleBtn05,
-    pinLEDIsVisibleBtn06    = Controls.pinLEDIsVisibleBtn06,
-    pinLEDIsVisibleBtn07    = Controls.pinLEDIsVisibleBtn07,    
-    pinLEDIsVisibleBtn08    = Controls.pinLEDIsVisibleBtn08,
     pinLEDTouchActivity     = Controls.pinLEDTouchActivity,
     
 }
@@ -110,7 +83,7 @@ local function validateControls()
         "btnCloseHelpLaptopA", "btnCloseHelpLaptopB", "btnCloseHelpPCA", "btnCloseHelpPCB", "btnCloseHelpWirelessA", "btnCloseHelpWirelessB", "btnCloseHelpRouting", "btnCloseHelpStreamMusic",
         "btnRouting01", "btnRouting02", "btnRouting03", "btnRouting04", "btnRouting05", "btnRouting06", "btnRouting07", "btnRouting08",
         "txtRouting01", "txtRouting02", "txtRouting03", "txtRouting04", "txtRouting05", "txtRouting06", "txtRouting07", "txtRouting08",
-        "pinLEDTouchActivity", "pinLEDIsVisibleBtn01", "pinLEDIsVisibleBtn02", "pinLEDIsVisibleBtn03", "pinLEDIsVisibleBtn04", "pinLEDIsVisibleBtn05", "pinLEDIsVisibleBtn06", "pinLEDIsVisibleBtn07", "pinLEDIsVisibleBtn08"
+        "pinLEDTouchActivity",
     }
     
     local missing = {}
@@ -187,7 +160,7 @@ local function normalizeControlArrays()
     -- Build pin input array  
     local pinInputs = {"pinCallActive", "pinLEDUSBLaptop", "pinLEDUSBPC", "pinLEDOffHookLaptop", "pinLEDOffHookPC", 
                       "pinLEDHDMI01Active", "pinLEDHDMI02Active", "pinLEDPresetSaved", "pinLEDHDMI01Connect", 
-                      "pinLEDHDMI02Connect", "pinLEDACPRBypassActive", "pinLEDIsVisibleBtn01", "pinLEDIsVisibleBtn02", "pinLEDIsVisibleBtn03", "pinLEDIsVisibleBtn04", "pinLEDIsVisibleBtn05", "pinLEDIsVisibleBtn06", "pinLEDIsVisibleBtn07", "pinLEDIsVisibleBtn08", "pinLEDTouchActivity"}
+                      "pinLEDHDMI02Connect", "pinLEDACPRBypassActive", "pinLEDTouchActivity"}
     for i, name in ipairs(pinInputs) do
         if controls[name] then controlsToNormalize.pinInputs[i] = controls[name] end
     end
@@ -460,7 +433,6 @@ function LayerModule:showLayer()
         [self.controller.kLayerRouting] = {
             showLayers = {"R10-Routing"},
             callLayerFunctions = {
-                function() self.controller.routingModule:showRoutingLayer() end,
                 function() self.controller.sublayerModule:updateCallActiveState() end
             }
         },
@@ -769,72 +741,6 @@ function SublayerModule:updateConferenceControlsLayer()
     self.controller.layerModule:updateLayerVisibility({"J05-ConferenceControls"}, showJ04, showJ04 and "fade" or "none")
     self.controller.layerModule:updateLayerVisibility({"J06-ConferenceControls"}, showJ05, showJ05 and "fade" or "none")
     self:debug("Conference Controls: J04(Laptop)=" .. tostring(showJ04) .. ", J05(PC)=" .. tostring(showJ05))
-end
-
--------------------[ Routing Module ]----------------------
-local RoutingModule = setmetatable({}, BaseModule); RoutingModule.__index = RoutingModule
-function RoutingModule.new(controller)
-    local self = BaseModule.new(controller, "Routing")
-    setmetatable(self, RoutingModule)
-    self.routingLayers = {
-        "R01-Routing-SalonD", "R02-Routing-SalonE", "R03-Routing-SalonA",
-        "R04-Routing-SalonB", "R05-Routing-SalonC", "R06-Routing-SalonF",
-        "R07-Routing-SalonG", "R08-Routing-SalonH"
-    }
-    self.activeRoutingLayer = 1
-    return self
-end
-
-function RoutingModule:showRoutingLayer()
-    -- Bounds check
-    if self.activeRoutingLayer < 1 or self.activeRoutingLayer > #self.routingLayers then
-        self.activeRoutingLayer = 1
-    end
-    
-    -- Hide program volume layer for routing view
-    --self.controller.layerModule:updateLayerVisibility({"X01-ProgramVolume"}, false, "none")
-    
-    -- Hide all routing layers
-    for _, layer in ipairs(self.routingLayers) do
-        self.controller.layerModule:updateLayerVisibility({layer}, false, "none")
-    end
-    
-    -- Show active layer and update buttons
-    self.controller.layerModule:updateLayerVisibility({self.routingLayers[self.activeRoutingLayer]}, true, "fade")
-    self:interlockRoutingButtons()
-end
-
-function RoutingModule:getRoutingButtons()
-    return {controls.btnRouting01, controls.btnRouting02, controls.btnRouting03, controls.btnRouting04, 
-    controls.btnRouting05, controls.btnRouting06, controls.btnRouting07, controls.btnRouting08}
-end
-
-function RoutingModule:interlockRoutingButtons()
-    local routingButtons = self:getRoutingButtons()
-    for i, btn in ipairs(routingButtons) do
-        if btn then btn.Boolean = (i == self.activeRoutingLayer) end
-    end
-end
-
-function RoutingModule:routingButtonEventHandler(buttonIndex)
-    if buttonIndex < 1 or buttonIndex > #self.routingLayers then
-        self:debug("Invalid routing button index: " .. tostring(buttonIndex))
-        return
-    end
-    
-    self.activeRoutingLayer = buttonIndex
-    self:showRoutingLayer()
-    self:debug("Routing layer switched to: " .. self.routingLayers[buttonIndex])
-end
-
-function RoutingModule:resetRoutingButtons()
-    local routingButtons = self:getRoutingButtons()
-    for i, btn in ipairs(routingButtons) do
-        if btn then 
-            setProp(btn, "Boolean", false) -- Reset all routing buttons to false
-        end
-    end
-    self:debug("Routing buttons reset")
 end
 
 -------------------[ Video Switcher Module ]---------------
@@ -1407,7 +1313,6 @@ function UCIController.new(uciPage, defaultRoutingLayer, defaultActiveLayer, hid
     -- Initialize modules
     self.layerModule            = LayerModule.new(self)
     self.sublayerModule         = SublayerModule.new(self)
-    self.routingModule          = RoutingModule.new(self)
     self.videoSwitcherModule    = VideoSwitcherModule.new(self)
     self.roomAutomationModule   = RoomAutomationModule.new(self)
     self.progressModule         = ProgressModule.new(self)
@@ -1418,11 +1323,6 @@ function UCIController.new(uciPage, defaultRoutingLayer, defaultActiveLayer, hid
     
     -- Touch inactivity timer for H04-RoomCombining layer
     self.uciTouchInactivityTimer = Timer.New()
-    
-    -- Setup routing
-    if defaultRoutingLayer then
-        self.routingModule.activeRoutingLayer = defaultRoutingLayer
-    end
     
     -- Initialize and register events
     self:registerEventHandlers()
@@ -1464,13 +1364,6 @@ function UCIController:registerEventHandlers()
     if normalizedControls.navButtons then
         forEach(normalizedControls.navButtons, function(i, btn)
             bind(btn, function() self:btnNavEventHandler(i) end)
-        end)
-    end
-    
-    -- Routing button batch registration  
-    if normalizedControls.routingButtons then
-        forEach(normalizedControls.routingButtons, function(i, btn)
-            bind(btn, function() self.routingModule:routingButtonEventHandler(i) end)
         end)
     end
     
@@ -1700,11 +1593,6 @@ function UCIController:interlock()
             setProp(btn, "Boolean", shouldBeActive) -- Use setProp to prevent redundant assignments
         end
     end
-    
-    -- Reset routing buttons when not on routing layer
-    if self.varActiveLayer ~= self.kLayerRouting then
-        self.routingModule:resetRoutingButtons()
-    end
 end
 
 function UCIController:updateLegends()
@@ -1900,7 +1788,7 @@ function UCIController:cleanup()
     
     -- Cleanup all modules
     local modules = {
-        self.layerModule, self.sublayerModule, self.routingModule,
+        self.layerModule, self.sublayerModule,
         self.videoSwitcherModule, self.roomAutomationModule, self.progressModule,
         self.divisibleSpaceModule
     }
