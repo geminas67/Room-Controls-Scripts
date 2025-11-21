@@ -21,7 +21,14 @@ local controls = {
     btnNav04 = Controls.btnNav04, btnNav05 = Controls.btnNav05, btnNav06 = Controls.btnNav06,
     btnNav07 = Controls.btnNav07, btnNav08 = Controls.btnNav08, btnNav09 = Controls.btnNav09,
     btnNav10 = Controls.btnNav10, btnNav11 = Controls.btnNav11, btnNav12 = Controls.btnNav12,
-    btnNav13 = Controls.btnNav13,
+    btnNav13 = Controls.btnNav13, btnNav14 = Controls.btnNav14, btnNav15 = Controls.btnNav15,
+
+    -- Navigation Text Labels
+    txtNav01 = Controls.txtNav01, txtNav02 = Controls.txtNav02, txtNav03 = Controls.txtNav03,
+    txtNav04 = Controls.txtNav04, txtNav05 = Controls.txtNav05, txtNav06 = Controls.txtNav06,
+    txtNav07 = Controls.txtNav07, txtNav08 = Controls.txtNav08, txtNav09 = Controls.txtNav09,
+    txtNav10 = Controls.txtNav10, txtNav11 = Controls.txtNav11, txtNav12 = Controls.txtNav12,
+    txtNav13 = Controls.txtNav13, txtNav14 = Controls.txtNav14, txtNav15 = Controls.txtNav15,
     
     -- System Controls
     btnStartSystem      = Controls.btnStartSystem,
@@ -30,81 +37,69 @@ local controls = {
     btnShutdownConfirm  = Controls.btnShutdownConfirm,
     
     -- Help Buttons
-    btnOpenHelpLaptop       = Controls.btnOpenHelpLaptop,
-    btnOpenHelpPC           = Controls.btnOpenHelpPC,
-    btnOpenHelpWireless     = Controls.btnOpenHelpWireless,
+    btnOpenHelpLaptopA       = Controls.btnOpenHelpLaptopA,
+    btnOpenHelpLaptopB       = Controls.btnOpenHelpLaptopB,
+    btnOpenHelpPCA           = Controls.btnOpenHelpPCA,
+    btnOpenHelpPCB           = Controls.btnOpenHelpPCB,
+    btnOpenHelpWirelessA     = Controls.btnOpenHelpWirelessA,
+    btnOpenHelpWirelessB     = Controls.btnOpenHelpWirelessB,
     btnOpenHelpRouting      = Controls.btnOpenHelpRouting,
     btnOpenHelpStreamMusic  = Controls.btnOpenHelpStreamMusic,
 
-    btnCloseHelpLaptop      = Controls.btnCloseHelpLaptop,
-    btnCloseHelpPC          = Controls.btnCloseHelpPC,
-    btnCloseHelpWireless    = Controls.btnCloseHelpWireless,
+    btnCloseHelpLaptopA      = Controls.btnCloseHelpLaptopA,
+    btnCloseHelpLaptopB      = Controls.btnCloseHelpLaptopB,
+    btnCloseHelpPCA          = Controls.btnCloseHelpPCA,
+    btnCloseHelpPCB          = Controls.btnCloseHelpPCB,
+    btnCloseHelpWirelessA    = Controls.btnCloseHelpWirelessA,
+    btnCloseHelpWirelessB    = Controls.btnCloseHelpWirelessB,
     btnCloseHelpRouting     = Controls.btnCloseHelpRouting,
     btnCloseHelpStreamMusic = Controls.btnCloseHelpStreamMusic,
-
-    -- Routing Buttons
-    btnRouting01 = Controls.btnRouting01, 
-    btnRouting02 = Controls.btnRouting02,
-    btnRouting03 = Controls.btnRouting03, 
-    btnRouting04 = Controls.btnRouting04, 
-    btnRouting05 = Controls.btnRouting05,
-    btnRouting06 = Controls.btnRouting06,
-    btnRouting07 = Controls.btnRouting07,
-    btnRouting08 = Controls.btnRouting08,
-    -- Routing Text Labels
-    txtRouting01 = Controls.txtRouting01, 
-    txtRouting02 = Controls.txtRouting02,
-    txtRouting03 = Controls.txtRouting03, 
-    txtRouting04 = Controls.txtRouting04, 
-    txtRouting05 = Controls.txtRouting05,
-    txtRouting06 = Controls.txtRouting06,
-    txtRouting07 = Controls.txtRouting07,
-    txtRouting08 = Controls.txtRouting08,
     
     -- Progress Controls
     knbProgressBar = Controls.knbProgressBar,
     txtProgressBar = Controls.txtProgressBar,
     
     -- Pin Inputs
-    pinCallActive           = Controls.pinCallActive,
-    pinLEDUSBLaptop         = Controls.pinLEDUSBLaptop,
-    pinLEDUSBPC             = Controls.pinLEDUSBPC,
-    pinLEDOffHookLaptop     = Controls.pinLEDOffHookLaptop,
-    pinLEDOffHookPC         = Controls.pinLEDOffHookPC,
-    pinLEDHDMI01Active      = Controls.pinLEDHDMI01Active,
-    pinLEDHDMI02Active      = Controls.pinLEDHDMI02Active,
-    pinLEDPresetSaved       = Controls.pinLEDPresetSaved,
-    pinLEDHDMI01Connect     = Controls.pinLEDHDMI01Connect,
-    pinLEDHDMI02Connect     = Controls.pinLEDHDMI02Connect,
-    pinLEDACPRBypassActive  = Controls.pinLEDACPRBypassActive,
-    pinLEDIsVisibleBtn01       = Controls.pinLEDIsVisibleBtn01,
-    pinLEDIsVisibleBtn02       = Controls.pinLEDIsVisibleBtn02,
-    pinLEDIsVisibleBtn03       = Controls.pinLEDIsVisibleBtn03,
-    pinLEDIsVisibleBtn04       = Controls.pinLEDIsVisibleBtn04,
-    pinLEDIsVisibleBtn05       = Controls.pinLEDIsVisibleBtn05,
-    pinLEDIsVisibleBtn06       = Controls.pinLEDIsVisibleBtn06,
-    pinLEDIsVisibleBtn07       = Controls.pinLEDIsVisibleBtn07,
-    pinLEDIsVisibleBtn08       = Controls.pinLEDIsVisibleBtn08,
-    pinLEDTouchActivity       = Controls.pinLEDTouchActivity,
+    pinCallActive               = Controls.pinCallActive,
+    pinLEDUSBLaptopA            = Controls.pinLEDUSBLaptopA,
+    pinLEDUSBLaptopB            = Controls.pinLEDUSBLaptopB,
+    pinLEDUSBPCA                = Controls.pinLEDUSBPCA,
+    pinLEDUSBPCB                = Controls.pinLEDUSBPCB,
+    pinLEDOffHookLaptopA        = Controls.pinLEDOffHookLaptopA,
+    pinLEDOffHookLaptopB        = Controls.pinLEDOffHookLaptopB,
+    pinLEDOffHookPCA            = Controls.pinLEDOffHookPCA,
+    pinLEDOffHookPCB            = Controls.pinLEDOffHookPCB,
+    pinLEDHDMIActiveLaptopA     = Controls.pinLEDHDMIActiveLaptopA,
+    pinLEDHDMIActiveLaptopB     = Controls.pinLEDHDMIActiveLaptopB,
+    pinLEDHDMIActivePCA         = Controls.pinLEDHDMIActivePCA,
+    pinLEDHDMIActivePCB         = Controls.pinLEDHDMIActivePCB,
+    pinLEDPresetSaved           = Controls.pinLEDPresetSaved,
+    pinLEDACPRBypassActive      = Controls.pinLEDACPRBypassActive,
+    pinLEDTouchActivity         = Controls.pinLEDTouchActivity,
+    
+    -- Divisible Space HDMI Connection Monitoring (optional)
+    pinLEDHDMIConnectedPCA      = Controls.pinLEDHDMIConnectedPCA,
+    pinLEDHDMIConnectedPCB      = Controls.pinLEDHDMIConnectedPCB,
+    pinLEDHDMIConnectedLaptopA  = Controls.pinLEDHDMIConnectedLaptopA,
+    pinLEDHDMIConnectedLaptopB  = Controls.pinLEDHDMIConnectedLaptopB,
     
 }
 
 local function validateControls()
     -- Core navigation controls
     local required = {
-        "btnNav01", "btnNav02", "btnNav03", "btnNav04", "btnNav05", "btnNav06",
-        "btnNav07", "btnNav08", "btnNav09", "btnNav10", "btnNav11", "btnNav12", "btnNav13",
+        "btnNav01", "btnNav02", "btnNav03", "btnNav04", "btnNav05", "btnNav06", "btnNav07", "btnNav08", 
+        "btnNav09", "btnNav10", "btnNav11", "btnNav12", "btnNav13", "btnNav14", "btnNav15",
         "btnStartSystem", "btnNavShutdown", "btnShutdownCancel", "btnShutdownConfirm"
     }
     
     -- Optional but recommended controls
     local optional = {
         "knbProgressBar", "txtProgressBar",
-        "btnOpenHelpLaptop", "btnOpenHelpPC", "btnOpenHelpWireless", "btnOpenHelpRouting","btnOpenHelpStreamMusic",
-        "btnCloseHelpLaptop", "btnCloseHelpPC", "btnCloseHelpWireless", "btnCloseHelpRouting", "btnCloseHelpStreamMusic",
-        "btnRouting01", "btnRouting02", "btnRouting03", "btnRouting04", "btnRouting05", "btnRouting06", "btnRouting07", "btnRouting08",
-        "txtRouting01", "txtRouting02", "txtRouting03", "txtRouting04", "txtRouting05", "txtRouting06", "txtRouting07", "txtRouting08",
-        "pinLEDTouchActivity"
+        "btnOpenHelpLaptopA", "btnOpenHelpLaptopB", "btnOpenHelpPCA", "btnOpenHelpPCB", "btnOpenHelpWirelessA", "btnOpenHelpWirelessB", "btnOpenHelpRouting","btnOpenHelpStreamMusic",
+        "btnCloseHelpLaptopA", "btnCloseHelpLaptopB", "btnCloseHelpPCA", "btnCloseHelpPCB", "btnCloseHelpWirelessA", "btnCloseHelpWirelessB", "btnCloseHelpRouting", "btnCloseHelpStreamMusic",
+        "pinLEDTouchActivity",
+        "pinLEDHDMIConnectedPCA", "pinLEDHDMIConnectedPCB", "pinLEDHDMIConnectedLaptopA", "pinLEDHDMIConnectedLaptopB",
     }
     
     local missing = {}
@@ -159,28 +154,36 @@ local function normalizeControlArrays()
         pinInputs = {}
     }
     
-    -- Build navigation button array
-    for i = 1, 13 do
-        local btn = controls["btnNav" .. string.format("%02d", i)]
-        if btn then controlsToNormalize.navButtons[i] = btn end
+    -- Build navigation button array dynamically - discover all btnNav## buttons
+    for key, btn in pairs(controls) do
+        if type(key) == "string" and key:match("^btnNav%d+$") then
+            local num = tonumber(key:match("%d+"))
+            if num and btn then
+                controlsToNormalize.navButtons[num] = btn
+            end
+        end
     end
     
-    -- Build routing button array
-    for i = 1, 8 do
-        local btn = controls["btnRouting" .. string.format("%02d", i)]
-        if btn then controlsToNormalize.routingButtons[i] = btn end
+    -- Build routing button array dynamically - discover all btnRouting## buttons
+    for key, btn in pairs(controls) do
+        if type(key) == "string" and key:match("^btnRouting%d+$") then
+            local num = tonumber(key:match("%d+"))
+            if num and btn then
+                controlsToNormalize.routingButtons[num] = btn
+            end
+        end
     end
     
     -- Build help button array
-    local helpButtons = {"btnOpenHelpLaptop", "btnOpenHelpPC", "btnOpenHelpWireless", "btnOpenHelpRouting", "btnOpenHelpStreamMusic", "btnCloseHelpLaptop", "btnCloseHelpPC", "btnCloseHelpWireless", "btnCloseHelpRouting", "btnCloseHelpStreamMusic"}
+    local helpButtons = {"btnOpenHelpLaptopA", "btnOpenHelpLaptopB", "btnOpenHelpPCA", "btnOpenHelpPCB", "btnOpenHelpWirelessA", "btnOpenHelpWirelessB", "btnOpenHelpRouting", "btnOpenHelpStreamMusic", 
+    "btnCloseHelpLaptopA", "btnCloseHelpLaptopB", "btnCloseHelpPCA", "btnCloseHelpPCB", "btnCloseHelpWirelessA", "btnCloseHelpWirelessB", "btnCloseHelpRouting", "btnCloseHelpStreamMusic"}
     for i, name in ipairs(helpButtons) do
         if controls[name] then controlsToNormalize.helpButtons[i] = controls[name] end
     end
     
     -- Build pin input array  
-    local pinInputs = {"pinCallActive", "pinLEDUSBLaptop", "pinLEDUSBPC", "pinLEDOffHookLaptop", "pinLEDOffHookPC", 
-                      "pinLEDHDMI01Active", "pinLEDHDMI02Active", "pinLEDPresetSaved", "pinLEDHDMI01Connect", 
-                      "pinLEDHDMI02Connect", "pinLEDACPRBypassActive"}
+    local pinInputs = {"pinCallActive", "pinLEDUSBLaptopA", "pinLEDUSBPCA", "pinLEDUSBPCB", "pinLEDOffHookLaptopA", "pinLEDOffHookLaptopB", "pinLEDOffHookPCA", "pinLEDOffHookPCB", 
+                      "pinLEDHDMIActiveLaptopA", "pinLEDHDMIActivePCA", "pinLEDHDMIActiveLaptopB", "pinLEDHDMIActivePCB", "pinLEDPresetSaved", "pinLEDACPRBypassActive", "pinLEDTouchActivity"}
     for i, name in ipairs(pinInputs) do
         if controls[name] then controlsToNormalize.pinInputs[i] = controls[name] end
     end
@@ -343,12 +346,19 @@ function LayerModule:showLayer()
         "C05-Start", 
         "D01-ShutdownConfirm",
         "E01-SystemProgressWarming", "E02-SystemProgressCooling", "E05-SystemProgress",
-        "H01-PasscodeEntry", "H04-RoomCombining", "H05-RoomControls",
-        "I01-CallActive", "I02-HelpLaptop", "I03-HelpPC","I04-HelpWireless", "I05-HelpRouting", "I06-HelpDialer", "I07-HelpStreamMusic",
-        "J01-ConnectUSBLaptop", "J02-ConnectUSBPC", "J03-ACPRActive", "J04-CamPresetSaved","J05-CameraControls", 
-        "L01-HDMI01Disconnected", "L05-Laptop",
-        "P01-HDMI02Disconnected", "P05-PC", "W05-Wireless",
-        "R01-Routing-SalonD", "R02-Routing-SalonE", "R03-Routing-SalonA","R04-Routing-SalonB", "R05-Routing-SalonC","R06-Routing-SalonF", "R07-Routing-SalonG", "R08-Routing-SalonH", "R10-Routing",
+        "H04-RoomCombining", "H05-RoomControls",
+        "I01-CallActive", "I02-HelpLaptopA", "I03-HelpLaptopB", "I04-HelpPCA", "I05-HelpPCB", "I06-HelpWirelessA", "I07-HelpWirelessB", "I08-HelpRouting", "I09-HelpDialer", "I10-HelpStreamMusic",
+        "J01-ConnectUSBLaptopA", "J02-ConnectUSBLaptopB", "J03-ConnectUSBPCA", "J04-ConnectUSBPCB", 
+        "J05-ACPRActive", "J06-CamPresetSaved", 
+        "J07-ACPRBtnCombined", "J08-ACPRBtnSeparated", 
+        "J11-CameraSelectionLaptopA", "J12-CameraSelectionLaptopB", "J13-CameraSelectionPCA", "J14-CameraSelectionPCB",
+        "J21-ConferenceControlsLaptopA", "J22-ConferenceControlsLaptopB", "J23-ConferenceControlsPCA", "J24-ConferenceControlsPCB",
+        "L01-HDMIDisconnected", "L01-LaptopA",
+        "L02-HDMIDisconnected", "L02-LaptopB",
+        "P01-HDMIDisconnected", "P01-PCA",
+        "P02-HDMIDisconnected", "P02-PCB",
+        "W01-WirelessA", "W02-WirelessB", "W05-Wireless",
+        "R10-Routing",
         "S10-StreamMusic", 
         "V05-Dialer", 
         "X01-ProgramVolume", 
@@ -362,6 +372,11 @@ function LayerModule:showLayer()
 
     -- Set base layers visible
     self:updateLayerVisibility({"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}, true, "none")
+    
+    -- Update navigation button/text visibility whenever navbar becomes visible
+    if self.controller.divisibleSpaceModule then
+        self.controller.divisibleSpaceModule:updateNavigationVisibility()
+    end
 
     local layerConfigs = {
         [self.controller.kLayerAlarm] = {
@@ -388,25 +403,55 @@ function LayerModule:showLayer()
             hideLayers = {"X01-ProgramVolume"},
             callLayerFunctions = {function() self.controller.sublayerModule:updateCallActiveState() end}
         },
-        [self.controller.kLayerLaptop] = {
-            showLayers = {"L05-Laptop"},
+        [self.controller.kLayerPCA] = {
+            showLayers = {"P01-PCA"},
+            conditionalVisibility = true,
             callLayerFunctions = {
-                function() self.controller.sublayerModule:updateHDMI01State() end,
+                function() self.controller.sublayerModule:updateHDMIStatePCA() end,
                 function() self.controller.sublayerModule:updateConferenceState() end,
+                function() self.controller.sublayerModule:updateConferenceControlsLayer() end,
                 function() self.controller.sublayerModule:updatePresetSavedState() end,
                 function() self.controller.sublayerModule:updateACPRBypassState() end,
-                function() self.controller.sublayerModule:updateLaptopHelpState() end,
+                function() self.controller.sublayerModule:updatePCAHelpState() end,
                 function() self.controller.sublayerModule:updateCallActiveState() end
             }
         },
-        [self.controller.kLayerPC] = {
-            showLayers = {"P05-PC"},
+        [self.controller.kLayerPCB] = {
+            showLayers = {"P02-PCB"},
+            conditionalVisibility = true,
             callLayerFunctions = {
-                function() self.controller.sublayerModule:updateHDMI02State() end,
+                function() self.controller.sublayerModule:updateHDMIStatePCB() end,
                 function() self.controller.sublayerModule:updateConferenceState() end,
+                function() self.controller.sublayerModule:updateConferenceControlsLayer() end,
                 function() self.controller.sublayerModule:updatePresetSavedState() end,
                 function() self.controller.sublayerModule:updateACPRBypassState() end,
-                function() self.controller.sublayerModule:updatePCHelpState() end,
+                function() self.controller.sublayerModule:updatePCBHelpState() end,
+                function() self.controller.sublayerModule:updateCallActiveState() end
+            }
+        },
+        [self.controller.kLayerLaptopA] = {
+            showLayers = {"L01-LaptopA"},
+            conditionalVisibility = true,
+            callLayerFunctions = {
+                function() self.controller.sublayerModule:updateHDMIStateLaptopA() end,
+                function() self.controller.sublayerModule:updateConferenceState() end,
+                function() self.controller.sublayerModule:updateConferenceControlsLayer() end,
+                function() self.controller.sublayerModule:updatePresetSavedState() end,
+                function() self.controller.sublayerModule:updateACPRBypassState() end,
+                function() self.controller.sublayerModule:updateLaptopAHelpState() end,
+                function() self.controller.sublayerModule:updateCallActiveState() end
+            }
+        },
+        [self.controller.kLayerLaptopB] = {
+            showLayers = {"L02-LaptopB"},
+            conditionalVisibility = true,
+            callLayerFunctions = {
+                function() self.controller.sublayerModule:updateHDMIStateLaptopB() end,
+                function() self.controller.sublayerModule:updateConferenceState() end,
+                function() self.controller.sublayerModule:updateConferenceControlsLayer() end,
+                function() self.controller.sublayerModule:updatePresetSavedState() end,
+                function() self.controller.sublayerModule:updateACPRBypassState() end,
+                function() self.controller.sublayerModule:updateLaptopBHelpState() end,
                 function() self.controller.sublayerModule:updateCallActiveState() end
             }
         },
@@ -420,7 +465,6 @@ function LayerModule:showLayer()
         [self.controller.kLayerRouting] = {
             showLayers = {"R10-Routing"},
             callLayerFunctions = {
-                function() self.controller.routingModule:showRoutingLayer() end,
                 function() self.controller.sublayerModule:updateCallActiveState() end
             }
         },
@@ -439,24 +483,25 @@ function LayerModule:showLayer()
             }
         },
         [self.controller.kLayerRoomCombining] = {
-            showLayers = {"H01-PasscodeEntry"},
+            showLayers = {"H04-RoomCombining"},
             callLayerFunctions = {
-                function() self:hideBaseLayers() end,
-                function()
-                    -- Reset timer to give user time to enter passcode
-                    self.controller:resetTouchInactivityTimer()
-                    -- Check if passcode is already correct or disabled
-                    if self.controller.passcodeModule:isPasscodeCorrect() then
-                        self.controller.passcodeModule:onPasscodeCorrect(true)
-                    end
-                end,
-                function() self.controller.sublayerModule:updateCallActiveState() end
+                function() self.controller.sublayerModule:updateCallActiveState() end,
+                function() self.controller:resetTouchInactivityTimer() end
             }
         }
     }
     
     local config = layerConfigs[self.controller.varActiveLayer]
     if not config then return end
+    
+    -- Check conditional visibility for divisible space layers
+    if config.conditionalVisibility and self.controller.divisibleSpaceModule then
+        local shouldShow = self.controller.divisibleSpaceModule:shouldShowLayer(self.controller.varActiveLayer)
+        if not shouldShow then
+            self:debug("Layer " .. self.controller.varActiveLayer .. " hidden by divisible space conditional visibility")
+            return
+        end
+    end
     
     -- Show main layers
     for _, layer in ipairs(config.showLayers or {}) do
@@ -473,14 +518,14 @@ function LayerModule:showLayer()
         func()
     end
 
-    self:updateRoutingButtonState()
+    --self:updateRoutingButtonState() 
 end
 
 function LayerModule:resetLayerStates()
     self.layerStates = {}
     self:debug("Layer states reset")
 end
-
+--[[
 function LayerModule:updateRoutingButtonState()
     if self.controller.varActiveLayer == self.controller.kLayerRouting or controls.btnNav06.Boolean then
     setProp(controls.btnNav10, "IsDisabled", true)
@@ -492,104 +537,7 @@ else
         self:debug("Routing button enabled")
     end
 end
-
--------------------[ Passcode Module ]--------------------
-local PasscodeModule = setmetatable({}, BaseModule); PasscodeModule.__index = PasscodeModule
-function PasscodeModule.new(controller)
-    local self = BaseModule.new(controller, "Passcode")
-    setmetatable(self, PasscodeModule)
-    self.compPasscode = nil
-    self.roomIdentifier = nil
-    self.isEnabled = false
-    return self
-end
-
-function PasscodeModule:extractRoomFromPageName()
-    -- Extract room identifier from UCI page name (e.g., "uci Salon D (Touch)" -> "SalonD")
-    local pageName = self.controller.uciPage
-    local room = pageName:match("Salon%s*([A-H])")
-    if room then
-        self.roomIdentifier = "Salon" .. room
-        self:debug("Extracted room identifier: " .. self.roomIdentifier)
-        return self.roomIdentifier
-    end
-    self:debug("Could not extract room identifier from: " .. pageName)
-    return nil
-end
-
-function PasscodeModule:initializeComponent()
-    local roomId = self:extractRoomFromPageName()
-    if not roomId then
-        self:debug("Cannot initialize without room identifier")
-        return false
-    end
-    
-    -- Build component name with room identifier appended
-    local componentName = "passcode" .. roomId  -- e.g., "passcodeSalonD"
-    
-    local success, component = pcall(function() 
-        return Component.New(componentName) 
-    end)
-    
-    if success and component then
-        self.compPasscode = component
-        self.isEnabled = true
-        self:debug("Passcode component initialized: " .. componentName)
-        self:registerPasscodeHandler()
-        return true
-    else
-        self:debug("Passcode component not found: " .. componentName .. " (feature disabled)")
-        return false
-    end
-end
-
-function PasscodeModule:registerPasscodeHandler()
-    if not self.compPasscode or not self.compPasscode["PasscodeCorrect"] then
-        self:debug("PasscodeCorrect control not found")
-        return false
-    end
-    
-    -- Monitor the PasscodeCorrect Boolean property
-    self.compPasscode["PasscodeCorrect"].EventHandler = function(ctl)
-        self:onPasscodeCorrect(ctl.Boolean)
-    end
-    
-    self:debug("PasscodeCorrect EventHandler registered for " .. self.roomIdentifier)
-    return true
-end
-
-function PasscodeModule:onPasscodeCorrect(isCorrect)
-    if not isCorrect then return end
-    
-    self:debug("Correct passcode entered for " .. self.roomIdentifier)
-    
-    -- Hide passcode entry layer and show room combining layer
-    self.controller.layerModule:updateLayerVisibility({"H01-PasscodeEntry"}, false, "fade")
-    self.controller.layerModule:updateLayerVisibility({"H04-RoomCombining"}, true, "fade")
-    
-    -- Reset touch inactivity timer when room combining is shown
-    self.controller:resetTouchInactivityTimer()
-end
-
-function PasscodeModule:isPasscodeCorrect()
-    if not self.isEnabled or not self.compPasscode then
-        return true -- If no passcode component, allow access
-    end
-    
-    if self.compPasscode["PasscodeCorrect"] then
-        return self.compPasscode["PasscodeCorrect"].Boolean
-    end
-    
-    return true -- Default to allowing access if control doesn't exist
-end
-
-function PasscodeModule:cleanup()
-    if self.compPasscode and self.compPasscode["PasscodeCorrect"] then
-        self.compPasscode["PasscodeCorrect"].EventHandler = nil
-    end
-    BaseModule.cleanup(self)
-end
-
+]]
 -------------------[ Sublayer Module ]---------------------
 local SublayerModule = setmetatable({}, BaseModule); SublayerModule.__index = SublayerModule
 function SublayerModule.new(controller)
@@ -609,191 +557,260 @@ end
 
 function SublayerModule:updatePresetSavedState()
     local isVisible = controls.pinLEDPresetSaved and controls.pinLEDPresetSaved.Boolean or false
-    self.controller.layerModule:updateLayerVisibility({"J04-CamPresetSaved"}, isVisible, isVisible and "fade" or "none")
-    self:debug("Preset Saved: " .. (isVisible and "Showing" or "Hiding"))
-end
-
-function SublayerModule:updateHDMI01State()
-    if self.controller.varActiveLayer ~= self.controller.kLayerLaptop then return end
-    if not controls.pinLEDHDMI01Connect then return end
-    local isConnected = controls.pinLEDHDMI01Connect.Boolean or false
-    if isConnected then
-        self.controller.layerModule:updateLayerVisibility({"L05-Laptop"}, true, "fade")
-        self.controller.layerModule:updateLayerVisibility({"L01-HDMI01Disconnected"}, false, "none")
-        self:debug("HDMI01: Connected")
-        return
-    end
-
-    self.controller.layerModule:updateLayerVisibility({"L01-HDMI01Disconnected"}, true, "fade")
-    self.controller.layerModule:updateLayerVisibility({"L05-Laptop", "J05-CameraControls"}, false, "none")
-    self:debug("HDMI01: Disconnected")
-end
-
-function SublayerModule:updateHDMI02State()
-    if self.controller.varActiveLayer ~= self.controller.kLayerPC then return end
-    
-    local isConnected = controls.pinLEDHDMI02Connect and controls.pinLEDHDMI02Connect.Boolean or false
-    if isConnected then
-        self.controller.layerModule:updateLayerVisibility({"P05-PC"}, true, "fade")
-        self.controller.layerModule:updateLayerVisibility({"P01-HDMI02Disconnected"}, false, "none")
-    else
-        self.controller.layerModule:updateLayerVisibility({"P01-HDMI02Disconnected"}, true, "fade")
-        self.controller.layerModule:updateLayerVisibility({"P05-PC", "J05-CameraControls"}, false, "none")
-    end
-    self:debug("HDMI02: " .. (isConnected and "Connected" or "Disconnected"))
+    self.controller.layerModule:updateLayerVisibility({"J06-CamPresetSaved"}, isVisible, isVisible and "fade" or "none")
+    self:debug("Preset Saved: " .. (isVisible and "Showing" or "Hiding") .. " J06-CamPresetSaved")
 end
 
 function SublayerModule:updateACPRBypassState()
-    if self.controller.varActiveLayer ~= self.controller.kLayerLaptop and 
-       self.controller.varActiveLayer ~= self.controller.kLayerPC then return end
+    -- Divisible space: Check for any of the 4 source layers (PCA, PCB, LaptopA, LaptopB)
+    local activeLayer = self.controller.varActiveLayer
+    if activeLayer ~= self.controller.kLayerPCA and 
+       activeLayer ~= self.controller.kLayerPCB and
+       activeLayer ~= self.controller.kLayerLaptopA and 
+       activeLayer ~= self.controller.kLayerLaptopB then return end
+
+    -- Determine which conference controls layer based on active source
+    local conferenceLayer
+    if activeLayer == self.controller.kLayerLaptopA then
+        conferenceLayer = "J21-ConferenceControlsLaptopA"
+    elseif activeLayer == self.controller.kLayerLaptopB then
+        conferenceLayer = "J22-ConferenceControlsLaptopB"
+    elseif activeLayer == self.controller.kLayerPCA then
+        conferenceLayer = "J23-ConferenceControlsPCA"
+    elseif activeLayer == self.controller.kLayerPCB then
+        conferenceLayer = "J24-ConferenceControlsPCB"
+    end
 
     local isBypassActive = controls.pinLEDACPRBypassActive and controls.pinLEDACPRBypassActive.Boolean or false
     if not isBypassActive then
-        self.controller.layerModule:updateLayerVisibility({"J03-ACPRActive"}, true, "fade")
-        self.controller.layerModule:updateLayerVisibility({"J05-CameraControls"}, false, "none")
+        self.controller.layerModule:updateLayerVisibility({"J05-ACPRActive"}, true, "fade")
+        self.controller.layerModule:updateLayerVisibility({conferenceLayer}, false, "none")
     else
-        self.controller.layerModule:updateLayerVisibility({"J05-CameraControls"}, true, "fade")
-        self.controller.layerModule:updateLayerVisibility({"J03-ACPRActive"}, false, "none")
+        self.controller.layerModule:updateLayerVisibility({conferenceLayer}, true, "fade")
+        self.controller.layerModule:updateLayerVisibility({"J05-ACPRActive"}, false, "none")
     end
     self:debug("ACPR Bypass: " .. (isBypassActive and "Active" or "Inactive"))
 end
 
 function SublayerModule:updateConferenceState()
+    -- Divisible space: Determine USB connection and conference layer based on active layer
     local usbConnected = false
     local usbNotConnectedLayer
+    local conferenceLayer
+    local activeLayer = self.controller.varActiveLayer
     
-    if self.controller.varActiveLayer == self.controller.kLayerLaptop then
-        usbConnected = controls.pinLEDUSBLaptop and controls.pinLEDUSBLaptop.Boolean or false
-        usbNotConnectedLayer = "J01-ConnectUSBLaptop"
-    elseif self.controller.varActiveLayer == self.controller.kLayerPC then
-        usbConnected = controls.pinLEDUSBPC and controls.pinLEDUSBPC.Boolean or false
-        usbNotConnectedLayer = "J02-ConnectUSBPC"
+    if activeLayer == self.controller.kLayerLaptopA then
+        -- LaptopA: pinLEDUSBLaptopA and J21-ConferenceControlsLaptopA
+        usbConnected = controls.pinLEDUSBLaptopA and controls.pinLEDUSBLaptopA.Boolean or false
+        usbNotConnectedLayer = "J01-ConnectUSBLaptopA"
+        conferenceLayer = "J21-ConferenceControlsLaptopA"
+    elseif activeLayer == self.controller.kLayerLaptopB then
+        -- LaptopB: pinLEDUSBLaptopB and J22-ConferenceControlsLaptopB
+        usbConnected = controls.pinLEDUSBLaptopB and controls.pinLEDUSBLaptopB.Boolean or false
+        usbNotConnectedLayer = "J02-ConnectUSBLaptopB"
+        conferenceLayer = "J22-ConferenceControlsLaptopB"
+    elseif activeLayer == self.controller.kLayerPCA then
+        -- PCA: pinLEDUSBPCA and J23-ConferenceControlsPCA
+        usbConnected = controls.pinLEDUSBPCA and controls.pinLEDUSBPCA.Boolean or false
+        usbNotConnectedLayer = "J03-ConnectUSBPCA"
+        conferenceLayer = "J23-ConferenceControlsPCA"
+    elseif activeLayer == self.controller.kLayerPCB then
+        -- PCB: pinLEDUSBPCB and J24-ConferenceControlsPCB
+        usbConnected = controls.pinLEDUSBPCB and controls.pinLEDUSBPCB.Boolean or false
+        usbNotConnectedLayer = "J04-ConnectUSBPCB"
+        conferenceLayer = "J24-ConferenceControlsPCB"
     else
         return
     end
 
     if usbConnected then
-        self.controller.layerModule:updateLayerVisibility({"J05-CameraControls"}, true, "fade")
-        self.controller.layerModule:updateLayerVisibility({"J01-ConnectUSBLaptop", "J02-ConnectUSBPC"}, false, "none")
+        self.controller.layerModule:updateLayerVisibility({conferenceLayer}, true, "fade")
+        self.controller.layerModule:updateLayerVisibility({"J01-ConnectUSBLaptopA", "J02-ConnectUSBLaptopB", "J03-ConnectUSBPCA", "J04-ConnectUSBPCB"}, false, "none")
     else
         self.controller.layerModule:updateLayerVisibility({usbNotConnectedLayer}, true, "fade")
-        self.controller.layerModule:updateLayerVisibility({"J05-CameraControls"}, false, "none")
+        self.controller.layerModule:updateLayerVisibility({conferenceLayer}, false, "none")
     end
-    self:debug("Camera: " .. (usbConnected and "Connected" or "Disconnected"))
-end
-
-function SublayerModule:updateLaptopHelpState()
-    local isVisible = controls.btnHelpLaptop and controls.btnHelpLaptop.Boolean or false
-    if isVisible then
-        self.controller.layerModule:updateLayerVisibility({"I02-HelpLaptop"}, true, "fade")
-        self.controller.layerModule:updateLayerVisibility({"J05-CameraControls", "J01-ConnectUSBLaptop", "J02-ConnectUSBPC"}, false, "none")
-    else
-        self.controller.layerModule:updateLayerVisibility({"I02-HelpLaptop"}, false, "none")
-        self:updateConferenceState()
-    end
-    self:debug("Laptop Help: " .. (isVisible and "Showing" or "Hiding"))
-end
-
-function SublayerModule:updatePCHelpState()
-    local isVisible = controls.btnHelpPC and controls.btnHelpPC.Boolean or false
-    if isVisible then
-        self.controller.layerModule:updateLayerVisibility({"I03-HelpPC"}, true, "fade")
-        self.controller.layerModule:updateLayerVisibility({"J05-CameraControls", "J01-ConnectUSBLaptop", "J02-ConnectUSBPC"}, false, "none")
-    else
-        self.controller.layerModule:updateLayerVisibility({"I03-HelpPC"}, false, "none")
-        self:updateConferenceState()
-    end
-    self:debug("PC Help: " .. (isVisible and "Showing" or "Hiding"))
+    self:debug("Conference: " .. conferenceLayer .. " " .. (usbConnected and "Connected" or "Disconnected"))
 end
 
 function SublayerModule:updateWirelessHelpState()
     local isVisible = controls.btnHelpWireless and controls.btnHelpWireless.Boolean or false
-    self.controller.layerModule:updateLayerVisibility({"I04-HelpWireless"}, isVisible, "none")
+    self.controller.layerModule:updateLayerVisibility({"I06-HelpWirelessA"}, isVisible, "none")
     self:debug("Wireless Help: " .. (isVisible and "Showing" or "Hiding"))
 end
 
 function SublayerModule:updateRoutingHelpState()
     local isVisible = controls.btnHelpRouting and controls.btnHelpRouting.Boolean or false
-    self.controller.layerModule:updateLayerVisibility({"I05-HelpRouting"}, isVisible, "none")
+    self.controller.layerModule:updateLayerVisibility({"I08-HelpRouting"}, isVisible, "none")
     self:debug("Routing Help: " .. (isVisible and "Showing" or "Hiding"))
 end
 
 function SublayerModule:updateDialerHelpState()
     local isVisible = controls.btnHelpDialer and controls.btnHelpDialer.Boolean or false
-    self.controller.layerModule:updateLayerVisibility({"I06-HelpDialer"}, isVisible, "none")
+    self.controller.layerModule:updateLayerVisibility({"I09-HelpDialer"}, isVisible, "none")
     self:debug("Dialer Help: " .. (isVisible and "Showing" or "Hiding"))
 end
 
 function SublayerModule:updateStreamMusicHelpState()
     local isVisible = controls.btnHelpStreamMusic and controls.btnHelpStreamMusic.Boolean or false
-    self.controller.layerModule:updateLayerVisibility({"I07-HelpStreamMusic"}, isVisible, "none")
+    self.controller.layerModule:updateLayerVisibility({"I10-HelpStreamMusic"}, isVisible, "none")
     self:debug("Stream Music Help: " .. (isVisible and "Showing" or "Hiding"))
 end
 
--------------------[ Routing Module ]----------------------
-local RoutingModule = setmetatable({}, BaseModule); RoutingModule.__index = RoutingModule
-function RoutingModule.new(controller)
-    local self = BaseModule.new(controller, "Routing")
-    setmetatable(self, RoutingModule)
-    self.routingLayers = {
-        "R01-Routing-SalonD", "R02-Routing-SalonE", "R03-Routing-SalonA",
-        "R04-Routing-SalonB", "R05-Routing-SalonC", "R06-Routing-SalonF",
-        "R07-Routing-SalonG", "R08-Routing-SalonH"
-    }
-    self.activeRoutingLayer = 1
-    return self
-end
-
-function RoutingModule:showRoutingLayer()
-    -- Bounds check
-    if self.activeRoutingLayer < 1 or self.activeRoutingLayer > #self.routingLayers then
-        self.activeRoutingLayer = 1
-    end
+-------------------[ Generic HDMI State Handler ]----------
+-- DRY Pattern: Single method handles all 4 source HDMI states
+function SublayerModule:updateHDMIState(layerConstant, pinName, baseLayer, disconnectLayer, sourceName)
+    -- Guard clauses with early returns
+    if self.controller.varActiveLayer ~= layerConstant then return end
+    if not controls[pinName] then return end
     
-    -- Hide program volume layer for routing view
-    --self.controller.layerModule:updateLayerVisibility({"X01-ProgramVolume"}, false, "none")
-    
-    -- Hide all routing layers
-    for _, layer in ipairs(self.routingLayers) do
-        self.controller.layerModule:updateLayerVisibility({layer}, false, "none")
-    end
-    
-    -- Show active layer and update buttons
-    self.controller.layerModule:updateLayerVisibility({self.routingLayers[self.activeRoutingLayer]}, true, "fade")
-    self:interlockRoutingButtons()
-end
-
-function RoutingModule:getRoutingButtons()
-    return {controls.btnRouting01, controls.btnRouting02, controls.btnRouting03, controls.btnRouting04, 
-    controls.btnRouting05, controls.btnRouting06, controls.btnRouting07, controls.btnRouting08}
-end
-
-function RoutingModule:interlockRoutingButtons()
-    local routingButtons = self:getRoutingButtons()
-    for i, btn in ipairs(routingButtons) do
-        if btn then btn.Boolean = (i == self.activeRoutingLayer) end
-    end
-end
-
-function RoutingModule:routingButtonEventHandler(buttonIndex)
-    if buttonIndex < 1 or buttonIndex > #self.routingLayers then
-        self:debug("Invalid routing button index: " .. tostring(buttonIndex))
+    local isConnected = controls[pinName].Boolean or false
+    if isConnected then
+        self.controller.layerModule:updateLayerVisibility({baseLayer}, true, "fade")
+        self.controller.layerModule:updateLayerVisibility({disconnectLayer}, false, "none")
+        self:debug("HDMI " .. sourceName .. ": Connected")
         return
     end
     
-    self.activeRoutingLayer = buttonIndex
-    self:showRoutingLayer()
-    self:debug("Routing layer switched to: " .. self.routingLayers[buttonIndex])
+    -- Determine which conference layer to hide based on source
+    local conferenceLayer
+    if sourceName == "LaptopA" then
+        conferenceLayer = "J21-ConferenceControlsLaptopA"
+    elseif sourceName == "LaptopB" then
+        conferenceLayer = "J22-ConferenceControlsLaptopB"
+    elseif sourceName == "PCA" then
+        conferenceLayer = "J23-ConferenceControlsPCA"
+    elseif sourceName == "PCB" then
+        conferenceLayer = "J24-ConferenceControlsPCB"
+    end
+    
+    self.controller.layerModule:updateLayerVisibility({disconnectLayer}, true, "fade")
+    self.controller.layerModule:updateLayerVisibility({baseLayer, conferenceLayer}, false, "none")
+    self:debug("HDMI " .. sourceName .. ": Disconnected")
 end
 
-function RoutingModule:resetRoutingButtons()
-    local routingButtons = self:getRoutingButtons()
-    for i, btn in ipairs(routingButtons) do
-        if btn then 
-            setProp(btn, "Boolean", false) -- Reset all routing buttons to false
-        end
+-------------------[ Generic Source Help State Handler ]---
+-- DRY Pattern: Single method handles all source help states
+function SublayerModule:updateSourceHelpState(btnName, helpLayer, conferenceLayer, sourceName)
+    local isVisible = controls[btnName] and controls[btnName].Boolean or false
+    if isVisible then
+        self.controller.layerModule:updateLayerVisibility({helpLayer}, true, "fade")
+        self.controller.layerModule:updateLayerVisibility({
+            "J21-ConferenceControlsLaptopA", "J22-ConferenceControlsLaptopB", 
+            "J23-ConferenceControlsPCA", "J24-ConferenceControlsPCB", 
+            "J01-ConnectUSBLaptopA", "J02-ConnectUSBLaptopB", "J03-ConnectUSBPCA", "J04-ConnectUSBPCB"
+        }, false, "none")
+    else
+        self.controller.layerModule:updateLayerVisibility({helpLayer}, false, "none")
+        self:updateConferenceState()
     end
-    self:debug("Routing buttons reset")
+    self:debug(sourceName .. " Help: " .. (isVisible and "Showing" or "Hiding"))
+end
+
+function SublayerModule:updateHDMIStatePCA()
+    self:updateHDMIState(
+        self.controller.kLayerPCA,
+        "pinLEDHDMIConnectedPCA",
+        "P01-PCA",
+        "P01-HDMIDisconnected",
+        "PCA"
+    )
+end
+
+function SublayerModule:updateHDMIStatePCB()
+    self:updateHDMIState(
+        self.controller.kLayerPCB,
+        "pinLEDHDMIConnectedPCB",
+        "P02-PCB",
+        "P02-HDMIDisconnected",
+        "PCB"
+    )
+end
+
+function SublayerModule:updateHDMIStateLaptopA()
+    self:updateHDMIState(
+        self.controller.kLayerLaptopA,
+        "pinLEDHDMIConnectedLaptopA",
+        "L01-LaptopA",
+        "L01-HDMIDisconnected",
+        "LaptopA"
+    )
+end
+
+function SublayerModule:updateHDMIStateLaptopB()
+    self:updateHDMIState(
+        self.controller.kLayerLaptopB,
+        "pinLEDHDMIConnectedLaptopB",
+        "L02-LaptopB",
+        "L02-HDMIDisconnected",
+        "LaptopB"
+    )
+end
+
+-- Help state methods for new sources
+function SublayerModule:updatePCAHelpState()
+    self:updateSourceHelpState("btnHelpPCA", "I04-HelpPCA", "J23-ConferenceControlsPCA", "PCA")
+end
+
+function SublayerModule:updatePCBHelpState()
+    self:updateSourceHelpState("btnHelpPCB", "I05-HelpPCB", "J24-ConferenceControlsPCB", "PCB")
+end
+
+function SublayerModule:updateLaptopAHelpState()
+    self:updateSourceHelpState("btnHelpLaptopA", "I02-HelpLaptopA", "J21-ConferenceControlsLaptopA", "LaptopA")
+end
+
+function SublayerModule:updateLaptopBHelpState()
+    self:updateSourceHelpState("btnHelpLaptopB", "I03-HelpLaptopB", "J22-ConferenceControlsLaptopB", "LaptopB")
+end
+
+-- Conference controls and camera selection layer visibility based on active layer and room state
+function SublayerModule:updateConferenceControlsLayer()
+    if not self.controller.divisibleSpaceModule then return end
+    
+    local activeLayer = self.controller.varActiveLayer
+    local roomState = self.controller.divisibleSpaceModule:getRoomState()
+    
+    -- Determine which camera selection layer to show based on active source
+    local showJ11 = (activeLayer == self.controller.kLayerLaptopA)
+    local showJ12 = (activeLayer == self.controller.kLayerLaptopB)
+    local showJ13 = (activeLayer == self.controller.kLayerPCA)
+    local showJ14 = (activeLayer == self.controller.kLayerPCB)
+    
+    -- Show camera selection layers
+    self.controller.layerModule:updateLayerVisibility({"J11-CameraSelectionLaptopA"}, showJ11, showJ11 and "fade" or "none")
+    self.controller.layerModule:updateLayerVisibility({"J12-CameraSelectionLaptopB"}, showJ12, showJ12 and "fade" or "none")
+    self.controller.layerModule:updateLayerVisibility({"J13-CameraSelectionPCA"}, showJ13, showJ13 and "fade" or "none")
+    self.controller.layerModule:updateLayerVisibility({"J14-CameraSelectionPCB"}, showJ14, showJ14 and "fade" or "none")
+    
+    -- Determine USB connection state for each source
+    local usbLaptopA = controls.pinLEDUSBLaptopA and controls.pinLEDUSBLaptopA.Boolean or false
+    local usbLaptopB = controls.pinLEDUSBLaptopB and controls.pinLEDUSBLaptopB.Boolean or false
+    local usbPCA = controls.pinLEDUSBPCA and controls.pinLEDUSBPCA.Boolean or false
+    local usbPCB = controls.pinLEDUSBPCB and controls.pinLEDUSBPCB.Boolean or false
+    
+    -- Show conference controls layers only if USB is connected for active source
+    local showJ21 = showJ11 and usbLaptopA
+    local showJ22 = showJ12 and usbLaptopB
+    local showJ23 = showJ13 and usbPCA
+    local showJ24 = showJ14 and usbPCB
+    
+    self.controller.layerModule:updateLayerVisibility({"J21-ConferenceControlsLaptopA"}, showJ21, showJ21 and "fade" or "none")
+    self.controller.layerModule:updateLayerVisibility({"J22-ConferenceControlsLaptopB"}, showJ22, showJ22 and "fade" or "none")
+    self.controller.layerModule:updateLayerVisibility({"J23-ConferenceControlsPCA"}, showJ23, showJ23 and "fade" or "none")
+    self.controller.layerModule:updateLayerVisibility({"J24-ConferenceControlsPCB"}, showJ24, showJ24 and "fade" or "none")
+    
+    -- ACPR button visibility based on room state and any conference controls active
+    local conferenceActive = (showJ21 or showJ22 or showJ23 or showJ24)
+    local showJ07 = (roomState ~= "separated") and conferenceActive
+    local showJ08 = (roomState == "separated") and conferenceActive
+    
+    self.controller.layerModule:updateLayerVisibility({"J07-ACPRBtnCombined"}, showJ07, showJ07 and "fade" or "none")
+    self.controller.layerModule:updateLayerVisibility({"J08-ACPRBtnSeparated"}, showJ08, showJ08 and "fade" or "none")
+    
+    self:debug("Camera: J11=" .. tostring(showJ11) .. ", J12=" .. tostring(showJ12) .. ", J13=" .. tostring(showJ13) .. ", J14=" .. tostring(showJ14) .. 
+               " | Conference: J21=" .. tostring(showJ21) .. ", J22=" .. tostring(showJ22) .. ", J23=" .. tostring(showJ23) .. ", J24=" .. tostring(showJ24) ..
+               " | ACPR: J07(Combined)=" .. tostring(showJ07) .. ", J08(Separated)=" .. tostring(showJ08) .. " | RoomState=" .. roomState)
 end
 
 -------------------[ Video Switcher Module ]---------------
@@ -809,17 +826,26 @@ function VideoSwitcherModule.new(controller)
 end
 
 VideoSwitcherModule.SwitcherTypes = {
-    NV32 = {
-        componentType = "streamer_hdmi_switcher",
-        switcherNames = {"devNV32", "codenameNV32", "varNV32"},
-        routingMethod = "hdmi.out.1.select.index",
-        defaultMapping = {[7] = 5, [8] = 4, [9] = 6}
-    },
-    ExtronDXP = {
-        componentType = "%PLUGIN%_qsysc.extron.matrix.0.0.0.0-master_%FP%_bf09cd55c73845eb6fc31e4b896516ff",
-        switcherNames = {"devExtronDXP", "codenameExtronDXP", "varExtronDXP"},
-        routingMethod = "output.1",
-        defaultMapping = {[7] = 2, [8] = 4, [9] = 1}
+    AVProEdge = {
+        componentType = "%PLUGIN%_0a62fae1-c3d6-308a-8b7f-3586d7abdf9d_%FP%_1d35ac9dec572bc00d3405021155333f",
+        switcherNames = {"devAVProEdge", "compAVProEdge", "varAVProEdge"},
+        routingMethod = "trigger", -- Boolean controls that can be triggered
+        -- Output 1 (Collab A): Laptop A = Input 1, Laptop B = Input 2, PC A = Input 3, PC B = Input 4
+        -- Output 2 (Collab B): Laptop A = Input 5, Laptop B = Input 6, PC A = Input 7, PC B = Input 8
+        outputMappings = {
+            CollabA = {
+                [7] = "Input 3",   -- kLayerPCA -> Input 3
+                [8] = "Input 4",   -- kLayerPCB -> Input 4
+                [9] = "Input 1",   -- kLayerLaptopA -> Input 1
+                [10] = "Input 2"   -- kLayerLaptopB -> Input 2
+            },
+            CollabB = {
+                [7] = "Input 7",   -- kLayerPCA -> Input 7
+                [8] = "Input 8",   -- kLayerPCB -> Input 8
+                [9] = "Input 5",   -- kLayerLaptopA -> Input 5
+                [10] = "Input 6"   -- kLayerLaptopB -> Input 6
+            }
+        }
     }
 }
 
@@ -838,7 +864,6 @@ function VideoSwitcherModule:initialize()
     
     self.switcherType = switcherType
     self.switcherComponent = component
-    self.uciToInputMapping = self.SwitcherTypes[switcherType].defaultMapping
     self.isEnabled = true
     self:debug("Video switcher initialized: " .. switcherType)
     return true
@@ -867,24 +892,51 @@ function VideoSwitcherModule:autoDetectSwitcher()
     return nil, nil
 end
 
-function VideoSwitcherModule:switchToInput(inputNumber, uciButton)
+function VideoSwitcherModule:switchToInput(uciButton)
     -- Guard clauses with early returns
     if not self.isEnabled then return false end
     if not self.switcherComponent then return false end
-    if not inputNumber or not uciButton then return false end
+    if not uciButton then return false end
     
-    self:debug("Switching to input " .. inputNumber .. " via UCI button " .. uciButton)
+    local config = self.SwitcherTypes[self.switcherType]
+    if not config then return false end
     
+    -- Get room identity from DivisibleSpaceModule
+    local roomIdentity = nil
+    if self.controller.divisibleSpaceModule then
+        roomIdentity = self.controller.divisibleSpaceModule:getCurrentRoom()
+    end
+    
+    -- Guard clause: ensure room identity is determined
+    if not roomIdentity then
+        self:debug("Cannot switch: Room identity not determined")
+        return false
+    end
+    
+    -- Get the correct input control name based on room identity and UCI button
+    local inputMapping = config.outputMappings and config.outputMappings[roomIdentity]
+    if not inputMapping then
+        self:debug("Cannot switch: No output mapping for room " .. roomIdentity)
+        return false
+    end
+    
+    local inputControlName = inputMapping[uciButton]
+    if not inputControlName then
+        self:debug("No input mapping for UCI button " .. uciButton .. " in room " .. roomIdentity)
+        return false
+    end
+    
+    self:debug("Switching to " .. inputControlName .. " via UCI button " .. uciButton .. " (Room: " .. roomIdentity .. ")")
+    
+    -- Trigger the Boolean control
     local success, err = pcall(function()
-        local config = self.SwitcherTypes[self.switcherType]
-        if not config then return false end
-        
-        if self.switcherType == "NV32" then
-            setProp(self.switcherComponent[config.routingMethod], "Value", inputNumber)
+        if self.switcherComponent[inputControlName] then
+            self.switcherComponent[inputControlName]:Trigger()
+            return true
         else
-            setProp(self.switcherComponent[config.routingMethod], "String", tostring(inputNumber))
+            self:debug("Warning: Control " .. inputControlName .. " not found on switcher")
+            return false
         end
-        return true
     end)
     
     if not success then
@@ -892,7 +944,7 @@ function VideoSwitcherModule:switchToInput(inputNumber, uciButton)
         return false
     end
     
-    self:debug("Successfully switched to input " .. inputNumber)
+    self:debug("Successfully switched to " .. inputControlName)
     return true
 end
 
@@ -932,7 +984,8 @@ function RoomAutomationModule:initializeComponent()
         self.roomControlsComponent = component
         self:debug("Room Controls Component referenced: " .. componentName)
         
-        -- Initialize previous state (use ledSystemPower as authoritative status indicator)
+        -- Initialize previous state from ledSystemPower (authoritative status indicator)
+        -- Use ledSystemPower for status reads, btnSystemOnOff for control writes
         if self.roomControlsComponent["ledSystemPower"] then
             self.previousPowerState = self.roomControlsComponent["ledSystemPower"].Boolean
             self:debug("Initial power state: " .. tostring(self.previousPowerState))
@@ -946,12 +999,12 @@ function RoomAutomationModule:initializeComponent()
 end
 
 function RoomAutomationModule:powerOn()
-    -- Set btnSystemOnOff control to trigger power on (ledSystemPower will update via SystemAutomationController)
     if not self.roomControlsComponent or not self.roomControlsComponent["btnSystemOnOff"] then
         self:debug("Cannot power on: Room Controls component not available")
         return false
     end
     
+    -- Set btnSystemOnOff control to trigger power on (ledSystemPower will update via SystemAutomationController)
     local ok, result = pcall(function()
         self.roomControlsComponent["btnSystemOnOff"].Boolean = true
         return self.roomControlsComponent["btnSystemOnOff"].Boolean
@@ -967,12 +1020,12 @@ function RoomAutomationModule:powerOn()
 end
 
 function RoomAutomationModule:powerOff()
-    -- Set btnSystemOnOff control to trigger power off (ledSystemPower will update via SystemAutomationController)
     if not self.roomControlsComponent or not self.roomControlsComponent["btnSystemOnOff"] then
         self:debug("Cannot power off: Room Controls component not available")
         return false
     end
     
+    -- Set btnSystemOnOff control to trigger power off (ledSystemPower will update via SystemAutomationController)
     local ok, result = pcall(function()
         self.roomControlsComponent["btnSystemOnOff"].Boolean = false
         return not self.roomControlsComponent["btnSystemOnOff"].Boolean
@@ -1013,11 +1066,12 @@ function RoomAutomationModule:getTiming(isPoweringOn)
 end
 
 function RoomAutomationModule:syncRoomControlsState()
-    -- Guard clause: ensure component is available (use ledSystemPower as authoritative status)
+    -- Guard clause: ensure component is available with ledSystemPower (authoritative status)
     if not self.roomControlsComponent or not self.roomControlsComponent["ledSystemPower"] then
         return
     end
     
+    -- Use ledSystemPower as authoritative status indicator
     local currentState = self.roomControlsComponent["ledSystemPower"].Boolean
     
     -- Only react to state changes
@@ -1101,7 +1155,13 @@ function ProgressModule:startLoadingBar(isPoweringOn)
             self.timeoutTimer:Stop()
             self.isAnimating = false
             
-            local targetLayer = isPoweringOn and self.controller.defaultActiveLayer or self.controller.kLayerStart
+            -- Use DivisibleSpaceModule to determine default layer after warming
+            local targetLayer
+            if isPoweringOn and self.controller.divisibleSpaceModule then
+                targetLayer = self.controller.divisibleSpaceModule:getDefaultLayerAfterWarming()
+            else
+                targetLayer = self.controller.kLayerStart
+            end
             self.controller:btnNavEventHandler(targetLayer)
         else
             self.loadingTimer:Start(interval)
@@ -1117,6 +1177,251 @@ function ProgressModule:cleanup()
     if self.timeoutTimer then self.timeoutTimer:Stop(); self.timeoutTimer = nil end
     self.isAnimating = false
     self:debug("Progress module cleanup complete")
+end
+
+-------------------[ DivisibleSpace Module ]---------------
+local DivisibleSpaceModule = setmetatable({}, BaseModule); DivisibleSpaceModule.__index = DivisibleSpaceModule
+function DivisibleSpaceModule.new(controller)
+    local self = BaseModule.new(controller, "DivisibleSpace")
+    setmetatable(self, DivisibleSpaceModule)
+    self.roomIdentity = nil -- "CollabA" or "CollabB"
+    self.compDivisibleSpaceControls = nil
+    self.btnRoomState = nil -- Cached btnRoomState array
+    self.isEnabled = false
+    return self
+end
+
+function DivisibleSpaceModule:initialize()
+    -- Parse room identity from Uci.Variables.compRoomControls
+    self:parseRoomIdentity()
+    
+    -- Try to reference compDivisibleSpaceControls component
+    local success, component = pcall(function()
+        return Component.New("compDivisibleSpaceControls")
+    end)
+    
+    if success and component then
+        self.compDivisibleSpaceControls = component
+        self.isEnabled = true
+        self:debug("DivisibleSpaceControls component referenced successfully")
+        
+        -- Cache btnRoomState array for reuse
+        self:cacheBtnRoomState()
+        
+        self:registerStateChangeHandlers()
+        
+        -- Set initial navigation button visibility based on current state
+        self:updateNavigationVisibility()
+    else
+        self:debug("DivisibleSpaceControls component not found (feature disabled)")
+        self.isEnabled = false
+        
+        -- Still update navigation visibility based on room identity alone
+        self:updateNavigationVisibility()
+    end
+    
+    return self.isEnabled
+end
+
+function DivisibleSpaceModule:cacheBtnRoomState()
+    -- DRY Pattern: Cache btnRoomState array for reuse across methods
+    if not self.compDivisibleSpaceControls then
+        self.btnRoomState = nil
+        return
+    end
+    
+    self.btnRoomState = {
+        self.compDivisibleSpaceControls["btnRoomState 1"],
+        self.compDivisibleSpaceControls["btnRoomState 2"],
+        self.compDivisibleSpaceControls["btnRoomState 3"]
+    }
+    
+    self:debug("btnRoomState array cached (" .. #self.btnRoomState .. " controls)")
+end
+
+function DivisibleSpaceModule:parseRoomIdentity()
+    -- Parse room identity from Uci.Variables.compRoomControls.String
+    if not Uci.Variables.compRoomControls then
+        self:debug("Warning: Uci.Variables.compRoomControls not found")
+        return
+    end
+    
+    local roomControlsName = Uci.Variables.compRoomControls.String or ""
+    
+    if roomControlsName:find("CollabA") then
+        self.roomIdentity = "CollabA"
+        self:debug("Room identity detected: Collab A")
+    elseif roomControlsName:find("CollabB") then
+        self.roomIdentity = "CollabB"
+        self:debug("Room identity detected: Collab B")
+    else
+        self:debug("Warning: Could not determine room identity from: " .. roomControlsName)
+    end
+end
+
+function DivisibleSpaceModule:getCurrentRoom()
+    return self.roomIdentity
+end
+
+function DivisibleSpaceModule:getRoomState()
+    if not self.isEnabled or not self.btnRoomState then
+        return "separated"
+    end
+    
+    if not self.btnRoomState[1] then
+        return "separated"
+    end
+    
+    if self.btnRoomState[1] and self.btnRoomState[1].Boolean then
+        return "separated"
+    elseif self.btnRoomState[2] and self.btnRoomState[2].Boolean then
+        return "combinedA"
+    elseif self.btnRoomState[3] and self.btnRoomState[3].Boolean then
+        return "combinedB"
+    end
+    
+    return "separated"
+end
+
+function DivisibleSpaceModule:getDefaultLayerAfterWarming()
+    -- Determine default layer based on room state and room identity
+    local roomState = self:getRoomState()
+    local roomIdentity = self:getCurrentRoom()
+    
+    self:debug("Determining default layer: State=" .. roomState .. ", Room=" .. tostring(roomIdentity))
+    
+    if roomState == "separated" then
+        -- Use room-specific PC layer
+        if roomIdentity == "CollabA" then
+            return self.controller.kLayerPCA
+        elseif roomIdentity == "CollabB" then
+            return self.controller.kLayerPCB
+        else
+            -- Fallback to PCA if identity unknown
+            return self.controller.kLayerPCA
+        end
+    elseif roomState == "combinedA" then
+        -- Combined on PC A - use PCA for both rooms
+        return self.controller.kLayerPCA
+    elseif roomState == "combinedB" then
+        -- Combined on PC B - use PCB for both rooms
+        return self.controller.kLayerPCB
+    end
+    
+    -- Fallback to routing layer
+    return self.controller.kLayerRouting
+end
+
+function DivisibleSpaceModule:shouldShowLayer(layerIndex)
+    -- Determine if a layer should be shown based on room state and room identity
+    local roomState = self:getRoomState()
+    local roomIdentity = self:getCurrentRoom()
+    
+    -- Define which layers are available for each room identity in separated mode
+    local layerAvailability = {
+        CollabA = {
+            [self.controller.kLayerPCA] = true,
+            [self.controller.kLayerLaptopA] = true
+        },
+        CollabB = {
+            [self.controller.kLayerPCB] = true,
+            [self.controller.kLayerLaptopB] = true
+        }
+    }
+    
+    -- If rooms are combined, all source layers are available
+    if roomState == "combinedA" or roomState == "combinedB" then
+        return true
+    end
+    
+    -- If separated, check if the layer is available for this room
+    if roomState == "separated" and layerAvailability[roomIdentity] then
+        local isAvailable = layerAvailability[roomIdentity][layerIndex]
+        if isAvailable ~= nil then
+            return isAvailable
+        end
+    end
+    
+    -- Default to showing the layer (for non-source layers like Routing, Wireless, etc.)
+    return true
+end
+
+function DivisibleSpaceModule:updateNavigationVisibility()
+    -- Update navigation button and text visibility based on room identity and separation state
+    -- btnNav EventHandlers handle showing layers; this only controls button/text visibility
+    local roomState = self:getRoomState()
+    local roomIdentity = self:getCurrentRoom()
+    local isSeparated = (roomState == "separated")
+    
+    self:debug(string.format("Updating navigation visibility: Room=%s, State=%s", 
+        tostring(roomIdentity), roomState))
+    
+    -- Configuration map: room -> navigation controls to hide when separated
+    local navConfig = {
+        CollabA = {
+            {num = "08", label = "PCB"},      -- btnNav08/txtNav08
+            {num = "10", label = "LaptopB"}   -- btnNav10/txtNav10
+        },
+        CollabB = {
+            {num = "07", label = "PCA"},      -- btnNav07/txtNav07
+            {num = "09", label = "LaptopA"}   -- btnNav09/txtNav09
+        }
+    }
+    
+    -- Get the controls to update for current room
+    local controlsToUpdate = navConfig[roomIdentity]
+    if not controlsToUpdate then return end
+    
+    -- Helper function to set visibility for a button/text pair
+    local function setNavVisibility(num, label, isInvisible)
+        local controlNames = {"btnNav" .. num, "txtNav" .. num}
+        
+        for _, controlName in ipairs(controlNames) do
+            if controls[controlName] then
+                setProp(controls[controlName], "IsInvisible", isInvisible)
+                self:debug(string.format("%s (%s) IsInvisible = %s", controlName, label, tostring(isInvisible)))
+            end
+        end
+    end
+    
+    -- Apply visibility to all configured controls
+    for _, config in ipairs(controlsToUpdate) do
+        setNavVisibility(config.num, config.label, isSeparated)
+    end
+end
+
+function DivisibleSpaceModule:registerStateChangeHandlers()
+    if not self.btnRoomState or not self.btnRoomState[1] then
+        return
+    end
+    
+    forEach(self.btnRoomState, function(i, btn)
+        bind(btn, function(ctl)
+            self:onRoomStateChanged(i, ctl.Boolean)
+        end)
+    end)
+end
+
+function DivisibleSpaceModule:onRoomStateChanged(buttonIndex, state)
+    if not state then return end
+    
+    -- Only update navigation visibility if the navbar is currently visible
+    if self.controller and self.controller.layerModule then
+        local navbarVisible = self.controller.layerModule.layerStates["Y01-Navbar"]
+        if navbarVisible then
+            self:updateNavigationVisibility()
+        end
+    end
+end
+
+function DivisibleSpaceModule:cleanup()
+    -- Cleanup event handlers
+    if self.btnRoomState then
+        forEach(self.btnRoomState, function(i, btn)
+            btn.EventHandler = nil
+        end)
+    end
+    BaseModule.cleanup(self)
 end
 
 -------------------[ UCIController (Main Orchestrator) ]---
@@ -1152,33 +1457,29 @@ function UCIController.new(uciPage, defaultRoutingLayer, defaultActiveLayer, hid
     self.kLayerWarming          = 4; 
     self.kLayerCooling          = 5; 
     self.kLayerRoomControls     = 6;
-    self.kLayerPC               = 7; 
-    self.kLayerLaptop           = 8; 
-    self.kLayerWireless         = 9;
-    self.kLayerRouting          = 10; 
-    self.kLayerDialer           = 11; 
-    self.kLayerStreamMusic      = 12;
-    self.kLayerRoomCombining    = 13;
+    self.kLayerPCA              = 7; 
+    self.kLayerPCB              = 8; 
+    self.kLayerLaptopA          = 9;
+    self.kLayerLaptopB          = 10;
+    self.kLayerWireless         = 11;
+    self.kLayerRouting          = 12; 
+    self.kLayerDialer           = 13; 
+    self.kLayerStreamMusic      = 14;
+    self.kLayerRoomCombining    = 15;
     
     -- Initialize modules
     self.layerModule            = LayerModule.new(self)
     self.sublayerModule         = SublayerModule.new(self)
-    self.routingModule          = RoutingModule.new(self)
     self.videoSwitcherModule    = VideoSwitcherModule.new(self)
     self.roomAutomationModule   = RoomAutomationModule.new(self)
     self.progressModule         = ProgressModule.new(self)
-    self.passcodeModule         = PasscodeModule.new(self)
+    self.divisibleSpaceModule   = DivisibleSpaceModule.new(self)
     
     -- Sync timer for monitoring Room Controls state
     self.syncTimer              = nil
     
     -- Touch inactivity timer for H04-RoomCombining layer
     self.uciTouchInactivityTimer = Timer.New()
-    
-    -- Setup routing
-    if defaultRoutingLayer then
-        self.routingModule.activeRoutingLayer = defaultRoutingLayer
-    end
     
     -- Initialize and register events
     self:registerEventHandlers()
@@ -1203,9 +1504,11 @@ function UCIController:onRoomCombiningInactivity()
 end
 
 function UCIController:resetTouchInactivityTimer()
-    -- Stop and clear any existing timer first to prevent immediate firing
+    -- Guard clause - ensure timer exists
+    if not self.uciTouchInactivityTimer then return end
+    
+    -- Stop any existing timer first to prevent immediate firing
     self.uciTouchInactivityTimer:Stop()
-    self.uciTouchInactivityTimer.EventHandler = nil
     
     -- Check if we're actually on the RoomCombining layer
     -- Use actual layer visibility check instead of relying on layerStates which might not be updated yet
@@ -1241,13 +1544,6 @@ function UCIController:registerEventHandlers()
         end)
     end
     
-    -- Routing button batch registration  
-    if normalizedControls.routingButtons then
-        forEach(normalizedControls.routingButtons, function(i, btn)
-            bind(btn, function() self.routingModule:routingButtonEventHandler(i) end)
-        end)
-    end
-    
     -- System control handler map with direct object references
     local systemHandlerMap = {
         [controls.btnStartSystem] = function()
@@ -1264,10 +1560,14 @@ function UCIController:registerEventHandlers()
         end
     }
     
+    -- Divisible space: Help control pairs for 4 sources + wireless/routing/streaming
     local helpControlPairs = {
-        {open = controls.btnOpenHelpLaptop, close = controls.btnCloseHelpLaptop, handler = function() self.sublayerModule:updateLaptopHelpState() end},
-        {open = controls.btnOpenHelpPC, close = controls.btnCloseHelpPC, handler = function() self.sublayerModule:updatePCHelpState() end},
-        {open = controls.btnOpenHelpWireless, close = controls.btnCloseHelpWireless, handler = function() self.sublayerModule:updateWirelessHelpState() end},
+        {open = controls.btnOpenHelpLaptopA, close = controls.btnCloseHelpLaptopA, handler = function() self.sublayerModule:updateLaptopAHelpState() end},
+        {open = controls.btnOpenHelpLaptopB, close = controls.btnCloseHelpLaptopB, handler = function() self.sublayerModule:updateLaptopBHelpState() end},
+        {open = controls.btnOpenHelpPCA, close = controls.btnCloseHelpPCA, handler = function() self.sublayerModule:updatePCAHelpState() end},
+        {open = controls.btnOpenHelpPCB, close = controls.btnCloseHelpPCB, handler = function() self.sublayerModule:updatePCBHelpState() end},
+        {open = controls.btnOpenHelpWirelessA, close = controls.btnCloseHelpWirelessA, handler = function() self.sublayerModule:updateWirelessHelpState() end},
+        {open = controls.btnOpenHelpWirelessB, close = controls.btnCloseHelpWirelessB, handler = function() self.sublayerModule:updateWirelessHelpState() end},
         {open = controls.btnOpenHelpRouting, close = controls.btnCloseHelpRouting, handler = function() self.sublayerModule:updateRoutingHelpState() end},
         {open = controls.btnOpenHelpStreamMusic, close = controls.btnCloseHelpStreamMusic, handler = function() self.sublayerModule:updateStreamMusicHelpState() end},
     }
@@ -1275,57 +1575,64 @@ function UCIController:registerEventHandlers()
             bindPairedControls(pair.open, pair.close, pair.handler)
     end
     
-    -- Helper function to check and start system if needed (check ledSystemPower status)
+    -- Helper function to check and start system if needed
     local function ensureSystemIsOn()
-        if self.roomAutomationModule.roomControlsComponent and self.roomAutomationModule.roomControlsComponent["ledSystemPower"] then
-            if not self.roomAutomationModule.roomControlsComponent["ledSystemPower"].Boolean then
+        if self.roomAutomationModule and self.roomAutomationModule.roomControlsComponent then
+            -- Check ledSystemPower status (authoritative status indicator)
+            if self.roomAutomationModule.roomControlsComponent["ledSystemPower"] and 
+               not self.roomAutomationModule.roomControlsComponent["ledSystemPower"].Boolean then
                 -- System is OFF, trigger start system
                 self:startSystem()
             end
         end
     end
     
-    -- Pin state handler map
+    -- Pin state handler map - Divisible space version (4 sources: PCA, PCB, LaptopA, LaptopB)
     -- BEST PRACTICE: Route all layer changes through btnNavEventHandler for centralized state management
     -- This ensures varActiveLayer, video switching, and navButton interlocking are always synchronized
     local pinHandlerMap = {
-        [controls.pinLEDUSBLaptop] = function(ctl)
-            if ctl.Boolean then ensureSystemIsOn() self.btnNavEventHandler(self.kLayerLaptop)
-            else
-                -- Pin went false - only update sublayers, don't change navigation state
-                self.sublayerModule:updateConferenceState()
+        -- USB connection monitoring (updates conference state only, doesn't change layers)
+        [controls.pinLEDUSBLaptopA] = function(ctl)
+            self.sublayerModule:updateConferenceState()
+        end,
+        [controls.pinLEDUSBLaptopB] = function(ctl)
+            self.sublayerModule:updateConferenceState()
+        end,
+        [controls.pinLEDUSBPCA] = function(ctl)
+            self.sublayerModule:updateConferenceState()
+        end,
+        [controls.pinLEDUSBPCB] = function(ctl)
+            self.sublayerModule:updateConferenceState()
+        end,
+        
+        -- HDMI active detection (optional - triggers automatic layer switching when source goes active)
+        [controls.pinLEDHDMIActiveLaptopA] = function(ctl)
+            if ctl.Boolean then 
+                ensureSystemIsOn() 
+                self:btnNavEventHandler(self.kLayerLaptopA)
             end
         end,
-        [controls.pinLEDUSBPC] = function(ctl)
-            if ctl.Boolean then ensureSystemIsOn() self.btnNavEventHandler(self.kLayerPC)
-            else
-                -- Pin went false - only update sublayers, don't change navigation state
-                self.sublayerModule:updateConferenceState()
+        [controls.pinLEDHDMIActiveLaptopB] = function(ctl)
+            if ctl.Boolean then 
+                ensureSystemIsOn()
+                self:btnNavEventHandler(self.kLayerLaptopB)
             end
         end,
-        [controls.pinLEDOffHookLaptop] = function(ctl)
-            if ctl.Boolean then ensureSystemIsOn() self.btnNavEventHandler(self.kLayerLaptop)
+        [controls.pinLEDHDMIActivePCA] = function(ctl)
+            if ctl.Boolean then 
+                ensureSystemIsOn()
+                self:btnNavEventHandler(self.kLayerPCA)
             end
-            -- When false, no action needed (call state change will be handled by pinCallActive)
         end,
-        [controls.pinLEDOffHookPC] = function(ctl)
-            if ctl.Boolean then ensureSystemIsOn() self.btnNavEventHandler(self.kLayerPC)
+        [controls.pinLEDHDMIActivePCB] = function(ctl)
+            if ctl.Boolean then 
+                ensureSystemIsOn()
+                self:btnNavEventHandler(self.kLayerPCB)
             end
-            -- When false, no action needed (call state change will be handled by pinCallActive)
         end,
-        [controls.pinLEDHDMI01Active] = function(ctl)
-            if ctl.Boolean then ensureSystemIsOn() self.btnNavEventHandler(self.kLayerLaptop)
-            end
-            -- When false, HDMI disconnect will be handled by pinLEDHDMI01Connect
-        end,
-        [controls.pinLEDHDMI02Active] = function(ctl)
-            if ctl.Boolean then ensureSystemIsOn() self.btnNavEventHandler(self.kLayerPC)
-            end
-            -- When false, HDMI disconnect will be handled by pinLEDHDMI02Connect
-        end,
+        
+        -- Other pin handlers
         [controls.pinLEDPresetSaved] = function() self.sublayerModule:updatePresetSavedState() end,
-        [controls.pinLEDHDMI01Connect] = function() self.sublayerModule:updateHDMI01State() end,
-        [controls.pinLEDHDMI02Connect] = function() self.sublayerModule:updateHDMI02State() end,
         [controls.pinLEDACPRBypassActive] = function() self.sublayerModule:updateACPRBypassState() end,
         [controls.pinCallActive] = function() self.sublayerModule:updateCallActiveState() end,
         
@@ -1333,14 +1640,18 @@ function UCIController:registerEventHandlers()
         [controls.pinLEDTouchActivity] = function(ctl) self:resetTouchInactivityTimer() end
     }
     
-    -- Routing Button Visibility Controls - DRY batch registration
-    for i = 1, 8 do
-        local pin = controls["pinLEDIsVisibleBtn" .. string.format("%02d", i)]
-        if pin then
-            pinHandlerMap[pin] = function(ctl) 
-                self:updateRoutingControlVisibility(i, ctl.Boolean) 
-            end
-        end
+    -- Conditionally add HDMI connection monitoring handlers for divisible space sources (optional controls)
+    if controls.pinLEDHDMIConnectedPCA then
+        pinHandlerMap[controls.pinLEDHDMIConnectedPCA] = function() self.sublayerModule:updateHDMIStatePCA() end
+    end
+    if controls.pinLEDHDMIConnectedPCB then
+        pinHandlerMap[controls.pinLEDHDMIConnectedPCB] = function() self.sublayerModule:updateHDMIStatePCB() end
+    end
+    if controls.pinLEDHDMIConnectedLaptopA then
+        pinHandlerMap[controls.pinLEDHDMIConnectedLaptopA] = function() self.sublayerModule:updateHDMIStateLaptopA() end
+    end
+    if controls.pinLEDHDMIConnectedLaptopB then
+        pinHandlerMap[controls.pinLEDHDMIConnectedLaptopB] = function() self.sublayerModule:updateHDMIStateLaptopB() end
     end
     
     -- Batch register all handler maps
@@ -1367,9 +1678,7 @@ function UCIController:shutdownSystem()
     self.layerModule:updateLayerVisibility({"D01-ShutdownConfirm"}, false, "fade")
     self.roomAutomationModule:powerOff()
     self.progressModule:startLoadingBar(false)
-    self.varActiveLayer = self.kLayerCooling
-    self.layerModule:showLayer()
-    self:interlock()
+    self:btnNavEventHandler(self.kLayerCooling)
 end
 
 -------------------[ Core Navigation Logic ]---------------
@@ -1379,45 +1688,13 @@ function UCIController:btnNavEventHandler(argIndex)
     
     -- Trigger video switcher for specific buttons
     if self.videoSwitcherModule.isEnabled then
-        local inputNumber = self.videoSwitcherModule.uciToInputMapping[argIndex]
-        if inputNumber then
-            self:debug("Triggering video switch to input " .. inputNumber)
-            self.videoSwitcherModule:switchToInput(inputNumber, argIndex)
-        end
+        -- switchToInput will determine the correct input based on room identity and UCI button
+        self.videoSwitcherModule:switchToInput(argIndex)
     end
     
     self.layerModule:showLayer()
     self:interlock()
     self:debug("Layer changed from " .. previousLayer .. " to " .. argIndex)
-end
-
-function UCIController:updateRoutingControlVisibility(buttonIndex, isVisible)
-    local indexStr = string.format("%02d", buttonIndex)
-    local controlNames = {"btnRouting" .. indexStr, "txtRouting" .. indexStr}
-    
-    for _, controlName in ipairs(controlNames) do
-        local control = controls[controlName]
-        if control then
-            setProp(control, "IsInvisible", not isVisible)
-        else
-            self:debug("Warning: " .. controlName .. " not found")
-        end
-    end
-    
-    self:debug("Routing controls " .. indexStr .. " visibility: " .. (isVisible and "shown" or "hidden"))
-end
-
-function UCIController:initializeRoutingControlVisibility()
-    -- Initialize routing button visibility based on pin states
-    for i = 1, 8 do
-        local pin = controls["pinLEDIsVisibleBtn" .. string.format("%02d", i)]
-        if pin then
-            local isVisible = pin.Boolean or false
-            self:updateRoutingControlVisibility(i, isVisible)
-        end
-    end
-    
-    self:debug("Routing control visibility initialized")
 end
 
 function UCIController:interlock()
@@ -1433,13 +1710,15 @@ function UCIController:interlock()
             [self.kLayerWarming]        = 4, 
             [self.kLayerCooling]        = 5, 
             [self.kLayerRoomControls]   = 6,
-            [self.kLayerPC]             = 7, 
-            [self.kLayerLaptop]         = 8, 
-            [self.kLayerWireless]       = 9,
-            [self.kLayerRouting]        = 10, 
-            [self.kLayerDialer]         = 11, 
-            [self.kLayerStreamMusic]    = 12,
-            [self.kLayerRoomCombining]  = 13
+            [self.kLayerPCA]            = 7, 
+            [self.kLayerPCB]            = 8, 
+            [self.kLayerLaptopA]        = 9,
+            [self.kLayerLaptopB]        = 10,
+            [self.kLayerWireless]       = 11,
+            [self.kLayerRouting]        = 12, 
+            [self.kLayerDialer]         = 13,
+            [self.kLayerStreamMusic]    = 14,
+            [self.kLayerRoomCombining]  = 15
         }
     end
     
@@ -1451,11 +1730,6 @@ function UCIController:interlock()
             local shouldBeActive = (i == activeButtonIndex)
             setProp(btn, "Boolean", shouldBeActive) -- Use setProp to prevent redundant assignments
         end
-    end
-    
-    -- Reset routing buttons when not on routing layer
-    if self.varActiveLayer ~= self.kLayerRouting then
-        self.routingModule:resetRoutingButtons()
     end
 end
 
@@ -1488,18 +1762,14 @@ function UCIController:initializeLegendArrays()
     local legendControls = {
         "txtNav01", "txtNav02", "txtNav03", "txtNav04",
         "txtNav05", "txtNav06", "txtNav07", "txtNav08",
-        "txtNav09", "txtNav10", "txtNav11", "txtNav12", "txtNav13",
+        "txtNav09", "txtNav10", "txtNav11", "txtNav12", "txtNav13","txtNav14","txtNav15",
         "txtNavShutdown", "txtRoomNameNav", "txtRoomNameStart",
         "txtRoutingRooms", "txtRouting01", "txtRouting02", "txtRouting03","txtRouting04", 
-        "txtRouting05", "txtRouting06", "txtRouting07", "txtRouting08", "txtRoutingSources",
-        "txtAudSrc01", "txtAudSrc02", "txtAudSrc03", "txtAudSrc04",
-        "txtAudSrc05", "txtAudSrc06", "txtAudSrc07", "txtAudSrc08",
+        "txtRouting05", "txtRouting06", "txtRouting07", "txtRouting08", "txtRouting09", "txtRouting10", "txtRouting11", "txtRouting12", "txtRoutingSources",
+        "txtVidSrc01", "txtVidSrc02", "txtVidSrc03", "txtVidSrc04", "txtVidSrc05", "txtVidSrc06", "txtVidSrc07", "txtVidSrc08", "txtVidSrc09", "txtVidSrc10", "txtVidSrc11", "txtVidSrc12", 
         "txtGainPGM", 
         "txtGain01", "txtGain02", "txtGain03", "txtGain04","txtGain05", "txtGain06", "txtGain07", "txtGain08", "txtGain09", "txtGain10",
-        "txtGain11", "txtGain12", "txtGain13", "txtGain14","txtGain15", "txtGain16", "txtGain17", "txtGain18", "txtGain19", "txtGain20",
-        "txtGain21", "txtGain22", "txtGain23", "txtGain24","txtGain25", "txtGain26", "txtGain27", "txtGain28", "txtGain29", "txtGain30",
-        "txtGain31", "txtGain32", "txtGain33", "txtGain34","txtGain35", "txtGain36", "txtGain37", "txtGain38", "txtGain39", "txtGain40",
-        "txtDisplay01", "txtDisplay02", "txtDisplay03", "txtDisplay04"
+        "txtDisplay01", "txtDisplay02", "txtDisplay03", "txtDisplay04", "txtDisplay05", "txtDisplay06", "txtDisplay07", "txtDisplay08", "txtDisplay09", "txtDisplay10", "txtDisplay11", "txtDisplay12", 
     }
     
     for i, controlName in ipairs(legendControls) do
@@ -1517,18 +1787,14 @@ function UCIController:initializeLegendArrays()
     local userLabelVariables = {
         "txtLabelNav01", "txtLabelNav02", "txtLabelNav03", "txtLabelNav04",
         "txtLabelNav05", "txtLabelNav06", "txtLabelNav07", "txtLabelNav08",
-        "txtLabelNav09", "txtLabelNav10", "txtLabelNav11", "txtLabelNav12", "txtLabelNav13",
+        "txtLabelNav09", "txtLabelNav10", "txtLabelNav11", "txtLabelNav12", "txtLabelNav13","txtLabelNav14","txtLabelNav15",
         "txtLabelNavShutdown", "txtLabelRoomNameNav", "txtLabelRoomNameStart",
         "txtLabelRoutingRooms", "txtLabelRouting01", "txtLabelRouting02", "txtLabelRouting03","txtLabelRouting04", 
-        "txtLabelRouting05", "txtLabelRouting06", "txtLabelRouting07", "txtLabelRouting08", "txtLabelRoutingSources",
-        "txtLabelAudSrc01", "txtLabelAudSrc02", "txtLabelAudSrc03", "txtLabelAudSrc04",
-        "txtLabelAudSrc05", "txtLabelAudSrc06", "txtLabelAudSrc07", "txtLabelAudSrc08",
+        "txtLabelRouting05", "txtLabelRouting06", "txtLabelRouting07", "txtLabelRouting08", "txtLabelRouting09", "txtLabelRouting10", "txtLabelRouting11", "txtLabelRouting12", "txtLabelRoutingSources",
+        "txtLabelVidSrc01", "txtLabelVidSrc02", "txtLabelVidSrc03", "txtLabelVidSrc04","txtLabelVidSrc05", "txtLabelVidSrc06", "txtLabelVidSrc07", "txtLabelVidSrc08","txtLabelVidSrc09", "txtLabelVidSrc10", "txtLabelVidSrc11", "txtLabelVidSrc12", 
         "txtLabelGainPGM", 
         "txtLabelGain01", "txtLabelGain02", "txtLabelGain03", "txtLabelGain04","txtLabelGain05", "txtLabelGain06", "txtLabelGain07", "txtLabelGain08", "txtLabelGain09", "txtLabelGain10",
-        "txtLabelGain11", "txtLabelGain12", "txtLabelGain13", "txtLabelGain14","txtLabelGain15", "txtLabelGain16", "txtLabelGain17", "txtLabelGain18", "txtLabelGain19", "txtLabelGain20",
-        "txtLabelGain21", "txtLabelGain22", "txtLabelGain23", "txtLabelGain24","txtLabelGain25", "txtLabelGain26", "txtLabelGain27", "txtLabelGain28", "txtLabelGain29", "txtLabelGain30",
-        "txtLabelGain31", "txtLabelGain32", "txtLabelGain33", "txtLabelGain34","txtLabelGain35", "txtLabelGain36", "txtLabelGain37", "txtLabelGain38", "txtLabelGain39", "txtLabelGain40",
-        "txtLabelDisplay01", "txtLabelDisplay02", "txtLabelDisplay03", "txtLabelDisplay04"
+        "txtLabelDisplay01", "txtLabelDisplay02", "txtLabelDisplay03", "txtLabelDisplay04", "txtLabelDisplay05", "txtLabelDisplay06", "txtLabelDisplay07", "txtLabelDisplay08", "txtLabelDisplay09", "txtLabelDisplay10", "txtLabelDisplay11", "txtLabelDisplay12", 
     }
     
     for i, varLabel in ipairs(userLabelVariables) do
@@ -1568,8 +1834,10 @@ function UCIController:init()
     -- Initialize video switcher
     self.videoSwitcherModule:initialize()
     
-    -- Initialize passcode module
-    self.passcodeModule:initializeComponent()
+    -- Initialize divisible space module (handles room identity and state monitoring)
+    if self.divisibleSpaceModule then
+        self.divisibleSpaceModule:initialize()
+    end
     
     -- Sync with Room Automation state if available
     if mySystemController and mySystemController.state then
@@ -1579,7 +1847,12 @@ function UCIController:init()
                 self.varActiveLayer = self.kLayerWarming
                 self.progressModule:startLoadingBar(true)
             else
-                self.varActiveLayer = self.defaultActiveLayer
+                -- Use DivisibleSpaceModule to determine default layer
+                if self.divisibleSpaceModule then
+                    self.varActiveLayer = self.divisibleSpaceModule:getDefaultLayerAfterWarming()
+                else
+                    self.varActiveLayer = self.defaultActiveLayer
+                end
             end
         else
             self.varActiveLayer = self.kLayerStart
@@ -1602,9 +1875,6 @@ function UCIController:init()
     self.layerModule:showLayer()
     self:interlock()
     self:updateLegends()
-    
-    -- Initialize routing button visibility based on pin states
-    self:initializeRoutingControlVisibility()
     
     -- Start synchronization timer if Room Controls component is available
     self:startSyncTimer()
@@ -1651,9 +1921,9 @@ function UCIController:cleanup()
     
     -- Cleanup all modules
     local modules = {
-        self.layerModule, self.sublayerModule, self.routingModule,
+        self.layerModule, self.sublayerModule,
         self.videoSwitcherModule, self.roomAutomationModule, self.progressModule,
-        self.passcodeModule
+        self.divisibleSpaceModule
     }
     
     for _, module in ipairs(modules) do
@@ -1763,36 +2033,22 @@ Public API:
     myUCI:cleanup()
     myUCI:startSyncTimer()
     myUCI:stopSyncTimer()
-    myUCI.videoSwitcherModule:switchToInput(inputNumber, uciButton)
+    myUCI.videoSwitcherModule:switchToInput(uciButton)
     myUCI.roomAutomationModule:powerOn()
     myUCI.roomAutomationModule:powerOff()
     myUCI.roomAutomationModule:syncRoomControlsState()
     myUCI.progressModule:startLoadingBar(isPoweringOn)
-    myUCI.passcodeModule:isPasscodeCorrect()
 
 UCI Variables (Component Discovery):
     - compRoomControls: Name of System Automation Controller component
     
-Passcode Protection Feature:
-    - Extracts room identifier from UCI page name (e.g., "uci Salon D (Touch)" -> "SalonD")
-    - Dynamically references room-specific passcode components (e.g., "passcodeSalonD")
-    - When kLayerRoomCombining is accessed:
-      * If passcode component not found: Grants access (graceful degradation)
-      * If passcode already correct: Skips H01-PasscodeEntry, shows H04-RoomCombining directly
-      * If passcode needed: Shows H01-PasscodeEntry layer first
-    - When correct passcode entered: Automatically transitions from H01-PasscodeEntry to H04-RoomCombining
-    - Optional feature - gracefully degrades if component not present
-    
 Touch Inactivity Feature:
     - Monitors touch activity on H04-RoomCombining layer via pinLEDTouchActivity control
-    - After 60 seconds of no touch activity, automatically returns to C05-Start layer
+    - After 10 seconds of no touch activity, automatically returns to C05-Start layer
     - Optional control - gracefully degrades if not present
 
 Event-Driven Synchronization:
-    - Automatic monitoring of SystemAutomationController ledSystemPower status (1s interval)
-    - Uses ledSystemPower as authoritative status indicator (not btnSystemOnOff)
-    - Sets btnSystemOnOff to trigger power changes (control)
-    - Monitors ledSystemPower to detect actual system state changes (status)
+    - Automatic monitoring of SystemAutomationController btnSystemOnOff state (1s interval)
     - Updates UCI layers and progress bar when power state changes externally
     - Prevents double-triggering of automation logic
     - Can be manually invoked via myUCI.roomAutomationModule:syncRoomControlsState()

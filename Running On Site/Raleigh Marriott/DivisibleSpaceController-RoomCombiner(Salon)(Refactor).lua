@@ -1915,8 +1915,8 @@ function DivisibleSpaceController:isRoomPoweredOn(roomName)
   for i, rn in ipairs(roomNames) do
     if rn == roomName then
       local comp = self.components.roomControls[i]
-      if comp and comp["btnSystemOnOff"] then
-        return comp["btnSystemOnOff"].Boolean
+      if comp and comp["ledSystemPower"] then
+        return comp["ledSystemPower"].Boolean
       end
       return false
     end

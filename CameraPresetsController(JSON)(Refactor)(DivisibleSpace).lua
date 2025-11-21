@@ -134,6 +134,8 @@ function CameraPresetController.new(config)
     self:initJSONModule()
     self:initCameraModule()
     self:initRouterModule()
+    self:initCallSyncModule()
+    self:initVideoBridgeModule()
     
     -- Setup event handlers and initialize
     self:registerEventHandlers()
@@ -487,6 +489,51 @@ function CameraPresetController:initRouterModule()
     }
 end
 
+--------** Call Sync Module **--------
+function CameraPresetController:initCallSyncModule()
+    self.callSyncModule = {
+        setCallSyncComponent = function()
+            self.components.callSync = self:setComponent(controls.compCallSync, "Call Sync")
+            local callSync = self.components.callSync
+            if not callSync then return end
+            
+            -- Register event handlers for call sync state changes
+            if callSync["off.hook"] then
+                bind(callSync["off.hook"], function()
+                    local hookState = callSync["off.hook"].Boolean
+                    self:debugPrint("Call Sync off.hook state: " .. tostring(hookState))
+                end)
+            end
+            
+            if callSync["mute"] then
+                bind(callSync["mute"], function()
+                    local muteState = callSync["mute"].Boolean
+                    self:debugPrint("Call Sync mute state: " .. tostring(muteState))
+                end)
+            end
+        end
+    }
+end
+
+--------** Video Bridge Module **--------
+function CameraPresetController:initVideoBridgeModule()
+    self.videoBridgeModule = {
+        setVideoBridgeComponent = function()
+            self.components.videoBridge = self:setComponent(controls.compVideoBridge, "Video Bridge")
+            local videoBridge = self.components.videoBridge
+            if not videoBridge then return end
+            
+            -- Register event handler for video privacy state changes
+            if videoBridge["toggle.privacy"] then
+                bind(videoBridge["toggle.privacy"], function()
+                    local privacyState = videoBridge["toggle.privacy"].Boolean
+                    self:debugPrint("Video Bridge privacy state: " .. tostring(privacyState))
+                end)
+            end
+        end
+    }
+end
+
 -------------------[ Component Management ]------------------
 function CameraPresetController:setComponent(ctrl, componentType)
     -- Early return guards
@@ -562,6 +609,40 @@ function CameraPresetController:populateRoomControlsChoices()
     controls.compRoomControls.Choices = names
 end
 
+function CameraPresetController:populateCallSyncChoices()
+    if not controls.compCallSync then return end
+    
+    local names = {}
+    local components = Component.GetComponents()
+    
+    for _, comp in ipairs(components) do
+        if comp.Type == "call_sync" then
+            table.insert(names, comp.Name)
+        end
+    end
+    
+    table.sort(names)
+    table.insert(names, self.clearString)
+    controls.compCallSync.Choices = names
+end
+
+function CameraPresetController:populateVideoBridgeChoices()
+    if not controls.compVideoBridge then return end
+    
+    local names = {}
+    local components = Component.GetComponents()
+    
+    for _, comp in ipairs(components) do
+        if comp.Type == "usb_uvc" then
+            table.insert(names, comp.Name)
+        end
+    end
+    
+    table.sort(names)
+    table.insert(names, self.clearString)
+    controls.compVideoBridge.Choices = names
+end
+
 --------** Event Handler Registration **--------
 function CameraPresetController:registerEventHandlers()
     -- Batch register simple control handlers using handler map
@@ -584,6 +665,19 @@ function CameraPresetController:registerEventHandlers()
             self:debugPrint("Hold Time: " .. self.config.holdTime .. "s")
         end,
     }
+    
+    -- Add optional DivisibleSpace component handlers
+    if controls.compCallSync then
+        controlHandlerMap[controls.compCallSync] = function()
+            self.callSyncModule.setCallSyncComponent()
+        end
+    end
+    
+    if controls.compVideoBridge then
+        controlHandlerMap[controls.compVideoBridge] = function()
+            self.videoBridgeModule.setVideoBridgeComponent()
+        end
+    end
     
     -- Batch bind all control handlers
     for ctrl, handler in pairs(controlHandlerMap) do
@@ -667,16 +761,29 @@ function CameraPresetController:initialize()
     -- Populate room controls dropdown
     self:populateRoomControlsChoices()
     
+    -- Populate DivisibleSpace component dropdowns
+    self:populateCallSyncChoices()
+    self:populateVideoBridgeChoices()
+    
     -- Set default camera and preset
     self:setDefaultCameraAndPreset(cameraNames)
     
     -- Setup router synchronization
-    if #routerNames > 0 and routerNames[1] then
+    if routerNames and #routerNames > 0 and routerNames[1] then
         setProp(controls.compcamRouter, "String", routerNames[1])
     end
     
     -- Set room controls component
     self.components.roomControls = self:setComponent(controls.compRoomControls, "Room Controls")
+    
+    -- Set DivisibleSpace components
+    if controls.compCallSync then
+        self.callSyncModule.setCallSyncComponent()
+    end
+    
+    if controls.compVideoBridge then
+        self.videoBridgeModule.setVideoBridgeComponent()
+    end
     
     -- Save initial state
     self.jsonModule.save()
@@ -773,6 +880,23 @@ function CameraPresetController:cleanup()
         end
     end
     
+    -- Clear call sync event handlers
+    if self.components.callSync then
+        if self.components.callSync["off.hook"] then
+            self.components.callSync["off.hook"].EventHandler = nil
+        end
+        if self.components.callSync["mute"] then
+            self.components.callSync["mute"].EventHandler = nil
+        end
+    end
+    
+    -- Clear video bridge event handlers
+    if self.components.videoBridge then
+        if self.components.videoBridge["toggle.privacy"] then
+            self.components.videoBridge["toggle.privacy"].EventHandler = nil
+        end
+    end
+    
     self:debugPrint(string.format("Cleanup complete: Stopped %d timers", timerCount))
 end
 
@@ -849,6 +973,12 @@ JSON Module Methods:
 Router Module Methods:
   .routerModule.setupRouterSync()           - Setup router output synchronization
   .routerModule.discoverRouters()           - Scan for video routers
+
+Call Sync Module Methods (DivisibleSpace):
+  .callSyncModule.setCallSyncComponent()    - Initialize and setup Call Sync component
+
+Video Bridge Module Methods (DivisibleSpace):
+  .videoBridgeModule.setVideoBridgeComponent() - Initialize and setup Video Bridge component
 
 Utility Methods:
   .cleanup()                                - Clean up timers and event handlers
