@@ -357,7 +357,7 @@ function LayerModule:showLayer()
         "C05-Start", 
         "D01-ShutdownConfirm",
         "E01-SystemProgressWarming", "E02-SystemProgressCooling", "E05-SystemProgress",
-        "H04-RoomCombining", "H05-RoomControls",
+        "H04-RoomCombining", "H08-RoomControlsCombined", "H09-RoomControlsSeparated", "H10-RoomControls",
         "I01-CallActive", "I02-HelpLaptopA", "I03-HelpLaptopB", "I04-HelpPCA", "I05-HelpPCB", "I06-HelpWirelessA", "I07-HelpWirelessB", "I08-HelpRouting", "I09-HelpDialer", "I10-HelpStreamMusic",
         "J01-ConnectUSBLaptopA", "J02-ConnectUSBLaptopB", "J03-ConnectUSBPCA", "J04-ConnectUSBPCB", 
         "J06-ACPRActiveCombined", "J07-ACPRActiveSeparated", "J08-CamPresetSaved", 
@@ -410,8 +410,9 @@ function LayerModule:showLayer()
             callLayerFunctions = {function() self:hideBaseLayers() end}
         },
         [self.controller.kLayerRoomControls] = {
-            showLayers = {"H05-RoomControls"},
+            showLayers = {"H10-RoomControls"}, -- Base layer, actual layer determined by conditionalVisibility
             hideLayers = {"X01-ProgramVolume"},
+            conditionalVisibility = true,
             callLayerFunctions = {function() self.controller.sublayerModule:updateCallActiveState() end}
         },
         [self.controller.kLayerPCA] = {
@@ -507,10 +508,22 @@ function LayerModule:showLayer()
     
     -- Check conditional visibility for divisible space layers
     if config.conditionalVisibility and self.controller.divisibleSpaceModule then
-        local shouldShow = self.controller.divisibleSpaceModule:shouldShowLayer(self.controller.varActiveLayer)
-        if not shouldShow then
-            self:debug("Layer " .. self.controller.varActiveLayer .. " hidden by divisible space conditional visibility")
-            return
+        -- Special handling for RoomControls: get the correct layer name based on isSeparated
+        if self.controller.varActiveLayer == self.controller.kLayerRoomControls then
+            local layerName = self.controller.divisibleSpaceModule:getRoomControlsLayerName()
+            if layerName then
+                config.showLayers = {layerName}
+            else
+                self:debug("Layer " .. self.controller.varActiveLayer .. " hidden - could not determine room controls layer")
+                return
+            end
+        else
+            -- Standard conditional visibility check for other layers (PCA, PCB, etc.)
+            local shouldShow = self.controller.divisibleSpaceModule:shouldShowLayer(self.controller.varActiveLayer)
+            if not shouldShow then
+                self:debug("Layer " .. self.controller.varActiveLayer .. " hidden by divisible space conditional visibility")
+                return
+            end
         end
     end
     
@@ -1451,6 +1464,18 @@ function DivisibleSpaceModule:shouldShowLayer(layerIndex)
     
     -- Default to showing the layer (for non-source layers like Routing, Wireless, etc.)
     return true
+end
+
+function DivisibleSpaceModule:getRoomControlsLayerName()
+    -- Return the correct RoomControls layer name based on isSeparated
+    local roomState = self:getRoomState()
+    local isSeparated = (roomState == "separated")
+    
+    if isSeparated then
+        return "H09-RoomControlsSeparated"
+    else
+        return "H08-RoomControlsCombined"
+    end
 end
 
 function DivisibleSpaceModule:updateNavigationVisibility()

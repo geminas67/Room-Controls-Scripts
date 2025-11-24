@@ -148,6 +148,8 @@ function MX44RouterController.new(config)
     }
     -- Component storage
     self.mx44Router = nil
+    self.compDivisibleSpaceControls = nil
+    self.roomState = false  -- Track combined state (true = combined, false = separated)
     
     -- MX44 control name pattern: "Video Routing Output X Input Y"
     self.numOutputs = 4  -- MX44 has 4 outputs
@@ -314,6 +316,11 @@ function MX44RouterController:setMX44RouterComponent()
                         setProp(btn, "Boolean", (i == inputIdx))
                     end
                     this:debugPrint("MX44 Output 1 switched to Input " .. inputIdx)
+                    
+                    -- Sync Output02 to follow Output01 when room is combined (roomState == true)
+                    if this.roomState then
+                        this:syncOutput02ToOutput01(inputIdx)
+                    end
                 end
             end
         end
@@ -337,6 +344,77 @@ function MX44RouterController:setMX44RouterComponent()
             end
         end
     end
+end
+
+-----------------[ DivisibleSpaceControls Component Setup ]-------------------
+function MX44RouterController:setDivisibleSpaceControlsComponent()
+    -- Direct component reference (no selector control)
+    local success, component = pcall(function()
+        return Component.New("compDivisibleSpaceControls")
+    end)
+    
+    if success and component then
+        self.compDivisibleSpaceControls = component
+        self:debugPrint("DivisibleSpaceControls component referenced successfully")
+        
+        -- Set up EventHandler for btnRoomState 1
+        local btnRoomState = component["btnRoomState 1"]
+        if btnRoomState then
+            local this = self  -- Capture self for use in handler
+            bind(btnRoomState, function(ctl)
+                -- btnRoomState.Boolean == false means Combined, true means Separated
+                -- Store inverse so roomState == true means Combined
+                this.roomState = not ctl.Boolean
+                this:debugPrint("Room state changed: " .. (this.roomState and "Combined" or "Separated"))
+                
+                -- If room becomes combined (btnRoomState.Boolean == false), sync Output02 to follow Output01's current route
+                if not ctl.Boolean then
+                    -- Find current Output01 route by checking MX44 router controls
+                    if this.mx44Router then
+                        for inputIdx = 1, this.numInputs do
+                            local controlName = this:getMX44ControlName(1, inputIdx)
+                            local control = this.mx44Router[controlName]
+                            if control and control.Boolean then
+                                -- Output01 is currently routed to this input, sync Output02
+                                this:syncOutput02ToOutput01(inputIdx)
+                                this:debugPrint("Synced Output02 to follow Output01 (Input " .. inputIdx .. ")")
+                                break
+                            end
+                        end
+                    end
+                end
+            end)
+            
+            -- Read initial room state (inverse: false = Combined, true = Separated)
+            self.roomState = not btnRoomState.Boolean
+            self:debugPrint("Initial room state: " .. (self.roomState and "Combined" or "Separated"))
+        else
+            self:debugPrint("Warning: btnRoomState 1 control not found in compDivisibleSpaceControls")
+        end
+    else
+        self:debugPrint("DivisibleSpaceControls component not found (feature disabled)")
+        self.compDivisibleSpaceControls = nil
+        self.roomState = false
+    end
+end
+
+-----------------[ Routing Sync Helper ]-------------------
+function MX44RouterController:syncOutput02ToOutput01(output01Input)
+    -- Sync Output02 to follow Output01 when room is combined
+    -- Mapping: Output01 Input 1-4 → Output02 Input 5-8
+    if not self.roomState then
+        return false  -- Only sync when room is combined
+    end
+    
+    if output01Input < 1 or output01Input > self.numInputs then
+        self:debugPrint("Invalid Output01 input for sync: " .. tostring(output01Input))
+        return false
+    end
+    
+    -- Use setRoute with Output02's logical input index (1-4) mapped to physical input (5-8)
+    -- setRoute expects logical input (1-4 for output 2), so we use output01Input directly
+    -- The getMX44ControlName method will map it correctly: output 2, input 1 → Input 5
+    return self:setRoute(output01Input, self.outputs.OUTPUT2)
 end
 
 -----------------[ Video Routing Functions ]-------------------
@@ -420,11 +498,17 @@ end
 function MX44RouterController:funcInit()
     self:setupComponents()
     self:setMX44RouterComponent()
+    self:setDivisibleSpaceControlsComponent()
     
     -- Set default selection to first input for both outputs
     if self.mx44Router then
         self:setRoute(1, self.outputs.OUTPUT1)
-        self:setRoute(1, self.outputs.OUTPUT2)
+        -- If room is combined (roomState == true), sync Output02 to follow Output01; otherwise set independently
+        if self.roomState then
+            self:syncOutput02ToOutput01(1)
+        else
+            self:setRoute(1, self.outputs.OUTPUT2)
+        end
     end
     
     self:debugPrint("MX44 Router Controller Initialized")

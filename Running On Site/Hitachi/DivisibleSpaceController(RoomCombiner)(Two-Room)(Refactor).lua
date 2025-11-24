@@ -198,6 +198,7 @@ function ComponentModule:discoverAndAssignComponents()
     roomControls = {},
     mxaControls = {},
     uciStatus = nil,
+    uciController = nil,
     acprComponents = {},
     camRouter = nil
   }
@@ -250,6 +251,12 @@ function ComponentModule:discoverAndAssignComponents()
     if component.Name:match(componentPatterns.uciStatus) then
       discovered.uciStatus = Component.New(component.Name)
       self:debug("Found UCI status: " .. component.Name)
+    end
+    
+    -- Find UCI controller (uciControllerCollabA)
+    if component.Name == "uciControllerCollabA" then
+      discovered.uciController = Component.New(component.Name)
+      self:debug("Found UCI controller: " .. component.Name)
     end
 
     -- Find ACPR components (compACPRCollabA, compACPRCollabB, compACPRCollabCombined)
@@ -619,8 +626,10 @@ function DivisibleSpaceController.new(roomName, debugging)
     roomControls = {},
     mxaControls = {},
     uciStatus = nil,
+    uciController = nil,
     acprComponents = {},
-    camRouter = nil
+    camRouter = nil,
+    gainComponents = {} -- Cache gain components to avoid repeated Component.New() calls
   }
   
   self.componentModule = ComponentModule.new(self)
@@ -646,6 +655,23 @@ function DivisibleSpaceController:printOperationResult(operationType, successCou
   end
 end
 
+----------------[ Component Caching ]--------------------------
+function DivisibleSpaceController:cacheGainComponents()
+  self:debugPrint("Caching gain components...")
+  
+  for i, gainName in ipairs(gainControlNames) do
+    local gainComp = Component.New(gainName)
+    if gainComp then
+      self.components.gainComponents[i] = gainComp
+      self:debugPrint("Cached gain component: " .. gainName)
+    else
+      self:debugPrint("WARNING: Failed to cache gain component: " .. gainName)
+    end
+  end
+  
+  self:debugPrint("Gain components cached: " .. #self.components.gainComponents .. "/" .. #gainControlNames)
+end
+
 ----------------[ Initialization ]--------------------------
 function DivisibleSpaceController:init()
   self:debugPrint("Starting initialization...")
@@ -657,6 +683,7 @@ function DivisibleSpaceController:init()
   self.components.roomControls = discovered.roomControls
   self.components.mxaControls = discovered.mxaControls
   self.components.uciStatus = discovered.uciStatus
+  self.components.uciController = discovered.uciController
   self.components.acprComponents = discovered.acprComponents
   self.components.camRouter = discovered.camRouter
   -- Verify critical components
@@ -691,6 +718,9 @@ function DivisibleSpaceController:init()
     self:debugPrint("WARNING: Combined ACPR component not found")
   end
   
+  -- Cache gain components to optimize repeated access
+  self:cacheGainComponents()
+  
   -- Register event handlers
   self:registerEventHandlers()
   
@@ -701,6 +731,9 @@ function DivisibleSpaceController:init()
   if self.powerSyncModule then
     self.powerSyncModule:setupRoomPowerEventHandlers()
   end
+  
+  -- Setup UCI button event handlers (for dynamic priority room changes)
+  self:setupUCIButtonEventHandlers()
   
   -- Update initial btnRoomState button disabled states based on current power state
   if self.wallModule then
@@ -733,6 +766,100 @@ function DivisibleSpaceController:registerEventHandlers()
   end
   
   self:debugPrint("Event handlers setup complete")
+end
+
+function DivisibleSpaceController:setupUCIButtonEventHandlers()
+  self:debugPrint("Setting up UCI input selection event handlers...")
+  
+  if not self.components.uciController then
+    self:debugPrint("WARNING: UCI controller component not found - skipping UCI button event handlers")
+    return
+  end
+  
+  -- Configuration-driven handler setup (DRY pattern per Lua Refactoring Prompt #28)
+  -- Reusing pattern from PowerSyncModule:setupRoomPowerEventHandlers()
+  local buttonConfigs = {
+    {
+      buttonName = "btnNav07",
+      priorityRoom = "RoomA",
+      description = "RoomA-PC"
+    },
+    {
+      buttonName = "btnNav09",
+      priorityRoom = "RoomA",
+      description = "RoomA-Laptop"
+    },
+    {
+      buttonName = "btnNav08",
+      priorityRoom = "RoomB",
+      description = "RoomB-PC"
+    },
+    {
+      buttonName = "btnNav10",
+      priorityRoom = "RoomB",
+      description = "RoomB-Laptop"
+    }
+  }
+  
+  local handlersSetup = 0
+  
+  -- Bind all handlers using configuration table
+  for _, config in ipairs(buttonConfigs) do
+    local button = self.components.uciController[config.buttonName]
+    if button then
+      local handler = function()
+        self:onUCIInputSelectionChanged()
+      end
+      -- Reuse existing bind() utility function
+      if bind(button, handler) then
+        handlersSetup = handlersSetup + 1
+        self:debugPrint("UCI button event handler set for " .. config.buttonName .. " (" .. config.description .. ")")
+      else
+        self:debugPrint("WARNING: Failed to bind handler for " .. config.buttonName)
+      end
+    else
+      self:debugPrint("WARNING: Could not set handler for " .. config.buttonName .. " - button not found")
+    end
+  end
+  
+  self:debugPrint("UCI button event handlers setup: " .. handlersSetup .. "/" .. #buttonConfigs .. " successful")
+end
+
+function DivisibleSpaceController:onUCIInputSelectionChanged()
+  self:debugPrint("UCI input selection changed - checking for priority room update...")
+  
+  -- Reuse existing patterns: Check room state and power state
+  if self:isRoomsSeparated() then
+    self:debugPrint("Rooms are separated - no priority room change needed")
+    return
+  end
+  
+  -- Check if system is already On (any room powered on)
+  -- Reuse existing isRoomPoweredOn() method (CONTROL/STATUS pattern)
+  local anyRoomOn = false
+  for _, roomName in ipairs(roomNames) do
+    if self:isRoomPoweredOn(roomName) then
+      anyRoomOn = true
+      self:debugPrint("System is ON (" .. roomName .. " powered on) - will re-apply priority-dependent routing")
+      break
+    end
+  end
+  
+  if not anyRoomOn then
+    self:debugPrint("System is OFF - priority room change noted but routing will apply when system powers on")
+    return
+  end
+  
+  -- Get current priority room to detect if it changed
+  local newPriorityRoom = self:getPriorityRoom()
+  
+  if newPriorityRoom then
+    self:debugPrint("Priority room changed to: " .. newPriorityRoom .. " - re-applying routing")
+    -- Reuse existing applyPriorityDependentRouting() method
+    self:applyPriorityDependentRouting()
+  else
+    self:debugPrint("No priority room detected from UCI buttons - keeping current routing")
+  end
 end
 
 ------------------[ Room State Management ]----------------------
@@ -772,13 +899,37 @@ end
 function DivisibleSpaceController:getPriorityRoom()
   local roomState = self:getRoomState()
   
+  -- If separated, no priority room
+  if self:isRoomsSeparated() then
+    return nil
+  end
+  
+  -- When combined, check UCI button states first (override btnRoomState priority)
+  if self.components.uciController then
+    local btnNav07 = self.components.uciController["btnNav07"]
+    local btnNav08 = self.components.uciController["btnNav08"]
+    local btnNav09 = self.components.uciController["btnNav09"]
+    local btnNav10 = self.components.uciController["btnNav10"]
+    
+    -- Check for RoomA priority: btnNav07 OR btnNav09
+    if (btnNav07 and btnNav07.Boolean) or (btnNav09 and btnNav09.Boolean) then
+      return "RoomA"
+    end
+    
+    -- Check for RoomB priority: btnNav08 OR btnNav10
+    if (btnNav08 and btnNav08.Boolean) or (btnNav10 and btnNav10.Boolean) then
+      return "RoomB"
+    end
+  end
+  
+  -- Fallback to btnRoomState logic if no UCI buttons are active
   if roomState == "RoomA_Combined" then
     return "RoomA"
   elseif roomState == "RoomB_Combined" then
     return "RoomB"
   end
   
-  return nil -- No priority in separated state
+  return nil
 end
 
 function DivisibleSpaceController:isRoomsSeparated()
@@ -867,6 +1018,16 @@ function DivisibleSpaceController:syncPowerOnCombine()
   end
 end
 
+function DivisibleSpaceController:applyPriorityDependentRouting()
+  self:debugPrint("Re-applying priority-dependent routing...")
+  
+  -- Reuse existing routing methods (DRY principle - no duplicate logic)
+  self:applyGainRouting()
+  self:applyMXAControlsRouting()
+  self:applyHidVideoBridgeRouting()
+  self:applyACPRComponentRouting()
+end
+
 function DivisibleSpaceController:applyGainRouting()
   self:debugPrint("Applying gain routing based on room state...")
   
@@ -886,11 +1047,23 @@ function DivisibleSpaceController:applyGainRouting()
         -- Each room uses own gain
         gainControlName = gainControlNames[i]
       else
-        -- Combined: use priority room's gain
-        if priorityRoom == "RoomA" then
-          gainControlName = gainControlNames[1]
-        elseif priorityRoom == "RoomB" then
-          gainControlName = gainControlNames[2]
+        -- Combined: use priority room's gain and mute non-priority gain
+        -- Use cached gain components for efficiency
+        local priorityIndex = (priorityRoom == "RoomA") and 1 or 2
+        local nonPriorityIndex = 3 - priorityIndex  -- Quick swap: 1<->2
+        
+        gainControlName = gainControlNames[priorityIndex]
+        
+        -- Get cached gain components
+        local nonPriorityGain = self.components.gainComponents[nonPriorityIndex]
+        local priorityGain = self.components.gainComponents[priorityIndex]
+        
+        -- Mute non-priority room, unmute priority room
+        if nonPriorityGain and nonPriorityGain["mute"] then
+          setProp(nonPriorityGain["mute"], "Boolean", true)
+        end
+        if priorityGain and priorityGain["mute"] then
+          setProp(priorityGain["mute"], "Boolean", false)
         end
       end
       
@@ -1135,7 +1308,7 @@ function DivisibleSpaceController:applyACPRComponentRouting()
   local routingErrors = {}
   local successfulRoutings = 0
   
-  if isSeparated then
+  if isSeparated then 
     -- Separated: Set TrackingBypass to false for components 1 and 2, true for component 3
     for i = 1, 2 do
       local acprComp = self.components.acprComponents[i]
@@ -1149,7 +1322,7 @@ function DivisibleSpaceController:applyACPRComponentRouting()
     end
     
     -- Set component 3 TrackingBypass to true
-    local acprComp3 = self.components.acprComponents[3]
+    local acprComp3 = self.components.acprComponents[3] -- make note to also set "Disable".Boolean on acrpComp[3]
     if acprComp3 and acprComp3["TrackingBypass"] then
       setProp(acprComp3["TrackingBypass"], "Boolean", true)
       successfulRoutings = successfulRoutings + 1
@@ -1169,6 +1342,7 @@ function DivisibleSpaceController:applyACPRComponentRouting()
     end
     
     -- Set CameraRouterOutput on component 3 based on priorityRoom
+    -- make note to also set "Disable".Boolean on acrpComp[1] and acrpComp[2]
     if priorityRoom then
       local outputValue = nil
       if priorityRoom == "RoomA" then

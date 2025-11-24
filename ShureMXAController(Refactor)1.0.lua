@@ -49,6 +49,24 @@ local function forEach(ctrls, fn)
     for i, ctrl in ipairs(getControlArray(ctrls)) do fn(i, ctrl) end
 end
 
+-- DRY utility: Clean up event handlers from old component before assigning new one
+-- Usage: cleanupComponentHandlers(oldComponent, controlNames, debugCallback)
+-- controlNames: table of control name strings (e.g., {"off.hook", "mute"})
+local function cleanupComponentHandlers(oldComponent, controlNames, debugCallback)
+    if not oldComponent or not controlNames then return false end
+    local cleaned = 0
+    for _, controlName in ipairs(controlNames) do
+        if oldComponent[controlName] then
+            setProp(oldComponent[controlName], "EventHandler", nil)
+            cleaned = cleaned + 1
+        end
+    end
+    if debugCallback and cleaned > 0 then
+        debugCallback("Cleaned up " .. cleaned .. " event handler(s) from old component")
+    end
+    return cleaned > 0
+end
+
 local function validateControls()
     local required = { "devMXAs", "btnMXAMute" }
     local missing = {}
@@ -402,6 +420,13 @@ end
 function ShureMXAController:setupCallSyncComponent()
     if not controls.compCallSync then return end
     
+    -- Clean up old event handlers before setting new component (DRY pattern)
+    cleanupComponentHandlers(
+        self.componentModule.components.callSync,
+        {"off.hook", "mute"},
+        function(msg) self:debugPrint("[CallSync] " .. msg) end
+    )
+    
     self.componentModule.components.callSync = self.componentModule:setComponent(controls.compCallSync, "Call Sync")
     if self.componentModule.components.callSync then
         self:registerCallSyncEventHandlers()
@@ -410,6 +435,13 @@ end
 
 function ShureMXAController:setupRoomControlsComponent()
     if not controls.compRoomControls then return end
+    
+    -- Clean up old event handlers before setting new component (DRY pattern)
+    cleanupComponentHandlers(
+        self.componentModule.components.roomControls,
+        {"ledSystemPower", "ledFireAlarm"},
+        function(msg) self:debugPrint("[RoomControls] " .. msg) end
+    )
     
     self.componentModule.components.roomControls = self.componentModule:setComponent(controls.compRoomControls, "Room Controls")
     if self.componentModule.components.roomControls then
@@ -442,11 +474,23 @@ function ShureMXAController:registerCallSyncEventHandlers()
     local callSync = self.componentModule.components.callSync
     if not callSync then return end
     
-    -- Register off-hook state handler
-    bind(callSync["off.hook"], function(ctl) self.callModule:setHookState(ctl.Boolean) end)
+    -- Get component name for debugging
+    local callSyncName = controls.compCallSync and controls.compCallSync.String or "unknown"
+    local mxaDeviceCount = self.mxaModule:getDeviceCount()
     
-    -- Register mute state handler
-    bind(callSync["mute"], function(ctl) self.callModule:setMuteState(ctl.Boolean) end)
+    -- Register off-hook state handler - only affects this instance's MXA devices
+    bind(callSync["off.hook"], function(ctl) 
+        self:debugPrint("callSync off.hook event: " .. tostring(ctl.Boolean) .. " (affecting " .. mxaDeviceCount .. " MXA device(s))")
+        self.callModule:setHookState(ctl.Boolean) 
+    end)
+    
+    -- Register mute state handler - only affects this instance's MXA devices
+    bind(callSync["mute"], function(ctl) 
+        self:debugPrint("callSync mute event: " .. tostring(ctl.Boolean) .. " (affecting " .. mxaDeviceCount .. " MXA device(s))")
+        self.callModule:setMuteState(ctl.Boolean) 
+    end)
+    
+    self:debugPrint("Registered callSync event handlers for: " .. callSyncName .. " (controlling " .. mxaDeviceCount .. " MXA device(s))")
 end
 
 function ShureMXAController:registerRoomControlsEventHandlers()

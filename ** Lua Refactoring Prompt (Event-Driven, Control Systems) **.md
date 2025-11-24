@@ -130,7 +130,15 @@ Refactor the following Lua code to make it faster and more responsive, with a fo
     - Implement parameterized handler factories for similar event types that only differ in component references.
     - Group related event handlers logically within maps for better organization and maintenance.
     - Prefer handler factories over inline function definitions when multiple handlers perform variations of the same task.
-25. **Implement Consistent Module Integration Patterns:**
+
+25. **CRITICAL: Clean Up Component Event Handlers Before Reassignment (DRY Pattern):**
+    - **REQUIRED** for any script using `.Choices` selector controls to assign components.
+    - Implement a DRY `cleanupComponentHandlers()` utility function to remove old event handlers before assigning new components.
+    - Prevents handler accumulation when components are changed programmatically (e.g., by DivisibleSpaceController).
+    - Critical in divisible space scenarios where multiple script instances may reference the same component.
+    - Must be called in ALL component setup methods (setupCallSyncComponent, setupRoomControlsComponent, setComponentByType, etc.).
+    - See Advanced DRY Pattern #33 for detailed implementation examples.
+26. **Implement Consistent Module Integration Patterns:**
     - Ensure all modules can access and use the controller's centralized utilities.
     - Design modules to delegate common operations (error reporting, status updates) to the main controller.
     - Use dependency injection to provide modules with access to centralized utilities.
@@ -450,6 +458,103 @@ end
 -- ... repeated for every layer
 ```
 
+### **33. Component Handler Cleanup Before Reassignment (CRITICAL for Divisible Spaces)**
+
+**✅ BEST PRACTICE: Always Clean Up Old Event Handlers Before Assigning New Components**
+- **REQUIRED** for any script that uses `.Choices` selector controls to assign components
+- Prevents handler accumulation when components are changed programmatically (e.g., by DivisibleSpaceController)
+- Critical in divisible space scenarios where multiple script instances may reference the same component
+- Use a DRY utility function to avoid repetitive cleanup code across multiple component setup methods
+
+**Implementation Pattern:**
+```lua
+-- ✅ CORRECT: DRY utility function for handler cleanup
+local function cleanupComponentHandlers(oldComponent, controlNames, debugCallback)
+    if not oldComponent or not controlNames then return false end
+    local cleaned = 0
+    for _, controlName in ipairs(controlNames) do
+        if oldComponent[controlName] then
+            setProp(oldComponent[controlName], "EventHandler", nil)
+            cleaned = cleaned + 1
+        end
+    end
+    if debugCallback and cleaned > 0 then
+        debugCallback("Cleaned up " .. cleaned .. " event handler(s) from old component")
+    end
+    return cleaned > 0
+end
+
+-- ✅ CORRECT: Use utility in component setup methods
+function Controller:setupCallSyncComponent()
+    if not controls.compCallSync then return end
+    
+    -- Clean up old handlers before setting new component (DRY pattern)
+    cleanupComponentHandlers(
+        self.componentModule.components.callSync,
+        {"off.hook", "mute"},
+        function(msg) self:debugPrint("[CallSync] " .. msg) end
+    )
+    
+    self.componentModule.components.callSync = self.componentModule:setComponent(controls.compCallSync, "Call Sync")
+    if self.componentModule.components.callSync then
+        self:registerCallSyncEventHandlers()
+    end
+end
+
+-- ✅ CORRECT: Alternative pattern for eventMap-based systems
+local function cleanupComponentHandlers(oldComponent, eventMap, debugCallback)
+    if not oldComponent or not eventMap then return 0 end
+    local cleaned = 0
+    for event, _ in pairs(eventMap) do
+        if oldComponent[event] then
+            oldComponent[event].EventHandler = nil
+            cleaned = cleaned + 1
+        end
+    end
+    if debugCallback and cleaned > 0 then
+        debugCallback("Cleaned up " .. cleaned .. " event handler(s) from old component")
+    end
+    return cleaned
+end
+
+-- Usage in setComponentByType pattern:
+function Controller:setComponentByType(ctrl, componentType, storage, eventMap, initCallback)
+    -- Clean up old handlers before setting new component (DRY pattern)
+    cleanupComponentHandlers(
+        self.components[storage],
+        eventMap,
+        function(msg) self:debugPrint("[" .. componentType .. "] " .. msg) end
+    )
+    
+    self.components[storage] = self:setComponent(ctrl, componentType)
+    -- ... rest of setup
+end
+
+-- ❌ WRONG: No cleanup - handlers accumulate when component changes
+function Controller:setupCallSyncComponent()
+    if not controls.compCallSync then return end
+    
+    -- ❌ Missing cleanup - old handlers remain active!
+    self.componentModule.components.callSync = self.componentModule:setComponent(controls.compCallSync, "Call Sync")
+    if self.componentModule.components.callSync then
+        self:registerCallSyncEventHandlers()  -- ❌ Adds new handlers without removing old ones
+    end
+end
+```
+
+**Why This Is Critical:**
+- In divisible spaces, when DivisibleSpaceController programmatically changes component assignments, old handlers persist
+- Multiple script instances can end up listening to the same component, causing cross-control issues
+- Without cleanup, each component change adds new handlers without removing old ones, leading to handler accumulation
+- This causes one room's component changes to affect other rooms' devices unintentionally
+
+**When to Apply:**
+- ✅ Any script that uses `.Choices` selector controls for component assignment
+- ✅ Any script that registers event handlers on component controls
+- ✅ Any script that may have components changed programmatically
+- ✅ All scripts in divisible space configurations
+- ✅ Scripts with multiple component setup methods (callSync, roomControls, devices, etc.)
+
 ---
 
 ## **Summary: DRY Architecture Checklist**
@@ -481,5 +586,12 @@ When refactoring or creating new Lua scripts, ensure:
 - [ ] Each module handles ONE domain (layers, routing, video, etc.)
 - [ ] Modules delegate to controller for shared utilities
 - [ ] Debug logging centralized via BaseModule pattern
+
+✅ **Component Handler Management (CRITICAL)**
+- [ ] `cleanupComponentHandlers()` utility function implemented for all component setup methods
+- [ ] Old event handlers cleaned up before assigning new components
+- [ ] Cleanup called in all methods that use `.Choices` selectors to assign components
+- [ ] Prevents handler accumulation in divisible space scenarios
+- [ ] Debug logging included for handler cleanup operations
 
 By following these patterns, the codebase remains **highly maintainable**, **DRY throughout**, and **easy to extend** with new features.

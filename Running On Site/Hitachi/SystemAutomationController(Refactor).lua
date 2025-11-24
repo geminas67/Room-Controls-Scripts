@@ -129,6 +129,25 @@ local function bind(ctrl, handler)
     if ctrl then ctrl.EventHandler = handler end
 end
 
+-- DRY utility: Clean up event handlers from old component before assigning new one
+-- Usage: cleanupComponentHandlers(oldComponent, eventMap, debugCallback)
+-- eventMap: table of event names (keys) and handlers (values) that were registered
+-- Returns: number of handlers cleaned up
+local function cleanupComponentHandlers(oldComponent, eventMap, debugCallback)
+    if not oldComponent or not eventMap then return 0 end
+    local cleaned = 0
+    for event, _ in pairs(eventMap) do
+        if oldComponent[event] then
+            oldComponent[event].EventHandler = nil
+            cleaned = cleaned + 1
+        end
+    end
+    if debugCallback and cleaned > 0 then
+        debugCallback("Cleaned up " .. cleaned .. " event handler(s) from old component")
+    end
+    return cleaned
+end
+
 local function bindArray(ctrls, handler)
     for i, ctrl in ipairs(getControlArray(ctrls)) do bind(ctrl, function(ctl) handler(i, ctl) end) end
 end
@@ -705,6 +724,14 @@ function SystemAutomationController:setComponentByType(ctrl, componentType, stor
         local storageKey = storage.key
         if not ctrl or not getControlArray(ctrl)[idx] then return end
         local label = storage.label or (componentType .. " [" .. idx .. "]")
+        
+        -- Clean up old event handlers before setting new component (DRY pattern)
+        cleanupComponentHandlers(
+            self.components[storageKey][idx],
+            eventMap,
+            function(msg) self:debugPrint("[" .. label .. "] " .. msg) end
+        )
+        
         self.components[storageKey][idx] = self:setComponent(getControlArray(ctrl)[idx], label)
         local comp = self.components[storageKey][idx]
         if not comp then return end
@@ -720,6 +747,13 @@ function SystemAutomationController:setComponentByType(ctrl, componentType, stor
         if initCallback then initCallback(self, idx) end
     else
         -- Single storage
+        -- Clean up old event handlers before setting new component (DRY pattern)
+        cleanupComponentHandlers(
+            self.components[storage],
+            eventMap,
+            function(msg) self:debugPrint("[" .. componentType .. "] " .. msg) end
+        )
+        
         self.components[storage] = self:setComponent(ctrl, componentType)
         local comp = self.components[storage]
         if not comp then return end
