@@ -25,6 +25,20 @@ local gainControlNames = {"lvlPGMCollabA", "lvlPGMCollabB"}
 -- compACPR name mapping - index follows roomNumberMap
 local acprControlNames = {"compACPRCollabA", "compACPRCollabB"}
 
+-- ACPR routing configuration
+-- Set to true to disable ACPR component routing (assignment and routing)
+-- Set to false to re-enable ACPR component routing (for future use)
+local acprConfig = {
+    disableACPRRouting = true  -- Set to false to re-enable ACPR component routing
+}
+
+-- hidVideoBridge routing configuration
+-- Set to true to disable hidVideoBridge routing
+-- Set to false to re-enable hidVideoBridge routing (for future use)
+local hidVideoBridgeConfig = {
+    disableHidVideoBridgeRouting = true  -- Set to false to re-enable hidVideoBridge routing
+}
+
 -- hidVideoBridge name mapping - index follows roomNumberMap
 local hidVideoBridgeNames = {"hidVideoBridgeDSP-01CollabA", "hidVideoBridgeIOB-01CollabB"}
 
@@ -1115,6 +1129,12 @@ function DivisibleSpaceController:applyMatrixMixerMutes()
 end
 
 function DivisibleSpaceController:applyACPRAssignment()
+  -- Early return if ACPR routing is disabled (non-destructive, can be re-enabled)
+  if acprConfig.disableACPRRouting then
+    self:debugPrint("ACPR assignment disabled via acprConfig")
+    return
+  end
+
   self:debugPrint("Applying acpr assignment based on room state...")
   
   local isSeparated = self:isRoomsSeparated()
@@ -1258,6 +1278,12 @@ function DivisibleSpaceController:applyUCIStatusRouting()
 end
 
 function DivisibleSpaceController:applyHidVideoBridgeRouting()
+  -- Early return if hidVideoBridge routing is disabled (non-destructive, can be re-enabled)
+  if hidVideoBridgeConfig.disableHidVideoBridgeRouting then
+    self:debugPrint("Hid video bridge routing disabled via hidVideoBridgeConfig")
+    return
+  end
+
   self:debugPrint("Applying hid video bridge routing based on room state...")
   
   local isSeparated = self:isRoomsSeparated()
@@ -1269,7 +1295,7 @@ function DivisibleSpaceController:applyHidVideoBridgeRouting()
   for i, roomName in ipairs(roomNames) do
     local roomComp = self.components.roomControls[i]
 
-    if roomComp and roomComp["hidVideoBridge 1"] then
+    if roomComp and roomComp["compVideoBridge 1"] then
       local hidVideoBridgeName = nil
 
       if isSeparated then
@@ -1285,7 +1311,10 @@ function DivisibleSpaceController:applyHidVideoBridgeRouting()
       end
       
       if hidVideoBridgeName and hidVideoBridgeName ~= "" then
-        setProp(roomComp["hidVideoBridge 1"], "String", hidVideoBridgeName)
+        setProp(roomComp["compVideoBridge 1"], "String", hidVideoBridgeName)
+        -- EventHandler on SystemAutomationController will fire automatically
+        -- (external changes from different scripts DO trigger EventHandlers)
+        -- This will clean up old VideoBridge handlers and bind new ones
         successfulRoutings = successfulRoutings + 1
         self:debugPrint(roomName .. " -> Hid Video Bridge: " .. hidVideoBridgeName)
       else
@@ -1300,6 +1329,12 @@ function DivisibleSpaceController:applyHidVideoBridgeRouting()
 end
 
 function DivisibleSpaceController:applyACPRComponentRouting()
+  -- Early return if ACPR routing is disabled (non-destructive, can be re-enabled)
+  if acprConfig.disableACPRRouting then
+    self:debugPrint("ACPR component routing disabled via acprConfig")
+    return
+  end
+
   self:debugPrint("Applying ACPR component routing based on room state...")
   
   local isSeparated = self:isRoomsSeparated()

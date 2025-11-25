@@ -23,40 +23,18 @@
 
 -- Define control references
 -- luacheck: globals Controls Timer Component
-
--- CRITICAL: For cross-instance synchronization, txtJSONStorage must be shared
--- Option 1: Use a shared external component (recommended)
--- Option 2: Use Named Controls pointing to same external control
--- Option 3: Use local control (no cross-instance sync)
-
-local sharedStorageComponent = nil
-local useSharedStorage = Controls.compSharedStorage  -- Check if shared storage component selector exists
-
-if useSharedStorage and useSharedStorage.String ~= "" then
-    -- Using shared component for cross-instance synchronization
-    local success, comp = pcall(Component.New, useSharedStorage.String)
-    if success and comp then
-        sharedStorageComponent = comp
-        print("[CameraPresetController] Using shared storage component: " .. useSharedStorage.String)
-    else
-        print("[CameraPresetController] WARNING: Could not access shared storage component, using local storage")
-    end
-end
-
 local controls = {
     devCams = Controls.devCams,
     btnCamPreset = Controls.btnCamPreset,
     ledPresetMatch = Controls.ledPresetMatch,
     ledPresetSaved = Controls.ledPresetSaved,
     knbledOnTime = Controls.knbledOnTime,
-    -- Use shared component if available, otherwise use local control
-    txtJSONStorage = sharedStorageComponent and sharedStorageComponent["txtJSONStorage"] or Controls.txtJSONStorage,
+    txtJSONStorage = Controls.txtJSONStorage,
     knbHoldTime = Controls.knbHoldTime,
     compcamRouter = Controls.compcamRouter,
     routerOutput = Controls.routerOutput,
     compRoomControls = Controls.compRoomControls,
     compCallSync = Controls.compCallSync,
-    compSharedStorage = Controls.compSharedStorage,  -- Combo box to select shared storage component
     txtStatus = Controls.txtStatus
 }
 

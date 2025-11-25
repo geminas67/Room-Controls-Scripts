@@ -95,6 +95,13 @@ local conferenceStateConfig = {
     skipLaptopB = true   -- Skip "J02-ConnectUSBLaptopB" layer for LaptopB
 }
 
+-- ACPR Show logic configuration
+-- Set to true to disable ACPR Show logic (UI layers and buttons)
+-- Set to false to re-enable ACPR Show logic (for future use)
+local acprConfig = {
+    disableACPRShow = true  -- Set to false to re-enable ACPR Show logic
+}
+
 local function validateControls()
     -- Core navigation controls
     local required = {
@@ -362,7 +369,8 @@ function LayerModule:showLayer()
         "J01-ConnectUSBLaptopA", "J02-ConnectUSBLaptopB", "J03-ConnectUSBPCA", "J04-ConnectUSBPCB", 
         "J06-ACPRActiveCombined", "J07-ACPRActiveSeparated", "J08-CamPresetSaved", 
         "J09-ACPRBtnCombined", "J10-ACPRBtnSeparated", 
-        "J11-CameraSelectionLaptopA", "J12-CameraSelectionLaptopB", "J13-CameraSelectionPCA", "J14-CameraSelectionPCB",
+        "J11-CameraSelectionLaptopA", "J12-CameraSelectionLaptopB", "J13-CameraSelectionPCA", "J14-CameraSelectionPCB", 
+        "J17-VideoPrivacySeparatedA", "J18-VideoPrivacySeparatedB", "J19-VideoPrivacyCombinedA", "J20-VideoPrivacyCombinedB",
         "J21-ConferenceControlsLaptopA", "J22-ConferenceControlsLaptopB", "J23-ConferenceControlsPCA", "J24-ConferenceControlsPCB",
         "L01-HDMIDisconnected", "L01-LaptopA",
         "L02-HDMIDisconnected", "L02-LaptopB",
@@ -604,6 +612,16 @@ function SublayerModule:updatePresetSavedState()
 end
 
 function SublayerModule:updateACPRBypassState()
+    -- Early return if ACPR Show logic is disabled (non-destructive, can be re-enabled)
+    if acprConfig.disableACPRShow then
+        -- Hide all ACPR-related layers when disabled
+        self.controller.layerModule:updateLayerVisibility({
+            "J06-ACPRActiveCombined", "J07-ACPRActiveSeparated"
+        }, false, "none")
+        self:debug("ACPR Show logic disabled via acprConfig")
+        return
+    end
+
     -- Divisible space: Check for any of the 4 source layers (PCA, PCB, LaptopA, LaptopB)
     local activeLayer = self.controller.varActiveLayer
     if activeLayer ~= self.controller.kLayerPCA and 
@@ -913,6 +931,17 @@ function SublayerModule:updateConferenceControlsLayer()
     self.controller.layerModule:updateLayerVisibility({"J23-ConferenceControlsPCA"}, showJ23, showJ23 and "fade" or "none")
     self.controller.layerModule:updateLayerVisibility({"J24-ConferenceControlsPCB"}, showJ24, showJ24 and "fade" or "none")
     
+    -- VideoPrivacy layer visibility based on conference controls and room state
+    local showJ17 = (roomState == "separated") and showJ23  -- PCA Separated
+    local showJ18 = (roomState == "separated") and showJ24  -- PCB Separated
+    local showJ19 = (roomState ~= "separated") and showJ23  -- PCA Combined
+    local showJ20 = (roomState ~= "separated") and showJ24  -- PCB Combined
+    
+    self.controller.layerModule:updateLayerVisibility({"J17-VideoPrivacySeparatedA"}, showJ17, showJ17 and "fade" or "none")
+    self.controller.layerModule:updateLayerVisibility({"J18-VideoPrivacySeparatedB"}, showJ18, showJ18 and "fade" or "none")
+    self.controller.layerModule:updateLayerVisibility({"J19-VideoPrivacyCombinedA"}, showJ19, showJ19 and "fade" or "none")
+    self.controller.layerModule:updateLayerVisibility({"J20-VideoPrivacyCombinedB"}, showJ20, showJ20 and "fade" or "none")
+    
     -- ACPR button visibility based on room state and any conference controls active
     -- Check both computed visibility AND actual layer states (in case updateACPRBypassState() shows them)
     local computedConferenceActive = (showJ21 or showJ22 or showJ23 or showJ24)
@@ -922,14 +951,16 @@ function SublayerModule:updateConferenceControlsLayer()
     local actualJ24 = self.controller.layerModule.layerStates["J24-ConferenceControlsPCB"] == true
     local conferenceActive = computedConferenceActive or actualJ21 or actualJ22 or actualJ23 or actualJ24
     
-    local showJ09 = (roomState ~= "separated") and conferenceActive
-    local showJ10 = (roomState == "separated") and conferenceActive
+    -- Force hide ACPR buttons if disabled via acprConfig (non-destructive, can be re-enabled)
+    local showJ09 = (roomState ~= "separated") and conferenceActive and not acprConfig.disableACPRShow
+    local showJ10 = (roomState == "separated") and conferenceActive and not acprConfig.disableACPRShow
     
     self.controller.layerModule:updateLayerVisibility({"J09-ACPRBtnCombined"}, showJ09, showJ09 and "fade" or "none")
     self.controller.layerModule:updateLayerVisibility({"J10-ACPRBtnSeparated"}, showJ10, showJ10 and "fade" or "none")
     
     self:debug("Camera: J11=" .. tostring(showJ11) .. ", J12=" .. tostring(showJ12) .. ", J13=" .. tostring(showJ13) .. ", J14=" .. tostring(showJ14) .. 
                " | Conference: J21=" .. tostring(showJ21) .. ", J22=" .. tostring(showJ22) .. ", J23=" .. tostring(showJ23) .. ", J24=" .. tostring(showJ24) ..
+               " | VideoPrivacy: J17=" .. tostring(showJ17) .. ", J18=" .. tostring(showJ18) .. ", J19=" .. tostring(showJ19) .. ", J20=" .. tostring(showJ20) ..
                " | ACPR: J09(Combined)=" .. tostring(showJ09) .. ", J10(Separated)=" .. tostring(showJ10) .. " | RoomState=" .. roomState)
 end
 
@@ -1332,12 +1363,14 @@ function DivisibleSpaceModule:initialize()
         
         -- Set initial navigation button visibility based on current state
         self:updateNavigationVisibility()
+        self:updateStartSystemLegend()
     else
         self:debug("DivisibleSpaceControls component not found (feature disabled)")
         self.isEnabled = false
         
         -- Still update navigation visibility based on room identity alone
         self:updateNavigationVisibility()
+        self:updateStartSystemLegend()
     end
     
     return self.isEnabled
@@ -1522,6 +1555,17 @@ function DivisibleSpaceModule:updateNavigationVisibility()
     end
 end
 
+function DivisibleSpaceModule:updateStartSystemLegend()
+    -- DRY: Single method to update btnStartSystem.Legend based on room state
+    if not controls.btnStartSystem then return end
+    
+    local roomState = self:getRoomState()
+    local legend = (roomState == "separated") and "Start Room" or "Start Rooms"
+    
+    setProp(controls.btnStartSystem, "Legend", legend)
+    self:debug("Start System button legend updated: " .. legend .. " (State: " .. roomState .. ")")
+end
+
 function DivisibleSpaceModule:registerStateChangeHandlers()
     if not self.btnRoomState or not self.btnRoomState[1] then
         return
@@ -1542,8 +1586,12 @@ function DivisibleSpaceModule:onRoomStateChanged(buttonIndex, state)
         local navbarVisible = self.controller.layerModule.layerStates["Y01-Navbar"]
         if navbarVisible then
             self:updateNavigationVisibility()
+            self:updateStartSystemLegend()
         end
     end
+    
+    -- Always update start system legend when room state changes (even if navbar not visible)
+    self:updateStartSystemLegend()
     
     -- Update conference controls layer visibility when room state changes
     -- This ensures J13/J14 camera selection layers are updated for PCA/PCB

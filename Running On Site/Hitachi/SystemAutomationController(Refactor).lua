@@ -444,7 +444,7 @@ local SystemAutomationController = {}
 SystemAutomationController.__index = SystemAutomationController
 SystemAutomationController.clearString = "[Clear]"
 SystemAutomationController.componentTypes = {
-    callSync    = "call_sync", videoBridge = "usb_uvc",
+    callSync    = "call_sync", videoBridge = "onvif_camera_operative",
     displays    = "%PLUGIN%_78a74df3-40bf-447b-a714-f564ebae238a_%FP%_bec481a6666b76b5249bbd12046c3920",
     gains       = "gain", systemMute = "system_mute",
     camACPR     = "%PLUGIN%_648260e3-c166-4b00-98ba-ba16ksnza4a63b0_%FP%_a4d2263b4380c424e16eebb67084f355"
@@ -783,6 +783,13 @@ function SystemAutomationController:setVideoBridgeComponent(idx)
         { key = "videoBridge", index = idx, label = label }, {
         ["toggle.privacy"] = function(ctrl, i) ctrl:videoBridgeCheckPrivacy(i) end
     }, function(ctrl, i) ctrl:getVideoBridgePrivacy(i) end)
+end
+
+-- Public method for external scripts to trigger VideoBridge re-initialization
+-- Used by DivisibleSpaceController when VideoBridge routing changes programmatically
+function SystemAutomationController:reinitializeVideoBridgeComponent(idx)
+    self:debugPrint("Manually re-initializing Video Bridge [" .. (idx or 1) .. "]")
+    self:setVideoBridgeComponent(idx or 1)
 end
 
 function SystemAutomationController:setGainComponent(idx)
