@@ -9,12 +9,16 @@
   - Comprehensive control validation with descriptive error messages
   - Control array normalization for consistent data structures
   - Essential utility functions (isArr, setProp, bind, bindArray, forEach)
+  - cleanupComponentHandlers() utility (Pattern #25/#33) for divisible space support
+  - Generic component setup method (Pattern #21) eliminating code duplication
+  - Centralized source input mapping logic (DRY principle)
   - Batch event registration using handler maps
   - Optimized property access with cached references
   - Factory function with enhanced error handling
   - Direct routing and state management
   - UCI integration for automatic input switching
   - Component discovery using Component.GetComponents()
+  - Full compliance with Lua Refactoring Prompt v3.0 and DRY principles
 ]]--
 
 -------------------[ Utility Functions ]-------------------
@@ -55,9 +59,29 @@ local function forEach(tbl, func)
     end
 end
 
+-- CRITICAL: Clean up old event handlers before reassigning components (Pattern #25/#33)
+-- Prevents handler accumulation in divisible space scenarios
+local function cleanupComponentHandlers(oldComponent, controlNames, debugCallback)
+    if not oldComponent or not controlNames then return 0 end
+    
+    local cleaned = 0
+    for _, controlName in ipairs(controlNames) do
+        if oldComponent[controlName] and oldComponent[controlName].EventHandler then
+            setProp(oldComponent[controlName], "EventHandler", nil)
+            cleaned = cleaned + 1
+        end
+    end
+    
+    if debugCallback and cleaned > 0 then
+        debugCallback(string.format("Cleaned up %d event handler(s) from old component", cleaned))
+    end
+    
+    return cleaned
+end
+
 -------------------[ Control References ]-------------------
 local controls = {
-    txtDestination = Controls.txtDestination,
+    txtSource = Controls.txtSource,
     btnVideoSource = Controls.btnVideoSource,
     btnDestination = Controls.btnDestination,
     ledSourceRouted = Controls.ledSourceRouted,
@@ -66,6 +90,7 @@ local controls = {
     btnNav07 = Controls['btnNav07'],
     btnNav08 = Controls['btnNav08'],
     btnNav09 = Controls['btnNav09'],
+    txtStatus = Controls.txtStatus,
     compExtronDXPMatrix = Controls.compExtronDXPMatrix,
     compCallSync = Controls.compCallSync,
     compClickShare = Controls.compClickShare,
@@ -76,10 +101,10 @@ local controls = {
 ExtronDXPMatrixController = {}
 ExtronDXPMatrixController.__index = ExtronDXPMatrixController
 
---------** Control Validation **--------
+--------------------------------[ Control Validation ]--------------------------------
 function ExtronDXPMatrixController.validateControls()
     local requiredControls = {
-        "txtDestination"
+        "txtSource",
     }
     
     local missing = {}
@@ -90,6 +115,7 @@ function ExtronDXPMatrixController.validateControls()
     end
     
     if #missing > 0 then
+        -- Use consistent error format (will be replaced by debugPrint in instance context)
         print("ERROR: Missing required controls: " .. table.concat(missing, ", "))
         return false
     end
@@ -97,7 +123,7 @@ function ExtronDXPMatrixController.validateControls()
     return true
 end
 
---------** Control Array Normalization **--------
+--------------------------------[ Control Array Normalization ]--------------------------------
 function ExtronDXPMatrixController.normalizeControlArrays()
     local normalized = {}
     
@@ -108,16 +134,16 @@ function ExtronDXPMatrixController.normalizeControlArrays()
     normalized.ledExtronSignalPresence = {}
     normalized.uciButtons = {}
     
-    -- Build video source buttons (1-5)
+    -- Build video source buttons (1-6)
     if controls.btnVideoSource then
-        for i = 1, 5 do
+        for i = 1, 6 do
             normalized.btnVideoSource[i] = controls.btnVideoSource[i]
         end
     end
     
-    -- Build destination buttons (1-4)
+    -- Build destination buttons (1-5)
     if controls.btnDestination then
-        for i = 1, 4 do
+        for i = 1, 5 do
             normalized.btnDestination[i] = controls.btnDestination[i]
         end
     end
@@ -146,7 +172,7 @@ function ExtronDXPMatrixController.normalizeControlArrays()
     return normalized
 end
 
---------** Class Constructor **--------
+--------------------------------[ Class Constructor ]--------------------------------
 function ExtronDXPMatrixController.new()
     -- Validate controls before creating instance
     if not ExtronDXPMatrixController.validateControls() then
@@ -167,11 +193,12 @@ function ExtronDXPMatrixController.new()
     
     -- Input/Output mapping
     self.inputs = {
-        ClickShare  = 1,
-        TeamsPC     = 2,
-        LaptopFront = 4,
-        LaptopRear  = 5,
-        NoSource    = 0
+        ClickShare       = 1,
+        TeamsPC          = 2,
+        TeamsPCSecondary = 3,  -- TeamsPC secondary output (auto-routed to even outputs)
+        LaptopFront      = 4,
+        LaptopRear       = 5,
+        NoSource         = 0
     }
     
     self.outputs = {
@@ -188,24 +215,52 @@ function ExtronDXPMatrixController.new()
         [9] = self.inputs.ClickShare,  -- btnNav09 → WPres (ClickShare)
     }
     
+    -- Source button index to input mapping (aligned with Extron input numbers)
+    self.sourceButtonToInput = {
+        [1] = self.inputs.ClickShare,       -- input 1
+        [2] = self.inputs.TeamsPC,          -- input 2
+        [3] = self.inputs.TeamsPCSecondary, -- input 3 (disabled, not independently routable)
+        [4] = self.inputs.LaptopFront,      -- input 4
+        [5] = self.inputs.LaptopRear,       -- input 5
+        [6] = self.inputs.NoSource          -- input 0
+    }
+    
     -- Source priority mapping (for auto-switching)
+    -- NOTE: checkFunc must handle nil safely and return explicit boolean
     self.sourcePriority = {
-        {name = "TeamsPC", input = self.inputs.TeamsPC, checkFunc = function() 
-            return self.callSync and self.callSync["off.hook"].Boolean or 
-                   self.normalizedControls.ledExtronSignalPresence[3].Boolean 
+        {name = "Teams PC", input = self.inputs.TeamsPC, checkFunc = function() 
+            -- Check CallSync off-hook OR signal presence on input 3
+            local offHook = self.callSync and self.callSync["off.hook"] and self.callSync["off.hook"].Boolean
+            local signalPresent = self.normalizedControls.ledExtronSignalPresence[3] and 
+                                  self.normalizedControls.ledExtronSignalPresence[3].Boolean
+            return offHook or signalPresent
         end},
-        {name = "LaptopFront", input = self.inputs.LaptopFront, checkFunc = function() 
-            return self.normalizedControls.ledExtronSignalPresence[4].Boolean 
+        {name = "Front Laptop", input = self.inputs.LaptopFront, checkFunc = function() 
+            local led = self.normalizedControls.ledExtronSignalPresence[4]
+            return led and led.Boolean
         end},
-        {name = "LaptopRear", input = self.inputs.LaptopRear, checkFunc = function() 
-            return self.normalizedControls.ledExtronSignalPresence[5].Boolean 
+        {name = "Rear Laptop", input = self.inputs.LaptopRear, checkFunc = function() 
+            local led = self.normalizedControls.ledExtronSignalPresence[5]
+            return led and led.Boolean
         end},
         {name = "ClickShare", input = self.inputs.ClickShare, checkFunc = function() 
-            return self.normalizedControls.ledExtronSignalPresence[1].Boolean 
+            local led = self.normalizedControls.ledExtronSignalPresence[1]
+            return led and led.Boolean
         end},
-        {name = "TeamsPC2", input = self.inputs.TeamsPC, checkFunc = function() 
-            return self.normalizedControls.ledExtronSignalPresence[2].Boolean 
+        {name = "Teams PC2", input = self.inputs.TeamsPC, checkFunc = function() 
+            local led = self.normalizedControls.ledExtronSignalPresence[2]
+            return led and led.Boolean
         end}
+    }
+    
+    -- Source names mapping (DRY: centralized for reuse)
+    self.sourceNames = {
+        [1] = "ClickShare",
+        [2] = "Teams PC",
+        [3] = "Teams PC2",
+        [4] = "Front Laptop",
+        [5] = "Rear Laptop",
+        [0] = "No Source"
     }
     
     -- Control references
@@ -238,14 +293,14 @@ function ExtronDXPMatrixController.new()
     return self
 end
 
---------** Debug Helper **--------
+--------------------------------[ Debug Helper ]--------------------------------
 function ExtronDXPMatrixController:debugPrint(str)
     if self.debugging then
         print("[Extron DXP] " .. str)
     end
 end
 
---------** UCI Integration Methods **--------
+--------------------------------[ UCI Integration Methods ]--------------------------------
 function ExtronDXPMatrixController:setUCIController(uciController)
     if not uciController then return end
     
@@ -254,6 +309,34 @@ function ExtronDXPMatrixController:setUCIController(uciController)
     
     if self.uciIntegrationEnabled then
         self:startUCIMonitoring()
+    end
+end
+
+--[[
+  CRITICAL: Never call layer navigation directly on the UCI.
+  Always use triggerUCILayer() which calls btnNav[i]:Trigger() to ensure
+  signals propagate correctly through the UCI script's event handlers.
+]]--
+function ExtronDXPMatrixController:triggerUCILayer(layer)
+    -- Map layer number to btnNav button and trigger it
+    -- This ensures the signal propagates through UCI script event handlers
+    local btnNav = self.normalizedControls.uciButtons[layer]
+    if not btnNav then
+        self:debugPrint("Warning: btnNav button for layer " .. layer .. " not found")
+        return false
+    end
+    
+    -- Use pcall to safely trigger the button
+    local success, err = pcall(function()
+        btnNav:Trigger()
+    end)
+    
+    if success then
+        self:debugPrint("Triggered UCI layer " .. layer .. " via btnNav" .. layer)
+        return true
+    else
+        self:debugPrint("Error triggering btnNav" .. layer .. ": " .. tostring(err))
+        return false
     end
 end
 
@@ -325,8 +408,8 @@ function ExtronDXPMatrixController:onUCILayerChange(layerChangeInfo)
     end
 end
 
---------** Component Management **--------
-function ExtronDXPMatrixController:setComponent(ctrl, componentType)
+--------------------------------[ Component Management ]--------------------------------
+function ExtronDXPMatrixController:setComponent(ctrl, componentType, expectedComponentType)
     if not ctrl then
         self:debugPrint("Control for " .. componentType .. " is nil!")
         self:setComponentInvalid(componentType)
@@ -351,7 +434,9 @@ function ExtronDXPMatrixController:setComponent(ctrl, componentType)
         return nil
     end
     
-    if #Component.GetControls(Component.New(componentName)) < 1 then
+    -- Validate component exists and has controls
+    local newComponent = Component.New(componentName)
+    if #Component.GetControls(newComponent) < 1 then
         self:debugPrint(componentType .. " Component " .. componentName .. " is Invalid")
         setProp(ctrl, "String", "[Invalid Component Selected]")
         setProp(ctrl, "Color", "pink")
@@ -359,10 +444,23 @@ function ExtronDXPMatrixController:setComponent(ctrl, componentType)
         return nil
     end
     
+    -- Validate component type if expected type is provided
+    if expectedComponentType then
+        local actualType = newComponent.Type
+        if actualType ~= expectedComponentType then
+            self:debugPrint(componentType .. " Component " .. componentName .. " has wrong type. Expected: " .. 
+                           tostring(expectedComponentType) .. ", Got: " .. tostring(actualType))
+            setProp(ctrl, "String", "[Wrong Component Type]")
+            setProp(ctrl, "Color", "pink")
+            self:setComponentInvalid(componentType)
+            return nil
+        end
+    end
+    
     self:debugPrint("Setting " .. componentType .. " Component: {" .. ctrl.String .. "}")
     setProp(ctrl, "Color", "white")
     self:setComponentValid(componentType)
-    return Component.New(componentName)
+    return newComponent
 end
 
 function ExtronDXPMatrixController:setComponentInvalid(componentType)
@@ -375,19 +473,20 @@ function ExtronDXPMatrixController:setComponentValid(componentType)
     self:checkStatus()
 end
 
+--------------------------------[ Status Check ]--------------------------------
 function ExtronDXPMatrixController:checkStatus()
     for i, v in pairs(self.invalidComponents) do
         if v == true then
-            setProp(self.controls.txtDestination, "String", "Invalid Components")
-            setProp(self.controls.txtDestination, "Value", 1)
+            setProp(self.controls.txtStatus, "String", "Invalid Components")
+            setProp(self.controls.txtStatus, "Value", 1)
             return
         end
     end
-    setProp(self.controls.txtDestination, "String", "OK")
-    setProp(self.controls.txtDestination, "Value", 0)
+    setProp(self.controls.txtStatus, "String", "OK")
+    setProp(self.controls.txtStatus, "Value", 0)
 end
 
---------** Component Discovery **--------
+--------------------------------[ Component Discovery ]--------------------------------
 function ExtronDXPMatrixController:discoverComponents()
     local components = Component.GetComponents()
     local discovered = {
@@ -397,49 +496,93 @@ function ExtronDXPMatrixController:discoverComponents()
         roomControlsNames = {}
     }
     
+    self:debugPrint("Starting component discovery...")
+    self:debugPrint("Looking for callSync type: '" .. tostring(self.componentTypes.callSync) .. "'")
+    self:debugPrint("Looking for roomControls type: '" .. tostring(self.componentTypes.roomControls) .. "'")
+    
     for _, comp in pairs(components) do
         if comp.Type == self.componentTypes.extronRouter then
             table.insert(discovered.extronDXPNames, comp.Name)
+            self:debugPrint("Found Extron DXP: " .. comp.Name)
         elseif comp.Type == self.componentTypes.callSync then
             table.insert(discovered.callSyncNames, comp.Name)
+            self:debugPrint("Found CallSync: " .. comp.Name .. " (Type: " .. tostring(comp.Type) .. ")")
         elseif comp.Type == self.componentTypes.ClickShare then
             table.insert(discovered.clickShareNames, comp.Name)
-        elseif comp.Type == self.componentTypes.roomControls and 
-               string.match(comp.Name, "^compRoomControls") then
-            table.insert(discovered.roomControlsNames, comp.Name)
+            self:debugPrint("Found ClickShare: " .. comp.Name)
+        elseif comp.Type == self.componentTypes.roomControls then
+            if string.match(comp.Name, "^compRoomControls") then
+                table.insert(discovered.roomControlsNames, comp.Name)
+                self:debugPrint("Found Room Controls: " .. comp.Name .. " (Type: " .. tostring(comp.Type) .. ")")
+            end
         end
     end
+    
+    self:debugPrint("Discovery complete - CallSync: " .. #discovered.callSyncNames .. 
+                   ", Room Controls: " .. #discovered.roomControlsNames)
     
     return discovered
 end
 
---------** Component Setup **--------
+--------------------------------[ Component Setup ]--------------------------------
 function ExtronDXPMatrixController:setupComponents()
     local discovered = self:discoverComponents()
     
-    -- Setup Extron DXP Router
-    if #discovered.extronDXPNames > 0 then
-        self.extronRouter = Component.New(discovered.extronDXPNames[1])
-        self:debugPrint("Extron DXP Router set: " .. discovered.extronDXPNames[1])
+    -- Helper to populate choices and set up EventHandler for a component selector
+    local function setupComponentSelector(ctrl, componentNames, setMethod, componentType)
+        if not ctrl then return end
+        
+        -- Build choices array with clear option
+        local choices = { self.clearString }
+        for _, name in ipairs(componentNames) do
+            table.insert(choices, name)
+        end
+        ctrl.Choices = choices
+        
+        -- Set up EventHandler for user selection changes
+        bind(ctrl, function()
+            self:debugPrint(componentType .. " selection changed to: " .. ctrl.String)
+            setMethod(self)
+        end)
+        
+        -- Auto-select first discovered component if available and control is empty
+        if #componentNames > 0 and (ctrl.String == "" or ctrl.String == nil) then
+            ctrl.String = componentNames[1]
+            self:debugPrint("Auto-selected " .. componentType .. ": " .. componentNames[1])
+        end
     end
     
-    -- Setup CallSync
-    if #discovered.callSyncNames > 0 then
-        self.callSync = Component.New(discovered.callSyncNames[1])
-        self:debugPrint("CallSync set: " .. discovered.callSyncNames[1])
-    end
+    -- Setup Extron DXP Router selector
+    setupComponentSelector(
+        self.controls.compExtronDXPMatrix,
+        discovered.extronDXPNames,
+        self.setExtronDXPComponent,
+        "Extron DXP Matrix"
+    )
     
-    -- Setup ClickShare
-    if #discovered.clickShareNames > 0 then
-        self.ClickShare = Component.New(discovered.clickShareNames[1])
-        self:debugPrint("ClickShare set: " .. discovered.clickShareNames[1])
-    end
+    -- Setup CallSync selector
+    setupComponentSelector(
+        self.controls.compCallSync,
+        discovered.callSyncNames,
+        self.setCallSyncComponent,
+        "CallSync"
+    )
     
-    -- Setup Room Controls
-    if #discovered.roomControlsNames > 0 then
-        self.roomControls = Component.New(discovered.roomControlsNames[1])
-        self:debugPrint("Room Controls set: " .. discovered.roomControlsNames[1])
-    end
+    -- Setup ClickShare selector
+    setupComponentSelector(
+        self.controls.compClickShare,
+        discovered.clickShareNames,
+        self.setClickShareComponent,
+        "ClickShare"
+    )
+    
+    -- Setup Room Controls selector
+    setupComponentSelector(
+        self.controls.compRoomControls,
+        discovered.roomControlsNames,
+        self.setRoomControlsComponent,
+        "Room Controls"
+    )
     
     -- Setup UCI Layer Selector (if exists)
     local success, uciSelector = pcall(function() 
@@ -451,12 +594,61 @@ function ExtronDXPMatrixController:setupComponents()
     end
 end
 
+-- Generic component setup method (DRY: consolidates repetitive setup methods - Pattern #21)
+function ExtronDXPMatrixController:setComponentByType(ctrl, componentType, storageKey, eventMap, expectedComponentType)
+    if not ctrl then return end
+    
+    -- CRITICAL: Clean up old handlers before reassigning (Pattern #25/#33)
+    local oldComponent = self[storageKey]
+    if oldComponent and eventMap then
+        local controlNames = {}
+        for controlName, _ in pairs(eventMap) do
+            table.insert(controlNames, controlName)
+        end
+        cleanupComponentHandlers(
+            oldComponent,
+            controlNames,
+            function(msg) self:debugPrint("[" .. componentType .. "] " .. msg) end
+        )
+    end
+    
+    -- Set new component with type validation
+    self[storageKey] = self:setComponent(ctrl, componentType, expectedComponentType)
+    
+    -- Register event handlers if component is valid and event map provided
+    if self[storageKey] and eventMap then
+        for controlName, handler in pairs(eventMap) do
+            if self[storageKey][controlName] then
+                bind(self[storageKey][controlName], handler)
+            end
+        end
+    end
+    
+    return self[storageKey]
+end
+
+-- Specific component setup methods (maintained for backward compatibility)
 function ExtronDXPMatrixController:setExtronDXPComponent()
     self.extronRouter = self:setComponent(self.controls.compExtronDXPMatrix, "Extron DXP Matrix")
 end
 
 function ExtronDXPMatrixController:setCallSyncComponent()
-    self.callSync = self:setComponent(self.controls.compCallSync, "CallSync")
+    -- Event map for CallSync component
+    local callSyncEventMap = {
+        ["off.hook"] = function(ctl)
+            -- No guards - checkAutoSwitch() will power on system if needed
+            self:checkAutoSwitch()
+        end
+    }
+    
+    -- Skip type validation - discovery already validated component types
+    self:setComponentByType(
+        self.controls.compCallSync,
+        "CallSync",
+        "callSync",
+        callSyncEventMap,
+        nil  -- Type already validated during discovery
+    )
 end
 
 function ExtronDXPMatrixController:setClickShareComponent()
@@ -464,44 +656,53 @@ function ExtronDXPMatrixController:setClickShareComponent()
 end
 
 function ExtronDXPMatrixController:setRoomControlsComponent()
-    self.roomControls = self:setComponent(self.controls.compRoomControls, "Room Controls")
-    
-    if not self.roomControls then return end
-    
-    -- Setup system power monitoring
-    if self.roomControls["ledSystemPower"] then
-        bind(self.roomControls["ledSystemPower"], function(ctl)
+    -- Event map for Room Controls component
+    local roomControlsEventMap = {
+        ["ledSystemPower"] = function(ctl)
             self.systemPowered = ctl.Boolean
             self:debugPrint("System power state: " .. tostring(self.systemPowered))
             if self.systemPowered then
                 self:checkAutoSwitch()
             end
-        end)
-    end
-    
-    -- Setup system warming monitoring
-    if self.roomControls["ledSystemWarming"] then
-        bind(self.roomControls["ledSystemWarming"], function(ctl)
+            -- Note: Power-off recovery handled by ledSystemCooling handler
+        end,
+        ["ledSystemWarming"] = function(ctl)
             self.systemWarming = ctl.Boolean
             self:debugPrint("System warming state: " .. tostring(self.systemWarming))
             if not self.systemWarming and self.systemPowered then
                 self:checkAutoSwitch()
             end
-        end)
-    end
+        end,
+        ["ledSystemCooling"] = function(ctl)
+            self.systemCooling = ctl.Boolean
+            self:debugPrint("System cooling state: " .. tostring(self.systemCooling))
+            if not self.systemCooling and not self.systemPowered then
+                -- System powered OFF - wait for settle then check if priority source still active
+                -- This handles accidental power-off or power loss recovery
+                Timer.CallAfter(function()
+                    self:debugPrint("Power-off settle complete, checking for active priority sources...")
+                    self:checkAutoSwitch()
+                end, 2)
+            end
+        end
+    }
+    
+    -- Skip type validation - discovery already validated component types
+    self:setComponentByType(
+        self.controls.compRoomControls,
+        "Room Controls",
+        "roomControls",
+        roomControlsEventMap,
+        nil  -- Type already validated during discovery
+    )
 end
 
---------** Routing Methods **--------
+--------------------------------[ Routing Methods ]--------------------------------
 function ExtronDXPMatrixController:setRoute(input, output)
     if not self.extronRouter then return end
     
-    self.extronRouter['output_' .. output].String = tostring(input)
+    self.extronRouter['output.' .. output].String = tostring(input)
     self:debugPrint("Set Output " .. output .. " to Input " .. input)
-    
-    -- Update destination feedback
-    if self.normalizedControls.ledSourceRouted[output] then
-        setProp(self.normalizedControls.ledSourceRouted[output], "Boolean", true)
-    end
 
     self:updateDestinationFeedback()
     self:updateDestinationText()
@@ -510,13 +711,8 @@ end
 function ExtronDXPMatrixController:clearRoute(output)
     if not self.extronRouter then return end
     
-    self.extronRouter['output_' .. output].String = '0'
+    self.extronRouter['output.' .. output].String = '0'
     self:debugPrint("Cleared Output " .. output)
-    
-    -- Update destination feedback
-    if self.normalizedControls.ledSourceRouted[output] then
-        setProp(self.normalizedControls.ledSourceRouted[output], "Boolean", false)
-    end
 
     self:updateDestinationFeedback()
     self:updateDestinationText()
@@ -526,27 +722,57 @@ function ExtronDXPMatrixController:clearAllRoutes()
     for output = 1, 4 do
         self:clearRoute(output)
     end
+    
+    -- Update source text display
+    self:updateSourceText()
 end
 
 function ExtronDXPMatrixController:setSource(input)
-    -- Route to all active destinations
-    for dest = 1, 4 do
-        local isActive = self.normalizedControls.ledSourceRouted[dest] and 
-                        self.normalizedControls.ledSourceRouted[dest].Boolean
-        if isActive then
+    if not self.extronRouter then return end
+    
+    -- Select the corresponding source button to keep UI in sync
+    self:selectSourceButton(input)
+    
+    -- TeamsPC special routing: primary to odd outputs, secondary to even outputs
+    if input == self.inputs.TeamsPC then
+        -- Route TeamsPC to outputs 1 and 3, TeamsPCSecondary to outputs 2 and 4
+        self:setRoute(self.inputs.TeamsPC, 1)
+        self:setRoute(self.inputs.TeamsPCSecondary, 2)
+        self:setRoute(self.inputs.TeamsPC, 3)
+        self:setRoute(self.inputs.TeamsPCSecondary, 4)
+    else
+        -- Normal routing: route to all 4 outputs
+        for dest = 1, 4 do
             self:setRoute(input, dest)
         end
     end
+    
+    -- Update source text display and destination feedback
+    self:updateSourceText()
+    self:updateDestinationFeedback()
 end
 
 function ExtronDXPMatrixController:updateDestinationFeedback()
     if not self.extronRouter then return end
     
+    local selectedSource = self:getSelectedSource()
+    
     for i = 1, 4 do
-        local currentInput = tonumber(self.extronRouter['output_' .. i].String) or 0
-        local isActive = currentInput > 0
+        local currentInput = tonumber(self.extronRouter['output.' .. i].String) or 0
+        local isRouted = false
+        
+        if selectedSource then
+            -- TeamsPC: consider both primary (input 2) and secondary (input 3) as "selected"
+            if selectedSource == self.inputs.TeamsPC then
+                isRouted = (currentInput == self.inputs.TeamsPC) or 
+                           (currentInput == self.inputs.TeamsPCSecondary)
+            else
+                isRouted = (currentInput == selectedSource)
+            end
+        end
+        
         if self.normalizedControls.ledSourceRouted[i] then
-            setProp(self.normalizedControls.ledSourceRouted[i], "Boolean", isActive)
+            setProp(self.normalizedControls.ledSourceRouted[i], "Boolean", isRouted)
         end
     end
 end
@@ -561,95 +787,62 @@ function ExtronDXPMatrixController:updateDestinationText()
         [4] = "Rear Right"
     }
     
-    local sourceNames = {
-        [1] = "ClickShare",
-        [2] = "TeamsPC",
-        [4] = "LaptopFront",
-        [5] = "LaptopRear",
-        [0] = "NoSource"
-    }
-    
     local activeRoutes = {}
     local activeCount = 0
     
     for output = 1, 4 do
-        local currentInput = tonumber(self.extronRouter['output_' .. output].String) or 0
+        local currentInput = tonumber(self.extronRouter['output.' .. output].String) or 0
         if currentInput > 0 then
             activeCount = activeCount + 1
-            local sourceName = sourceNames[currentInput] or "Unknown"
+            local sourceName = self.sourceNames[currentInput] or "Unknown"
             table.insert(activeRoutes, sourceName .. " → " .. destinationNames[output])
         end
     end
     
     if activeCount == 0 then
-        setProp(self.controls.txtDestination, "String", "")
+        setProp(self.controls.txtStatus, "String", "")
     elseif activeCount == 4 then
-        setProp(self.controls.txtDestination, "String", "All Displays Active")
+        setProp(self.controls.txtStatus, "String", "All Displays Active")
         Timer.CallAfter(function()
-            setProp(self.controls.txtDestination, "String", "")
+            setProp(self.controls.txtStatus, "String", "")
         end, 3)
     else
-        setProp(self.controls.txtDestination, "String", table.concat(activeRoutes, ", "))
+        setProp(self.controls.txtStatus, "String", table.concat(activeRoutes, ", "))
     end
 end
 
---------** Auto-Switching Methods **--------
+--------------------------------[ Auto-Switching Methods ]--------------------------------
 function ExtronDXPMatrixController:checkAutoSwitch()
-    if not self.systemPowered or self.systemWarming then
-        return
-    end
-    
-    -- Check sources in priority order
+    -- Check sources in priority order and route to ALL displays
     for _, source in ipairs(self.sourcePriority) do
         if source.checkFunc() then
-            -- Check if any outputs are currently active
-            local hasActiveOutputs = false
-            for output = 1, 4 do
-                local currentInput = tonumber(self.extronRouter['output_' .. output].String) or 0
-                if currentInput > 0 then
-                    hasActiveOutputs = true
-                    break
-                end
+            -- Power on system if not already powered
+            if not self.systemPowered and self.roomControls then
+                self:debugPrint("Powering on system for " .. source.name)
+                self.roomControls["btnSystemOnOff"].Boolean = true
             end
             
-            -- If no outputs are active, activate the first one
-            if not hasActiveOutputs then
-                self:setRoute(source.input, 1)
-            else
-                -- Update all active outputs to the new source
-                for output = 1, 4 do
-                    local currentInput = tonumber(self.extronRouter['output_' .. output].String) or 0
-                    if currentInput > 0 then
-                        self:setRoute(source.input, output)
-                    end
-                end
-            end
+            self:debugPrint("Auto-switching to " .. source.name)
+            self:setSource(source.input)
             return
         end
     end
 end
 
 function ExtronDXPMatrixController:setupAutoSwitchMonitoring()
-    -- Monitor CallSync off-hook state
-    if self.callSync and self.callSync["off.hook"] then
-        bind(self.callSync["off.hook"], function(ctl)
-            if self.systemPowered and not self.systemWarming then
-                self:checkAutoSwitch()
-            end
-        end)
-    end
+    -- Note: CallSync off-hook monitoring is now handled in setCallSyncComponent()
+    -- via the event map pattern for consistency
     
     -- Monitor Extron signal presence
+    -- No guards - checkAutoSwitch() will power on system if needed
     forEach(self.normalizedControls.ledExtronSignalPresence, function(i, ctrl)
         bind(ctrl, function(ctl)
-            if self.systemPowered and not self.systemWarming then
-                self:checkAutoSwitch()
-            end
+            self:checkAutoSwitch()
         end)
     end)
 end
 
---------** Helper Methods **--------
+--------------------------------[ Helper Methods ]--------------------------------
 function ExtronDXPMatrixController:setDestinationButtonProperties(output, color, text, disabled)
     local btn = self.normalizedControls.btnDestination[output]
     if not btn then return end
@@ -658,85 +851,126 @@ function ExtronDXPMatrixController:setDestinationButtonProperties(output, color,
     if text and text ~= "" then
         setProp(btn, "String", text)
     end
-    setProp(btn, "Disabled", disabled)
+    setProp(btn, "IsDisabled", disabled)
     
     self:debugPrint("Set destination button " .. output .. " properties: color=" .. 
                    color .. ", disabled=" .. tostring(disabled))
 end
 
 function ExtronDXPMatrixController:getSelectedSource()
-    for src = 1, 5 do
+    -- DRY: Use centralized source button to input mapping
+    for src = 1, 6 do
         local btn = self.normalizedControls.btnVideoSource[src]
         if btn and btn.Boolean then
-            if src == 1 then return self.inputs.ClickShare
-            elseif src == 2 then return self.inputs.TeamsPC
-            elseif src == 3 then return self.inputs.LaptopFront
-            elseif src == 4 then return self.inputs.LaptopRear
-            elseif src == 5 then return self.inputs.NoSource
-            end
+            return self.sourceButtonToInput[src]
         end
     end
     return nil
 end
 
---------** Event Handler Registration **--------
+function ExtronDXPMatrixController:selectSourceButton(input)
+    -- Find and select the button that corresponds to this input
+    for btnIndex, inputNum in pairs(self.sourceButtonToInput) do
+        if inputNum == input then
+            -- Deselect all buttons
+            for i = 1, 6 do
+                local btn = self.normalizedControls.btnVideoSource[i]
+                if btn then setProp(btn, "Boolean", false) end
+            end
+            -- Select the matching button
+            local btn = self.normalizedControls.btnVideoSource[btnIndex]
+            if btn then 
+                setProp(btn, "Boolean", true)
+                self:updateSourceText()
+            end
+            return
+        end
+    end
+end
+
+function ExtronDXPMatrixController:updateSourceText()
+    local selectedInput = self:getSelectedSource()
+    local sourceName = "No Source"
+    
+    if selectedInput and self.sourceNames[selectedInput] then
+        sourceName = self.sourceNames[selectedInput]
+    end
+    
+    setProp(self.controls.txtSource, "String", sourceName)
+end
+
+--------------------------------[ Event Handler Registration ]--------------------------------
 function ExtronDXPMatrixController:registerEventHandlers()
     -- Source selection buttons (interlocking)
     local sourceHandlers = {}
-    for i = 1, 5 do
+    for i = 1, 6 do
         local btn = self.normalizedControls.btnVideoSource[i]
         if btn then
             sourceHandlers[btn] = function(ctl)
                 if not ctl.Boolean then return end
                 
                 -- Deselect all other sources (interlocking)
-                for j = 1, 5 do
-                    if j ~= i then
-                        local otherBtn = self.normalizedControls.btnVideoSource[j]
+                for srcButton = 1, 6 do
+                    if srcButton ~= i then
+                        local otherBtn = self.normalizedControls.btnVideoSource[srcButton]
                         if otherBtn then setProp(otherBtn, "Boolean", false) end
                     end
                 end
                 
-                -- Get the input for this source
-                local sourceInput = nil
-                if i == 1 then sourceInput = self.inputs.ClickShare
-                elseif i == 2 then sourceInput = self.inputs.TeamsPC
-                elseif i == 3 then sourceInput = self.inputs.LaptopFront
-                elseif i == 4 then sourceInput = self.inputs.LaptopRear
-                elseif i == 5 then sourceInput = self.inputs.NoSource
-                end
-                
-                if not sourceInput then return end
-                
-                -- Route source to all active destinations
-                for dest = 1, 4 do
-                    local isActive = self.normalizedControls.ledSourceRouted[dest] and 
-                                   self.normalizedControls.ledSourceRouted[dest].Boolean
-                    if isActive then
-                        self:setRoute(sourceInput, dest)
-                    end
-                end
-                
-                -- Handle Teams PC button properties
-                if i == 2 then
+                -- Handle Teams PC button properties (disable even outputs)
+                -- Check for both TeamsPC (index 2) and TeamsPC2 (index 3)
+                if i == 2 or i == 3 then
                     self:setDestinationButtonProperties(2, '#ff6666', 'N/A', true)
                     self:setDestinationButtonProperties(4, '#ff6666', 'N/A', true)
                 else
-                    self:setDestinationButtonProperties(2, 'white', '', false)
-                    self:setDestinationButtonProperties(4, 'white', '', false)
+                    self:setDestinationButtonProperties(2, '#ff7c7c7c', '', false)
+                    self:setDestinationButtonProperties(4, '#ff7c7c7c', '', false)
                 end
+                
+                -- Update source text display and destination feedback LEDs
+                self:updateSourceText()
+                self:updateDestinationFeedback()
             end
         end
     end
     
     -- Destination selection buttons
     local destinationHandlers = {}
-    for i = 1, 4 do
+    for i = 1, 5 do
         local btn = self.normalizedControls.btnDestination[i]
         if btn then
             destinationHandlers[btn] = function(ctl)
                 local selectedSource = self:getSelectedSource()
-                if selectedSource then
+                if not selectedSource then return end
+                
+                -- btnDestination[5]: Route to ALL destinations
+                if i == 5 then
+                    if selectedSource == self.inputs.TeamsPC or selectedSource == self.inputs.TeamsPCSecondary then
+                        -- TeamsPC: route input 2 to outputs 1,3 and input 3 to outputs 2,4
+                        self:setRoute(self.inputs.TeamsPC, 1)
+                        self:setRoute(self.inputs.TeamsPCSecondary, 2)
+                        self:setRoute(self.inputs.TeamsPC, 3)
+                        self:setRoute(self.inputs.TeamsPCSecondary, 4)
+                    else
+                        -- Normal sources: route to all 4 outputs
+                        for dest = 1, 4 do
+                            self:setRoute(selectedSource, dest)
+                        end
+                    end
+                -- TeamsPC special routing: primary to odd outputs, secondary to adjacent even outputs
+                elseif selectedSource == self.inputs.TeamsPC or selectedSource == self.inputs.TeamsPCSecondary then
+                    if i == 1 then
+                        -- btnDestination[1]: TeamsPC to output 1, TeamsPCSecondary to output 2
+                        self:setRoute(self.inputs.TeamsPC, 1)
+                        self:setRoute(self.inputs.TeamsPCSecondary, 2)
+                    elseif i == 3 then
+                        -- btnDestination[3]: TeamsPC to output 3, TeamsPCSecondary to output 4
+                        self:setRoute(self.inputs.TeamsPC, 3)
+                        self:setRoute(self.inputs.TeamsPCSecondary, 4)
+                    end
+                    -- btnDestination[2] and [4] are disabled when TeamsPC is selected
+                else
+                    -- Normal routing: route selected source to pressed destination
                     self:setRoute(selectedSource, i)
                 end
             end
@@ -771,7 +1005,7 @@ function ExtronDXPMatrixController:registerEventHandlers()
     self:debugPrint("Event handlers registered successfully")
 end
 
---------** Initialization **--------
+--------------------------------[ Initialization ]--------------------------------
 function ExtronDXPMatrixController:funcInit()
     self:setupComponents()
     self:setExtronDXPComponent()
@@ -786,10 +1020,20 @@ function ExtronDXPMatrixController:funcInit()
         self.systemWarming = self.roomControls["ledSystemWarming"].Boolean
     end
     
+    -- Disable TeamsPC2 button (input 3 cannot be routed independently)
+    local teamsPC2Btn = self.normalizedControls.btnVideoSource[3]
+    if teamsPC2Btn then
+        setProp(teamsPC2Btn, "IsDisabled", true)
+        setProp(teamsPC2Btn, "Color", "#ff6666")
+    end
+    
+    -- Initialize destination feedback LEDs
+    self:updateDestinationFeedback()
+    
     self:debugPrint("Extron DXP Controller initialization complete")
 end
 
---------** Cleanup **--------
+--------------------------------[ Cleanup ]--------------------------------
 function ExtronDXPMatrixController:cleanup()
     if self.uciMonitorTimer then
         self.uciMonitorTimer:Stop()
@@ -800,7 +1044,7 @@ function ExtronDXPMatrixController:cleanup()
     self:debugPrint("Cleanup completed")
 end
 
---------** Factory Function **--------
+--------------------------------[ Factory Function ]--------------------------------
 local function createExtronDXPMatrixController(config)
     local defaultConfig = {
         debugging = true,
@@ -814,15 +1058,16 @@ local function createExtronDXPMatrixController(config)
     end)
     
     if success and controller then
-        print("✓ Successfully created Extron DXP Matrix Controller")
+        -- Use debugPrint for consistency (controller.debugging may be false, so direct print here)
+        print("[Extron DXP] ✓ Successfully created Extron DXP Matrix Controller")
         return controller
     else
-        print("✗ Failed to create Extron DXP Matrix Controller: " .. tostring(controller))
+        print("[Extron DXP] ✗ Failed to create Extron DXP Matrix Controller: " .. tostring(controller))
         return nil
     end
 end
 
---------** Instance Creation **--------
+--------------------------------[ Instance Creation ]--------------------------------
 myExtronDXPMatrixController = createExtronDXPMatrixController()
 
 --[[
@@ -839,6 +1084,12 @@ UCI Layer to Input Mapping:
   - Layer 8 (btnNav08) → LaptopFront (input 4)  
   - Layer 9 (btnNav09) → ClickShare (input 1)
 
+CRITICAL: Layer Navigation Pattern
+  - NEVER call layer navigation directly on the UCI
+  - ALWAYS use triggerUCILayer(layer) which calls btnNav[i]:Trigger()
+  - This ensures signals propagate correctly through the UCI script's event handlers
+  - Direct layer manipulation bypasses UCI script logic and can cause state desynchronization
+
 Auto-switching Integration:
   - Monitors system power and warming states
   - Integrates with CallSync off-hook detection
@@ -849,11 +1100,15 @@ REFACTORING SUMMARY:
 ✓ Comprehensive control validation with descriptive error messages
 ✓ Control array normalization for consistent data structures
 ✓ Essential utility functions (isArr, setProp, bind, bindArray, forEach)
+✓ cleanupComponentHandlers() utility (Pattern #25/#33) - CRITICAL for divisible spaces
+✓ Generic component setup method (Pattern #21) - eliminates code duplication
+✓ Centralized source input mapping logic - DRY principle compliance
 ✓ Batch event registration using handler maps
 ✓ Optimized property access with cached references
 ✓ Factory function with enhanced error handling
 ✓ Direct routing and state management
 ✓ Flattened control flow with early returns
 ✓ Component discovery using Component.GetComponents()
-✓ Follows Lua Refactoring Prompt specifications v3.0
+✓ Full compliance with Lua Refactoring Prompt specifications v3.0
+✓ DRY principles applied throughout
 ]]--

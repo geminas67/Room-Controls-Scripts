@@ -55,9 +55,6 @@ local uciNames = {"uciCollabB", "uciCollabA"}
 -- ACPR component name mapping 
 local acprOutputNames = {"01", "02"}
 
--- Cam router output controlname mapping -- index follows roomNumberMap
-local camRouterOutputControlNames = {"select.1", "select.2"}
-
 -- Component name patterns for discovery
 local componentPatterns = {
   roomControls = "^compRoomControls",         -- Expects: compRoomControlsCollabA, compRoomControlsCollabB

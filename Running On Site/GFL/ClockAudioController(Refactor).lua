@@ -1,14 +1,21 @@
 --[[
   ClockAudioCDTMicController - Q-SYS Control Script for ClockAudio CDT 100
-  Author: Nikolas Smith
-  Date: 2025-09-10
-  Version: 2.0
-  Description: ClockAudio CDT microphone controller with optimized event handling
-  Notes: Refactored per Lua Refactoring Prompt (event-driven, OOP modular)
-         - Added comprehensive control validation and error handling
-         - Implemented utility functions for efficient array operations
-         - Enhanced batch event registration patterns
-         - Improved factory pattern with better error messaging
+  Author: Nikolas Smith, Q-SYS
+  Date: 2025-01-27
+  Version: 3.0
+  Firmware Req: 10.0.0
+
+  Refactored to Lua Refactoring Prompt specifications:
+  - Comprehensive control validation with descriptive error messages
+  - Control array normalization for consistent data structures
+  - Essential utility functions (isArr, setProp, bind, bindArray, forEach)
+  - cleanupComponentHandlers() utility (Pattern #25/#33) for divisible space support
+  - Batch event registration using handler maps (Pattern #28)
+  - Optimized property access with cached references
+  - Factory function with enhanced error handling
+  - Direct routing and state management
+  - Component discovery using Component.GetComponents()
+  - Full compliance with Lua Refactoring Prompt v3.0 and DRY principles
 ]]--
 
 local controls = {
@@ -99,7 +106,8 @@ local function getControlArray(control)
 end
 
 local function setProp(obj, prop, value)
-    if not obj or not obj[prop] or obj[prop] == value then return false end
+    if not obj or not prop then return false end
+    if obj[prop] == value then return false end  -- Guard against redundant assignments
     obj[prop] = value
     return true
 end
@@ -131,6 +139,26 @@ local function forEach(array, func)
         end
     end
     return count
+end
+
+-- CRITICAL: Clean up old event handlers before reassigning components (Pattern #25/#33)
+-- Prevents handler accumulation in divisible space scenarios
+local function cleanupComponentHandlers(oldComponent, controlNames, debugCallback)
+    if not oldComponent or not controlNames then return 0 end
+    
+    local cleaned = 0
+    for _, controlName in ipairs(controlNames) do
+        if oldComponent[controlName] and oldComponent[controlName].EventHandler then
+            setProp(oldComponent[controlName], "EventHandler", nil)
+            cleaned = cleaned + 1
+        end
+    end
+    
+    if debugCallback and cleaned > 0 then
+        debugCallback(string.format("Cleaned up %d event handler(s) from old component", cleaned))
+    end
+    
+    return cleaned
 end
 
 -----------------[ Class Constructor ]-------------------
@@ -265,11 +293,42 @@ function ClockAudioCDTMicController:checkStatus()
 end
 
 function ClockAudioCDTMicController:setupComponents()
+    -- CRITICAL: Clean up old handlers before reassigning components (Pattern #25/#33)
+    -- Room Controls component handlers
+    cleanupComponentHandlers(
+        self.components.roomControls,
+        {"ledSystemPower", "ledFireAlarm"},
+        function(msg) self:debugPrint("[Room Controls] " .. msg) end
+    )
     self.components.roomControls = self:setComponent(controls.compRoomControls, "Room Controls")
+    
+    -- Call Sync component handlers
+    cleanupComponentHandlers(
+        self.components.callSync,
+        {"off.hook", "mute"},
+        function(msg) self:debugPrint("[Call Sync] " .. msg) end
+    )
     self.components.callSync = self:setComponent(controls.compCallSync, "Call Sync")
+    
+    -- Mic Mixer component (no event handlers, but included for consistency)
     self.components.micMixer = self:setComponent(controls.compMicMixer, "Mic Mixer")
+    
+    -- Mic Box components (clean up handlers for all buttons 1-12 on each box)
     for i = 1, 4 do
         if controls.compMicBox[i] then
+            local oldBox = self.components.micBoxes[i]
+            if oldBox then
+                -- Build control names for all buttons (1-12)
+                local buttonControlNames = {}
+                for btnNum = 1, 12 do
+                    table.insert(buttonControlNames, "ButtonState " .. btnNum)
+                end
+                cleanupComponentHandlers(
+                    oldBox,
+                    buttonControlNames,
+                    function(msg) self:debugPrint("[MicBox"..string.format("%02d", i).."] " .. msg) end
+                )
+            end
             self.components.micBoxes[i] = self:setComponent(controls.compMicBox[i], "MicBox"..string.format("%02d", i))
         end
     end

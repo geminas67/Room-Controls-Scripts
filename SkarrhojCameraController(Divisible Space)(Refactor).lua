@@ -44,7 +44,10 @@ local function getControlArray(ctrl)
 end
 
 local function setProp(ctrl, prop, val)
-    if ctrl then ctrl[prop] = val end
+    if not ctrl then return false end
+    if ctrl[prop] == val then return false end  -- Redundancy guard (Pattern #27)
+    ctrl[prop] = val
+    return true
 end
 
 local function bind(ctrl, handler)
@@ -59,6 +62,26 @@ end
 
 local function forEach(ctrls, fn)
     for i, ctrl in ipairs(getControlArray(ctrls)) do fn(i, ctrl) end
+end
+
+local function cleanupComponentHandlers(oldComponent, controlNames, debugCallback)
+    -- CRITICAL: Clean up old event handlers before reassigning (Pattern #33)
+    -- Prevents handler accumulation in divisible space scenarios
+    if not oldComponent or not controlNames then return 0 end
+    
+    local cleaned = 0
+    for _, controlName in ipairs(controlNames) do
+        if oldComponent[controlName] and oldComponent[controlName].EventHandler then
+            oldComponent[controlName].EventHandler = nil
+            cleaned = cleaned + 1
+        end
+    end
+    
+    if debugCallback and cleaned > 0 then
+        debugCallback(string.format("Cleaned up %d event handler(s) from old component", cleaned))
+    end
+    
+    return cleaned
 end
 
 -------------------[ Base Module Class ]------------------
@@ -836,9 +859,30 @@ function SkaarhojPTZControllerMultiRoom:setCallSyncComponents()
     for i = 1, 2 do
         local success, control = pcall(function() return controls.compCallSync[i] end)
         if success and control then
+            -- Clean up old handlers before setting new component (Pattern #33)
+            if self.components.callSync and self.components.callSync[i] then
+                cleanupComponentHandlers(
+                    self.components.callSync[i],
+                    {"off.hook"},
+                    function(msg) self:debugPrint("[CallSync " .. i .. "] " .. msg) end
+                )
+            end
+            
             self:debugPrint("Setting up callSync component " .. i)
             local roomLabel = i == 1 and "Rm-A" or "Rm-B"
             self.components.callSync[i] = self:setComponent(control, "Call Sync " .. roomLabel)
+            
+            -- Register event handlers for new component
+            if self.components.callSync[i] and self.components.callSync[i]["off.hook"] then
+                self.components.callSync[i]["off.hook"].EventHandler = function()
+                    local hookState = self:safeComponentAccess(self.components.callSync[i], "off.hook", "get")
+                    if i == 1 then
+                        self.hookStateModule:handleRoomAHookState(hookState)
+                    else
+                        self.hookStateModule:handleRoomBHookState(hookState)
+                    end
+                end
+            end
         else
             self:debugPrint("Failed to access controls.compCallSync[" .. i .. "]: " .. tostring(control))
         end
@@ -861,8 +905,28 @@ function SkaarhojPTZControllerMultiRoom:setCompRoomControlsComponents()
     
     for i = 1, 2 do
         if controls.compRoomControls[i] then
+            -- Clean up old handlers before setting new component (Pattern #33)
+            if self.components.compRoomControls and self.components.compRoomControls[i] then
+                cleanupComponentHandlers(
+                    self.components.compRoomControls[i],
+                    {"ledSystemPower"},
+                    function(msg) self:debugPrint("[RoomControls " .. i .. "] " .. msg) end
+                )
+            end
+            
             local roomLabel = i == 1 and "Rm-A" or "Rm-B"
             self.components.compRoomControls[i] = self:setComponent(controls.compRoomControls[i], "Room Controls " .. roomLabel)
+            
+            -- Register event handlers for new component
+            if self.components.compRoomControls[i] and self.components.compRoomControls[i]["ledSystemPower"] then
+                self.components.compRoomControls[i]["ledSystemPower"].EventHandler = function()
+                    local systemPowerState = self:safeComponentAccess(self.components.compRoomControls[i], "ledSystemPower", "get")
+                    if not systemPowerState then
+                        setProp(controls.btnProductionMode, "Boolean", false)
+                        self.hookStateModule:handleSystemPowerOff()
+                    end
+                end
+            end
         end
     end
 end
@@ -926,17 +990,10 @@ end
 function SkaarhojPTZControllerMultiRoom:registerComponentEventHandlers()
     self:debugPrint("Registering component event handlers...")
     -- Call Sync event handlers
-    self:debugPrint("Registering Call Sync event handlers")
-    self:debugPrint("callSync components table: " .. tostring(self.components.callSync))
-    if self.components.callSync then
-        self:debugPrint("callSync table length: " .. tostring(#self.components.callSync))
-    end
-    -- Safely iterate over callSync components
     if self.components.callSync then
         for i, callSync in ipairs(self.components.callSync) do
-            self:debugPrint("Registering event handler for callSync[" .. i .. "]")
-            if callSync and callSync["off.hook"] then
-                self:debugPrint("Setting up off.hook event handler for callSync " .. i)
+            if callSync and callSync["off.hook"] and not callSync["off.hook"].EventHandler then
+                self:debugPrint("Registering event handler for callSync[" .. i .. "]")
                 callSync["off.hook"].EventHandler = function()
                     local hookState = self:safeComponentAccess(callSync, "off.hook", "get")
                     if i == 1 then
@@ -945,12 +1002,8 @@ function SkaarhojPTZControllerMultiRoom:registerComponentEventHandlers()
                         self.hookStateModule:handleRoomBHookState(hookState)
                     end
                 end
-            else
-                self:debugPrint("callSync[" .. i .. "] or off.hook control not available")
             end
         end
-    else
-        self:debugPrint("No callSync components to register")
     end
     -- PTZ Controller event handlers
     if self.components.skaarhojPTZController then
@@ -959,7 +1012,7 @@ function SkaarhojPTZControllerMultiRoom:registerComponentEventHandlers()
     end
     -- Room Controls event handlers
     for i, roomControl in ipairs(self.components.compRoomControls) do
-        if roomControl and roomControl["ledSystemPower"] then
+        if roomControl and roomControl["ledSystemPower"] and not roomControl["ledSystemPower"].EventHandler then
             roomControl["ledSystemPower"].EventHandler = function()
                 local systemPowerState = self:safeComponentAccess(roomControl, "ledSystemPower", "get")
                 if not systemPowerState then
@@ -995,6 +1048,23 @@ end
 
 -------------------[ Component Setters ]--------------------
 function SkaarhojPTZControllerMultiRoom:setSkaarhojPTZComponent()
+    -- Clean up old handlers before setting new component (Pattern #33)
+    if self.components.skaarhojPTZController then
+        local ptz = self.components.skaarhojPTZController
+        local controlNames = {}
+        for i = 1, 4 do
+            table.insert(controlNames, "Button" .. i .. ".press")
+        end
+        table.insert(controlNames, "Button8.press")
+        table.insert(controlNames, "Button9.press")
+        
+        cleanupComponentHandlers(
+            ptz,
+            controlNames,
+            function(msg) self:debugPrint("[SkaarhojPTZ] " .. msg) end
+        )
+    end
+    
     self.components.skaarhojPTZController = self:setComponent(controls.compdevSkaarhojPTZ, "Skaarhoj PTZ Controller")
     if self.components.skaarhojPTZController then
         self:registerPTZButtonHandlers()
