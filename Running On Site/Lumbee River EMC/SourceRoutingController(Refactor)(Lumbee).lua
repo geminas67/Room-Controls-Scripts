@@ -1,13 +1,13 @@
 --[[
     Source Routing Controller (Refactored)
     Author: Nikolas Smith, Q-SYS
-    Version: 2.0 | Date: 2025-11-07
+    Version: 2.1 | Date: 2025-01-XX
     Firmware Req: 10.0.0
     Notes:
     - Refactored per Lua Refactoring Prompt specifications (event-driven, OOP modular)
     - Manages audio source routing for divisible space (Rm-A, Rm-B, Combined EMC TR)
+    - Simplified to only manage output muting (output.1.mute) - input muting removed
     - All event registration is DRY and centralized using control/event maps
-    - Configuration-driven routing logic eliminates repetitive switch statements
     - Early returns and guard clauses for flattened control flow
 ]]
 
@@ -17,16 +17,17 @@ local components = {
     emcUCISelector = Component.New('uciLayerSelectorEMC'),
     rmAUCISelector = Component.New('uciLayerSelectorRmA'),
     rmBUCISelector = Component.New('uciLayerSelectorRmB'),
-    rmBPowerState = Component.New('selPowerStateRmB'),
     rmAPowerState = Component.New('selPowerStateRmA'),
-    rmBMixer = Component.New('mixerPGMRmB'),
+    rmBPowerState = Component.New('selPowerStateRmB'),
     rmAMixer = Component.New('mixerPGMRmA'),
+    rmBMixer = Component.New('mixerPGMRmB'),
     combinerSS = Component.New('snapshotCombinerEMC'),
     rmAStatusBar = Component.New('barStatusRmA'),
-    displayControlsA = Component.New('compDisplayControlsRoomA'),
     rmBStatusBar = Component.New('barStatusRmB'),
+    displayControlsA = Component.New('compDisplayControlsRoomA'),
     displayControlsB = Component.New('compDisplayControlsRoomB'),
-    displayControlsEMC = Component.New('compDisplayControlsMain')
+    emcDisplayController = Component.New('compDisplayControlsMain'),
+    routerPGM = Component.New('routerPGM')
 }
 
 -------------------[ Utility Functions ]-------------------
@@ -94,16 +95,6 @@ SourceRoutingModule.__index = SourceRoutingModule
 function SourceRoutingModule.new(controller)
     local self = setmetatable(BaseModule.new(controller, "SourceRouting"), SourceRoutingModule)
     
-    -- Configuration-driven routing maps for DRY pattern
-    self.mixerChannelMap = {
-        Laptop = { channels = {1, 4}, delay = 0.2 },
-        PC = { channels = {3, 5}, delay = 0.2 },
-        WPres = { channels = {2}, delay = 0.2 },
-        -- DispatchPC01 and DispatchPC02 do not contain audio channels
-        SignagePC = { channels = {6}, delay = 0.2 },
-        MediaPlayer = { channels = {7}, delay = 0.2 },
-    }
-    
     -- Display button mappings for each source
     self.displayButtonMap = {
         RmA_DispatchPC01 = { roomA = 1, roomB = nil },
@@ -135,74 +126,40 @@ function SourceRoutingModule.new(controller)
     return self
 end
 
-function SourceRoutingModule:muteAllChannels(mixer)
+function SourceRoutingModule:muteMixer(mixer)
     if not mixer then return end
-    
-    for i = 1, 7 do
-        setProp(mixer['input_' .. i .. '_mute'], "Boolean", true)
-    end
-    self:debug("Muted all channels on " .. (mixer == components.rmAMixer and "Room A" or "Room B") .. " mixer")
+    setProp(mixer["output.1.mute"], "Boolean", true)
+    self:debug("Muted " .. (mixer == components.rmAMixer and "Room A" or "Room B") .. " mixer output")
+end
+
+function SourceRoutingModule:unmuteMixer(mixer)
+    if not mixer then return end
+    setProp(mixer["output.1.mute"], "Boolean", false)
+    self:debug("Unmuted " .. (mixer == components.rmAMixer and "Room A" or "Room B") .. " mixer output")
 end
 
 function SourceRoutingModule:muteAllRooms()
-    self:muteAllChannels(components.rmAMixer)
-    self:muteAllChannels(components.rmBMixer)
-    self:debug("Muted all channels in both rooms")
+    self:muteMixer(components.rmAMixer)
+    self:muteMixer(components.rmBMixer)
+    self:debug("Muted both room mixer outputs")
 end
 
-function SourceRoutingModule:unmuteChannels(mixer, sourceType)
-    if not mixer or not sourceType then return end
-    
-    local config = self.mixerChannelMap[sourceType]
-    if not config then
-        self:debug("Invalid source type: " .. tostring(sourceType))
-        return
-    end
-    
-    -- Mute all channels first
-    self:muteAllChannels(mixer)
-    
-    -- Unmute specified channels after delay
-    Timer.CallAfter(function()
-        for _, channel in ipairs(config.channels) do
-            setProp(mixer['input_' .. channel .. '_mute'], "Boolean", false)
-        end
-        self:debug("Unmuted channels " .. table.concat(config.channels, ", ") .. " on mixer")
-    end, config.delay)
+function SourceRoutingModule:unmuteAllRooms()
+    self:unmuteMixer(components.rmAMixer)
+    self:unmuteMixer(components.rmBMixer)
+    self:debug("Unmuted both room mixer outputs")
 end
 
 function SourceRoutingModule:routeAudio(room, sourceType)
-    local mixer = (room == "RmA") and components.rmAMixer or 
-                  (room == "RmB") and components.rmBMixer or nil
-    
-    if not mixer then
-        self:debug("Invalid room: " .. tostring(room))
-        return
-    end
-    
-    self:unmuteChannels(mixer, sourceType)
-    self:debug("Routed audio: " .. room .. " -> " .. sourceType)
+    -- Audio routing is now handled by output muting via updateOutputMuteStates()
+    -- This function is kept for API compatibility but does not perform input muting
+    self:debug("Route audio requested: " .. room .. " -> " .. sourceType .. " (output muting handled by controller)")
 end
 
 function SourceRoutingModule:routeCombinedAudio(sourceRoom, sourceType)
-    -- For combined mode, route to both mixers but only unmute the source room's channels
-    local sourceMixer = (sourceRoom == "RmA") and components.rmAMixer or components.rmBMixer
-    
-    -- Mute all channels in both rooms first
-    self:muteAllRooms()
-    
-    -- Get config for delay and channels
-    local config = self.mixerChannelMap[sourceType]
-    if not config then return end
-    
-    -- Unmute only the source room's channels
-    Timer.CallAfter(function()
-        for _, channel in ipairs(config.channels) do
-            setProp(sourceMixer['input_' .. channel .. '_mute'], "Boolean", false)
-        end
-    end, config.delay)
-    
-    self:debug("Routed combined audio: " .. sourceRoom .. " -> " .. sourceType)
+    -- Audio routing is now handled by output muting via updateOutputMuteStates()
+    -- This function is kept for API compatibility but does not perform input muting
+    self:debug("Route combined audio requested: " .. sourceRoom .. " -> " .. sourceType .. " (output muting handled by controller)")
 end
 
 function SourceRoutingModule:triggerDisplayButton(buttonConfig)
@@ -235,21 +192,8 @@ function SourceRoutingModule:handleEMCDisplayButtonPress(buttonIndex)
     local buttonConfig = self.displayButtonMap[sourceConfig.key]
     self:triggerDisplayButton(buttonConfig)
     
-    -- Route audio if source has audio channels
-    if sourceConfig.source then
-        -- Mute all channels first
-        self:muteAllRooms()
-        
-        -- Unmute the source channels on Room A mixer only (to avoid doubling audio in combined space)
-        local config = self.mixerChannelMap[sourceConfig.source]
-        if config then
-            Timer.CallAfter(function()
-                for _, channel in ipairs(config.channels) do
-                    setProp(components.rmAMixer['input_' .. channel .. '_mute'], "Boolean", false)
-                end
-            end, config.delay)
-        end
-    end
+    -- Audio routing is now handled by output muting via updateOutputMuteStates()
+    -- No input muting needed
     
     self:debug("EMC display button " .. buttonIndex .. " pressed: " .. sourceConfig.key)
 end
@@ -299,6 +243,7 @@ function SourceRoutingController.new(config)
     self.debugging = (config and config.debugging) or true
     self.sourceRoutingModule = SourceRoutingModule.new(self)
     self.stateModule = StateModule.new(self)
+    self.activeRoom = nil  -- Track current active room when combined
     
     -- Source routing configuration for EMC combined mode
     self.emcRoutingConfig = {
@@ -333,6 +278,33 @@ function SourceRoutingController:debugPrint(msg)
     end
 end
 
+function SourceRoutingController:updateOutputMuteStates()
+    local isCombined = self.stateModule:isCombined()
+    
+    if isCombined then
+        -- Combined mode: unmute only the active room's mixer, mute the other
+        if self.activeRoom == "RmA" then
+            setProp(components.rmAMixer["output.1.mute"], "Boolean", false)
+            setProp(components.rmBMixer["output.1.mute"], "Boolean", true)
+            self:debugPrint("Combined mode - Room A active: RmA unmuted, RmB muted")
+        elseif self.activeRoom == "RmB" then
+            setProp(components.rmAMixer["output.1.mute"], "Boolean", true)
+            setProp(components.rmBMixer["output.1.mute"], "Boolean", false)
+            self:debugPrint("Combined mode - Room B active: RmA muted, RmB unmuted")
+        else
+            -- No active room set yet, mute both
+            setProp(components.rmAMixer["output.1.mute"], "Boolean", true)
+            setProp(components.rmBMixer["output.1.mute"], "Boolean", true)
+            self:debugPrint("Combined mode - No active room: both muted")
+        end
+    else
+        -- Separated mode: unmute both mixers
+        setProp(components.rmAMixer["output.1.mute"], "Boolean", false)
+        setProp(components.rmBMixer["output.1.mute"], "Boolean", false)
+        self:debugPrint("Separated mode: both mixers unmuted")
+    end
+end
+
 -------------------[ Routing Logic ]-------------------
 function SourceRoutingController:handleEMCSelection(selectorIndex)
     -- Early returns for invalid states
@@ -353,12 +325,15 @@ function SourceRoutingController:handleEMCSelection(selectorIndex)
         return
     end
     
-    -- Route audio using combined mode
-    self.sourceRoutingModule:routeCombinedAudio(routeConfig.room, routeConfig.source)
+    -- Store active room and update output mute states
+    self.activeRoom = routeConfig.room
     
     -- Trigger display buttons
     local buttonConfig = self.sourceRoutingModule.displayButtonMap[routeConfig.key]
     self.sourceRoutingModule:triggerDisplayButton(buttonConfig)
+    
+    -- Update output mute states based on active room
+    self:updateOutputMuteStates()
     
     self:debugPrint("EMC routing: " .. routeConfig.key)
 end
@@ -382,12 +357,12 @@ function SourceRoutingController:handleRoomASelection(selectorIndex)
         return
     end
     
-    -- Route audio to Room A
-    self.sourceRoutingModule:routeAudio(routeConfig.room, routeConfig.source)
-    
     -- Trigger display button for Room A only
     local buttonConfig = self.sourceRoutingModule.displayButtonMap[routeConfig.key]
     self.sourceRoutingModule:triggerDisplayButton(buttonConfig)
+    
+    -- Update output mute states (separated mode - both unmuted)
+    self:updateOutputMuteStates()
     
     self:debugPrint("Room A routing: " .. routeConfig.key)
 end
@@ -411,12 +386,12 @@ function SourceRoutingController:handleRoomBSelection(selectorIndex)
         return
     end
     
-    -- Route audio to Room B
-    self.sourceRoutingModule:routeAudio(routeConfig.room, routeConfig.source)
-    
     -- Trigger display button for Room B only
     local buttonConfig = self.sourceRoutingModule.displayButtonMap[routeConfig.key]
     self.sourceRoutingModule:triggerDisplayButton(buttonConfig)
+    
+    -- Update output mute states (separated mode - both unmuted)
+    self:updateOutputMuteStates()
     
     self:debugPrint("Room B routing: " .. routeConfig.key)
 end
@@ -428,7 +403,8 @@ function SourceRoutingController:registerEventHandlers()
         bind(components.initTrigger['percent_output'], function(ctl)
             if ctl.Position == 1 then
                 self.sourceRoutingModule:muteAllRooms()
-                self:debugPrint("System initialized - all sources muted")
+                self:updateOutputMuteStates()
+                self:debugPrint("System initialized - all mixer outputs muted")
             end
         end)
     end
@@ -445,9 +421,9 @@ function SourceRoutingController:registerEventHandlers()
                 end
             end
             
-            -- If no valid selector is active and not combined, mute all
+            -- If no valid selector is active and not combined, update output states
             if not self.stateModule:isCombined() then
-                self.sourceRoutingModule:muteAllRooms()
+                self:updateOutputMuteStates()
             end
         end)
     end
@@ -484,8 +460,8 @@ function SourceRoutingController:registerEventHandlers()
     if components.rmAPowerState then
         bind(components.rmAPowerState['selector.0'], function(ctl)
             if ctl.Boolean then
-                self.sourceRoutingModule:muteAllChannels(components.rmAMixer)
-                self:debugPrint("Room A powered off - muted")
+                self.sourceRoutingModule:muteMixer(components.rmAMixer)
+                self:debugPrint("Room A powered off - mixer output muted")
             end
         end)
     end
@@ -494,108 +470,56 @@ function SourceRoutingController:registerEventHandlers()
     if components.rmBPowerState then
         bind(components.rmBPowerState['selector.0'], function(ctl)
             if ctl.Boolean then
-                self.sourceRoutingModule:muteAllChannels(components.rmBMixer)
-                self:debugPrint("Room B powered off - muted")
+                self.sourceRoutingModule:muteMixer(components.rmBMixer)
+                self:debugPrint("Room B powered off - mixer output muted")
             end
         end)
     end
     
     -- EMC Main Display Controller button handlers for Combined mode sources
-    if components.displayControlsEMC then
-        -- DispatchPC01 button (no audio) - mute all inputs
-        bind(components.displayControlsEMC['btnSource 1'], function(ctl)
+    if components.emcDisplayController then
+        -- DispatchPC01 button (no audio)
+        bind(components.emcDisplayController['btnSource 1'], function(ctl)
             if ctl.Boolean and self.stateModule:isCombined() then
                 self.sourceRoutingModule:handleEMCDisplayButtonPress(1)
-                self.sourceRoutingModule:muteAllRooms()
             end
         end)
         
-        -- DispatchPC02 button (no audio) - mute all inputs
-        bind(components.displayControlsEMC['btnSource 2'], function(ctl)
+        -- DispatchPC02 button (no audio)
+        bind(components.emcDisplayController['btnSource 2'], function(ctl)
             if ctl.Boolean and self.stateModule:isCombined() then
                 self.sourceRoutingModule:handleEMCDisplayButtonPress(2)
-                self.sourceRoutingModule:muteAllRooms()
             end
         end)
         
         -- SignagePC button (has audio - channel 6)
-        bind(components.displayControlsEMC['btnSource 11'], function(ctl)
+        bind(components.emcDisplayController['btnSource 11'], function(ctl)
             if ctl.Boolean and self.stateModule:isCombined() then
                 self.sourceRoutingModule:handleEMCDisplayButtonPress(11)
             end
         end)
         
         -- MediaPlayer button (has audio - channel 7)
-        bind(components.displayControlsEMC['btnSource 12'], function(ctl)
+        bind(components.emcDisplayController['btnSource 12'], function(ctl)
             if ctl.Boolean and self.stateModule:isCombined() then
                 self.sourceRoutingModule:handleEMCDisplayButtonPress(12)
             end
         end)
     end
     
-    -- Room A Display Controller button handlers
-    if components.displayControlsA then
-        -- DispatchPC01 button (no audio) - mute all Room A inputs
-        bind(components.displayControlsA['btnSource 1'], function(ctl)
-            if ctl.Boolean then
-                self.sourceRoutingModule:muteAllChannels(components.rmAMixer)
+    -- Combiner state change handler
+    if components.combinerSS then
+        bind(components.combinerSS['load_2'], function(ctl)
+            local isCombined = ctl.Boolean
+            if isCombined then
+                -- Transitioning to combined: update output mute states if active room is set
+                self:updateOutputMuteStates()
+            else
+                -- Transitioning to separated: reset active room and unmute both
+                self.activeRoom = nil
+                self:updateOutputMuteStates()
             end
-        end)
-        
-        -- DispatchPC02 button (no audio) - mute all Room A inputs
-        bind(components.displayControlsA['btnSource 2'], function(ctl)
-            if ctl.Boolean then
-                self.sourceRoutingModule:muteAllChannels(components.rmAMixer)
-            end
-        end)
-        
-        -- SignagePC button (has audio - channel 6)
-        bind(components.displayControlsA['btnSource 11'], function(ctl)
-            if ctl.Boolean then
-                self.sourceRoutingModule:muteAllChannels(components.rmAMixer)
-                setProp(components.rmAMixer['input.6.mute'], "Boolean", false)
-            end
-        end)
-        
-        -- MediaPlayer button (has audio - channel 7)
-        bind(components.displayControlsA['btnSource 12'], function(ctl)
-            if ctl.Boolean then
-                self.sourceRoutingModule:muteAllChannels(components.rmAMixer)
-                setProp(components.rmAMixer['input.7.mute'], "Boolean", false)
-            end
-        end)
-    end
-    
-    -- Room B Display Controller button handlers
-    if components.displayControlsB then
-        -- DispatchPC01 button (no audio) - mute all Room B inputs
-        bind(components.displayControlsB['btnSource 1'], function(ctl)
-            if ctl.Boolean then
-                self.sourceRoutingModule:muteAllChannels(components.rmBMixer)
-            end
-        end)
-        
-        -- DispatchPC02 button (no audio) - mute all Room B inputs
-        bind(components.displayControlsB['btnSource 2'], function(ctl)
-            if ctl.Boolean then
-                self.sourceRoutingModule:muteAllChannels(components.rmBMixer)
-            end
-        end)
-        
-        -- SignagePC button (has audio - channel 6)
-        bind(components.displayControlsB['btnSource 11'], function(ctl)
-            if ctl.Boolean then
-                self.sourceRoutingModule:muteAllChannels(components.rmBMixer)
-                setProp(components.rmBMixer['input.6.mute'], "Boolean", false)
-            end
-        end)
-        
-        -- MediaPlayer button (has audio - channel 7)
-        bind(components.displayControlsB['btnSource 12'], function(ctl)
-            if ctl.Boolean then
-                self.sourceRoutingModule:muteAllChannels(components.rmBMixer)
-                setProp(components.rmBMixer['input.7.mute'], "Boolean", false)
-            end
+            self:debugPrint("Combiner state changed: " .. (isCombined and "Combined" or "Separated"))
         end)
     end
 end
@@ -605,8 +529,9 @@ function SourceRoutingController:init()
     self:debugPrint("Initializing Source Routing Controller")
     self:registerEventHandlers()
     
-    -- Initial state - mute all
+    -- Set initial output mute states
     self.sourceRoutingModule:muteAllRooms()
+    self:updateOutputMuteStates()
     
     self:debugPrint("Initialization complete")
 end
@@ -634,23 +559,14 @@ function SourceRoutingController:cleanup()
     if components.rmBPowerState then
         components.rmBPowerState['selector.0'].EventHandler = nil
     end
-    if components.displayControlsEMC then
-        components.displayControlsEMC['btnSource 1'].EventHandler = nil
-        components.displayControlsEMC['btnSource 2'].EventHandler = nil
-        components.displayControlsEMC['btnSource 11'].EventHandler = nil
-        components.displayControlsEMC['btnSource 12'].EventHandler = nil
+    if components.emcDisplayController then
+        components.emcDisplayController['btnSource 1'].EventHandler = nil
+        components.emcDisplayController['btnSource 2'].EventHandler = nil
+        components.emcDisplayController['btnSource 11'].EventHandler = nil
+        components.emcDisplayController['btnSource 12'].EventHandler = nil
     end
-    if components.displayControlsA then
-        components.displayControlsA['btnSource 1'].EventHandler = nil
-        components.displayControlsA['btnSource 2'].EventHandler = nil
-        components.displayControlsA['btnSource 11'].EventHandler = nil
-        components.displayControlsA['btnSource 12'].EventHandler = nil
-    end
-    if components.displayControlsB then
-        components.displayControlsB['btnSource 1'].EventHandler = nil
-        components.displayControlsB['btnSource 2'].EventHandler = nil
-        components.displayControlsB['btnSource 11'].EventHandler = nil
-        components.displayControlsB['btnSource 12'].EventHandler = nil
+    if components.combinerSS then
+        components.combinerSS['load_2'].EventHandler = nil
     end
     
     self:debugPrint("Cleanup complete")
@@ -702,14 +618,14 @@ end
 -------------------[ Public API ]-------------------
 --[[
 Public API:
-    -- Manual routing control
-    mySourceRoutingController.sourceRoutingModule:routeAudio("RmA", "Laptop")
-    mySourceRoutingController.sourceRoutingModule:routeAudio("RmB", "PC")
-    mySourceRoutingController.sourceRoutingModule:routeCombinedAudio("RmA", "WPres")
-    
-    -- Mute controls
+    -- Output mute controls
+    mySourceRoutingController.sourceRoutingModule:muteMixer(components.rmAMixer)
+    mySourceRoutingController.sourceRoutingModule:unmuteMixer(components.rmBMixer)
     mySourceRoutingController.sourceRoutingModule:muteAllRooms()
-    mySourceRoutingController.sourceRoutingModule:muteAllChannels(components.rmAMixer)
+    mySourceRoutingController.sourceRoutingModule:unmuteAllRooms()
+    
+    -- Output state management
+    mySourceRoutingController:updateOutputMuteStates()
     
     -- State queries
     local isCombined = mySourceRoutingController.stateModule:isCombined()

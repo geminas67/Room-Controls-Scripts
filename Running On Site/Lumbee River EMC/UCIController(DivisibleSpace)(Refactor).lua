@@ -74,7 +74,8 @@ local controls = {
     pinLEDHDMIActivePCA         = Controls.pinLEDHDMIActivePCA,
     pinLEDHDMIActivePCB         = Controls.pinLEDHDMIActivePCB,
     pinLEDPresetSaved           = Controls.pinLEDPresetSaved,
-    pinLEDACPRBypassActive      = Controls.pinLEDACPRBypassActive,
+    pinLEDACPRBypassSeparated   = Controls.pinLEDACPRBypassSeparated,
+    pinLEDACPRBypassCombined    = Controls.pinLEDACPRBypassCombined,
     pinLEDTouchActivity         = Controls.pinLEDTouchActivity,
     
     -- Divisible Space HDMI Connection Monitoring (optional)
@@ -85,12 +86,29 @@ local controls = {
     
 }
 
+-------------------[ Configuration ]-------------------
+-- Conference state update configuration
+-- Set to true to skip showing USB connection layers for these sources
+-- Set to false to re-enable USB connection layer display (for future use)
+local conferenceStateConfig = {
+    skipLaptopA = true,  -- Skip "J01-ConnectUSBLaptopA" layer for LaptopA
+    skipLaptopB = true   -- Skip "J02-ConnectUSBLaptopB" layer for LaptopB
+}
+
+-- ACPR Show logic configuration
+-- Set to true to disable ACPR Show logic (UI layers and buttons)
+-- Set to false to re-enable ACPR Show logic (for future use)
+local acprConfig = {
+    disableACPRShow = true  -- Set to false to re-enable ACPR Show logic
+}
+
 local function validateControls()
     -- Core navigation controls
     local required = {
         "btnNav01", "btnNav02", "btnNav03", "btnNav04", "btnNav05", "btnNav06", "btnNav07", "btnNav08", 
         "btnNav09", "btnNav10", "btnNav11", "btnNav12", "btnNav13", "btnNav14", "btnNav15",
-        "btnStartSystem", "btnNavShutdown", "btnShutdownCancel", "btnShutdownConfirm"
+        "btnStartSystem", "btnNavShutdown", "btnShutdownCancel", "btnShutdownConfirm",
+        "pinLEDHDMIConnectedPCA", "pinLEDHDMIConnectedPCB", "pinLEDHDMIConnectedLaptopA", "pinLEDHDMIConnectedLaptopB"
     }
     
     -- Optional but recommended controls
@@ -99,7 +117,7 @@ local function validateControls()
         "btnOpenHelpLaptopA", "btnOpenHelpLaptopB", "btnOpenHelpPCA", "btnOpenHelpPCB", "btnOpenHelpWirelessA", "btnOpenHelpWirelessB", "btnOpenHelpRouting","btnOpenHelpStreamMusic",
         "btnCloseHelpLaptopA", "btnCloseHelpLaptopB", "btnCloseHelpPCA", "btnCloseHelpPCB", "btnCloseHelpWirelessA", "btnCloseHelpWirelessB", "btnCloseHelpRouting", "btnCloseHelpStreamMusic",
         "pinLEDTouchActivity",
-        "pinLEDHDMIConnectedPCA", "pinLEDHDMIConnectedPCB", "pinLEDHDMIConnectedLaptopA", "pinLEDHDMIConnectedLaptopB",
+        "pinLEDACPRBypassSeparated", "pinLEDACPRBypassCombined"
     }
     
     local missing = {}
@@ -183,7 +201,7 @@ local function normalizeControlArrays()
     
     -- Build pin input array  
     local pinInputs = {"pinCallActive", "pinLEDUSBLaptopA", "pinLEDUSBPCA", "pinLEDUSBPCB", "pinLEDOffHookLaptopA", "pinLEDOffHookLaptopB", "pinLEDOffHookPCA", "pinLEDOffHookPCB", 
-                      "pinLEDHDMIActiveLaptopA", "pinLEDHDMIActivePCA", "pinLEDHDMIActiveLaptopB", "pinLEDHDMIActivePCB", "pinLEDPresetSaved", "pinLEDACPRBypassActive", "pinLEDTouchActivity"}
+                      "pinLEDHDMIActiveLaptopA", "pinLEDHDMIActivePCA", "pinLEDHDMIActiveLaptopB", "pinLEDHDMIActivePCB", "pinLEDPresetSaved", "pinLEDACPRBypassSeparated", "pinLEDACPRBypassCombined", "pinLEDTouchActivity"}
     for i, name in ipairs(pinInputs) do
         if controls[name] then controlsToNormalize.pinInputs[i] = controls[name] end
     end
@@ -346,21 +364,22 @@ function LayerModule:showLayer()
         "C05-Start", 
         "D01-ShutdownConfirm",
         "E01-SystemProgressWarming", "E02-SystemProgressCooling", "E05-SystemProgress",
-        "H04-RoomCombining", "H05-RoomControls",
+        "H04-RoomCombining", "H08-RoomControlsCombined", "H09-RoomControlsSeparated", "H10-RoomControls",
         "I01-CallActive", "I02-HelpLaptopA", "I03-HelpLaptopB", "I04-HelpPCA", "I05-HelpPCB", "I06-HelpWirelessA", "I07-HelpWirelessB", "I08-HelpRouting", "I09-HelpDialer", "I10-HelpStreamMusic",
         "J01-ConnectUSBLaptopA", "J02-ConnectUSBLaptopB", "J03-ConnectUSBPCA", "J04-ConnectUSBPCB", 
-        "J05-ACPRActive", "J06-CamPresetSaved", 
-        "J07-ACPRBtnCombined", "J08-ACPRBtnSeparated", 
-        "J11-CameraSelectionLaptopA", "J12-CameraSelectionLaptopB", "J13-CameraSelectionPCA", "J14-CameraSelectionPCB",
+        "J06-ACPRActiveCombined", "J07-ACPRActiveSeparated", "J08-CamPresetSaved", 
+        "J09-ACPRBtnCombined", "J10-ACPRBtnSeparated", 
+        "J11-CameraSelectionLaptopA", "J12-CameraSelectionLaptopB", "J13-CameraSelectionPCA", "J14-CameraSelectionPCB", 
+        "J17-VideoPrivacySeparatedA", "J18-VideoPrivacySeparatedB", "J19-VideoPrivacyCombinedA", "J20-VideoPrivacyCombinedB",
         "J21-ConferenceControlsLaptopA", "J22-ConferenceControlsLaptopB", "J23-ConferenceControlsPCA", "J24-ConferenceControlsPCB",
         "L01-HDMIDisconnected", "L01-LaptopA",
         "L02-HDMIDisconnected", "L02-LaptopB",
         "P01-HDMIDisconnected", "P01-PCA",
         "P02-HDMIDisconnected", "P02-PCB",
-        "W01-WirelessA", "W02-WirelessB", "W05-Wireless",
+        "W01-WirelessA", "W02-WirelessB",
         "R10-Routing",
-        "S10-StreamMusic", 
-        "V05-Dialer", 
+        "S01-StreamMusicA", "S02-StreamMusicB", 
+        "V01-DialerA", "V02-DialerB", 
         "X01-ProgramVolume", 
         "Y01-Navbar", 
         "Z01-Base"
@@ -399,8 +418,9 @@ function LayerModule:showLayer()
             callLayerFunctions = {function() self:hideBaseLayers() end}
         },
         [self.controller.kLayerRoomControls] = {
-            showLayers = {"H05-RoomControls"},
+            showLayers = {"H10-RoomControls"}, -- Base layer, actual layer determined by conditionalVisibility
             hideLayers = {"X01-ProgramVolume"},
+            conditionalVisibility = true,
             callLayerFunctions = {function() self.controller.sublayerModule:updateCallActiveState() end}
         },
         [self.controller.kLayerPCA] = {
@@ -434,10 +454,10 @@ function LayerModule:showLayer()
             conditionalVisibility = true,
             callLayerFunctions = {
                 function() self.controller.sublayerModule:updateHDMIStateLaptopA() end,
-                function() self.controller.sublayerModule:updateConferenceState() end,
-                function() self.controller.sublayerModule:updateConferenceControlsLayer() end,
-                function() self.controller.sublayerModule:updatePresetSavedState() end,
-                function() self.controller.sublayerModule:updateACPRBypassState() end,
+                --function() self.controller.sublayerModule:updateConferenceState() end,
+                --function() self.controller.sublayerModule:updateConferenceControlsLayer() end,
+                --function() self.controller.sublayerModule:updatePresetSavedState() end,
+                --function() self.controller.sublayerModule:updateACPRBypassState() end,
                 function() self.controller.sublayerModule:updateLaptopAHelpState() end,
                 function() self.controller.sublayerModule:updateCallActiveState() end
             }
@@ -447,19 +467,28 @@ function LayerModule:showLayer()
             conditionalVisibility = true,
             callLayerFunctions = {
                 function() self.controller.sublayerModule:updateHDMIStateLaptopB() end,
-                function() self.controller.sublayerModule:updateConferenceState() end,
-                function() self.controller.sublayerModule:updateConferenceControlsLayer() end,
-                function() self.controller.sublayerModule:updatePresetSavedState() end,
-                function() self.controller.sublayerModule:updateACPRBypassState() end,
+                --function() self.controller.sublayerModule:updateConferenceState() end,
+                --function() self.controller.sublayerModule:updateConferenceControlsLayer() end,
+                --function() self.controller.sublayerModule:updatePresetSavedState() end,
+                --function() self.controller.sublayerModule:updateACPRBypassState() end,
                 function() self.controller.sublayerModule:updateLaptopBHelpState() end,
                 function() self.controller.sublayerModule:updateCallActiveState() end
             }
         },
-        [self.controller.kLayerWireless] = {
-            showLayers = {"W05-Wireless"},
+        [self.controller.kLayerWirelessA] = {
+            showLayers = {"W01-WirelessA"},
+            conditionalVisibility = true,
             callLayerFunctions = {
-                function() self.controller.sublayerModule:updateWirelessHelpState() end,
-                function() self.controller.sublayerModule:updateCallActiveState() end
+                function() self.controller.sublayerModule:updateCallActiveState() end,
+                function() self.controller.sublayerModule:updateWirelessHelpState() end
+            }
+        },
+        [self.controller.kLayerWirelessB] = {
+            showLayers = {"W02-WirelessB"},
+            conditionalVisibility = true,
+            callLayerFunctions = {
+                function() self.controller.sublayerModule:updateCallActiveState() end,
+                function() self.controller.sublayerModule:updateWirelessHelpState() end
             }
         },
         [self.controller.kLayerRouting] = {
@@ -468,18 +497,36 @@ function LayerModule:showLayer()
                 function() self.controller.sublayerModule:updateCallActiveState() end
             }
         },
-        [self.controller.kLayerDialer] = {
-            showLayers = {"V05-Dialer"},
+        [self.controller.kLayerDialerA] = {
+            showLayers = {"V01-DialerA"},
+            conditionalVisibility = true,
             callLayerFunctions = {
-                function() self.controller.sublayerModule:updateDialerHelpState() end,
-                function() self.controller.sublayerModule:updateCallActiveState() end
+                function() self.controller.sublayerModule:updateCallActiveState() end,
+                function() self.controller.sublayerModule:updateDialerHelpState() end
             }
         },
-        [self.controller.kLayerStreamMusic] = {
-            showLayers = {"S10-StreamMusic"},
+        [self.controller.kLayerDialerB] = {
+            showLayers = {"V02-DialerB"},
+            conditionalVisibility = true,
             callLayerFunctions = {
-                function() self.controller.sublayerModule:updateStreamMusicHelpState() end,
-                function() self.controller.sublayerModule:updateCallActiveState() end
+                function() self.controller.sublayerModule:updateCallActiveState() end,
+                function() self.controller.sublayerModule:updateDialerHelpState() end
+            }
+        },
+        [self.controller.kLayerStreamMusicA] = {
+            showLayers = {"S01-StreamMusicA"},
+            conditionalVisibility = true,
+            callLayerFunctions = {
+                function() self.controller.sublayerModule:updateCallActiveState() end,
+                function() self.controller.sublayerModule:updateStreamMusicHelpState() end
+            }
+        },
+        [self.controller.kLayerStreamMusicB] = {
+            showLayers = {"S02-StreamMusicB"},
+            conditionalVisibility = true,
+            callLayerFunctions = {
+                function() self.controller.sublayerModule:updateCallActiveState() end,
+                function() self.controller.sublayerModule:updateStreamMusicHelpState() end
             }
         },
         [self.controller.kLayerRoomCombining] = {
@@ -496,10 +543,22 @@ function LayerModule:showLayer()
     
     -- Check conditional visibility for divisible space layers
     if config.conditionalVisibility and self.controller.divisibleSpaceModule then
-        local shouldShow = self.controller.divisibleSpaceModule:shouldShowLayer(self.controller.varActiveLayer)
-        if not shouldShow then
-            self:debug("Layer " .. self.controller.varActiveLayer .. " hidden by divisible space conditional visibility")
-            return
+        -- Special handling for RoomControls: get the correct layer name based on isSeparated
+        if self.controller.varActiveLayer == self.controller.kLayerRoomControls then
+            local layerName = self.controller.divisibleSpaceModule:getRoomControlsLayerName()
+            if layerName then
+                config.showLayers = {layerName}
+            else
+                self:debug("Layer " .. self.controller.varActiveLayer .. " hidden - could not determine room controls layer")
+                return
+            end
+        else
+            -- Standard conditional visibility check for other layers (PCA, PCB, etc.)
+            local shouldShow = self.controller.divisibleSpaceModule:shouldShowLayer(self.controller.varActiveLayer)
+            if not shouldShow then
+                self:debug("Layer " .. self.controller.varActiveLayer .. " hidden by divisible space conditional visibility")
+                return
+            end
         end
     end
     
@@ -543,6 +602,15 @@ local SublayerModule = setmetatable({}, BaseModule); SublayerModule.__index = Su
 function SublayerModule.new(controller)
     local self = BaseModule.new(controller, "Sublayer")
     setmetatable(self, SublayerModule)
+    
+    -- Cache HDMI pin mapping for O(1) lookups (required controls)
+    self.hdmiPinMap = {
+        [controller.kLayerLaptopA] = controls.pinLEDHDMIConnectedLaptopA,
+        [controller.kLayerLaptopB] = controls.pinLEDHDMIConnectedLaptopB,
+        [controller.kLayerPCA] = controls.pinLEDHDMIConnectedPCA,
+        [controller.kLayerPCB] = controls.pinLEDHDMIConnectedPCB
+    }
+    
     return self
 end
 
@@ -555,19 +623,50 @@ function SublayerModule:updateCallActiveState()
     self:debug("Call Active: " .. (isActive and "Showing" or "Hiding"))
 end
 
+-- DRY Helper: Check HDMI connection using cached map (O(1) lookup)
+function SublayerModule:checkHDMIConnection()
+    local hdmiPin = self.hdmiPinMap[self.controller.varActiveLayer]
+    if not hdmiPin then
+        return true -- Non-source layers always pass
+    end
+    return hdmiPin.Boolean
+end
+
 function SublayerModule:updatePresetSavedState()
     local isVisible = controls.pinLEDPresetSaved and controls.pinLEDPresetSaved.Boolean or false
-    self.controller.layerModule:updateLayerVisibility({"J06-CamPresetSaved"}, isVisible, isVisible and "fade" or "none")
-    self:debug("Preset Saved: " .. (isVisible and "Showing" or "Hiding") .. " J06-CamPresetSaved")
+    self.controller.layerModule:updateLayerVisibility({"J08-CamPresetSaved"}, isVisible, isVisible and "fade" or "none")
+    self:debug("Preset Saved: " .. (isVisible and "Showing" or "Hiding") .. " J08-CamPresetSaved")
 end
 
 function SublayerModule:updateACPRBypassState()
+    -- Early return if ACPR Show logic is disabled (non-destructive, can be re-enabled)
+    if acprConfig.disableACPRShow then
+        -- Hide all ACPR-related layers when disabled
+        self.controller.layerModule:updateLayerVisibility({
+            "J06-ACPRActiveCombined", "J07-ACPRActiveSeparated"
+        }, false, "none")
+        self:debug("ACPR Show logic disabled via acprConfig")
+        return
+    end
+
     -- Divisible space: Check for any of the 4 source layers (PCA, PCB, LaptopA, LaptopB)
     local activeLayer = self.controller.varActiveLayer
     if activeLayer ~= self.controller.kLayerPCA and 
        activeLayer ~= self.controller.kLayerPCB and
        activeLayer ~= self.controller.kLayerLaptopA and 
        activeLayer ~= self.controller.kLayerLaptopB then return end
+
+    -- Guard: Check HDMI connection first
+    if not self:checkHDMIConnection() then
+        self:debug("ACPR bypass check blocked: HDMI not connected")
+        return
+    end
+
+    -- Get room state to determine which control and layer to use
+    local roomState = "separated" -- default
+    if self.controller.divisibleSpaceModule then
+        roomState = self.controller.divisibleSpaceModule:getRoomState()
+    end
 
     -- Determine which conference controls layer based on active source
     local conferenceLayer
@@ -581,15 +680,39 @@ function SublayerModule:updateACPRBypassState()
         conferenceLayer = "J24-ConferenceControlsPCB"
     end
 
-    local isBypassActive = controls.pinLEDACPRBypassActive and controls.pinLEDACPRBypassActive.Boolean or false
+    -- Read appropriate bypass control based on room state
+    local bypassControl, acprActiveLayer
+    if roomState == "separated" then
+        bypassControl = controls.pinLEDACPRBypassSeparated
+        acprActiveLayer = "J07-ACPRActiveSeparated"
+    else
+        -- Combined state (combinedA or combinedB)
+        bypassControl = controls.pinLEDACPRBypassCombined
+        acprActiveLayer = "J06-ACPRActiveCombined"
+    end
+
+    local isBypassActive = bypassControl and bypassControl.Boolean or false
+    
+    -- Hide the other ACPR Active layer based on room state
+    if roomState == "separated" then
+        self.controller.layerModule:updateLayerVisibility({"J06-ACPRActiveCombined"}, false, "none")
+    else
+        self.controller.layerModule:updateLayerVisibility({"J07-ACPRActiveSeparated"}, false, "none")
+    end
+
+    -- Show/hide appropriate layers based on bypass state
     if not isBypassActive then
-        self.controller.layerModule:updateLayerVisibility({"J05-ACPRActive"}, true, "fade")
+        self.controller.layerModule:updateLayerVisibility({acprActiveLayer}, true, "fade")
         self.controller.layerModule:updateLayerVisibility({conferenceLayer}, false, "none")
     else
         self.controller.layerModule:updateLayerVisibility({conferenceLayer}, true, "fade")
-        self.controller.layerModule:updateLayerVisibility({"J05-ACPRActive"}, false, "none")
+        self.controller.layerModule:updateLayerVisibility({acprActiveLayer}, false, "none")
     end
-    self:debug("ACPR Bypass: " .. (isBypassActive and "Active" or "Inactive"))
+    self:debug("ACPR Bypass (" .. roomState .. "): " .. (isBypassActive and "Active" or "Inactive"))
+    
+    -- Update ACPR button visibility after bypass state changes
+    -- This ensures J09/J10 buttons show/hide correctly when bypass activates/deactivates
+    self:updateConferenceControlsLayer()
 end
 
 function SublayerModule:updateConferenceState()
@@ -598,6 +721,25 @@ function SublayerModule:updateConferenceState()
     local usbNotConnectedLayer
     local conferenceLayer
     local activeLayer = self.controller.varActiveLayer
+    
+    -- Guard: Check HDMI connection first
+    if not self:checkHDMIConnection() then
+        self.controller.layerModule:updateLayerVisibility({
+            "J01-ConnectUSBLaptopA", "J02-ConnectUSBLaptopB", "J03-ConnectUSBPCA", "J04-ConnectUSBPCB",
+            "J21-ConferenceControlsLaptopA", "J22-ConferenceControlsLaptopB", 
+            "J23-ConferenceControlsPCA", "J24-ConferenceControlsPCB"
+        }, false, "none")
+        self:debug("Conference state blocked: HDMI not connected")
+        return
+    end
+    
+    -- Skip conference state updates based on configuration (non-destructive, can be re-enabled)
+    if activeLayer == self.controller.kLayerLaptopA and conferenceStateConfig.skipLaptopA then
+        return
+    end
+    if activeLayer == self.controller.kLayerLaptopB and conferenceStateConfig.skipLaptopB then
+        return
+    end
     
     if activeLayer == self.controller.kLayerLaptopA then
         -- LaptopA: pinLEDUSBLaptopA and J21-ConferenceControlsLaptopA
@@ -749,19 +891,19 @@ end
 
 -- Help state methods for new sources
 function SublayerModule:updatePCAHelpState()
-    self:updateSourceHelpState("btnHelpPCA", "I04-HelpPCA", "J23-ConferenceControlsPCA", "PCA")
+    self:updateSourceHelpState("btnOpenHelpPCA", "I04-HelpPCA", "J23-ConferenceControlsPCA", "PCA")
 end
 
 function SublayerModule:updatePCBHelpState()
-    self:updateSourceHelpState("btnHelpPCB", "I05-HelpPCB", "J24-ConferenceControlsPCB", "PCB")
+    self:updateSourceHelpState("btnOpenHelpPCB", "I05-HelpPCB", "J24-ConferenceControlsPCB", "PCB")
 end
 
 function SublayerModule:updateLaptopAHelpState()
-    self:updateSourceHelpState("btnHelpLaptopA", "I02-HelpLaptopA", "J21-ConferenceControlsLaptopA", "LaptopA")
+    self:updateSourceHelpState("btnOpenHelpLaptopA", "I02-HelpLaptopA", "J21-ConferenceControlsLaptopA", "LaptopA")
 end
 
 function SublayerModule:updateLaptopBHelpState()
-    self:updateSourceHelpState("btnHelpLaptopB", "I03-HelpLaptopB", "J22-ConferenceControlsLaptopB", "LaptopB")
+    self:updateSourceHelpState("btnOpenHelpLaptopB", "I03-HelpLaptopB", "J22-ConferenceControlsLaptopB", "LaptopB")
 end
 
 -- Conference controls and camera selection layer visibility based on active layer and room state
@@ -769,13 +911,27 @@ function SublayerModule:updateConferenceControlsLayer()
     if not self.controller.divisibleSpaceModule then return end
     
     local activeLayer = self.controller.varActiveLayer
+    
+    -- Guard: Check HDMI connection first
+    if not self:checkHDMIConnection() then
+        self.controller.layerModule:updateLayerVisibility({
+            "J11-CameraSelectionLaptopA", "J12-CameraSelectionLaptopB", "J13-CameraSelectionPCA", "J14-CameraSelectionPCB",
+            "J21-ConferenceControlsLaptopA", "J22-ConferenceControlsLaptopB", 
+            "J23-ConferenceControlsPCA", "J24-ConferenceControlsPCB",
+            "J09-ACPRBtnCombined", "J10-ACPRBtnSeparated"
+        }, false, "none")
+        self:debug("Conference controls blocked: HDMI not connected")
+        return
+    end
+    
     local roomState = self.controller.divisibleSpaceModule:getRoomState()
     
     -- Determine which camera selection layer to show based on active source
-    local showJ11 = (activeLayer == self.controller.kLayerLaptopA)
-    local showJ12 = (activeLayer == self.controller.kLayerLaptopB)
-    local showJ13 = (activeLayer == self.controller.kLayerPCA)
-    local showJ14 = (activeLayer == self.controller.kLayerPCB)
+    local showJ11 = (activeLayer == self.controller.kLayerLaptopA) and (roomState ~= "separated")
+    local showJ12 = (activeLayer == self.controller.kLayerLaptopB) and (roomState ~= "separated")
+    -- J13 and J14 only show when room is NOT separated (hide when separated)
+    local showJ13 = (activeLayer == self.controller.kLayerPCA) and (roomState ~= "separated")
+    local showJ14 = (activeLayer == self.controller.kLayerPCB) and (roomState ~= "separated")
     
     -- Show camera selection layers
     self.controller.layerModule:updateLayerVisibility({"J11-CameraSelectionLaptopA"}, showJ11, showJ11 and "fade" or "none")
@@ -789,28 +945,50 @@ function SublayerModule:updateConferenceControlsLayer()
     local usbPCA = controls.pinLEDUSBPCA and controls.pinLEDUSBPCA.Boolean or false
     local usbPCB = controls.pinLEDUSBPCB and controls.pinLEDUSBPCB.Boolean or false
     
-    -- Show conference controls layers only if USB is connected for active source
-    local showJ21 = showJ11 and usbLaptopA
-    local showJ22 = showJ12 and usbLaptopB
-    local showJ23 = showJ13 and usbPCA
-    local showJ24 = showJ14 and usbPCB
+    -- Show conference controls layers if USB is connected for active source
+    -- Conference controls show when active layer matches and USB connected (ignore room state)
+    -- Camera selection (J13/J14) respects room state, but conference controls (J21-J24) show regardless
+    local showJ21 = (activeLayer == self.controller.kLayerLaptopA) and usbLaptopA
+    local showJ22 = (activeLayer == self.controller.kLayerLaptopB) and usbLaptopB
+    local showJ23 = (activeLayer == self.controller.kLayerPCA) and usbPCA
+    local showJ24 = (activeLayer == self.controller.kLayerPCB) and usbPCB
     
     self.controller.layerModule:updateLayerVisibility({"J21-ConferenceControlsLaptopA"}, showJ21, showJ21 and "fade" or "none")
     self.controller.layerModule:updateLayerVisibility({"J22-ConferenceControlsLaptopB"}, showJ22, showJ22 and "fade" or "none")
     self.controller.layerModule:updateLayerVisibility({"J23-ConferenceControlsPCA"}, showJ23, showJ23 and "fade" or "none")
     self.controller.layerModule:updateLayerVisibility({"J24-ConferenceControlsPCB"}, showJ24, showJ24 and "fade" or "none")
     
-    -- ACPR button visibility based on room state and any conference controls active
-    local conferenceActive = (showJ21 or showJ22 or showJ23 or showJ24)
-    local showJ07 = (roomState ~= "separated") and conferenceActive
-    local showJ08 = (roomState == "separated") and conferenceActive
+    -- VideoPrivacy layer visibility based on conference controls and room state
+    local showJ17 = (roomState == "separated") and showJ23  -- PCA Separated
+    local showJ18 = (roomState == "separated") and showJ24  -- PCB Separated
+    local showJ19 = (roomState ~= "separated") and showJ23  -- PCA Combined
+    local showJ20 = (roomState ~= "separated") and showJ24  -- PCB Combined
     
-    self.controller.layerModule:updateLayerVisibility({"J07-ACPRBtnCombined"}, showJ07, showJ07 and "fade" or "none")
-    self.controller.layerModule:updateLayerVisibility({"J08-ACPRBtnSeparated"}, showJ08, showJ08 and "fade" or "none")
+    self.controller.layerModule:updateLayerVisibility({"J17-VideoPrivacySeparatedA"}, showJ17, showJ17 and "fade" or "none")
+    self.controller.layerModule:updateLayerVisibility({"J18-VideoPrivacySeparatedB"}, showJ18, showJ18 and "fade" or "none")
+    self.controller.layerModule:updateLayerVisibility({"J19-VideoPrivacyCombinedA"}, showJ19, showJ19 and "fade" or "none")
+    self.controller.layerModule:updateLayerVisibility({"J20-VideoPrivacyCombinedB"}, showJ20, showJ20 and "fade" or "none")
+    
+    -- ACPR button visibility based on room state and any conference controls active
+    -- Check both computed visibility AND actual layer states (in case updateACPRBypassState() shows them)
+    local computedConferenceActive = (showJ21 or showJ22 or showJ23 or showJ24)
+    local actualJ21 = self.controller.layerModule.layerStates["J21-ConferenceControlsLaptopA"] == true
+    local actualJ22 = self.controller.layerModule.layerStates["J22-ConferenceControlsLaptopB"] == true
+    local actualJ23 = self.controller.layerModule.layerStates["J23-ConferenceControlsPCA"] == true
+    local actualJ24 = self.controller.layerModule.layerStates["J24-ConferenceControlsPCB"] == true
+    local conferenceActive = computedConferenceActive or actualJ21 or actualJ22 or actualJ23 or actualJ24
+    
+    -- Force hide ACPR buttons if disabled via acprConfig (non-destructive, can be re-enabled)
+    local showJ09 = (roomState ~= "separated") and conferenceActive and not acprConfig.disableACPRShow
+    local showJ10 = (roomState == "separated") and conferenceActive and not acprConfig.disableACPRShow
+    
+    self.controller.layerModule:updateLayerVisibility({"J09-ACPRBtnCombined"}, showJ09, showJ09 and "fade" or "none")
+    self.controller.layerModule:updateLayerVisibility({"J10-ACPRBtnSeparated"}, showJ10, showJ10 and "fade" or "none")
     
     self:debug("Camera: J11=" .. tostring(showJ11) .. ", J12=" .. tostring(showJ12) .. ", J13=" .. tostring(showJ13) .. ", J14=" .. tostring(showJ14) .. 
                " | Conference: J21=" .. tostring(showJ21) .. ", J22=" .. tostring(showJ22) .. ", J23=" .. tostring(showJ23) .. ", J24=" .. tostring(showJ24) ..
-               " | ACPR: J07(Combined)=" .. tostring(showJ07) .. ", J08(Separated)=" .. tostring(showJ08) .. " | RoomState=" .. roomState)
+               " | VideoPrivacy: J17=" .. tostring(showJ17) .. ", J18=" .. tostring(showJ18) .. ", J19=" .. tostring(showJ19) .. ", J20=" .. tostring(showJ20) ..
+               " | ACPR: J09(Combined)=" .. tostring(showJ09) .. ", J10(Separated)=" .. tostring(showJ10) .. " | RoomState=" .. roomState)
 end
 
 -------------------[ Video Switcher Module ]---------------
@@ -1212,12 +1390,14 @@ function DivisibleSpaceModule:initialize()
         
         -- Set initial navigation button visibility based on current state
         self:updateNavigationVisibility()
+        self:updateStartSystemLegend()
     else
         self:debug("DivisibleSpaceControls component not found (feature disabled)")
         self.isEnabled = false
         
         -- Still update navigation visibility based on room identity alone
         self:updateNavigationVisibility()
+        self:updateStartSystemLegend()
     end
     
     return self.isEnabled
@@ -1346,6 +1526,18 @@ function DivisibleSpaceModule:shouldShowLayer(layerIndex)
     return true
 end
 
+function DivisibleSpaceModule:getRoomControlsLayerName()
+    -- Return the correct RoomControls layer name based on isSeparated
+    local roomState = self:getRoomState()
+    local isSeparated = (roomState == "separated")
+    
+    if isSeparated then
+        return "H09-RoomControlsSeparated"
+    else
+        return "H08-RoomControlsCombined"
+    end
+end
+
 function DivisibleSpaceModule:updateNavigationVisibility()
     -- Update navigation button and text visibility based on room identity and separation state
     -- btnNav EventHandlers handle showing layers; this only controls button/text visibility
@@ -1390,6 +1582,17 @@ function DivisibleSpaceModule:updateNavigationVisibility()
     end
 end
 
+function DivisibleSpaceModule:updateStartSystemLegend()
+    -- DRY: Single method to update btnStartSystem.Legend based on room state
+    if not controls.btnStartSystem then return end
+    
+    local roomState = self:getRoomState()
+    local legend = (roomState == "separated") and "Start Room" or "Start Rooms"
+    
+    setProp(controls.btnStartSystem, "Legend", legend)
+    self:debug("Start System button legend updated: " .. legend .. " (State: " .. roomState .. ")")
+end
+
 function DivisibleSpaceModule:registerStateChangeHandlers()
     if not self.btnRoomState or not self.btnRoomState[1] then
         return
@@ -1410,7 +1613,17 @@ function DivisibleSpaceModule:onRoomStateChanged(buttonIndex, state)
         local navbarVisible = self.controller.layerModule.layerStates["Y01-Navbar"]
         if navbarVisible then
             self:updateNavigationVisibility()
+            self:updateStartSystemLegend()
         end
+    end
+    
+    -- Always update start system legend when room state changes (even if navbar not visible)
+    self:updateStartSystemLegend()
+    
+    -- Update conference controls layer visibility when room state changes
+    -- This ensures J13/J14 camera selection layers are updated for PCA/PCB
+    if self.controller and self.controller.sublayerModule then
+        self.controller.sublayerModule:updateConferenceControlsLayer()
     end
 end
 
@@ -1633,25 +1846,58 @@ function UCIController:registerEventHandlers()
         
         -- Other pin handlers
         [controls.pinLEDPresetSaved] = function() self.sublayerModule:updatePresetSavedState() end,
-        [controls.pinLEDACPRBypassActive] = function() self.sublayerModule:updateACPRBypassState() end,
         [controls.pinCallActive] = function() self.sublayerModule:updateCallActiveState() end,
         
         -- Touch Activity Monitor for H04-RoomCombining inactivity
-        [controls.pinLEDTouchActivity] = function(ctl) self:resetTouchInactivityTimer() end
+        [controls.pinLEDTouchActivity] = function(ctl) self:resetTouchInactivityTimer() end,
+        
+        -- HDMI connection monitoring (required controls)
+        [controls.pinLEDHDMIConnectedPCA] = function() 
+            if self.varActiveLayer == self.kLayerPCA then
+                self.sublayerModule:updateHDMIStatePCA()
+                self.sublayerModule:updateConferenceState()
+                self.sublayerModule:updateConferenceControlsLayer()
+            end
+        end,
+        
+        [controls.pinLEDHDMIConnectedPCB] = function() 
+            if self.varActiveLayer == self.kLayerPCB then
+                self.sublayerModule:updateHDMIStatePCB()
+                self.sublayerModule:updateConferenceState()
+                self.sublayerModule:updateConferenceControlsLayer()
+            end
+        end,
+        
+        [controls.pinLEDHDMIConnectedLaptopA] = function() 
+            if self.varActiveLayer == self.kLayerLaptopA then
+                self.sublayerModule:updateHDMIStateLaptopA()
+            end
+        end,
+        
+        [controls.pinLEDHDMIConnectedLaptopB] = function() 
+            if self.varActiveLayer == self.kLayerLaptopB then
+                self.sublayerModule:updateHDMIStateLaptopB()
+            end
+        end
     }
     
-    -- Conditionally add HDMI connection monitoring handlers for divisible space sources (optional controls)
-    if controls.pinLEDHDMIConnectedPCA then
-        pinHandlerMap[controls.pinLEDHDMIConnectedPCA] = function() self.sublayerModule:updateHDMIStatePCA() end
+    -- Helper function to conditionally add optional control handlers with logging
+    local missingOptionalControls = {}
+    local function addOptionalHandler(control, controlName, handler)
+        if control then
+            pinHandlerMap[control] = handler
+        else
+            table.insert(missingOptionalControls, controlName)
+        end
     end
-    if controls.pinLEDHDMIConnectedPCB then
-        pinHandlerMap[controls.pinLEDHDMIConnectedPCB] = function() self.sublayerModule:updateHDMIStatePCB() end
-    end
-    if controls.pinLEDHDMIConnectedLaptopA then
-        pinHandlerMap[controls.pinLEDHDMIConnectedLaptopA] = function() self.sublayerModule:updateHDMIStateLaptopA() end
-    end
-    if controls.pinLEDHDMIConnectedLaptopB then
-        pinHandlerMap[controls.pinLEDHDMIConnectedLaptopB] = function() self.sublayerModule:updateHDMIStateLaptopB() end
+    
+    -- Conditionally add ACPR bypass handlers (optional controls)
+    addOptionalHandler(controls.pinLEDACPRBypassSeparated, "pinLEDACPRBypassSeparated", function() self.sublayerModule:updateACPRBypassState() end)
+    addOptionalHandler(controls.pinLEDACPRBypassCombined, "pinLEDACPRBypassCombined", function() self.sublayerModule:updateACPRBypassState() end)
+    
+    -- Report missing optional controls if any
+    if #missingOptionalControls > 0 then
+        self:debug("Optional control handlers skipped (controls not found): " .. table.concat(missingOptionalControls, ", "))
     end
     
     -- Batch register all handler maps

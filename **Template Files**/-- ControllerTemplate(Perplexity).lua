@@ -64,6 +64,17 @@ local function registerHandlers(controlArray, callback)
     end
 end
 
+-- Cleanup utility: removes event handlers from component controls before reassignment
+-- Prevents handler accumulation when components are reassigned in divisible space scenarios
+local function cleanupComponentHandlers(component, controlNames)
+    if not component then return end
+    for _, controlName in ipairs(controlNames) do
+        if component[controlName] then
+            component[controlName].EventHandler = nil
+        end
+    end
+end
+
 local function isArr(t)
     -- is this table an array? (index 1 exists)
     return type(t) == "table" and t[1] ~= nil
@@ -665,7 +676,12 @@ function SystemAutomationController:checkStatus()
 end
 
 ------[ Per-Component Setup/Assignment (wires events) ]------
+-- NOTE: cleanupComponentHandlers MUST be called before assigning new components
+-- to prevent handler accumulation on previously assigned components (per refactoring guidelines sections 25, 33)
 function SystemAutomationController:setCallSyncComponent()
+    -- Cleanup old component handlers before reassignment
+    cleanupComponentHandlers(self.components.callSync, {"off.hook", "mute"})
+    
     self.components.callSync = self:setComponent(controls.compCallSync, "Call Sync")
     local callSync = self.components.callSync
     if not callSync then return end
@@ -673,6 +689,9 @@ function SystemAutomationController:setCallSyncComponent()
     callSync["mute"].EventHandler = function() self:callSyncCheckMute() end
 end
 function SystemAutomationController:setVideoBridgeComponent()
+    -- Cleanup old component handlers before reassignment
+    cleanupComponentHandlers(self.components.videoBridge, {"toggle.privacy"})
+    
     self.components.videoBridge = self:setComponent(controls.compVideoBridge, "Video Bridge")
     local vb = self.components.videoBridge
     if not vb then return end
@@ -680,6 +699,10 @@ function SystemAutomationController:setVideoBridgeComponent()
 end
 function SystemAutomationController:setGainComponent(idx)
     if not controls.compGains or not controls.compGains[idx] then return end
+    
+    -- Cleanup old component handlers before reassignment
+    cleanupComponentHandlers(self.components.gains[idx], {"gain", "mute"})
+    
     local label = idx == 1 and "Program Volume [Gain 1]" or "Gain [" .. idx .. "]"
     self.components.gains[idx] = self:setComponent(controls.compGains[idx], label)
     if not self.components.gains[idx] then return end
@@ -690,9 +713,13 @@ function SystemAutomationController:setGainComponent(idx)
     gain["mute"].EventHandler = function() self:getVolumeMute(idx) end
 end
 function SystemAutomationController:setSystemMuteComponent()
+    -- No event handlers assigned, no cleanup needed
     self.components.systemMute = self:setComponent(controls.compSystemMute, "System Mute")
 end
 function SystemAutomationController:setCamACPRComponent()
+    -- Cleanup old component handlers before reassignment
+    cleanupComponentHandlers(self.components.camACPR, {"TrackingBypass"})
+    
     self.components.camACPR = self:setComponent(controls.compACPR, "Camera ACPR")
     local camACPR = self.components.camACPR
     if not camACPR then return end
@@ -704,6 +731,7 @@ function SystemAutomationController:setCamACPRComponent()
     camACPR["TrackingBypass"].Legend = " "
 end
 function SystemAutomationController:setDisplayComponent(idx)
+    -- Display components don't have event handlers assigned, no cleanup needed
     self.components.displays[idx] = self:setComponent(controls.devDisplays[idx], "Display [" .. idx .. "]")
 end
 

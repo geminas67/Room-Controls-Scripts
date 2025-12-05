@@ -124,11 +124,18 @@ function setupCameraButtons()
     end
     funcShowCameraSublayer()
   end
-  -- Assign event handlers using the generalized function
-  for i, btn in ipairs(camButtons) do
-    btn.EventHandler = function ()
-      selectCamera(i)
+  
+  -- Factory function to capture index by value (fixes classic Lua closure issue)
+  -- Without this, all handlers would reference the final loop value
+  local function makeButtonHandler(index)
+    return function()
+      selectCamera(index)
     end
+  end
+  
+  -- Assign event handlers using factory function to capture index
+  for i, btn in ipairs(camButtons) do
+    btn.EventHandler = makeButtonHandler(i)
   end
 end
 
