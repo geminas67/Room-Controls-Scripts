@@ -4,12 +4,15 @@ Refactor the following Lua code to make it faster and more responsive, with a fo
 
 **Guidelines for Refactoring:**
 
-1. **Use Class-Based Architecture (OOP):**
-    - Implement all Lua scripts using class-based architecture Lua metatables.
-    - Use metatable-based construction (as in 'UCIController') to support multiple instances and inheritance.
-    - Prefer object-oriented approaches over closure-based pattens.
-    - Structure every script as a class with well-defined initialization, clear methods, and property/state management.
-    - Apply consistent naming: use `ClassName` for classes, `instanceName` for instances.
+1. **Use Functional/Modular Architecture:**
+    - Implement all Lua scripts using functional/modular pattern with factory functions.
+    - State managed via closures instead of class fields.
+    - Explicit dependencies passed to each module.
+    - Same functionality with reduced boilerplate.
+    - Aligned with modern Lua idioms and Svelte-like logic module patterns.
+    - Prefer factory functions that return module objects with encapsulated state.
+    - Structure every script as a collection of modules with well-defined interfaces and clear dependency injection.
+    - Apply consistent naming: use `createModuleName()` for factory functions, `moduleName` for module instances.
 
 2. **Flatten Control Flow and Use Early Returns**
 	-	Use guard clauses at the start of functions to check for invalid/error conditions and return early.

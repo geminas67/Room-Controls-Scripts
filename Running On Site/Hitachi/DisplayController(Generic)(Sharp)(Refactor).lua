@@ -32,7 +32,10 @@ local displayControls = {
     -- Input Controls (Option 2: Button method)
     inputSelectButtons = "Input",
     inputNames = "InputNames ",
-    currentInput = "CurrentInput "
+    currentInput = "CurrentInput ",
+
+    -- Display Volume Control
+    displayVolume0 = "Custom1Trigger",
 }
 
 -------------------[ Control References ]-------------------
@@ -193,8 +196,14 @@ function GenericDisplayController.new(roomName, config)
     -- Timers
     self.timers = {
         warmup = Timer.New(),
-        cooldown = Timer.New()
+        cooldown = Timer.New(),
+        volumeMute = {}
     }
+    
+    -- Initialize volume mute timers for each display
+    for i = 1, self.config.maxDisplays do
+        self.timers.volumeMute[i] = Timer.New()
+    end
     
     -- Timer Configuration
     self.timerConfig = {
@@ -406,6 +415,20 @@ function GenericDisplayController:initPowerModule()
             setProp(controls.btnDisplayPowerAll, "Boolean", state)
         end,
         
+        setIndividualDisplayPowerFB = function(index, state)
+            -- Set individual display power button feedback efficiently
+            if controls.btnDisplayPowerSingle and controls.btnDisplayPowerSingle[index] then
+                setProp(controls.btnDisplayPowerSingle[index], "Boolean", state)
+            end
+            -- Also update individual power on/off buttons if they exist as arrays
+            if controls.btnDisplayPowerOn and controls.btnDisplayPowerOn[index] then
+                setProp(controls.btnDisplayPowerOn[index], "Boolean", state)
+            end
+            if controls.btnDisplayPowerOff and controls.btnDisplayPowerOff[index] then
+                setProp(controls.btnDisplayPowerOff[index], "Boolean", not state)
+            end
+        end,
+        
         updatePowerFeedbackFromDisplays = function()
             local allPoweredOn, anyPoweredOn, poweredOnCount, totalDisplays = true, false, 0, 0
             
@@ -416,14 +439,12 @@ function GenericDisplayController:initPowerModule()
                     if powerStatus then
                         poweredOnCount = poweredOnCount + 1
                         anyPoweredOn = true
-                        if controls.btnDisplayPowerSingle and controls.btnDisplayPowerSingle[i] then
-                            setProp(controls.btnDisplayPowerSingle[i], "Boolean", true)
-                        end
+                        -- Use the efficient individual display power feedback function
+                        selfRef.powerModule.setIndividualDisplayPowerFB(i, true)
                     else
                         allPoweredOn = false
-                        if controls.btnDisplayPowerSingle and controls.btnDisplayPowerSingle[i] then
-                            setProp(controls.btnDisplayPowerSingle[i], "Boolean", false)
-                        end
+                        -- Use the efficient individual display power feedback function
+                        selfRef.powerModule.setIndividualDisplayPowerFB(i, false)
                     end
                 end
             end
@@ -443,8 +464,10 @@ function GenericDisplayController:initPowerModule()
             selfRef.state.isWarming = true
             setProp(controls.ledDisplayWarming, "Boolean", true)
             selfRef.timers.warmup:Start(selfRef:getTimerConfig(true))
-            if controls.btnDisplayPowerSingle and controls.btnDisplayPowerSingle[index] then
-                setProp(controls.btnDisplayPowerSingle[index], "Boolean", true)
+            selfRef.powerModule.setIndividualDisplayPowerFB(index, true)
+            -- Start 3-second timer to mute volume after power on
+            if selfRef.timers.volumeMute and selfRef.timers.volumeMute[index] then
+                selfRef.timers.volumeMute[index]:Start(5)
             end
         end,
         
@@ -456,9 +479,7 @@ function GenericDisplayController:initPowerModule()
             selfRef.state.isCooling = true
             setProp(controls.ledDisplayCooling, "Boolean", true)
             selfRef.timers.cooldown:Start(selfRef:getTimerConfig(false))
-            if controls.btnDisplayPowerSingle and controls.btnDisplayPowerSingle[index] then
-                setProp(controls.btnDisplayPowerSingle[index], "Boolean", false)
-            end
+            selfRef.powerModule.setIndividualDisplayPowerFB(index, false)
         end,
         
         powerOnAll = function()
@@ -719,6 +740,20 @@ function GenericDisplayController:registerTimerHandlers()
         self.state.isCooling = false
         setProp(controls.ledDisplayCooling, "Boolean", false)
         self.timers.cooldown:Stop()
+    end
+    
+    -- Register volume mute timer handlers for each display
+    for i = 1, self.config.maxDisplays do
+        if self.timers.volumeMute[i] then
+            self.timers.volumeMute[i].EventHandler = function()
+                local display = self.components.displays[i]
+                if display then
+                    self:debugPrint("Muting volume for display " .. i)
+                    self:safeComponentAccess(display, displayControls.displayVolume0, "trigger")
+                end
+                self.timers.volumeMute[i]:Stop()
+            end
+        end
     end
 end
 

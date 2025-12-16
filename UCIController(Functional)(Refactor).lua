@@ -9,6 +9,19 @@
     - Explicit dependencies passed to each module
     - Same functionality with reduced boilerplate
     - Aligned with modern Lua idioms and Svelte-like logic module patterns
+    
+    OOP → Functional Mapping (for transition reference):
+    - self:btnNavEventHandler(layer) → myUCI.navigate(layer)
+    - self.varActiveLayer → ctx.state.activeLayer (or myUCI.getActiveLayer())
+    - self.layerModule → ctx.layer (or myUCI.layer)
+    - self.sublayerModule → ctx.sublayer (or myUCI.sublayer)
+    - self.routingModule → ctx.routing (or myUCI.routing)
+    - self.videoSwitcherModule → ctx.videoSwitcher (or myUCI.videoSwitcher)
+    - self.roomAutomationModule → ctx.roomAutomation (or myUCI.roomAutomation)
+    - self.progressModule → ctx.progress (or myUCI.progress)
+    - self.kLayerLaptop → kLayers.layerLaptop
+    - self:interlock() → interlock() (internal closure)
+    - self:debug() → debug() (module-specific debugger)
 ]]
 
 -------------------[ Control References ]-------------------
@@ -62,19 +75,19 @@ local controls = {
 }
 
 -------------------[ Layer Constants ]----------------------
-local LAYERS = {
-    ALARM           = 1,
-    INCOMING_CALL   = 2,
-    START           = 3,
-    WARMING         = 4,
-    COOLING         = 5,
-    ROOM_CONTROLS   = 6,
-    PC              = 7,
-    LAPTOP          = 8,
-    WIRELESS        = 9,
-    ROUTING         = 10,
-    DIALER          = 11,
-    STREAM_MUSIC    = 12,
+local kLayers = {
+    layerAlarm           = 1,
+    layerIncomingCall   = 2,
+    layerStart          = 3,
+    layerWarming        = 4,
+    layerCooling        = 5,
+    layerRoomControls   = 6,
+    layerPC             = 7,
+    layerLaptop         = 8,
+    layerWireless       = 9,
+    layerRouting        = 10,
+    layerDialer         = 11,
+    layerStreamMusic    = 12,
 }
 
 -------------------[ Utility Functions ]-------------------
@@ -83,7 +96,7 @@ local function getControlArray(ctrl) return isArr(ctrl) and ctrl or (type(ctrl) 
 
 local function setProp(ctrl, prop, val)
     if not ctrl or not prop then return false end
-    if ctrl[prop] == val then return false end
+    if ctrl[prop] == val then return false end -- Prevent redundant assignment
     ctrl[prop] = val
     return true
 end
@@ -92,6 +105,7 @@ local function bind(ctrl, handler)
     if ctrl and handler then ctrl.EventHandler = handler end 
 end
 
+-- Utility function for managing paired controls (open/close, on/off, etc.)
 local function bindPairedControls(openCtrl, closeCtrl, updateHandler)
     if openCtrl and updateHandler then
         bind(openCtrl, function()
@@ -221,7 +235,10 @@ local function createLayerModule(ctx)
     
     local function showLayer()
         local layersToHide = {
-            "A01-Alarm", "B01-IncomingCall", "C05-Start", "D01-ShutdownConfirm",
+            "A01-Alarm", 
+            "B01-IncomingCall", 
+            "C05-Start", 
+            "D01-ShutdownConfirm",
             "E01-SystemProgressWarming", "E02-SystemProgressCooling", "E05-SystemProgress",
             "H01-RoomControls", 
             "I01-CallActive", "I02-HelpLaptop", "I03-HelpPC", "I04-HelpWireless", "I05-HelpRouting", "I07-HelpStreamMusic",
@@ -240,31 +257,31 @@ local function createLayerModule(ctx)
         updateLayerVisibility({"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}, true, "none")
         
         local layerConfigs = {
-            [LAYERS.ALARM] = {
+            [kLayers.layerAlarm] = {
                 showLayers = {"A01-Alarm"},
                 callFunctions = {hideBaseLayers}
             },
-            [LAYERS.INCOMING_CALL] = {
+            [kLayers.layerIncomingCall] = {
                 showLayers = {"B01-IncomingCall"}
             },
-            [LAYERS.START] = {
+            [kLayers.layerStart] = {
                 showLayers = {"C05-Start"},
                 callFunctions = {hideBaseLayers}
             },
-            [LAYERS.WARMING] = {
+            [kLayers.layerWarming] = {
                 showLayers = {"E05-SystemProgress", "E01-SystemProgressWarming"},
                 callFunctions = {hideBaseLayers}
             },
-            [LAYERS.COOLING] = {
+            [kLayers.layerCooling] = {
                 showLayers = {"E05-SystemProgress", "E02-SystemProgressCooling"},
                 callFunctions = {hideBaseLayers}
             },
-            [LAYERS.ROOM_CONTROLS] = {
+            [kLayers.layerRoomControls] = {
                 showLayers = {"H01-RoomControls"},
                 hideLayers = {"X01-ProgramVolume"},
                 callFunctions = {function() ctx.sublayer.updateCallActiveState() end}
             },
-            [LAYERS.LAPTOP] = {
+            [kLayers.layerLaptop] = {
                 showLayers = {"L05-Laptop"},
                 callFunctions = {
                     function() ctx.sublayer.updateHDMI01State() end,
@@ -275,7 +292,7 @@ local function createLayerModule(ctx)
                     function() ctx.sublayer.updateCallActiveState() end
                 }
             },
-            [LAYERS.PC] = {
+            [kLayers.layerPC] = {
                 showLayers = {"P05-PC"},
                 callFunctions = {
                     function() ctx.sublayer.updateHDMI02State() end,
@@ -286,14 +303,14 @@ local function createLayerModule(ctx)
                     function() ctx.sublayer.updateCallActiveState() end
                 }
             },
-            [LAYERS.WIRELESS] = {
+            [kLayers.layerWireless] = {
                 showLayers = {"W05-Wireless"},
                 callFunctions = {
                     function() ctx.sublayer.updateWirelessHelpState() end,
                     function() ctx.sublayer.updateCallActiveState() end
                 }
             },
-            [LAYERS.ROUTING] = {
+            [kLayers.layerRouting] = {
                 showLayers = {"R10-Routing"},
                 callFunctions = {
                     function() ctx.sublayer.updateRoutingHelpState() end,
@@ -301,11 +318,11 @@ local function createLayerModule(ctx)
                     function() ctx.sublayer.updateCallActiveState() end
                 }
             },
-            [LAYERS.DIALER] = {
+            [kLayers.layerDialer] = {
                 showLayers = {"V05-Dialer"},
                 callFunctions = {function() ctx.sublayer.updateCallActiveState() end}
             },
-            [LAYERS.STREAM_MUSIC] = {
+            [kLayers.layerStreamMusic] = {
                 showLayers = {"S05-StreamMusic"},
                 callFunctions = {
                     function() ctx.sublayer.updateStreamMusicHelpState() end,
@@ -357,7 +374,7 @@ local function createSublayerModule(ctx)
     end
     
     local function updateHDMI01State()
-        if ctx.state.activeLayer ~= LAYERS.LAPTOP then return end
+        if ctx.state.activeLayer ~= kLayers.layerLaptop then return end
         if not controls.pinLEDHDMI01Connect then return end
         local isConnected = controls.pinLEDHDMI01Connect.Boolean or false
         if isConnected then
@@ -371,7 +388,7 @@ local function createSublayerModule(ctx)
     end
     
     local function updateHDMI02State()
-        if ctx.state.activeLayer ~= LAYERS.PC then return end
+        if ctx.state.activeLayer ~= kLayers.layerPC then return end
         if not controls.pinLEDHDMI02Connect then return end
         local isConnected = controls.pinLEDHDMI02Connect.Boolean or false
         if isConnected then
@@ -386,18 +403,18 @@ local function createSublayerModule(ctx)
     
     local function updateACPRBypassState()
         local activeLayer = ctx.state.activeLayer
-        if activeLayer ~= LAYERS.LAPTOP and activeLayer ~= LAYERS.PC then return end
+        if activeLayer ~= kLayers.layerLaptop and activeLayer ~= kLayers.layerPC then return end
         
         local isBypassActive = controls.pinLEDACPRBypassActive and controls.pinLEDACPRBypassActive.Boolean or false
         local isCallActive = controls.pinCallActive and controls.pinCallActive.Boolean or false
         
         -- Check HDMI connection for current layer
-        if activeLayer == LAYERS.LAPTOP then
+        if activeLayer == kLayers.layerLaptop then
             if not controls.pinLEDHDMI01Connect or not controls.pinLEDHDMI01Connect.Boolean then
                 ctx.layer.updateLayerVisibility({"J03-ACPRActive"}, false, "none")
                 return
             end
-        elseif activeLayer == LAYERS.PC then
+        elseif activeLayer == kLayers.layerPC then
             if not controls.pinLEDHDMI02Connect or not controls.pinLEDHDMI02Connect.Boolean then
                 ctx.layer.updateLayerVisibility({"J03-ACPRActive"}, false, "none")
                 return
@@ -418,12 +435,12 @@ local function createSublayerModule(ctx)
         local activeLayer = ctx.state.activeLayer
         
         -- Check HDMI connection for current layer
-        if activeLayer == LAYERS.LAPTOP then
+        if activeLayer == kLayers.layerLaptop then
             if not controls.pinLEDHDMI01Connect or not controls.pinLEDHDMI01Connect.Boolean then
                 ctx.layer.updateLayerVisibility({"J05-ConferenceControls"}, false, "none")
                 return
             end
-        elseif activeLayer == LAYERS.PC then
+        elseif activeLayer == kLayers.layerPC then
             if not controls.pinLEDHDMI02Connect or not controls.pinLEDHDMI02Connect.Boolean then
                 ctx.layer.updateLayerVisibility({"J05-ConferenceControls"}, false, "none")
                 return
@@ -433,10 +450,10 @@ local function createSublayerModule(ctx)
         end
         
         local usbConnected, usbNotConnectedLayer
-        if activeLayer == LAYERS.LAPTOP then
+        if activeLayer == kLayers.layerLaptop then
             usbConnected = controls.pinLEDUSBLaptop and controls.pinLEDUSBLaptop.Boolean or false
             usbNotConnectedLayer = "J01-ConnectUSBLaptop"
-        elseif activeLayer == LAYERS.PC then
+        elseif activeLayer == kLayers.layerPC then
             usbConnected = controls.pinLEDUSBPC and controls.pinLEDUSBPC.Boolean or false
             usbNotConnectedLayer = "J02-ConnectUSBPC"
         else
@@ -790,12 +807,12 @@ local function createRoomAutomationModule(ctx)
         
         if currentState then
             ctx.progress.startLoadingBar(true)
-            ctx.navigate(LAYERS.WARMING)
-            debug("Synchronized to WARMING state")
+            ctx.navigate(kLayers.layerWarming)
+            debug("Synchronized to layerWarming state")
         else
             ctx.progress.startLoadingBar(false)
-            ctx.navigate(LAYERS.COOLING)
-            debug("Synchronized to COOLING state")
+            ctx.navigate(kLayers.layerCooling)
+            debug("Synchronized to layerCooling state")
         end
     end
     
@@ -854,7 +871,7 @@ local function createProgressModule(ctx)
                 debug("Loading bar timeout reached")
                 isAnimating = false
                 if loadingTimer then loadingTimer:Stop(); loadingTimer = nil end
-                ctx.navigate(isPoweringOn and ctx.config.defaultActiveLayer or LAYERS.START)
+                ctx.navigate(isPoweringOn and ctx.config.defaultActiveLayer or kLayers.START)
             end
         end
         timeoutTimer:Start(300)
@@ -871,7 +888,7 @@ local function createProgressModule(ctx)
                 timeoutTimer:Stop()
                 isAnimating = false
                 
-                ctx.navigate(isPoweringOn and ctx.config.defaultActiveLayer or LAYERS.START)
+                ctx.navigate(isPoweringOn and ctx.config.defaultActiveLayer or kLayers.START)
             else
                 loadingTimer:Start(interval)
             end
@@ -976,12 +993,12 @@ local function createUCI(config)
         uciPage = uciPage,
         debugging = debugging,
         config = {
-            defaultActiveLayer = config.defaultActiveLayer or LAYERS.LAPTOP,
+            defaultActiveLayer = config.defaultActiveLayer or kLayers.layerLaptop,
             defaultRoutingLayer = config.defaultRoutingLayer or 1,
             hiddenNavIndices = config.hiddenNavIndices or {},
         },
         state = {
-            activeLayer = config.defaultActiveLayer or LAYERS.LAPTOP,
+            activeLayer = config.defaultActiveLayer or kLayers.layerLaptop,
             isInitialized = false,
         },
         normalizedControls = normalizeControlArrays(),
@@ -991,15 +1008,24 @@ local function createUCI(config)
     
     -- Layer-to-button mapping
     local layerToButtonMap = {
-        [LAYERS.ALARM] = 1, [LAYERS.INCOMING_CALL] = 2, [LAYERS.START] = 3,
-        [LAYERS.WARMING] = 4, [LAYERS.COOLING] = 5, [LAYERS.ROOM_CONTROLS] = 6,
-        [LAYERS.PC] = 7, [LAYERS.LAPTOP] = 8, [LAYERS.WIRELESS] = 9,
-        [LAYERS.ROUTING] = 10, [LAYERS.DIALER] = 11, [LAYERS.STREAM_MUSIC] = 12
+        [kLayers.layerAlarm]        = 1, 
+        [kLayers.layerIncomingCall] = 2, 
+        [kLayers.layerStart]        = 3,
+        [kLayers.layerWarming]      = 4, 
+        [kLayers.layerCooling]      = 5, 
+        [kLayers.layerRoomControls] = 6,
+        [kLayers.layerPC]           = 7, 
+        [kLayers.layerLaptop]       = 8, 
+        [kLayers.layerWireless]     = 9,
+        [kLayers.layerRouting]      = 10, 
+        [kLayers.layerDialer]       = 11, 
+        [kLayers.layerStreamMusic]  = 12
     }
     
     local syncTimer = nil
     
     -- Forward declaration for navigate function
+    -- Note: navigate() is the functional equivalent of self:btnNavEventHandler() from OOP version
     local navigate
     
     -- Add navigate to context for modules that need it
@@ -1027,12 +1053,14 @@ local function createUCI(config)
             end
         end
         
-        if ctx.state.activeLayer ~= LAYERS.ROUTING then
+        if ctx.state.activeLayer ~= kLayers.layerRouting then
             ctx.routing.resetRoutingButtons()
         end
     end
     
     -- Navigation handler
+    -- FUNCTIONAL EQUIVALENT: This replaces self:btnNavEventHandler(argIndex) from OOP version
+    -- Routes all layer/navigation state changes through centralized handler
     navigate = function(layerIndex)
         local previousLayer = ctx.state.activeLayer
         ctx.state.activeLayer = layerIndex
@@ -1055,14 +1083,14 @@ local function createUCI(config)
     local function startSystem()
         ctx.roomAutomation.powerOn()
         ctx.progress.startLoadingBar(true)
-        navigate(LAYERS.WARMING)
+        navigate(kLayers.layerWarming)
     end
     
     local function shutdownSystem()
         ctx.layer.updateLayerVisibility({"D01-ShutdownConfirm"}, false, "fade")
         ctx.roomAutomation.powerOff()
         ctx.progress.startLoadingBar(false)
-        navigate(LAYERS.COOLING)
+        navigate(kLayers.layerCooling)
     end
     
     -- Helper function to ensure system is on
@@ -1119,24 +1147,24 @@ local function createUCI(config)
         -- Pin state handlers
         local pinHandlers = {
             [controls.pinLEDUSBLaptop] = function(ctl)
-                if ctl.Boolean then ensureSystemIsOn(); navigate(LAYERS.LAPTOP)
+                if ctl.Boolean then ensureSystemIsOn(); navigate(kLayers.layerLaptop)
                 else ctx.sublayer.updateConferenceState() end
             end,
             [controls.pinLEDUSBPC] = function(ctl)
-                if ctl.Boolean then ensureSystemIsOn(); navigate(LAYERS.PC)
+                if ctl.Boolean then ensureSystemIsOn(); navigate(kLayers.layerPC)
                 else ctx.sublayer.updateConferenceState() end
             end,
             [controls.pinLEDOffHookLaptop] = function(ctl)
-                if ctl.Boolean then ensureSystemIsOn(); navigate(LAYERS.LAPTOP) end
+                if ctl.Boolean then ensureSystemIsOn(); navigate(kLayers.layerLaptop) end
             end,
             [controls.pinLEDOffHookPC] = function(ctl)
-                if ctl.Boolean then ensureSystemIsOn(); navigate(LAYERS.PC) end
+                if ctl.Boolean then ensureSystemIsOn(); navigate(kLayers.layerPC) end
             end,
             [controls.pinLEDHDMI01Active] = function(ctl)
-                if ctl.Boolean then ensureSystemIsOn(); navigate(LAYERS.LAPTOP) end
+                if ctl.Boolean then ensureSystemIsOn(); navigate(kLayers.layerLaptop) end
             end,
             [controls.pinLEDHDMI02Active] = function(ctl)
-                if ctl.Boolean then ensureSystemIsOn(); navigate(LAYERS.PC) end
+                if ctl.Boolean then ensureSystemIsOn(); navigate(kLayers.layerPC) end
             end,
             [controls.pinLEDPresetSaved] = ctx.sublayer.updatePresetSavedState,
             [controls.pinLEDHDMI01Connect] = ctx.sublayer.updateHDMI01State,
@@ -1189,17 +1217,17 @@ local function createUCI(config)
             local systemPowerState = controls.ledSystemPower and controls.ledSystemPower.Boolean
             if systemPowerState then
                 if mySystemController.state.isWarming then
-                    ctx.state.activeLayer = LAYERS.WARMING
+                    ctx.state.activeLayer = kLayers.layerWarming
                     ctx.progress.startLoadingBar(true)
                 else
                     ctx.state.activeLayer = ctx.config.defaultActiveLayer
                 end
             else
-                ctx.state.activeLayer = LAYERS.START
+                ctx.state.activeLayer = kLayers.layerStart
             end
             debug("Synchronized with Room Automation state")
         else
-            ctx.state.activeLayer = LAYERS.START
+            ctx.state.activeLayer = kLayers.layerStart
             debug("Using default initialization")
         end
         
@@ -1254,7 +1282,7 @@ local function createUCI(config)
         isInitialized = function() return ctx.state.isInitialized end,
         
         -- Constants
-        LAYERS = LAYERS,
+        kLayers = kLayers,
     }
 end
 
@@ -1262,16 +1290,16 @@ end
 myUCI = createUCI({
     uciPage = Uci.Variables.txtUCIPageName.String,
     defaultRoutingLayer = tonumber(Uci.Variables.numDefaultRoutingLayer.Value) or 4,
-    defaultActiveLayer = tonumber(Uci.Variables.numDefaultActiveLayer.Value) or LAYERS.LAPTOP,
+    defaultActiveLayer = tonumber(Uci.Variables.numDefaultActiveLayer.Value) or kLayers.layerLaptop,
     hiddenNavIndices = {},
     debugging = true,
 })
 
 if myUCI then
-    print("✓ UCIController (Functional) created successfully!")
+    print("✓ UCIController created successfully!")
     print("Event-driven Room Controls synchronization is active")
     _G.myUCI = myUCI
-    _G.LAYERS = LAYERS
+    _G.kLayers = kLayers
 else
     print("✗ ERROR: UCIController NOT created.")
 end
@@ -1279,15 +1307,15 @@ end
 ------------------[ Public API ]-----------------------------
 --[[
 Public API:
-    myUCI.navigate(layerIndex)          -- Navigate to a layer
+    myUCI.navigate(layerIndex)          -- Navigate to a layer (OOP: self:btnNavEventHandler(layer))
     myUCI.cleanup()                     -- Clean up resources
     myUCI.startSyncTimer()              -- Start room controls sync
     myUCI.stopSyncTimer()               -- Stop room controls sync
     
-    myUCI.getActiveLayer()              -- Get current active layer
-    myUCI.isInitialized()               -- Check if initialized
+    myUCI.getActiveLayer()              -- Get current active layer (OOP: self.varActiveLayer)
+    myUCI.isInitialized()               -- Check if initialized (OOP: self.isInitialized)
     
-    -- Module access
+    -- Module access (OOP: self.moduleName → Functional: myUCI.moduleName)
     myUCI.layer.showLayer()
     myUCI.sublayer.updateCallActiveState()
     myUCI.routing.showRoutingLayer()
@@ -1296,8 +1324,8 @@ Public API:
     myUCI.roomAutomation.powerOff()
     myUCI.progress.startLoadingBar(isPoweringOn)
     
-    -- Layer constants
-    LAYERS.ALARM, LAYERS.START, LAYERS.LAPTOP, etc.
+    -- Layer constants (OOP: self.kLayerLaptop → Functional: kLayers.layerLaptop)
+    kLayers.layerAlarm, kLayers.layerStart, kLayers.layerLaptop, etc.
 
 Event-Driven Synchronization:
     - Automatic monitoring of SystemAutomationController ledSystemPower status (1s interval)

@@ -891,6 +891,7 @@ function SublayerModule:updateConferenceControlsLayer()
             "J11-CameraSelectionLaptopA", "J12-CameraSelectionLaptopB", "J13-CameraSelectionPCA", "J14-CameraSelectionPCB",
             "J21-ConferenceControlsLaptopA", "J22-ConferenceControlsLaptopB", 
             "J23-ConferenceControlsPCA", "J24-ConferenceControlsPCB",
+            "J17-VideoPrivacySeparatedA", "J18-VideoPrivacySeparatedB", "J19-VideoPrivacyCombinedA", "J20-VideoPrivacyCombinedB",
             "J09-ACPRBtnCombined", "J10-ACPRBtnSeparated"
         }, false, "none")
         self:debug("Conference controls blocked: HDMI not connected")

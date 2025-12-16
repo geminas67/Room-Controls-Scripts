@@ -230,7 +230,7 @@ function AudioModule:setPrivacy(state)
     self.controller:safeComponentAccess(callSync, "mute", "set", state)
     setProp(controls.btnAudioPrivacy, "Boolean", state)
     if controls.btnAudioPrivacy then
-        setProp(controls.btnAudioPrivacy, "CssClass", state and "icon-mic_none" or "icon-mic_off")
+        setProp(controls.btnAudioPrivacy, "CssClass", state and "icon-mic_off" or "icon-mic_none")
     end
     self.controller:publishNotification()
 end
@@ -283,7 +283,7 @@ function AudioModule:updateVolumeVisuals(i)
     -- Cache current state to avoid redundant property access
     local isMuted = mute.Boolean
     local gainType = self.controller:getGainType(i)
-    setProp(mute, "CssClass", isMuted and (gainType == "Mic" and "icon-mic_none" or "icon-volume_mute") or (gainType == "Mic" and "icon-mic_off" or "icon-volume_off"))
+    setProp(mute, "CssClass", isMuted and (gainType == "Mic" and "icon-mic_none" or "icon-volume_off") or (gainType == "Mic" and "icon-mic_off" or "icon-volume_mute"))
     setProp(fader, "Color", isMuted and "#CCCCCC" or "#0561A5")
 end
 

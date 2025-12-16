@@ -324,9 +324,7 @@ function LayerModule:showLayer()
         "R01-Routing01", "R02-Routing02", "R03-Routing03","R04-Routing04", "R05-Routing05", "R10-Routing",
         "S05-StreamMusic", 
         "V05-Dialer", 
-        "X01-ProgramVolume", 
-        "Y01-Navbar", 
-        "Z01-Base"
+        "X01-ProgramVolume", "Y01-Navbar", "Z01-Base"
     }
     
     for _, layer in ipairs(layersToHide) do
