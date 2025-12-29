@@ -1,14 +1,16 @@
 --[[
-    UCIController (Refactored)
+    UCIController (DivisibleSpace)(Refactored)
     Author: Nikolas Smith, Q-SYS
-    Version: 2.0 | Date: 2025-09-10
+    Version: 2.1 | Date: 2025-12-27
     Firmware Req: 10.0.0
     Notes:
     - Refactored per Lua Refactoring Prompt (event-driven, OOP modular).
     - All event registration is DRY and centralized using control/event maps.
     - Added debug logging for each layer function call.
-    - This script is a modified version of the UCIController class that adds enhanced error handling and validation for required controls.
-    - It also adds a check for the System Automation (Room Controls) component and a fallback method if the component is not found.
+    - FAIL-FAST APPROACH: ALL controls in the controls table are REQUIRED.
+    - Script will fail immediately at startup if ANY control is missing.
+    - NO defensive "if not controls[x]" guards after validation.
+    - Cleaner code with guaranteed control availability after initialization.
     - NEW: Universal video switcher integration supporting NV32, Extron DXP, and other video switchers
     - Each logical domain is its own module; orchestrator is thin.
     - Aligned with SystemAutomationController architecture patterns.
@@ -55,6 +57,8 @@ local controls = {
     btnCloseHelpRouting     = Controls.btnCloseHelpRouting,
     btnCloseHelpStreamMusic = Controls.btnCloseHelpStreamMusic,
     
+    btnHelpDialer           = Controls.btnHelpDialer,
+    
     -- Progress Controls
     knbProgressBar = Controls.knbProgressBar,
     txtProgressBar = Controls.txtProgressBar,
@@ -99,66 +103,32 @@ local conferenceStateConfig = {
 -- Set to true to disable ACPR Show logic (UI layers and buttons)
 -- Set to false to re-enable ACPR Show logic (for future use)
 local acprConfig = {
-    disableACPRShow = true  -- Set to false to re-enable ACPR Show logic
+    disableACPRShow = false  -- Set to false to re-enable ACPR Show logic
 }
 
 local function validateControls()
-    -- Core navigation controls
-    local required = {
-        "btnNav01", "btnNav02", "btnNav03", "btnNav04", "btnNav05", "btnNav06", "btnNav07", "btnNav08", 
-        "btnNav09", "btnNav10", "btnNav11", "btnNav12", "btnNav13", "btnNav14", "btnNav15",
-        "btnStartSystem", "btnNavShutdown", "btnShutdownCancel", "btnShutdownConfirm",
-        "pinLEDHDMIConnectedPCA", "pinLEDHDMIConnectedPCB", "pinLEDHDMIConnectedLaptopA", "pinLEDHDMIConnectedLaptopB"
-    }
-    
-    -- Optional but recommended controls
-    local optional = {
-        "knbProgressBar", "txtProgressBar",
-        "btnOpenHelpLaptopA", "btnOpenHelpLaptopB", "btnOpenHelpPCA", "btnOpenHelpPCB", "btnOpenHelpWirelessA", "btnOpenHelpWirelessB", "btnOpenHelpRouting","btnOpenHelpStreamMusic",
-        "btnCloseHelpLaptopA", "btnCloseHelpLaptopB", "btnCloseHelpPCA", "btnCloseHelpPCB", "btnCloseHelpWirelessA", "btnCloseHelpWirelessB", "btnCloseHelpRouting", "btnCloseHelpStreamMusic",
-        "pinLEDTouchActivity",
-        "pinLEDACPRBypassSeparated", "pinLEDACPRBypassCombined"
-    }
-    
+    -- Fail-fast approach: ALL controls in the controls table are required
+    -- Script will fail immediately if ANY control is missing
     local missing = {}
-    local warnings = {}
     
-    -- Check required controls
-    for _, name in ipairs(required) do
-        if not controls[name] then
+    -- Check all controls in the controls table
+    for name, ctrl in pairs(controls) do
+        if not ctrl then
             table.insert(missing, name)
         end
     end
     
-    -- Check optional controls for warnings
-    for _, name in ipairs(optional) do
-        if not controls[name] then
-            table.insert(warnings, name)
-        end
-    end
-    
-    -- Report missing required controls
+    -- Report missing controls and fail immediately
     if #missing > 0 then
-        print("ERROR: UCIController validation failed - Missing required controls:")
+        print("ERROR: UCIController validation failed - Missing REQUIRED controls:")
         for _, name in ipairs(missing) do
             print("  - " .. name)
         end
+        error("UCIController initialization failed: Missing required controls. All controls must be present.")
         return false
     end
     
-    -- Report missing optional controls as warnings with functionality notes
-    if #warnings > 0 then
-        print("WARNING: UCIController - Missing optional controls (reduced functionality):")
-        for _, name in ipairs(warnings) do
-            local functionalityNote = ""
-            if name == "knbProgressBar" or name == "txtProgressBar" then
-                functionalityNote = " (progress bar animation disabled)"
-            end
-            print("  - " .. name .. functionalityNote)
-        end
-    end
-    
-    print("UCIController validation passed - All required controls found")
+    print("UCIController validation passed - All controls present")
     return true
 end
 
@@ -173,37 +143,39 @@ local function normalizeControlArrays()
     }
     
     -- Build navigation button array dynamically - discover all btnNav## buttons
+    -- All controls validated at startup, so btn will never be nil
     for key, btn in pairs(controls) do
         if type(key) == "string" and key:match("^btnNav%d+$") then
             local num = tonumber(key:match("%d+"))
-            if num and btn then
+            if num then
                 controlsToNormalize.navButtons[num] = btn
             end
         end
     end
     
     -- Build routing button array dynamically - discover all btnRouting## buttons
+    -- All controls validated at startup, so btn will never be nil
     for key, btn in pairs(controls) do
         if type(key) == "string" and key:match("^btnRouting%d+$") then
             local num = tonumber(key:match("%d+"))
-            if num and btn then
+            if num then
                 controlsToNormalize.routingButtons[num] = btn
             end
         end
     end
     
-    -- Build help button array
+    -- Build help button array (all controls validated at startup)
     local helpButtons = {"btnOpenHelpLaptopA", "btnOpenHelpLaptopB", "btnOpenHelpPCA", "btnOpenHelpPCB", "btnOpenHelpWirelessA", "btnOpenHelpWirelessB", "btnOpenHelpRouting", "btnOpenHelpStreamMusic", 
     "btnCloseHelpLaptopA", "btnCloseHelpLaptopB", "btnCloseHelpPCA", "btnCloseHelpPCB", "btnCloseHelpWirelessA", "btnCloseHelpWirelessB", "btnCloseHelpRouting", "btnCloseHelpStreamMusic"}
     for i, name in ipairs(helpButtons) do
-        if controls[name] then controlsToNormalize.helpButtons[i] = controls[name] end
+        controlsToNormalize.helpButtons[i] = controls[name]
     end
     
-    -- Build pin input array  
+    -- Build pin input array (all controls validated at startup)
     local pinInputs = {"pinCallActive", "pinLEDUSBLaptopA", "pinLEDUSBPCA", "pinLEDUSBPCB", "pinLEDOffHookLaptopA", "pinLEDOffHookLaptopB", "pinLEDOffHookPCA", "pinLEDOffHookPCB", 
                       "pinLEDHDMIActiveLaptopA", "pinLEDHDMIActivePCA", "pinLEDHDMIActiveLaptopB", "pinLEDHDMIActivePCB", "pinLEDPresetSaved", "pinLEDACPRBypassSeparated", "pinLEDACPRBypassCombined", "pinLEDTouchActivity"}
     for i, name in ipairs(pinInputs) do
-        if controls[name] then controlsToNormalize.pinInputs[i] = controls[name] end
+        controlsToNormalize.pinInputs[i] = controls[name]
     end
     
     return controlsToNormalize
@@ -241,61 +213,16 @@ end
 
 -- Utility function for managing paired controls (open/close, on/off, etc.)
 local function bindPairedControls(openCtrl, closeCtrl, updateHandler)
-    if openCtrl and updateHandler then
-        bind(openCtrl, function()
-            if closeCtrl then setProp(closeCtrl, "Boolean", false) end
-            updateHandler()
-        end)
-    end
-    
-    if closeCtrl and updateHandler then
-        bind(closeCtrl, function()
-            if openCtrl then setProp(openCtrl, "Boolean", false) end
-            updateHandler()
-        end)
-    end
-end
-
-
--------------------[ State Management Utility ]-------------
-local function resetComponentsArray()
-    -- State management utility for dynamic component arrays
-    -- Following SystemAutomationController pattern for consistency
-    local componentState = {
-        videoSwitchers = {},
-        roomControllers = {},
-        audioComponents = {},
-        initialized = false
-    }
-    
-    -- Clear any existing component references
-    for category, components in pairs(componentState) do
-        if type(components) == "table" then
-            for k in pairs(components) do
-                components[k] = nil
-            end
+    local function bindPair(ctrl, oppCtrl)
+        if ctrl and updateHandler then
+            bind(ctrl, function()
+                if oppCtrl then setProp(oppCtrl, "Boolean", false) end
+                updateHandler()
+            end)
         end
     end
-    
-    -- Reinitialize component discovery
-    local availableComponents = Component.GetComponents()
-    if availableComponents then
-        -- Categorize components by type
-        for name, comp in pairs(availableComponents) do
-            if comp.Type then
-                if comp.Type:find("streamer_hdmi_switcher") or comp.Type:find("extron") then
-                    componentState.videoSwitchers[name] = comp
-                elseif comp.Type:find("automation") or comp.Type:find("room") then
-                    componentState.roomControllers[name] = comp
-                elseif comp.Type:find("audio_router") then
-                    componentState.audioComponents[name] = comp
-                end
-            end
-        end
-    end
-    
-    componentState.initialized = true
-    return componentState
+    bindPair(openCtrl, closeCtrl)
+    bindPair(closeCtrl, openCtrl)
 end
 
 -------------------[ Base Module Class ]-------------------
@@ -505,6 +432,7 @@ function LayerModule:showLayer()
         [self.controller.kLayerRoomCombining] = {
             showLayers = {"H04-RoomCombining"},
             callLayerFunctions = {
+                function() self.controller.layerModule:hideBaseLayers() end,
                 function() self.controller.sublayerModule:updateCallActiveState() end,
                 function() self.controller:resetTouchInactivityTimer() end
             }
@@ -581,16 +509,26 @@ function SublayerModule.new(controller)
         [controller.kLayerLaptopA] = controls.pinLEDHDMIConnectedLaptopA,
         [controller.kLayerLaptopB] = controls.pinLEDHDMIConnectedLaptopB,
         [controller.kLayerPCA] = controls.pinLEDHDMIConnectedPCA,
-        [controller.kLayerPCB] = controls.pinLEDHDMIConnectedPCB
+        [controller.kLayerPCB] = controls.pinLEDHDMIConnectedPCB,
+    }
+    
+    -- Cache help layer to button mapping for DRY button state syncing
+    self.helpLayerButtonMap = {
+        ["I02-HelpLaptopA"] = {open = "btnOpenHelpLaptopA", close = "btnCloseHelpLaptopA"},
+        ["I03-HelpLaptopB"] = {open = "btnOpenHelpLaptopB", close = "btnCloseHelpLaptopB"},
+        ["I04-HelpPCA"] = {open = "btnOpenHelpPCA", close = "btnCloseHelpPCA"},
+        ["I05-HelpPCB"] = {open = "btnOpenHelpPCB", close = "btnCloseHelpPCB"},
+        ["I06-HelpWirelessA"] = {open = "btnOpenHelpWirelessA", close = "btnCloseHelpWirelessA"},
+        ["I07-HelpWirelessB"] = {open = "btnOpenHelpWirelessB", close = "btnCloseHelpWirelessB"},
+        ["I08-HelpRouting"] = {open = "btnOpenHelpRouting", close = "btnCloseHelpRouting"},
+        ["I10-HelpStreamMusic"] = {open = "btnOpenHelpStreamMusic", close = "btnCloseHelpStreamMusic"},
     }
     
     return self
 end
 
 function SublayerModule:updateCallActiveState()
-    -- Guard clause - early return if control doesn't exist
-    if not controls.pinCallActive then return end
-    
+    -- All controls validated at startup - no defensive checks needed
     local isActive = controls.pinCallActive.Boolean or false
     self.controller.layerModule:updateLayerVisibility({"I01-CallActive"}, isActive, isActive and "fade" or "none")
     self:debug("Call Active: " .. (isActive and "Showing" or "Hiding"))
@@ -605,8 +543,25 @@ function SublayerModule:checkHDMIConnection()
     return hdmiPin.Boolean
 end
 
+-- DRY Helper: Sync help button states with actual layer visibility
+function SublayerModule:syncHelpButtonStates(helpLayer)
+    local buttonMap = self.helpLayerButtonMap[helpLayer]
+    if not buttonMap then return end -- Unknown help layer, skip
+    
+    -- Get actual layer state from layerModule
+    local layerVisible = self.controller.layerModule.layerStates[helpLayer] == true
+    
+    -- Update button states to reflect actual layer visibility (all controls validated at startup)
+    local openBtn = controls[buttonMap.open]
+    local closeBtn = controls[buttonMap.close]
+    
+    setProp(openBtn, "Boolean", layerVisible)
+    setProp(closeBtn, "Boolean", false) -- Close button should always be false (it's a momentary trigger)
+end
+
 function SublayerModule:updatePresetSavedState()
-    local isVisible = controls.pinLEDPresetSaved and controls.pinLEDPresetSaved.Boolean or false
+    -- All controls validated at startup - no defensive checks needed
+    local isVisible = controls.pinLEDPresetSaved.Boolean or false
     self.controller.layerModule:updateLayerVisibility({"J08-CamPresetSaved"}, isVisible, isVisible and "fade" or "none")
     self:debug("Preset Saved: " .. (isVisible and "Showing" or "Hiding") .. " J08-CamPresetSaved")
 end
@@ -653,7 +608,7 @@ function SublayerModule:updateACPRBypassState()
         conferenceLayer = "J24-ConferenceControlsPCB"
     end
 
-    -- Read appropriate bypass control based on room state
+    -- Read appropriate bypass control based on room state (all controls validated at startup)
     local bypassControl, acprActiveLayer
     if roomState == "separated" then
         bypassControl = controls.pinLEDACPRBypassSeparated
@@ -664,7 +619,7 @@ function SublayerModule:updateACPRBypassState()
         acprActiveLayer = "J06-ACPRActiveCombined"
     end
 
-    local isBypassActive = bypassControl and bypassControl.Boolean or false
+    local isBypassActive = bypassControl.Boolean or false
     
     -- Hide the other ACPR Active layer based on room state
     if roomState == "separated" then
@@ -697,11 +652,31 @@ function SublayerModule:updateConferenceState()
     
     -- Guard: Check HDMI connection first
     if not self:checkHDMIConnection() then
-        self.controller.layerModule:updateLayerVisibility({
+        -- Determine help layer to hide based on active layer
+        local helpLayer
+        if activeLayer == self.controller.kLayerLaptopA then
+            helpLayer = "I02-HelpLaptopA"
+        elseif activeLayer == self.controller.kLayerLaptopB then
+            helpLayer = "I03-HelpLaptopB"
+        elseif activeLayer == self.controller.kLayerPCA then
+            helpLayer = "I04-HelpPCA"
+        elseif activeLayer == self.controller.kLayerPCB then
+            helpLayer = "I05-HelpPCB"
+        end
+        
+        local layersToHide = {
             "J01-ConnectUSBLaptopA", "J02-ConnectUSBLaptopB", "J03-ConnectUSBPCA", "J04-ConnectUSBPCB",
             "J21-ConferenceControlsLaptopA", "J22-ConferenceControlsLaptopB", 
             "J23-ConferenceControlsPCA", "J24-ConferenceControlsPCB"
-        }, false, "none")
+        }
+        if helpLayer then
+            table.insert(layersToHide, helpLayer)
+        end
+        self.controller.layerModule:updateLayerVisibility(layersToHide, false, "none")
+        -- Sync help button states after hiding help layer due to HDMI disconnect
+        if helpLayer then
+            self:syncHelpButtonStates(helpLayer)
+        end
         self:debug("Conference state blocked: HDMI not connected")
         return
     end
@@ -714,26 +689,32 @@ function SublayerModule:updateConferenceState()
         return
     end
     
+    -- All controls validated at startup - no defensive checks needed
+    local helpLayer
     if activeLayer == self.controller.kLayerLaptopA then
         -- LaptopA: pinLEDUSBLaptopA and J21-ConferenceControlsLaptopA
-        usbConnected = controls.pinLEDUSBLaptopA and controls.pinLEDUSBLaptopA.Boolean or false
+        usbConnected = controls.pinLEDUSBLaptopA.Boolean or false
         usbNotConnectedLayer = "J01-ConnectUSBLaptopA"
         conferenceLayer = "J21-ConferenceControlsLaptopA"
+        helpLayer = "I02-HelpLaptopA"
     elseif activeLayer == self.controller.kLayerLaptopB then
         -- LaptopB: pinLEDUSBLaptopB and J22-ConferenceControlsLaptopB
-        usbConnected = controls.pinLEDUSBLaptopB and controls.pinLEDUSBLaptopB.Boolean or false
+        usbConnected = controls.pinLEDUSBLaptopB.Boolean or false
         usbNotConnectedLayer = "J02-ConnectUSBLaptopB"
         conferenceLayer = "J22-ConferenceControlsLaptopB"
+        helpLayer = "I03-HelpLaptopB"
     elseif activeLayer == self.controller.kLayerPCA then
         -- PCA: pinLEDUSBPCA and J23-ConferenceControlsPCA
-        usbConnected = controls.pinLEDUSBPCA and controls.pinLEDUSBPCA.Boolean or false
+        usbConnected = controls.pinLEDUSBPCA.Boolean or false
         usbNotConnectedLayer = "J03-ConnectUSBPCA"
         conferenceLayer = "J23-ConferenceControlsPCA"
+        helpLayer = "I04-HelpPCA"
     elseif activeLayer == self.controller.kLayerPCB then
         -- PCB: pinLEDUSBPCB and J24-ConferenceControlsPCB
-        usbConnected = controls.pinLEDUSBPCB and controls.pinLEDUSBPCB.Boolean or false
+        usbConnected = controls.pinLEDUSBPCB.Boolean or false
         usbNotConnectedLayer = "J04-ConnectUSBPCB"
         conferenceLayer = "J24-ConferenceControlsPCB"
+        helpLayer = "I05-HelpPCB"
     else
         return
     end
@@ -743,42 +724,53 @@ function SublayerModule:updateConferenceState()
         self.controller.layerModule:updateLayerVisibility({"J01-ConnectUSBLaptopA", "J02-ConnectUSBLaptopB", "J03-ConnectUSBPCA", "J04-ConnectUSBPCB"}, false, "none")
     else
         self.controller.layerModule:updateLayerVisibility({usbNotConnectedLayer}, true, "fade")
-        self.controller.layerModule:updateLayerVisibility({conferenceLayer}, false, "none")
+        self.controller.layerModule:updateLayerVisibility({conferenceLayer, helpLayer}, false, "none")
+        -- Sync help button states after hiding help layer due to USB disconnect
+        if helpLayer then
+            self:syncHelpButtonStates(helpLayer)
+        end
     end
     self:debug("Conference: " .. conferenceLayer .. " " .. (usbConnected and "Connected" or "Disconnected"))
 end
 
 function SublayerModule:updateWirelessHelpState()
-    local isVisible = controls.btnHelpWireless and controls.btnHelpWireless.Boolean or false
+    -- All controls validated at startup - no defensive checks needed
+    local isVisible = controls.btnOpenHelpWirelessA.Boolean or false
     self.controller.layerModule:updateLayerVisibility({"I06-HelpWirelessA"}, isVisible, "none")
+    self:syncHelpButtonStates("I06-HelpWirelessA")
     self:debug("Wireless Help: " .. (isVisible and "Showing" or "Hiding"))
 end
 
 function SublayerModule:updateRoutingHelpState()
-    local isVisible = controls.btnHelpRouting and controls.btnHelpRouting.Boolean or false
+    -- All controls validated at startup - no defensive checks needed
+    local isVisible = controls.btnOpenHelpRouting.Boolean or false
     self.controller.layerModule:updateLayerVisibility({"I08-HelpRouting"}, isVisible, "none")
+    self:syncHelpButtonStates("I08-HelpRouting")
     self:debug("Routing Help: " .. (isVisible and "Showing" or "Hiding"))
 end
 
 function SublayerModule:updateDialerHelpState()
-    local isVisible = controls.btnHelpDialer and controls.btnHelpDialer.Boolean or false
+    -- All controls validated at startup - no defensive checks needed
+    local isVisible = controls.btnHelpDialer.Boolean or false
     self.controller.layerModule:updateLayerVisibility({"I09-HelpDialer"}, isVisible, "none")
     self:debug("Dialer Help: " .. (isVisible and "Showing" or "Hiding"))
 end
 
 function SublayerModule:updateStreamMusicHelpState()
-    local isVisible = controls.btnHelpStreamMusic and controls.btnHelpStreamMusic.Boolean or false
+    -- All controls validated at startup - no defensive checks needed
+    local isVisible = controls.btnOpenHelpStreamMusic.Boolean or false
     self.controller.layerModule:updateLayerVisibility({"I10-HelpStreamMusic"}, isVisible, "none")
+    self:syncHelpButtonStates("I10-HelpStreamMusic")
     self:debug("Stream Music Help: " .. (isVisible and "Showing" or "Hiding"))
 end
 
 -------------------[ Generic HDMI State Handler ]----------
 -- DRY Pattern: Single method handles all 4 source HDMI states
 function SublayerModule:updateHDMIState(layerConstant, pinName, baseLayer, disconnectLayer, sourceName)
-    -- Guard clauses with early returns
+    -- Guard clause: only process if on the correct layer
     if self.controller.varActiveLayer ~= layerConstant then return end
-    if not controls[pinName] then return end
     
+    -- All controls validated at startup - no defensive checks needed
     local isConnected = controls[pinName].Boolean or false
     if isConnected then
         self.controller.layerModule:updateLayerVisibility({baseLayer}, true, "fade")
@@ -787,27 +779,45 @@ function SublayerModule:updateHDMIState(layerConstant, pinName, baseLayer, disco
         return
     end
     
-    -- Determine which conference layer to hide based on source
+    -- Determine which conference layer and help layer to hide based on source
     local conferenceLayer
+    local helpLayer
     if sourceName == "LaptopA" then
         conferenceLayer = "J21-ConferenceControlsLaptopA"
+        helpLayer = "I02-HelpLaptopA"
     elseif sourceName == "LaptopB" then
         conferenceLayer = "J22-ConferenceControlsLaptopB"
+        helpLayer = "I03-HelpLaptopB"
     elseif sourceName == "PCA" then
         conferenceLayer = "J23-ConferenceControlsPCA"
+        helpLayer = "I04-HelpPCA"
     elseif sourceName == "PCB" then
         conferenceLayer = "J24-ConferenceControlsPCB"
+        helpLayer = "I05-HelpPCB"
     end
     
     self.controller.layerModule:updateLayerVisibility({disconnectLayer}, true, "fade")
-    self.controller.layerModule:updateLayerVisibility({baseLayer, conferenceLayer}, false, "none")
+    self.controller.layerModule:updateLayerVisibility({baseLayer, conferenceLayer, helpLayer}, false, "none")
+    -- Sync help button states after hiding help layer due to HDMI disconnect
+    if helpLayer then
+        self:syncHelpButtonStates(helpLayer)
+    end
     self:debug("HDMI " .. sourceName .. ": Disconnected")
 end
 
 -------------------[ Generic Source Help State Handler ]---
 -- DRY Pattern: Single method handles all source help states
 function SublayerModule:updateSourceHelpState(btnName, helpLayer, conferenceLayer, sourceName)
-    local isVisible = controls[btnName] and controls[btnName].Boolean or false
+    -- Guard: Check HDMI connection first - hide help if HDMI is not connected
+    if not self:checkHDMIConnection() then
+        self.controller.layerModule:updateLayerVisibility({helpLayer}, false, "none")
+        self:syncHelpButtonStates(helpLayer) -- Sync button states after hiding
+        self:debug(sourceName .. " Help: Hiding (HDMI not connected)")
+        return
+    end
+    
+    -- All controls validated at startup - no defensive checks needed
+    local isVisible = controls[btnName].Boolean or false
     if isVisible then
         self.controller.layerModule:updateLayerVisibility({helpLayer}, true, "fade")
         self.controller.layerModule:updateLayerVisibility({
@@ -819,6 +829,8 @@ function SublayerModule:updateSourceHelpState(btnName, helpLayer, conferenceLaye
         self.controller.layerModule:updateLayerVisibility({helpLayer}, false, "none")
         self:updateConferenceState()
     end
+    -- Sync button states to reflect actual layer visibility
+    self:syncHelpButtonStates(helpLayer)
     self:debug(sourceName .. " Help: " .. (isVisible and "Showing" or "Hiding"))
 end
 
@@ -913,11 +925,11 @@ function SublayerModule:updateConferenceControlsLayer()
     self.controller.layerModule:updateLayerVisibility({"J13-CameraSelectionPCA"}, showJ13, showJ13 and "fade" or "none")
     self.controller.layerModule:updateLayerVisibility({"J14-CameraSelectionPCB"}, showJ14, showJ14 and "fade" or "none")
     
-    -- Determine USB connection state for each source
-    local usbLaptopA = controls.pinLEDUSBLaptopA and controls.pinLEDUSBLaptopA.Boolean or false
-    local usbLaptopB = controls.pinLEDUSBLaptopB and controls.pinLEDUSBLaptopB.Boolean or false
-    local usbPCA = controls.pinLEDUSBPCA and controls.pinLEDUSBPCA.Boolean or false
-    local usbPCB = controls.pinLEDUSBPCB and controls.pinLEDUSBPCB.Boolean or false
+    -- Determine USB connection state for each source (all controls validated at startup)
+    local usbLaptopA = controls.pinLEDUSBLaptopA.Boolean or false
+    local usbLaptopB = controls.pinLEDUSBLaptopB.Boolean or false
+    local usbPCA = controls.pinLEDUSBPCA.Boolean or false
+    local usbPCB = controls.pinLEDUSBPCB.Boolean or false
     
     -- Show conference controls layers if USB is connected for active source
     -- Conference controls show when active layer matches and USB connected (ignore room state)
@@ -1155,20 +1167,10 @@ function RoomAutomationModule:powerOn()
         self:debug("Cannot power on: Room Controls component not available")
         return false
     end
-    
     -- Set btnSystemOnOff control to trigger power on (ledSystemPower will update via SystemAutomationController)
-    local ok, result = pcall(function()
-        self.roomControlsComponent["btnSystemOnOff"].Boolean = true
-        return self.roomControlsComponent["btnSystemOnOff"].Boolean
-    end)
-    
-    if ok and result then
-        self:debug("Room powered ON")
-        return true
-    else
-        self:debug("Failed to power on room automation")
-        return false
-    end
+    local ok = pcall(function() self.roomControlsComponent["btnSystemOnOff"].Boolean = true end)
+    if ok then self:debug("Room powered ON") else self:debug("Failed to power on room automation") end
+    return ok
 end
 
 function RoomAutomationModule:powerOff()
@@ -1176,20 +1178,10 @@ function RoomAutomationModule:powerOff()
         self:debug("Cannot power off: Room Controls component not available")
         return false
     end
-    
     -- Set btnSystemOnOff control to trigger power off (ledSystemPower will update via SystemAutomationController)
-    local ok, result = pcall(function()
-        self.roomControlsComponent["btnSystemOnOff"].Boolean = false
-        return not self.roomControlsComponent["btnSystemOnOff"].Boolean
-    end)
-    
-    if ok and result then
-        self:debug("Room powered OFF")
-        return true
-    else
-        self:debug("Failed to power off room automation")
-        return false
-    end
+    local ok = pcall(function() self.roomControlsComponent["btnSystemOnOff"].Boolean = false end)
+    if ok then self:debug("Room powered OFF") else self:debug("Failed to power off room automation") end
+    return ok
 end
 
 function RoomAutomationModule:getTiming(isPoweringOn)
@@ -1275,13 +1267,9 @@ function ProgressModule:startLoadingBar(isPoweringOn)
     self.loadingTimer = Timer.New()
     self.timeoutTimer = Timer.New()
     
-    -- Initialize progress display
-    if controls.knbProgressBar then
-        controls.knbProgressBar.Value = isPoweringOn and 0 or 100
-    end
-    if controls.txtProgressBar then
-        controls.txtProgressBar.String = (isPoweringOn and 0 or 100) .. "%"
-    end
+    -- Initialize progress display (all controls validated at startup)
+    controls.knbProgressBar.Value = isPoweringOn and 0 or 100
+    controls.txtProgressBar.String = (isPoweringOn and 0 or 100) .. "%"
     
     -- Timeout protection
     self.timeoutTimer.EventHandler = function()
@@ -1294,13 +1282,13 @@ function ProgressModule:startLoadingBar(isPoweringOn)
     end
     self.timeoutTimer:Start(300) -- 5-minute timeout
     
-    -- Progress animation
+    -- Progress animation (all controls validated at startup)
     self.loadingTimer.EventHandler = function()
         currentStep = currentStep + 1
         
         local progress = isPoweringOn and currentStep or (100 - currentStep)
-        if controls.knbProgressBar then controls.knbProgressBar.Value = progress end
-        if controls.txtProgressBar then controls.txtProgressBar.String = progress .. "%" end
+        controls.knbProgressBar.Value = progress
+        controls.txtProgressBar.String = progress .. "%"
         
         if currentStep >= steps then
             self.loadingTimer:Stop()
@@ -1538,15 +1526,13 @@ function DivisibleSpaceModule:updateNavigationVisibility()
     local controlsToUpdate = navConfig[roomIdentity]
     if not controlsToUpdate then return end
     
-    -- Helper function to set visibility for a button/text pair
+    -- Helper function to set visibility for a button/text pair (all controls validated at startup)
     local function setNavVisibility(num, label, isInvisible)
         local controlNames = {"btnNav" .. num, "txtNav" .. num}
         
         for _, controlName in ipairs(controlNames) do
-            if controls[controlName] then
-                setProp(controls[controlName], "IsInvisible", isInvisible)
-                self:debug(string.format("%s (%s) IsInvisible = %s", controlName, label, tostring(isInvisible)))
-            end
+            setProp(controls[controlName], "IsInvisible", isInvisible)
+            self:debug(string.format("%s (%s) IsInvisible = %s", controlName, label, tostring(isInvisible)))
         end
     end
     
@@ -1558,8 +1544,7 @@ end
 
 function DivisibleSpaceModule:updateStartSystemLegend()
     -- DRY: Single method to update btnStartSystem.Legend based on room state
-    if not controls.btnStartSystem then return end
-    
+    -- All controls validated at startup - no defensive checks needed
     local roomState = self:getRoomState()
     local legend = (roomState == "separated") and "Start Room" or "Start Rooms"
     
@@ -1626,9 +1611,6 @@ function UCIController.new(uciPage, defaultRoutingLayer, defaultActiveLayer, hid
     -- Normalize control arrays early in initialization
     self.normalizedControls = normalizeControlArrays()
     
-    -- Reset component state for clean initialization
-    self.componentState = resetComponentsArray()
-    
     -- Core properties
     self.uciPage = uciPage
     self.debugging = true
@@ -1691,9 +1673,6 @@ function UCIController:onRoomCombiningInactivity()
 end
 
 function UCIController:resetTouchInactivityTimer()
-    -- Guard clause - ensure timer exists
-    if not self.uciTouchInactivityTimer then return end
-    
     -- Stop any existing timer first to prevent immediate firing
     self.uciTouchInactivityTimer:Stop()
     
@@ -1762,12 +1741,12 @@ function UCIController:registerEventHandlers()
             bindPairedControls(pair.open, pair.close, pair.handler)
     end
     
-    -- Helper function to check and start system if needed
+    -- Helper function to check and start system if needed (room automation is optional)
     local function ensureSystemIsOn()
         if self.roomAutomationModule and self.roomAutomationModule.roomControlsComponent then
             -- Check ledSystemPower status (authoritative status indicator)
-            if self.roomAutomationModule.roomControlsComponent["ledSystemPower"] and 
-               not self.roomAutomationModule.roomControlsComponent["ledSystemPower"].Boolean then
+            local ledPower = self.roomAutomationModule.roomControlsComponent["ledSystemPower"]
+            if ledPower and not ledPower.Boolean then
                 -- System is OFF, trigger start system
                 self:startSystem()
             end
@@ -1855,32 +1834,16 @@ function UCIController:registerEventHandlers()
         end
     }
     
-    -- Helper function to conditionally add optional control handlers with logging
-    local missingOptionalControls = {}
-    local function addOptionalHandler(control, controlName, handler)
-        if control then
-            pinHandlerMap[control] = handler
-        else
-            table.insert(missingOptionalControls, controlName)
-        end
-    end
+    -- All controls validated at startup - no defensive checks needed
+    -- Add ACPR bypass handlers
+    pinHandlerMap[controls.pinLEDACPRBypassSeparated] = function() self.sublayerModule:updateACPRBypassState() end
+    pinHandlerMap[controls.pinLEDACPRBypassCombined] = function() self.sublayerModule:updateACPRBypassState() end
     
-    -- Conditionally add ACPR bypass handlers (optional controls)
-    addOptionalHandler(controls.pinLEDACPRBypassSeparated, "pinLEDACPRBypassSeparated", function() self.sublayerModule:updateACPRBypassState() end)
-    addOptionalHandler(controls.pinLEDACPRBypassCombined, "pinLEDACPRBypassCombined", function() self.sublayerModule:updateACPRBypassState() end)
-    
-    -- Report missing optional controls if any
-    if #missingOptionalControls > 0 then
-        self:debug("Optional control handlers skipped (controls not found): " .. table.concat(missingOptionalControls, ", "))
-    end
-    
-    -- Batch register all handler maps
+    -- Batch register all handler maps (all controls validated at startup)
     local handlerMaps = {systemHandlerMap, pinHandlerMap}
     for _, handlerMap in ipairs(handlerMaps) do
         for ctrl, handler in pairs(handlerMap) do
-            if ctrl then -- Only bind if control exists
-                bind(ctrl, handler)
-            end
+            bind(ctrl, handler)
         end
     end
     
@@ -1944,12 +1907,10 @@ function UCIController:interlock()
     
     local activeButtonIndex = self.layerToButtonMap[self.varActiveLayer]
     
-    -- Reset all buttons and set active one in single loop
+    -- Reset all buttons and set active one in single loop (all controls validated at startup)
     for i, btn in ipairs(navButtons) do
-        if btn then
-            local shouldBeActive = (i == activeButtonIndex)
-            setProp(btn, "Boolean", shouldBeActive) -- Use setProp to prevent redundant assignments
-        end
+        local shouldBeActive = (i == activeButtonIndex)
+        setProp(btn, "Boolean", shouldBeActive) -- Use setProp to prevent redundant assignments
     end
 end
 
@@ -1960,17 +1921,11 @@ function UCIController:updateLegends()
         return
     end
     
+    -- Legend arrays may contain nils (optional controls) - check before use
     for i, lbl in ipairs(self.arrUCILegends) do
         if lbl and self.arrUCIUserLabels[i] then
             local newLegend = self.arrUCIUserLabels[i].String or ""
             setProp(lbl, "Legend", newLegend)
-        else
-            if not lbl then
-                self:debug("Warning: Legend control at index " .. i .. " is nil")
-            end
-            if not self.arrUCIUserLabels[i] then
-                self:debug("Warning: User label variable at index " .. i .. " is nil")
-            end
         end
     end
 end
@@ -1992,14 +1947,9 @@ function UCIController:initializeLegendArrays()
         "txtDisplay01", "txtDisplay02", "txtDisplay03", "txtDisplay04", "txtDisplay05", "txtDisplay06", "txtDisplay07", "txtDisplay08", "txtDisplay09", "txtDisplay10", "txtDisplay11", "txtDisplay12", 
     }
     
+    -- Build legend array (may contain nils for optional display controls)
     for i, controlName in ipairs(legendControls) do
-        local control = Controls[controlName]
-        if control then
-            self.arrUCILegends[i] = control
-        else
-            self:debug("Warning: Legend control " .. controlName .. " not found")
-            self.arrUCILegends[i] = nil
-        end
+        self.arrUCILegends[i] = Controls[controlName]
     end
     
     -- Initialize UCI user label variables array
@@ -2017,24 +1967,17 @@ function UCIController:initializeLegendArrays()
         "txtLabelDisplay01", "txtLabelDisplay02", "txtLabelDisplay03", "txtLabelDisplay04", "txtLabelDisplay05", "txtLabelDisplay06", "txtLabelDisplay07", "txtLabelDisplay08", "txtLabelDisplay09", "txtLabelDisplay10", "txtLabelDisplay11", "txtLabelDisplay12", 
     }
     
+    -- Build UCI user label variables array (may contain nils for optional variables)
     for i, varLabel in ipairs(userLabelVariables) do
-        local variable = Uci.Variables[varLabel]
-        if variable then
-            self.arrUCIUserLabels[i] = variable
-        else
-            self:debug("Warning: UCI Variable " .. varLabel .. " not found")
-            self.arrUCIUserLabels[i] = nil
-        end
+        self.arrUCIUserLabels[i] = Uci.Variables[varLabel]
     end
     
     -- Set up event handlers for UCI variables to automatically update legends
     for i, label in ipairs(self.arrUCIUserLabels) do
-        if label then
+        if label then -- May be nil for optional variables
             label.EventHandler = function()
                 self:updateLegends()
             end
-        else
-            self:debug("Warning: User label variable at index " .. i .. " is nil, skipping event handler")
         end
     end
     
@@ -2059,9 +2002,13 @@ function UCIController:init()
         self.divisibleSpaceModule:initialize()
     end
     
-    -- Sync with Room Automation state if available
+    -- Sync with Room Automation state if available (component control, not UCI control)
     if mySystemController and mySystemController.state then
-        local systemPowerState = controls.ledSystemPower and controls.ledSystemPower.Boolean
+        local systemPowerState = false
+        if self.roomAutomationModule.roomControlsComponent and 
+           self.roomAutomationModule.roomControlsComponent["ledSystemPower"] then
+            systemPowerState = self.roomAutomationModule.roomControlsComponent["ledSystemPower"].Boolean
+        end
         if systemPowerState then
             if mySystemController.state.isWarming then
                 self.varActiveLayer = self.kLayerWarming
@@ -2209,7 +2156,7 @@ local function createUCIController(targetPageName, defaultRoutingLayer, defaultA
         return {
             uciPage = targetPageName,
             debugging = true,
-            varActiveLayer = defaultActiveLayer or 10,
+            varActiveLayer = defaultActiveLayer,
             isInitialized = false,
             btnNavEventHandler = function(self, layer)
                 print("Minimal UCI: Navigation to layer " .. layer .. " (limited functionality)")

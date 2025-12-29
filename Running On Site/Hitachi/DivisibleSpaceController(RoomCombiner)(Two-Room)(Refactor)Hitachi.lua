@@ -29,7 +29,7 @@ local acprControlNames = {"compACPRCollabA", "compACPRCollabB"}
 -- Set to true to disable ACPR component routing (assignment and routing)
 -- Set to false to re-enable ACPR component routing (for future use)
 local acprConfig = {
-    disableACPRRouting = true  -- Set to false to re-enable ACPR component routing
+    disableACPRRouting = false  -- Set to false to re-enable ACPR component routing
 }
 
 -- hidVideoBridge routing configuration
@@ -1341,20 +1341,8 @@ function DivisibleSpaceController:applyACPRComponentRouting()
   local successfulRoutings = 0
   
   if isSeparated then 
-    -- Separated: Set TrackingBypass to false for components 1 and 2, true for component 3
-    for i = 1, 2 do
-      local acprComp = self.components.acprComponents[i]
-      if acprComp and acprComp["TrackingBypass"] then
-        setProp(acprComp["TrackingBypass"], "Boolean", false)
-        successfulRoutings = successfulRoutings + 1
-        self:debugPrint("ACPR[" .. i .. "] -> TrackingBypass: false (Separated)")
-      else
-        table.insert(routingErrors, "ACPR[" .. i .. "]: Component or TrackingBypass control not found")
-      end
-    end
-    
-    -- Set component 3 TrackingBypass to true
-    local acprComp3 = self.components.acprComponents[3] -- make note to also set "Disable".Boolean on acrpComp[3]
+    -- Separated: Set TrackingBypass to true for component 3 (callSync["off.hook"] handles false)
+    local acprComp3 = self.components.acprComponents[3]
     if acprComp3 and acprComp3["TrackingBypass"] then
       setProp(acprComp3["TrackingBypass"], "Boolean", true)
       successfulRoutings = successfulRoutings + 1
@@ -1363,14 +1351,16 @@ function DivisibleSpaceController:applyACPRComponentRouting()
       table.insert(routingErrors, "ACPR[3]: Component or TrackingBypass control not found")
     end
   else
-    -- Combined: Set TrackingBypass to false for component 3
-    local acprComp3 = self.components.acprComponents[3]
-    if acprComp3 and acprComp3["TrackingBypass"] then
-      setProp(acprComp3["TrackingBypass"], "Boolean", false)
-      successfulRoutings = successfulRoutings + 1
-      self:debugPrint("ACPR[3] -> TrackingBypass: false (Combined)")
-    else
-      table.insert(routingErrors, "ACPR[3]: Component or TrackingBypass control not found")
+    -- Combined: Set TrackingBypass to true for components 1 and 2 (callSync["off.hook"] handles false)
+    for i = 1, 2 do
+      local acprComp = self.components.acprComponents[i]
+      if acprComp and acprComp["TrackingBypass"] then
+        setProp(acprComp["TrackingBypass"], "Boolean", true)
+        successfulRoutings = successfulRoutings + 1
+        self:debugPrint("ACPR[" .. i .. "] -> TrackingBypass: true (Combined)")
+      else
+        table.insert(routingErrors, "ACPR[" .. i .. "]: Component or TrackingBypass control not found")
+      end
     end
     
     -- Set CameraRouterOutput on component 3 based on priorityRoom

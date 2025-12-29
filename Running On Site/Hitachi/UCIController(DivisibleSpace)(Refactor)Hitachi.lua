@@ -1,5 +1,5 @@
 --[[
-    UCIController (DivisibleSpace)(Refactored)
+    UCIController (Refactored)
     Author: Nikolas Smith, Q-SYS
     Version: 2.1 | Date: 2025-12-27
     Firmware Req: 10.0.0
@@ -225,6 +225,7 @@ local function bindPairedControls(openCtrl, closeCtrl, updateHandler)
     bindPair(closeCtrl, openCtrl)
 end
 
+
 -------------------[ Base Module Class ]-------------------
 local BaseModule = {}; BaseModule.__index = BaseModule
 function BaseModule.new(controller, name)
@@ -381,10 +382,10 @@ function LayerModule:showLayer()
             conditionalVisibility = true,
             callLayerFunctions = {
                 function() self.controller.sublayerModule:updateHDMIStateLaptopA() end,
-                --function() self.controller.sublayerModule:updateConferenceState() end,
-                --function() self.controller.sublayerModule:updateConferenceControlsLayer() end,
-                --function() self.controller.sublayerModule:updatePresetSavedState() end,
-                --function() self.controller.sublayerModule:updateACPRBypassState() end,
+                function() self.controller.sublayerModule:updateConferenceState() end,
+                function() self.controller.sublayerModule:updateConferenceControlsLayer() end,
+                function() self.controller.sublayerModule:updatePresetSavedState() end,
+                function() self.controller.sublayerModule:updateACPRBypassState() end,
                 function() self.controller.sublayerModule:updateLaptopAHelpState() end,
                 function() self.controller.sublayerModule:updateCallActiveState() end
             }
@@ -394,10 +395,10 @@ function LayerModule:showLayer()
             conditionalVisibility = true,
             callLayerFunctions = {
                 function() self.controller.sublayerModule:updateHDMIStateLaptopB() end,
-                --function() self.controller.sublayerModule:updateConferenceState() end,
-                --function() self.controller.sublayerModule:updateConferenceControlsLayer() end,
-                --function() self.controller.sublayerModule:updatePresetSavedState() end,
-                --function() self.controller.sublayerModule:updateACPRBypassState() end,
+                function() self.controller.sublayerModule:updateConferenceState() end,
+                function() self.controller.sublayerModule:updateConferenceControlsLayer() end,
+                function() self.controller.sublayerModule:updatePresetSavedState() end,
+                function() self.controller.sublayerModule:updateACPRBypassState() end,
                 function() self.controller.sublayerModule:updateLaptopBHelpState() end,
                 function() self.controller.sublayerModule:updateCallActiveState() end
             }
@@ -506,21 +507,21 @@ function SublayerModule.new(controller)
     
     -- Cache HDMI pin mapping for O(1) lookups (required controls)
     self.hdmiPinMap = {
-        [controller.kLayerLaptopA] = controls.pinLEDHDMIConnectedLaptopA,
-        [controller.kLayerLaptopB] = controls.pinLEDHDMIConnectedLaptopB,
-        [controller.kLayerPCA] = controls.pinLEDHDMIConnectedPCA,
-        [controller.kLayerPCB] = controls.pinLEDHDMIConnectedPCB,
+        [controller.kLayerLaptopA]  = controls.pinLEDHDMIConnectedLaptopA,
+        [controller.kLayerLaptopB]  = controls.pinLEDHDMIConnectedLaptopB,
+        [controller.kLayerPCA]      = controls.pinLEDHDMIConnectedPCA,
+        [controller.kLayerPCB]      = controls.pinLEDHDMIConnectedPCB,
     }
     
     -- Cache help layer to button mapping for DRY button state syncing
     self.helpLayerButtonMap = {
-        ["I02-HelpLaptopA"] = {open = "btnOpenHelpLaptopA", close = "btnCloseHelpLaptopA"},
-        ["I03-HelpLaptopB"] = {open = "btnOpenHelpLaptopB", close = "btnCloseHelpLaptopB"},
-        ["I04-HelpPCA"] = {open = "btnOpenHelpPCA", close = "btnCloseHelpPCA"},
-        ["I05-HelpPCB"] = {open = "btnOpenHelpPCB", close = "btnCloseHelpPCB"},
-        ["I06-HelpWirelessA"] = {open = "btnOpenHelpWirelessA", close = "btnCloseHelpWirelessA"},
-        ["I07-HelpWirelessB"] = {open = "btnOpenHelpWirelessB", close = "btnCloseHelpWirelessB"},
-        ["I08-HelpRouting"] = {open = "btnOpenHelpRouting", close = "btnCloseHelpRouting"},
+        ["I02-HelpLaptopA"]     = {open = "btnOpenHelpLaptopA", close = "btnCloseHelpLaptopA"},
+        ["I03-HelpLaptopB"]     = {open = "btnOpenHelpLaptopB", close = "btnCloseHelpLaptopB"},
+        ["I04-HelpPCA"]         = {open = "btnOpenHelpPCA", close = "btnCloseHelpPCA"},
+        ["I05-HelpPCB"]         = {open = "btnOpenHelpPCB", close = "btnCloseHelpPCB"},
+        ["I06-HelpWirelessA"]   = {open = "btnOpenHelpWirelessA", close = "btnCloseHelpWirelessA"},
+        ["I07-HelpWirelessB"]   = {open = "btnOpenHelpWirelessB", close = "btnCloseHelpWirelessB"},
+        ["I08-HelpRouting"]     = {open = "btnOpenHelpRouting", close = "btnCloseHelpRouting"},
         ["I10-HelpStreamMusic"] = {open = "btnOpenHelpStreamMusic", close = "btnCloseHelpStreamMusic"},
     }
     

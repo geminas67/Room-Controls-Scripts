@@ -539,18 +539,25 @@ function SystemAutomationController:registerEventHandlers()
         bindArray(mapping.ctrls, mapping.handler)
     end
     
-    -- Component selection handlers (with forEach optimization)
-    local componentMaps = {
-        { ctrls = controls.compVideoBridge, handler = function(i) self:setVideoBridgeComponent(i) end },
-        { ctrls = controls.compGains, handler = function(i) self:setGainComponent(i) end },
-        { ctrls = controls.devDisplays, handler = function(i) self:setDisplayComponent(i) end }
-    }
-    
-    for _, mapping in ipairs(componentMaps) do
-        forEach(mapping.ctrls, function(i, ctrl)
-            bind(ctrl, function() mapping.handler(i) end)
+    -- Component selection handlers - use batch reset pattern for consistency
+    -- When any component in an array changes, reset and repopulate the entire array
+    forEach(controls.compVideoBridge, function(i, ctrl)
+        bind(ctrl, function() 
+            self:resetVideoBridgeComponents()
         end)
-    end
+    end)
+    
+    forEach(controls.compGains, function(i, ctrl)
+        bind(ctrl, function() 
+            self:resetGainComponents()
+        end)
+    end)
+    
+    forEach(controls.devDisplays, function(i, ctrl)
+        bind(ctrl, function() 
+            self:resetDisplayComponents()
+        end)
+    end)
     
     -- Special case: typeGain with conditional logic
     forEach(controls.typeGain, function(i, ctrl)
@@ -743,25 +750,8 @@ function SystemAutomationController:setCallSyncComponent()
     })
 end
 
-function SystemAutomationController:setVideoBridgeComponent(idx)
-    local label = idx == 1 and "Video Bridge [Main]" or "Video Bridge [" .. idx .. "]"
-    self:setComponentByType(controls.compVideoBridge, "Video Bridge", 
-        { key = "videoBridge", index = idx, label = label }, {
-        ["toggle.privacy"] = function(ctrl, i) ctrl:videoBridgeCheckPrivacy(i) end
-    }, function(ctrl, i) ctrl:getVideoBridgePrivacy(i) end)
-end
-
-function SystemAutomationController:setGainComponent(idx)
-    local label = idx == 1 and "Program Volume [Gain 1]" or "Gain [" .. idx .. "]"
-    self:setComponentByType(controls.compGains, "Gain", 
-        { key = "gains", index = idx, label = label }, {
-        ["gain"] = function(ctrl, i) ctrl:getVolumeLvl(i) end,
-        ["mute"] = function(ctrl, i) ctrl:getVolumeMute(i) end
-    }, function(ctrl, i) 
-        ctrl:getVolumeLvl(i)
-        ctrl:getVolumeMute(i)
-    end)
-end
+-- Individual setter methods removed - use batch reset methods instead:
+-- resetGainComponents(), resetDisplayComponents(), resetVideoBridgeComponents()
 
 function SystemAutomationController:setSystemMuteComponent()
     self:setComponentByType(controls.compSystemMute, "System Mute", "systemMute")
@@ -775,20 +765,154 @@ function SystemAutomationController:setCamACPRComponent()
     end)
 end
 
-function SystemAutomationController:setDisplayComponent(idx)
-    self:setComponentByType(controls.devDisplays, "Display", 
-        { key = "displays", index = idx }, {
-        ["PowerIsOn"] = function(ctrl, i) 
-            ctrl:debugPrint("Display [" .. i .. "] powered ON")
-        end,
-        ["PowerIsOff"] = function(ctrl, i) 
-            ctrl:debugPrint("Display [" .. i .. "] powered OFF")
-        end
-    })
-end
+-- Individual setter methods removed - use batch reset methods instead
 
 function SystemAutomationController:getVideoBridgePrivacy(idx)
     self:videoBridgeCheckPrivacy(idx)
+end
+
+------------------[ Component Population Helpers (for batch reset) ]------------------
+function SystemAutomationController:populateGainComponent(ctrl, index)
+    if not ctrl or not ctrl.String or ctrl.String == "" or ctrl.String == self.clearString then
+        return nil
+    end
+    
+    local component = self:setComponent(ctrl, index == 1 and "Program Volume [Gain 1]" or "Gain [" .. index .. "]")
+    if not component then return nil end
+    
+    -- Bind event handlers
+    if component["gain"] then
+        component["gain"].EventHandler = function() self:getVolumeLvl(index) end
+    end
+    if component["mute"] then
+        component["mute"].EventHandler = function() self:getVolumeMute(index) end
+    end
+    
+    -- Initialize volume state
+    self:getVolumeLvl(index)
+    self:getVolumeMute(index)
+    
+    return component
+end
+
+function SystemAutomationController:populateDisplayComponent(ctrl, index)
+    if not ctrl or not ctrl.String or ctrl.String == "" or ctrl.String == self.clearString then
+        return nil
+    end
+    
+    local component = self:setComponent(ctrl, "Display [" .. index .. "]")
+    if not component then return nil end
+    
+    -- Bind event handlers
+    if component["PowerIsOn"] then
+        component["PowerIsOn"].EventHandler = function() 
+            self:debugPrint("Display [" .. index .. "] powered ON")
+        end
+    end
+    if component["PowerIsOff"] then
+        component["PowerIsOff"].EventHandler = function() 
+            self:debugPrint("Display [" .. index .. "] powered OFF")
+        end
+    end
+    
+    return component
+end
+
+function SystemAutomationController:populateVideoBridgeComponent(ctrl, index)
+    if not ctrl or not ctrl.String or ctrl.String == "" or ctrl.String == self.clearString then
+        return nil
+    end
+    
+    local label = index == 1 and "Video Bridge [Main]" or "Video Bridge [" .. index .. "]"
+    local component = self:setComponent(ctrl, label)
+    if not component then return nil end
+    
+    -- Bind event handlers
+    if component["toggle.privacy"] then
+        component["toggle.privacy"].EventHandler = function() self:videoBridgeCheckPrivacy(index) end
+    end
+    
+    -- Initialize privacy state
+    self:getVideoBridgePrivacy(index)
+    
+    return component
+end
+
+------------------[ Batch Component Reset Methods ]------------------
+function SystemAutomationController:resetGainComponents()
+    if not controls.compGains then return end
+    
+    self:debugPrint("Resetting gain components array...")
+    
+    -- Clear existing components
+    for k in pairs(self.components.gains) do
+        self.components.gains[k] = nil
+    end
+    
+    -- Repopulate from controls
+    local gainControls = getControlArray(controls.compGains)
+    for i, ctrl in ipairs(gainControls) do
+        if ctrl then
+            self.components.gains[i] = self:populateGainComponent(ctrl, i)
+        end
+    end
+    
+    -- Apply volume defaults after reset
+    self:applyVolumeDefaults()
+    
+    self:debugPrint("Gain components reset completed")
+end
+
+function SystemAutomationController:resetDisplayComponents()
+    if not controls.devDisplays then return end
+    
+    self:debugPrint("Resetting display components array...")
+    
+    -- Clear existing components
+    for k in pairs(self.components.displays) do
+        self.components.displays[k] = nil
+    end
+    
+    -- Repopulate from controls
+    local displayControls = getControlArray(controls.devDisplays)
+    for i, ctrl in ipairs(displayControls) do
+        if ctrl then
+            self.components.displays[i] = self:populateDisplayComponent(ctrl, i)
+        end
+    end
+    
+    self:debugPrint("Display components reset completed")
+end
+
+function SystemAutomationController:resetVideoBridgeComponents()
+    if not controls.compVideoBridge then return end
+    
+    self:debugPrint("Resetting video bridge components array...")
+    
+    -- Clear existing components
+    for k in pairs(self.components.videoBridge) do
+        self.components.videoBridge[k] = nil
+    end
+    
+    -- Repopulate from controls
+    local bridgeControls = getControlArray(controls.compVideoBridge)
+    for i, ctrl in ipairs(bridgeControls) do
+        if ctrl then
+            self.components.videoBridge[i] = self:populateVideoBridgeComponent(ctrl, i)
+        end
+    end
+    
+    self:debugPrint("Video bridge components reset completed")
+end
+
+function SystemAutomationController:resetAllComponentArrays()
+    self:debugPrint("Resetting all component arrays...")
+    
+    self:resetGainComponents()
+    self:resetDisplayComponents()
+    self:resetVideoBridgeComponents()
+    
+    self:debugPrint("All component arrays reset completed")
 end
 
 ----------------[ Call Sync Helpers ]-------------------
@@ -1075,14 +1199,13 @@ function SystemAutomationController:init()
     
     self:setGainTypeAssignments()
     
-    -- Initialize components
+    -- Initialize single components (unchanged)
     self:setCallSyncComponent()
     self:setSystemMuteComponent()
     self:setCamACPRComponent()
     
-    forEach(controls.compVideoBridge, function(i) self:setVideoBridgeComponent(i) end)
-    forEach(controls.compGains, function(i) self:setGainComponent(i) end)
-    forEach(controls.devDisplays, function(i) self:setDisplayComponent(i) end)
+    -- Initialize component arrays using batch reset pattern
+    self:resetAllComponentArrays()
     
     self:debugPrint("SystemAutomationController ready; "..self.audioModule:getGainCount().." gain controls detected.")
 end

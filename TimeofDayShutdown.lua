@@ -14,14 +14,8 @@ local enableTime = {
 }
 
 local roomConfig = {
-    { roomControlName = 'roomControlsSalonA', componentName = 'compRoomControlsSalonA', roomName = 'Salon A' },
-    { roomControlName = 'roomControlsSalonB', componentName = 'compRoomControlsSalonB', roomName = 'Salon B' },
-    { roomControlName = 'roomControlsSalonC', componentName = 'compRoomControlsSalonC', roomName = 'Salon C' },
-    { roomControlName = 'roomControlsSalonD', componentName = 'compRoomControlsSalonD', roomName = 'Salon D' },
-    { roomControlName = 'roomControlsSalonE', componentName = 'compRoomControlsSalonE', roomName = 'Salon E' },
-    { roomControlName = 'roomControlsSalonF', componentName = 'compRoomControlsSalonF', roomName = 'Salon F' },
-    { roomControlName = 'roomControlsSalonG', componentName = 'compRoomControlsSalonG', roomName = 'Salon G' },
-    { roomControlName = 'roomControlsSalonH', componentName = 'compRoomControlsSalonH', roomName = 'Salon H' }
+    { roomControlName = 'roomControlsCollabA', componentName = 'compRoomControlsCollabA', roomName = 'Collab A' },
+    { roomControlName = 'roomControlsCollabB', componentName = 'compRoomControlsCollabB', roomName = 'Collab B' }
 }
 
 -------------------[ Component References ]-------------------

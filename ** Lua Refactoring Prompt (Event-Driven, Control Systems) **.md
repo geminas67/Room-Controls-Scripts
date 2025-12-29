@@ -1,600 +1,149 @@
-## **Objective:**
+## Objective
 
-Refactor the following Lua code to make it faster and more responsive, with a focus on event-driven operations like button presses and component state changes.
-
-**Guidelines for Refactoring:**
-
-1. **Use Functional/Modular Architecture:**
-    - Implement all Lua scripts using functional/modular pattern with factory functions.
-    - State managed via closures instead of class fields.
-    - Explicit dependencies passed to each module.
-    - Same functionality with reduced boilerplate.
-    - Aligned with modern Lua idioms and Svelte-like logic module patterns.
-    - Prefer factory functions that return module objects with encapsulated state.
-    - Structure every script as a collection of modules with well-defined interfaces and clear dependency injection.
-    - Apply consistent naming: use `createModuleName()` for factory functions, `moduleName` for module instances.
-
-2. **Flatten Control Flow and Use Early Returns**
-	-	Use guard clauses at the start of functions to check for invalid/error conditions and return early.
-	-	Write the main/happy path unindented after all early error cases.
-	-	Avoid unnecessary `else`/`elseif` branches after a `return`.
-
-3. **Streamline Event Handlers:**
-    - Keep event handlers as direct and minimal as possible.
-    - Update UI and system state immediately within the handler.
-    - Avoid unnecessary indirection or excessive nesting in callbacks.
-    - Use helpers functions to reduce 
-
-4. **Reduce Redundant Component Access:**
-    - Access component properties directly where safe (e.g., `component.property = value`).
-    - Use wrappers (like `safeComponentAccess`) only when needed for error-prone operations.
-    - Minimize repeated property or function calls in routine operations.
-
-5. **Batch and Parallelize Initialization:**
-    - Group initialization steps to reduce the number of separate dealys or timers.
-    - Use a single timer for grouped delayed tasks whenever possible.
-
-6. **Eliminate Redundant State and UI Updates:**
-    - Consolidate state and UI updates so each change happens only once per event.
-    - Do not update the same property or state variable multiple times unnecessarily.
-
-7. **Simplify and Modularize Logic:**
-    - Break down complex logic into clear, single-responsibility functions.
-    - Eliminate code duplication.
-    - Keep the call stack shallow—avoid deeply nested chains of function calls.
-
-8. **Direct Routing and State Management:**
-    - Perform routing assignments and UI feedback updates directly in event handlers.
-    - Avoid indirection, especially for critical or time-sensitive actions.
-
-9. **Profile and Target Real Bottlenecks:**
-    - Prioritize optimization of code paths triggered most frequently (e.g., button presses, switching).
-    - Ignore micro-optimizations in non-critical or rarely called code.
-
-10. **Maintain Readability and Maintainability:**
-    - Keep code modular and well-structured.
-    - Use clear comments, spacing, and consistent naming conventions throughout.
-    - Favor helper functions to aid ongoing readability and maintenance.
-
-11. **Prefer Combo Boxes for Component Selection:**
-    - Use Combo Boxes (dropdowns) instead of multiple buttons or manual input when users must select from several options.
-    - Ensure Combo Box selections trigger immediate, efficient updates to the UI and system state.
-    - Only use Combo Boxes where it improves clarity, reduces UI clutter, or streamlines selection logic.
-
-12. **Dynamically Pull Component Types:**
-    - Use `Component.GetComponents()` to dynamically discover and enumerate available system components (in one loop).
-    - Populate Combo Boxes or selection lists with dynamic results to keep UI current with actual system state.
-    - Never hard-code component types—dynamic queries ensure flexibility and maintainability.
-
-13. **Use State Management Utilities for Dynamic Component Arrays:**
-    - Always create and include a utility function directly within each script to handle state management before populating or batch operating on dynamic arrays/tables that reference components (audio, video, room topology, etc.).
-    - Follow the functional pattern found in successful modular scripts such as SystemAutomationController, which implements its own utility to safely reset and manage component arrays within the script itself—do not require importing shared utilities.
-    - Ensure this local utility function provides proper initialization and cleanup of component references, preventing stale data and maintaining system reliability.
-    - Call this function at the start of any operation that modifies component collections to guarantee a consistent state.
-
-14. **Implement Comprehensive Control Validation:**
-    - Create a `validateControls()` function that checks for required controls before initialization.
-    - Return early from constructor if validation fails to prevent runtime errors.
-    - Use descriptive error messages listing specific missing controls.
-    - Include validation as the first step in any constructor to ensure robust initialization.
-
-15. **Normalize Control Arrays at Initialization:**
-    - Create a `normalizeControlArrays()` function to standardize control structures upfront.
-    - Convert single controls to arrays where array processing is expected (e.g., device collections).
-    - Call normalization early in initialization to optimize subsequent array operations.
-    - Reduce repetitive type checking by ensuring consistent data structures from the start.
-
-16. **Use Efficient Utility Functions with Standard Patterns:**
-    - Implement core utilities: `isArr()`, `getControlArray()`, `setProp()`, `bind()`, `bindArray()`, `forEach()`.
-    - Ensure `setProp()` includes guard logic to prevent redundant property assignments.
-    - Design utilities to work optimally with pre-normalized data structures.
-    - Keep utility functions consistent across all scripts for maintainability.
-
-17. **Implement Batch Event Registration:**
-    - Use handler maps instead of individual event binding calls for devices with multiple controls.
-    - Employ single loops with key-value pairs for registering similar event handlers.
-    - Pass object references directly to avoid double lookups in event registration.
-    - Group related event handlers logically within maps for better organization.
-
-18. **Follow Modular Architecture with BaseModule Pattern:**
-    - Create a `BaseModule` class that provides common functionality (debug logging, controller reference).
-    - Extend BaseModule for domain-specific modules (ComponentModule, DeviceModule, etc.).
-    - Initialize modules within the main controller using dependency injection patterns.
-    - Keep each module focused on a single responsibility (component management, device control, etc.).
-
-19. **Implement Optimized Property Access Patterns:**
-    - Avoid redundant property assignments by checking current values before setting.
-    - Pass references directly between functions to eliminate repeated lookups.
-    - Cache frequently accessed objects at appropriate scopes to reduce traversal overhead.
-    - Use local variables for objects referenced multiple times within the same function.
-
-20. **Use Factory Functions with Enhanced Error Handling:**
-    - Implement factory functions that wrap constructor calls with comprehensive error handling.
-    - Provide clear success/failure messaging with specific error context.
-    - Export both the class and instance globally for external access and multiple instance support.
-    - Include graceful degradation when optional components are unavailable.
-21. **Implement Generic Component Update Patterns:**
-    - Create generic update functions that consolidate repetitive component assignment logic.
-    - Use parameterized functions with component type, name array, component array, and debug label parameters.
-    - Maintain backward compatibility by keeping specific wrapper functions that call the generic implementation.
-    - Example: Replace multiple updateRoomComponent(), updateAudioRouter(), updateBTNRoomSelector() functions with a single updateComponent() function.
-22. **Centralize Error and Status Reporting:**
-    - Implement centralized utilities for consistent operation result reporting across all modules.
-    - Create printOperationResult(operationType, successCount, totalCount, errorList) to eliminate repetitive summary print patterns.
-    - Use handleBatchResult(resultSuccess, operationType, index, itemName) for standardized batch operation error handling.
-    - Ensure all modules use the controller's centralized utilities for consistent output formatting.
-23. **Eliminate Repetitive Debug and Error Print Patterns:**
-    - Identify and consolidate repetitive error/debug print blocks that follow similar patterns.
-    - Replace manual error counting and printing with centralized utilities.
-    - Use consistent error message formatting across all operations (routing, synchronization, state updates).
-    - Reduce boilerplate code by extracting common print patterns into reusable functions.
-24. **Apply DRY Principles to Event Handler Registration:**
-    - Use configuration-driven handler maps to eliminate repetitive event binding code.
-    - Implement parameterized handler factories for similar event types that only differ in component references.
-    - Group related event handlers logically within maps for better organization and maintenance.
-    - Prefer handler factories over inline function definitions when multiple handlers perform variations of the same task.
-
-25. **CRITICAL: Clean Up Component Event Handlers Before Reassignment (DRY Pattern):**
-    - **REQUIRED** for any script using `.Choices` selector controls to assign components.
-    - Implement a DRY `cleanupComponentHandlers()` utility function to remove old event handlers before assigning new components.
-    - Prevents handler accumulation when components are changed programmatically (e.g., by DivisibleSpaceController).
-    - Critical in divisible space scenarios where multiple script instances may reference the same component.
-    - Must be called in ALL component setup methods (setupCallSyncComponent, setupRoomControlsComponent, setComponentByType, etc.).
-    - See Advanced DRY Pattern #33 for detailed implementation examples.
-26. **Implement Consistent Module Integration Patterns:**
-    - Ensure all modules can access and use the controller's centralized utilities.
-    - Design modules to delegate common operations (error reporting, status updates) to the main controller.
-    - Use dependency injection to provide modules with access to centralized utilities.
-    - Maintain module independence while leveraging shared functionality.
-    - These additions would help future refactoring efforts by:
-    - Guiding developers to identify and consolidate repetitive patterns early
-    - Providing specific examples of how to implement generic update functions
-    - Establishing standards for error reporting and debug output consistency
-    - Encouraging the creation of reusable utilities rather than copy-paste code
-    - Ensuring all modules benefit from centralized improvements
+Refactor Lua control scripts to be faster, more responsive, and easier to maintain by using functional patterns where state is simple and static, and a hybrid OOP/functional approach where state, components, or timers are dynamic.
 
 ---
 
-## **Advanced DRY Patterns for Event-Driven Control Systems**
+## 1. Choose the Right Architecture
 
-These patterns are demonstrated in UCIController and should be applied to all refactored scripts:
+### 1.1 Prefer Functional Modules When Suitable
 
-### **26. Route State Changes Through Central Navigation Handler**
+Use a functional/modular pattern (factory functions with closures) when:
 
-**✅ BEST PRACTICE: Eliminate Duplicated State Logic**
-- Route ALL layer/navigation state changes through a single centralized handler (e.g., `btnNavEventHandler`)
-- This ensures `varActiveLayer`, video switching, button interlocking, and sublayer updates are ALWAYS synchronized
-- Prevents "stuck buttons" and state desynchronization bugs
+- State is simple, mostly immutable, and event-driven (e.g., navigation, UI layers, static component references).
+- Component lifecycles are static (discovered once, rarely change at runtime).
 
-**Example Pattern:**
-```lua
--- ✅ CORRECT: Pin handlers route to central navigation on positive edge
-[controls.pinLEDUSBLaptop] = function(ctl)
-    if ctl.Boolean then 
-        -- Only positive edge triggers full navigation state change
-        self:btnNavEventHandler(self.kLayerLaptop)
-    else
-        -- Negative edge only updates sublayers, no navigation change
-        self.sublayerModule:updateConferenceState()
-    end
-end
+Guidelines:
 
--- ❌ WRONG: Direct layer/state manipulation bypasses central logic
-[controls.pinLEDUSBLaptop] = function(ctl)
-    if ctl.Boolean then
-        self.varActiveLayer = self.kLayerLaptop  -- ❌ Duplicates state logic
-        self.layerModule:showLayer()              -- ❌ Misses video switching
-        self:interlock()                          -- ❌ Repetitive pattern
-    end
-end
-```
+- Structure scripts as a collection of factory functions: `createXModule(deps) -> module`.
+- Manage module-local state via closures, not global/class fields, when the state does not need to be shared dynamically.
+- Pass explicit dependencies into factories (controls, config, stores) for testability and reuse.
 
-**Key Benefits:**
-- Single point of change for all navigation logic
-- Automatic synchronization of related state (buttons, layers, video)
-- Positive edge = full navigation; Negative edge = sublayer updates only
-- Eliminates race conditions and stuck UI states
+### 1.2 Use a Hybrid OOP/Functional Approach for Dynamic Systems
 
-### **27. Enhanced setProp Utility with Redundancy Guard**
+Use a hybrid design (OOP shell + functional logic) when:
 
-**✅ BEST PRACTICE: Prevent Redundant Property Assignments**
-- Always use `setProp()` wrapper that checks current value before assignment
-- Reduces unnecessary UI updates and eliminates race conditions
-- Critical for high-frequency event handlers and pin state changes
+- Components are created, assigned, or removed at runtime (dynamic arrays, `.Choices` selectors).
+- Long-lived mutable state and timers drive behavior (e.g., LED blink timers, fire alarm, power state).
 
-**Implementation:**
-```lua
--- ✅ CORRECT: Guard logic prevents redundant assignments
-local function setProp(ctrl, prop, val)
-    if not ctrl or not prop then return false end
-    if ctrl[prop] == val then return false end  -- 🎯 Critical guard
-    ctrl[prop] = val
-    return true
-end
+Guidelines:
 
--- Usage in interlocking:
-for i, btn in ipairs(navButtons) do
-    if btn then
-        local shouldBeActive = (i == activeButtonIndex)
-        setProp(btn, "Boolean", shouldBeActive)  -- Only updates if changed
-    end
-end
+- Keep OOP at the “edges”: component discovery, lifecycle, timer creation, and integration with Q-SYS components.
+- Encapsulate business logic and state transitions as pure/pure-ish functions or small state machines invoked from the OOP shell.
+- Use a central state store (table with `get/set/subscribe`) when multiple modules share mutable state.
 
--- ❌ WRONG: Direct assignment causes redundant UI updates
-btn.Boolean = shouldBeActive  -- Updates even if already same value
-```
+**Hybrid Balance Guidelines:**
 
-### **28. Batch Registration with Centralized Handler Maps**
+- **OOP for:** stateful modules, timer management, dynamic component lifecycle
+- **Functional for:** data transformation utilities, event handler wiring, pure computations
 
-**✅ BEST PRACTICE: Eliminate Repetitive Event Binding Code**
-- Use object-reference-based handler maps for all event registration
-- Single loop to bind all handlers of same type
-- Provides single point of update when extending controls
+**When to Adjust the Balance:**
 
-**Example Pattern:**
-```lua
-function Controller:registerEventHandlers()
-    -- 🎯 Centralized handler map with direct object references
-    local systemHandlerMap = {
-        [controls.btnStartSystem] = function() self:startSystem() end,
-        [controls.btnNavShutdown] = function() 
-            self.layerModule:updateLayerVisibility({"D01-ShutdownConfirm"}, true, "fade")
-        end,
-        [controls.btnShutdownCancel] = function() 
-            self.layerModule:updateLayerVisibility({"D01-ShutdownConfirm"}, false, "fade")
-        end,
-        [controls.btnShutdownConfirm] = function() self:shutdownSystem() end
-    }
-    
-    -- 🎯 Batch register all handlers in single loop
-    for ctrl, handler in pairs(systemHandlerMap) do
-        if ctrl then bind(ctrl, handler) end
-    end
-end
+**More functional if:**
+- No timers mutating state
+- Static component references (discovered once)
+- Simple, event-driven state changes
 
--- ❌ WRONG: Repetitive individual binding
-if controls.btnStartSystem then
-    controls.btnStartSystem.EventHandler = function() self:startSystem() end
-end
-if controls.btnNavShutdown then
-    controls.btnNavShutdown.EventHandler = function() 
-        self.layerModule:updateLayerVisibility({"D01-ShutdownConfirm"}, true, "fade")
-    end
-end
--- ... repeated for every control
-```
-
-### **29. Paired Controls Utility for Toggle Logic**
-
-**✅ BEST PRACTICE: DRY Toggle Logic for Open/Close, On/Off Pairs**
-- Use `bindPairedControls()` utility for all paired toggle controls
-- Automatically ensures mutual exclusivity and state synchronization
-- Reduces boilerplate code for help buttons, popups, modal dialogs
-
-**Implementation:**
-```lua
--- ✅ Utility function for paired controls
-local function bindPairedControls(openCtrl, closeCtrl, updateHandler)
-    if openCtrl and updateHandler then
-        bind(openCtrl, function()
-            if closeCtrl then setProp(closeCtrl, "Boolean", false) end
-            updateHandler()
-        end)
-    end
-    if closeCtrl and updateHandler then
-        bind(closeCtrl, function()
-            if openCtrl then setProp(openCtrl, "Boolean", false) end
-            updateHandler()
-        end)
-    end
-end
-
--- ✅ CORRECT: Batch registration of paired controls
-local helpControlPairs = {
-    {open = controls.btnOpenHelpLaptop, close = controls.btnCloseHelpLaptop, 
-     handler = function() self.sublayerModule:updateLaptopHelpState() end},
-    {open = controls.btnOpenHelpPC, close = controls.btnCloseHelpPC, 
-     handler = function() self.sublayerModule:updatePCHelpState() end},
-}
-for _, pair in ipairs(helpControlPairs) do
-    bindPairedControls(pair.open, pair.close, pair.handler)
-end
-
--- ❌ WRONG: Repetitive individual paired logic
-if controls.btnOpenHelpLaptop then
-    controls.btnOpenHelpLaptop.EventHandler = function()
-        if controls.btnCloseHelpLaptop then 
-            controls.btnCloseHelpLaptop.Boolean = false 
-        end
-        self.sublayerModule:updateLaptopHelpState()
-    end
-end
-if controls.btnCloseHelpLaptop then
-    controls.btnCloseHelpLaptop.EventHandler = function()
-        if controls.btnOpenHelpLaptop then 
-            controls.btnOpenHelpLaptop.Boolean = false 
-        end
-        self.sublayerModule:updateLaptopHelpState()
-    end
-end
--- ... repeated for every pair
-```
-
-### **30. Normalized Control Arrays at Initialization**
-
-**✅ BEST PRACTICE: Convert All Controls to Arrays for Consistent Processing**
-- Create `normalizeControlArrays()` function at initialization
-- Cache normalized arrays for use throughout script lifecycle
-- Enables batch operations with `forEach()` and `bindArray()` utilities
-
-**Example Pattern:**
-```lua
--- ✅ CORRECT: Early normalization
-local function normalizeControlArrays()
-    local controlsToNormalize = {
-        navButtons = {},
-        routingButtons = {},
-        pinInputs = {}
-    }
-    
-    -- Build arrays from individual controls
-    for i = 1, 12 do
-        local btn = controls["btnNav" .. string.format("%02d", i)]
-        if btn then controlsToNormalize.navButtons[i] = btn end
-    end
-    
-    return controlsToNormalize
-end
-
--- Cache at controller initialization
-function Controller.new()
-    local self = setmetatable({}, Controller)
-    self.normalizedControls = normalizeControlArrays()  -- 🎯 Cache early
-    -- ... rest of initialization
-end
-
--- Use throughout with forEach utility
-forEach(self.normalizedControls.navButtons, function(i, btn)
-    bind(btn, function() self:btnNavEventHandler(i) end)
-end)
-
--- ❌ WRONG: Repeated manual array building
-local navButtons = {}
-for i = 1, 12 do
-    navButtons[i] = controls["btnNav" .. string.format("%02d", i)]
-end
--- ... same logic repeated in multiple functions
-```
-
-### **31. Guard Clauses for Positive/Negative Edge Handling**
-
-**✅ BEST PRACTICE: Minimize Redundant State Calls with Edge Detection**
-- Use positive edge (Boolean = true) for full state changes
-- Use negative edge (Boolean = false) for cleanup/sublayer updates only
-- Prevents infinite sync loops and redundant navigation calls
-
-**Example Pattern:**
-```lua
--- ✅ CORRECT: Differentiate positive vs negative edge behavior
-[controls.pinLEDOffHookLaptop] = function(ctl)
-    if ctl.Boolean then 
-        -- Positive edge: Full navigation state change
-        ensureSystemIsOn()
-        self:btnNavEventHandler(self.kLayerLaptop)
-    end
-    -- Negative edge: No action needed, call state will be handled by pinCallActive
-end
-
-[controls.pinLEDUSBPC] = function(ctl)
-    if ctl.Boolean then 
-        -- Positive edge: Full navigation
-        self:btnNavEventHandler(self.kLayerPC)
-    else
-        -- Negative edge: Only update sublayer (conference controls hidden)
-        self.sublayerModule:updateConferenceState()
-    end
-end
-
--- ❌ WRONG: No edge differentiation causes redundant calls
-[controls.pinLEDUSBPC] = function(ctl)
-    -- Triggers on both edges, causing double navigation calls
-    self:btnNavEventHandler(self.kLayerPC)
-    self.sublayerModule:updateConferenceState()
-end
-```
-
-### **32. Layer Configuration Tables for Batch Updates**
-
-**✅ BEST PRACTICE: Data-Driven Layer Management**
-- Use configuration tables to define layer behaviors declaratively
-- Enables adding new layers without changing control flow logic
-- Consolidates show/hide/function calls into single data structure
-
-**Example Pattern:**
-```lua
--- ✅ CORRECT: Configuration-driven approach
-local layerConfigs = {
-    [self.kLayerLaptop] = {
-        showLayers = {"L05-Laptop"},
-        callLayerFunctions = {
-            function() self.sublayerModule:updateHDMI01State() end,
-            function() self.sublayerModule:updateConferenceState() end,
-            function() self.sublayerModule:updatePresetSavedState() end,
-            function() self.sublayerModule:updateACPRBypassState() end,
-            function() self.sublayerModule:updateLaptopHelpState() end,
-            function() self.sublayerModule:updateCallActiveState() end
-        }
-    },
-    [self.kLayerPC] = {
-        showLayers = {"P05-PC"},
-        callLayerFunctions = {
-            function() self.sublayerModule:updateHDMI02State() end,
-            function() self.sublayerModule:updateConferenceState() end,
-            function() self.sublayerModule:updateCallActiveState() end
-        }
-    }
-}
-
--- Single generic processing loop
-local config = layerConfigs[self.varActiveLayer]
-if config then
-    for _, layer in ipairs(config.showLayers or {}) do
-        self:updateLayerVisibility({layer}, true, "fade")
-    end
-    for _, func in ipairs(config.callLayerFunctions or {}) do
-        func()
-    end
-end
-
--- ❌ WRONG: Repetitive if/elseif blocks
-if self.varActiveLayer == self.kLayerLaptop then
-    self:updateLayerVisibility({"L05-Laptop"}, true, "fade")
-    self.sublayerModule:updateHDMI01State()
-    self.sublayerModule:updateConferenceState()
-    -- ... more calls
-elseif self.varActiveLayer == self.kLayerPC then
-    self:updateLayerVisibility({"P05-PC"}, true, "fade")
-    self.sublayerModule:updateHDMI02State()
-    self.sublayerModule:updateConferenceState()
-    -- ... more calls
-end
--- ... repeated for every layer
-```
-
-### **33. Component Handler Cleanup Before Reassignment (CRITICAL for Divisible Spaces)**
-
-**✅ BEST PRACTICE: Always Clean Up Old Event Handlers Before Assigning New Components**
-- **REQUIRED** for any script that uses `.Choices` selector controls to assign components
-- Prevents handler accumulation when components are changed programmatically (e.g., by DivisibleSpaceController)
-- Critical in divisible space scenarios where multiple script instances may reference the same component
-- Use a DRY utility function to avoid repetitive cleanup code across multiple component setup methods
-
-**Implementation Pattern:**
-```lua
--- ✅ CORRECT: DRY utility function for handler cleanup
-local function cleanupComponentHandlers(oldComponent, controlNames, debugCallback)
-    if not oldComponent or not controlNames then return false end
-    local cleaned = 0
-    for _, controlName in ipairs(controlNames) do
-        if oldComponent[controlName] then
-            setProp(oldComponent[controlName], "EventHandler", nil)
-            cleaned = cleaned + 1
-        end
-    end
-    if debugCallback and cleaned > 0 then
-        debugCallback("Cleaned up " .. cleaned .. " event handler(s) from old component")
-    end
-    return cleaned > 0
-end
-
--- ✅ CORRECT: Use utility in component setup methods
-function Controller:setupCallSyncComponent()
-    if not controls.compCallSync then return end
-    
-    -- Clean up old handlers before setting new component (DRY pattern)
-    cleanupComponentHandlers(
-        self.componentModule.components.callSync,
-        {"off.hook", "mute"},
-        function(msg) self:debugPrint("[CallSync] " .. msg) end
-    )
-    
-    self.componentModule.components.callSync = self.componentModule:setComponent(controls.compCallSync, "Call Sync")
-    if self.componentModule.components.callSync then
-        self:registerCallSyncEventHandlers()
-    end
-end
-
--- ✅ CORRECT: Alternative pattern for eventMap-based systems
-local function cleanupComponentHandlers(oldComponent, eventMap, debugCallback)
-    if not oldComponent or not eventMap then return 0 end
-    local cleaned = 0
-    for event, _ in pairs(eventMap) do
-        if oldComponent[event] then
-            oldComponent[event].EventHandler = nil
-            cleaned = cleaned + 1
-        end
-    end
-    if debugCallback and cleaned > 0 then
-        debugCallback("Cleaned up " .. cleaned .. " event handler(s) from old component")
-    end
-    return cleaned
-end
-
--- Usage in setComponentByType pattern:
-function Controller:setComponentByType(ctrl, componentType, storage, eventMap, initCallback)
-    -- Clean up old handlers before setting new component (DRY pattern)
-    cleanupComponentHandlers(
-        self.components[storage],
-        eventMap,
-        function(msg) self:debugPrint("[" .. componentType .. "] " .. msg) end
-    )
-    
-    self.components[storage] = self:setComponent(ctrl, componentType)
-    -- ... rest of setup
-end
-
--- ❌ WRONG: No cleanup - handlers accumulate when component changes
-function Controller:setupCallSyncComponent()
-    if not controls.compCallSync then return end
-    
-    -- ❌ Missing cleanup - old handlers remain active!
-    self.componentModule.components.callSync = self.componentModule:setComponent(controls.compCallSync, "Call Sync")
-    if self.componentModule.components.callSync then
-        self:registerCallSyncEventHandlers()  -- ❌ Adds new handlers without removing old ones
-    end
-end
-```
-
-**Why This Is Critical:**
-- In divisible spaces, when DivisibleSpaceController programmatically changes component assignments, old handlers persist
-- Multiple script instances can end up listening to the same component, causing cross-control issues
-- Without cleanup, each component change adds new handlers without removing old ones, leading to handler accumulation
-- This causes one room's component changes to affect other rooms' devices unintentionally
-
-**When to Apply:**
-- ✅ Any script that uses `.Choices` selector controls for component assignment
-- ✅ Any script that registers event handlers on component controls
-- ✅ Any script that may have components changed programmatically
-- ✅ All scripts in divisible space configurations
-- ✅ Scripts with multiple component setup methods (callSync, roomControls, devices, etc.)
+**More OOP if:**
+- Need complex inheritance hierarchies
+- Multiple controller instances with shared behavior
+- Need polymorphism for different device types
 
 ---
 
-## **Summary: DRY Architecture Checklist**
+## 2. Core Refactor Principles
 
-When refactoring or creating new Lua scripts, ensure:
+### 2.1 Flatten Control Flow and Use Early Returns
 
-✅ **Centralized State Management**
-- [ ] All navigation/layer changes route through single handler function
-- [ ] State variables (`varActiveLayer`, etc.) updated in ONE place only
-- [ ] Related updates (video, buttons, layers) synchronized automatically
+- Start functions with guard clauses for invalid inputs, missing components, or disabled features, then return early.
+- Write the main path unindented after error/edge cases; avoid `else` chains following a `return`.
 
-✅ **Batch Operations**
-- [ ] Control arrays normalized at initialization
-- [ ] Event handlers registered via centralized maps
-- [ ] Paired controls use `bindPairedControls()` utility
-- [ ] Similar operations grouped into single loops
+### 2.2 Streamline Event Handlers
 
-✅ **Guarded Assignment**
-- [ ] `setProp()` used for all property updates
-- [ ] Current value checked before assignment
-- [ ] Positive/negative edge differentiation for pin handlers
+- Keep handlers small: validate, update state, trigger necessary UI/logic, then exit.
+- For navigation, always route through a single central handler (e.g., `btnNavEventHandler`) instead of duplicating layer/state logic in multiple places.
 
-✅ **Configuration-Driven Logic**
-- [ ] Layer behaviors defined in configuration tables
-- [ ] Handler maps used instead of repetitive if/else chains
-- [ ] Generic processing loops replace case-by-case logic
+### 2.3 Normalize Controls and Use Utilities
 
-✅ **Single Responsibility**
-- [ ] Each module handles ONE domain (layers, routing, video, etc.)
-- [ ] Modules delegate to controller for shared utilities
-- [ ] Debug logging centralized via BaseModule pattern
+- Normalize controls once at initialization (e.g., `normalizeControlArrays()` for nav buttons, routing buttons, pins).
+- Use shared utilities consistently: `isArr`, `getControlArray`, `setProp`, `bind`, `bindArray`, `forEach`, and `bindPairedControls`.
+- Ensure `setProp()` guards against redundant assignments to reduce unnecessary UI churn and race conditions.
 
-✅ **Component Handler Management (CRITICAL)**
-- [ ] `cleanupComponentHandlers()` utility function implemented for all component setup methods
-- [ ] Old event handlers cleaned up before assigning new components
-- [ ] Cleanup called in all methods that use `.Choices` selectors to assign components
-- [ ] Prevents handler accumulation in divisible space scenarios
-- [ ] Debug logging included for handler cleanup operations
+### 2.4 Batch Operations and Handler Maps
 
-By following these patterns, the codebase remains **highly maintainable**, **DRY throughout**, and **easy to extend** with new features.
+- Use handler maps (`{ [control] = handlerFn }`) and a single loop to register events instead of individual bindings.
+- Use configuration tables (e.g., `layerConfigs`) to drive layer show/hide and behavior instead of long `if/elseif` chains.
+- For repeated toggle pairs (open/close, on/off), use a generic `bindPairedControls()` helper to keep behavior DRY.
+
+---
+
+## 3. State, Components, and Timers
+
+### 3.1 Centralize and Simplify State
+
+- Separate config/immutable data, runtime state, timer state, and component registries into distinct tables when complexity grows.
+- For shared state across modules, use a local state store with `get`/`set` and optional subscribers to observe changes.
+
+### 3.2 Dynamic Component Management (Hybrid Area)
+
+- For scripts that dynamically assign components (via `.Choices`, DivisibleSpace, or discovery), keep a dedicated component registry/module.
+- Always implement `cleanupComponentHandlers(oldComponent, ...)` to remove prior event handlers before assigning new components, especially in divisible spaces.
+
+### 3.3 Timers and Event Sources
+
+- Prefer timers that emit events (or call a small handler) rather than directly mutating many parts of the system.
+- Keep timer creation/cleanup in the OOP shell or controller module; keep timer-driven logic in small, testable functions.
+
+---
+
+## 4. Control and Component Patterns
+
+### 4.1 Validation and Initialization
+
+- Implement a `validateControls()` function that checks for required controls and logs missing ones; return early from construction if validation fails.
+- Normalize control arrays and compute caches (maps, legend arrays, HDMI pin maps) during initialization to simplify later code.
+
+### 4.2 Dynamic Component Discovery and Selection
+
+- Use `Component.GetComponents()` once to categorize available components and populate combo boxes or selection lists where appropriate.
+- Prefer Combo Boxes over many buttons when selecting from multiple components or rooms, provided it simplifies UI and logic.
+
+### 4.3 Generic Update and Error Reporting Utilities
+
+- Implement generic component-update helpers (e.g., `updateComponent(type, names, store, label)`) where many similar “set component” functions exist.
+- Centralize debug and error reporting utilities (e.g., `printOperationResult`, `handleBatchResult`) and use them across modules rather than re-implementing per domain.
+
+---
+
+## 5. Event-Driven DRY Patterns (Applied Across Architectures)
+
+- Route navigation and layer changes through a single handler to keep `varActiveLayer`, video switching, button interlocks, and sublayers in sync.
+- Differentiate positive/negative edges on pins (e.g., USB active vs inactive) so only positive edges trigger full navigation, while negative edges do minimal cleanup.
+- Use batch registration (`forEach` + handler maps) and normalized arrays to wire large UIs efficiently and consistently.
+
+---
+
+## 6. Checklist
+
+When refactoring or creating a script:
+
+**Architecture:**
+
+- [ ] Functional modules used where state is simple/static.
+- [ ] Hybrid OOP/functional used where components/timers are dynamic.
+
+**State and Lifecycle:**
+
+- [ ] Central state or store for shared mutable data.
+- [ ] Clear separation of config, state, timers, and components.
+
+**DRY and Events:**
+
+- [ ] Central navigation/layer handler.
+- [ ] Handler maps and normalized arrays for event registration.
+- [ ] `setProp()` and edge-aware pin handlers used consistently.
+
+**Components and Timers:**
+
+- [ ] `cleanupComponentHandlers()` used before reassigning components.
+- [ ] Timers centralized and cleaned up in module/controller lifecycle.

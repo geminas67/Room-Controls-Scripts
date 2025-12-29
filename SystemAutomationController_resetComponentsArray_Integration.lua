@@ -18,11 +18,8 @@ Benefits of Integration:
 -- Require the utilities module (would typically be at the top of SystemAutomationController)
 local QSysControllerUtils = require("Q-SysControllerUtilities")
 
---[[
-=================================================================================
-ENHANCED SystemAutomationController with resetComponentsArray Integration
-=================================================================================
-]]--
+
+-------------------[ SystemAutomationController with resetComponentsArray Integration ]------------------------
 
 -- Example of how to modify the existing SystemAutomationController constructor
 function SystemAutomationController.new(roomName, config, defaultConfigs)
@@ -54,11 +51,8 @@ function SystemAutomationController.new(roomName, config, defaultConfigs)
     return self
 end
 
---[[
-=================================================================================
-NEW: Enhanced Component Population Functions using resetComponentsArray
-=================================================================================
-]]--
+
+-------------------[ Component Population Functions using resetComponentsArray ]------------------------
 
 -- Enhanced gain component population function
 function SystemAutomationController:populateGainComponent(ctrl, index)
@@ -141,11 +135,8 @@ function SystemAutomationController:populateVideoBridgeComponent(ctrl, index)
     return component
 end
 
---[[
-=================================================================================
-NEW: Batch Component Reset Methods using resetComponentsArray
-=================================================================================
-]]--
+
+-------------------[ Batch Component Reset Methods using resetComponentsArray ]------------------------
 
 -- Reset and repopulate all gain components
 function SystemAutomationController:resetGainComponents()
@@ -206,40 +197,10 @@ function SystemAutomationController:resetAllComponentArrays()
     self:debugPrint("All component arrays reset completed")
 end
 
---[[
-=================================================================================
-ENHANCED: Individual Component Setup (backward compatibility)
-=================================================================================
-]]--
 
--- Enhanced individual component setup methods (maintains compatibility)
-function SystemAutomationController:setGainComponent(idx)
-    if not controls.compGains or not controls.compGains[idx] then return end
-    
-    -- Use the new population function for consistency
-    self.components.gains[idx] = self:populateGainComponent(controls.compGains[idx], idx)
-end
 
-function SystemAutomationController:setDisplayComponent(idx)
-    if not controls.devDisplays or not controls.devDisplays[idx] then return end
-    
-    self.components.displays[idx] = self:populateDisplayComponent(controls.devDisplays[idx], idx)
-end
 
-function SystemAutomationController:setVideoBridgeComponent(idx)
-    if not controls.compVideoBridge then return end
-    
-    local controlArray = getControlArray(controls.compVideoBridge)
-    if not controlArray[idx] then return end
-    
-    self.components.videoBridge[idx] = self:populateVideoBridgeComponent(controlArray[idx], idx)
-end
-
---[[
-=================================================================================
-ENHANCED: Initialization Method
-=================================================================================
-]]--
+-------------------[ Initialization Method ]------------------------
 
 -- Enhanced initialization using batch reset methods
 function SystemAutomationController:init()
@@ -274,11 +235,7 @@ function SystemAutomationController:init()
     self:debugPrint("SystemAutomationController ready; "..self.audioModule:getGainCount().." gain controls detected.")
 end
 
---[[
-=================================================================================
-NEW: Room Topology Change Handler
-=================================================================================
-]]--
+-------------------[ Room Topology Change Handler ]------------------------
 
 -- Handler for room topology changes (combine/divide)
 function SystemAutomationController:onRoomTopologyChange()
@@ -302,34 +259,29 @@ function SystemAutomationController:onComponentChoicesUpdated()
     self:resetAllComponentArrays()
 end
 
---[[
-=================================================================================
-ENHANCED: Event Handler Registration with Reset Support
-=================================================================================
-]]--
+
+-------------------[ Event Handler Registration with Reset Support ]------------------------
 
 -- Enhanced event handler registration with reset support
 function SystemAutomationController:registerEventHandlers()
     -- ... existing event handlers ...
     
-    -- NEW: Add handlers for component choice changes
+    -- Add handlers for component choice changes - use batch reset for consistency
     forEach(controls.compGains, function(i, ctrl)
         bind(ctrl, function() 
-            -- Individual component change
-            self:setGainComponent(i)
-            -- Optional: could use resetGainComponents() for full refresh
+            self:resetGainComponents()
         end) 
     end)
     
     forEach(controls.devDisplays, function(i, ctrl)
         bind(ctrl, function() 
-            self:setDisplayComponent(i)
+            self:resetDisplayComponents()
         end) 
     end)
     
     forEach(controls.compVideoBridge, function(i, ctrl)
         bind(ctrl, function() 
-            self:setVideoBridgeComponent(i)
+            self:resetVideoBridgeComponents()
         end) 
     end)
     
@@ -337,9 +289,7 @@ function SystemAutomationController:registerEventHandlers()
 end
 
 --[[
-=================================================================================
 USAGE COMPARISON: Before vs After
-=================================================================================
 ]]--
 
 --[[
@@ -352,6 +302,9 @@ function SystemAutomationController:init()
     forEach(controls.compGains, function(i) self:setGainComponent(i) end)
     forEach(controls.devDisplays, function(i) self:setDisplayComponent(i) end)
 end
+
+NOTE: Individual setter methods (setGainComponent, setDisplayComponent, setVideoBridgeComponent) 
+have been removed. All component updates now use batch reset methods for consistency.
 
 AFTER (With resetComponentsArray):
 ---------------------------------
@@ -385,15 +338,14 @@ To integrate resetComponentsArray into SystemAutomationController:
 4. ✓ Create reset methods for each component array
 5. ✓ Update init() method to use batch reset
 6. ✓ Add topology change handler
-7. ✓ Maintain backward compatibility with individual setters
+7. ✓ Update event handlers to use batch reset methods
 8. ✓ Add enhanced error handling and logging
 
 TESTING:
 --------
 1. Test component initialization on startup
-2. Test individual component changes
+2. Test component changes via event handlers (should trigger batch reset)
 3. Test batch component reset
 4. Test error handling with invalid components
 5. Test room topology changes
-6. Verify backward compatibility
 ]]--
