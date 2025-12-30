@@ -353,9 +353,7 @@ function LayerModule:showLayer()
     -- Base always on unless layer config hides it
     self:updateLayerVisibility({"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}, true, "none")
 
-    if self.controller.divisibleSpaceModule then
-        self.controller.divisibleSpaceModule:updateNavigationVisibility()
-    end
+    self.controller.divisibleSpaceModule:updateNavigationVisibility()
 
     local configs = self.configs or buildLayerConfigs(self.controller)
     self.configs = configs
@@ -365,7 +363,7 @@ function LayerModule:showLayer()
     if not config then return end
 
     -- Divisible-space condition
-    if config.conditional and self.controller.divisibleSpaceModule then
+    if config.conditional then
         if config.showRoomControls then
             local layerName = self.controller.divisibleSpaceModule:getRoomControlsLayerName()
             if not layerName then
@@ -643,10 +641,7 @@ function SublayerModule:updateACPRBypassState()
     end
 
     -- Get room state to determine which control and layer to use
-    local roomState = "separated"
-    if self.controller.divisibleSpaceModule then
-        roomState = self.controller.divisibleSpaceModule:getRoomState()
-    end
+    local roomState = self.controller.divisibleSpaceModule:getRoomState()
 
     local bypassControl, acprActiveLayer
     if roomState == "separated" then
@@ -682,8 +677,6 @@ end
 
 -- Conference Controls Layer - uses source map for lookups
 function SublayerModule:updateConferenceControlsLayer()
-    if not self.controller.divisibleSpaceModule then return end
-    
     -- HDMI gate
     if not self:checkHDMIConnection() then
         self.controller.layerModule:updateLayerVisibility({
@@ -818,7 +811,7 @@ end
 VideoSwitcherModule.SwitcherTypes = {
     AVProEdge = {
         componentType = "%PLUGIN%_0a62fae1-c3d6-308a-8b7f-3586d7abdf9d_%FP%_1d35ac9dec572bc00d3405021155333f",
-        switcherNames = {"devAVProEdge", "compAVProEdge", "varAVProEdge"},
+        switcherNames = {"devAVProEdge", "compAVProEdge"},
         routingMethod = "trigger",
         outputMappings = {
             CollabA = {
@@ -889,10 +882,7 @@ function VideoSwitcherModule:switchToInput(uciButton)
     if not config then return false end
     
     -- Get room identity from DivisibleSpaceModule
-    local roomIdentity = nil
-    if self.controller.divisibleSpaceModule then
-        roomIdentity = self.controller.divisibleSpaceModule:getCurrentRoom()
-    end
+    local roomIdentity = self.controller.divisibleSpaceModule:getCurrentRoom()
     
     if not roomIdentity then
         self:debug("Cannot switch: Room identity not determined")
@@ -1102,7 +1092,7 @@ function ProgressModule:startLoadingBar(isPoweringOn)
             self.isAnimating = false
             
             local targetLayer
-            if isPoweringOn and self.controller.divisibleSpaceModule then
+            if isPoweringOn then
                 targetLayer = self.controller.divisibleSpaceModule:getDefaultLayerAfterWarming()
             else
                 targetLayer = self.controller.kLayerStart
@@ -1724,9 +1714,7 @@ function UCIController:init()
     self.roomAutomationModule:initializeComponent()
     self.videoSwitcherModule:initialize()
     
-    if self.divisibleSpaceModule then
-        self.divisibleSpaceModule:initialize()
-    end
+    self.divisibleSpaceModule:initialize()
     
     if mySystemController and mySystemController.state then
         local systemPowerState = false
@@ -1739,11 +1727,7 @@ function UCIController:init()
                 self.varActiveLayer = self.kLayerWarming
                 self.progressModule:startLoadingBar(true)
             else
-                if self.divisibleSpaceModule then
-                    self.varActiveLayer = self.divisibleSpaceModule:getDefaultLayerAfterWarming()
-                else
-                    self.varActiveLayer = self.defaultActiveLayer
-                end
+                self.varActiveLayer = self.divisibleSpaceModule:getDefaultLayerAfterWarming()
             end
         else
             self.varActiveLayer = self.kLayerStart
