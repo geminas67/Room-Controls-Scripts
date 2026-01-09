@@ -1,0 +1,270 @@
+/* =========================================================
+   Q-SYS UCI Base Style Template
+   Author: Nikolas Smith
+   Date: 2026-01-06
+   Description:
+   - Global design tokens (:root)
+   - Base page styling
+   - Generic components (buttons, labels, faders, meters)
+   - Utility classes for layout and states
+   ========================================================= */
+
+   :root {
+    /* Color tokens */
+    --color-bg: #101319;
+    --color-bg-alt: #181c24;
+    --color-surface: #232834;
+    --color-border: #3a4253;
+    --color-accent: #3b82f6;
+    --color-accent-soft: rgba(59, 130, 246, 0.15);
+    --color-success: #22c55e;
+    --color-warning: #facc15;
+    --color-danger: #ef4444a2;
+  
+    --color-text-main: #f9fafb;
+    --color-text-muted: #9ca3af;
+    --color-text-invert: #0b0e14;
+  
+    /* Typography */
+    --font-sans: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont,
+                 "Roboto", sans-serif;
+    --font-mono: "JetBrains Mono", "Consolas", "SF Mono", ui-monospace, monospace;
+  
+    --font-size-xs: 10px;
+    --font-size-sm: 11px;
+    --font-size-md: 13px;
+    --font-size-lg: 15px;
+    --font-size-xl: 18px;
+  
+    /* Spacing scale */
+    --space-xs: 2px;
+    --space-sm: 4px;
+    --space-md: 8px;
+    --space-lg: 12px;
+    --space-xl: 16px;
+    --space-2xl: 24px;
+    --space-3xl: 32px;
+    --space-4xl: 40px;
+    --space-5xl: 48px;
+    --space-6xl: 56px;
+    --space-7xl: 64px;
+    --space-8xl: 72px;
+    --space-9xl: 80px;
+    --space-10xl: 88px;
+  
+    /* Radii */
+    --radius-sm: 3px;
+    --radius-md: 6px;
+    --radius-lg: 10px;
+    --radius-pill: 999px;
+  
+    /* Borders & shadows */
+    --border-default: 1px solid var(--color-border);
+    --shadow-soft: 0 2px 6px rgba(0, 0, 0, 0.4);
+  
+    /* Fader / meter specific */
+    --fader-track: #181c24;
+    --fader-cap: #3b82f6;
+    --fader-cap-border: #60a5fa;
+    --meter-bg: #1f2933;
+    --meter-fill: #22c55e;
+    --meter-warning: #f97316;
+    --meter-danger: #ef4444;
+  }
+  
+  /* Example custom font (optional)
+  @font-face {
+    font-family: "UCIIcons";
+    src: url("fonts/UCIIcons.ttf") format("truetype");
+  }
+  */
+
+  /* Full page background and base text */
+page {
+    background: radial-gradient(circle at top, #1f2933, #020617);
+    color: var(--color-text-main);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-md);
+  }
+  
+  /* Generic section container */
+  .u-section {
+    background-color: var(--color-bg-alt);
+    border: var(--border-default);
+    border-radius: var(--radius-md);
+    padding: var(--space-6);
+    box-shadow: var(--shadow-soft);
+  }
+  
+  /* Header bar (use on a rectangle behind your title row) */
+  .u-nav {
+    background: linear-gradient(90deg, #020617, #111827);
+    border-bottom: 1px solid #1f2937;
+    padding: var(--space-4) var(--space-6);
+  }
+  
+  .u-nav__title {
+    font-size: var(--font-size-xl);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-text-main);
+  }
+  
+  .u-nav__subtitle {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+  }
+
+  /* Buttons and button groups */
+  .btn-group {
+    display: flex;
+    gap: var(--space-2);
+  }
+  
+  .btn-group .btn {
+    flex: 1;
+  }
+
+  /* Base button: assign CSS Class Name "btn" in Designer */
+.btn {
+    background-color: var(--color-bg-alt);
+    border: var(--border-default);
+    border-radius: var(--radius-pill);
+    color: var(--color-text-main);
+    font-size: var(--font-size-md);
+    font-weight: 500;
+    padding: var(--space-3) var(--space-6);
+    text-align: center;
+  }
+  
+  /* Hover / focus look (Q-SYS maps state via .on / .off and :active) */
+  .btn.off {
+    background-color: var(--color-bg-alt);
+    color: var(--color-text-main);
+  }
+  
+  .btn.on {
+    background-color: var(--color-accent);
+    border-color: var(--color-accent);
+    color: var(--color-text-invert);
+    box-shadow: 0 0 0 1px var(--color-accent-soft);
+  }
+  
+  /* Variant: primary action */
+  .btn-primary {
+    background-color: var(--color-accent);
+    border-color: var(--color-accent);
+    color: var(--color-text-invert);
+  }
+  
+  /* Variant: destructive action */
+  .btn-danger {
+    background-color: rgba(239, 68, 68, 0.12);
+    border-color: #b91c1c;
+    color: #fecaca;
+  }
+  
+  .btn-danger.on {
+    background-color: #ef4444;
+    border-color: #f87171;
+    color: var(--color-text-invert);
+  }
+  
+  /* Pill-style source selector row */
+  .btn-source {
+    border-radius: var(--radius-pill);
+    font-size: var(--font-size-sm);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  
+  /* Generic label text */
+.label {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+  }
+  
+  /* Page titles */
+  .label-title {
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-main);
+  }
+  
+  /* Value readouts (e.g., dB, percentages) */
+  .label-value {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-md);
+    color: var(--color-text-main);
+  }
+  
+  /* Subtle caption or helper text */
+  .label-caption {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+  }
+  
+  /* Base fader: assign CSS Class Name "fader" */
+fader.fader {
+    -qsc-render-style: layer;
+    background-color: var(--fader-track);
+    border-radius: var(--radius-pill);
+    border: var(--border-default);
+  }
+  
+  /* Track and cap layers (Q-SYS-specific properties) */
+  fader.fader {
+    -qsc-fader-slot-class: fader-track;
+    -qsc-fader-cap-class: fader-cap;
+    -qsc-fader-cap-width: 18px;
+    -qsc-fader-cap-height: 40px;
+  }
+  
+  /* Track appearance */
+  .fader-track {
+    background: linear-gradient(180deg, #020617, #0b1120);
+    border-radius: var(--radius-pill);
+  }
+  
+  /* Cap appearance */
+  .fader-cap {
+    background: radial-gradient(circle at 30% 20%, #ffffff, #93c5fd 40%, #1d4ed8 100%);
+    border: 1px solid var(--fader-cap-border);
+    border-radius: var(--radius-pill);
+    box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.8), 0 2px 4px rgba(0, 0, 0, 0.7);
+  }
+  
+  /* Fader value text box */
+  .fader-value {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-main);
+    background-color: #020617;
+    border-radius: var(--radius-sm);
+    border: 1px solid #111827;
+  }
+  
+  /* Base meter: assign CSS Class Name "meter" */
+meter.meter {
+    -qsc-render-style: layer;
+    background-color: var(--meter-bg);
+    border-radius: var(--radius-pill);
+    border: var(--border-default);
+    -qsc-meter-indicator-class: meter-fill;
+  }
+  
+  /* Meter indicator uses :value() for zones if desired */
+  .meter-fill {
+    background: linear-gradient(
+      to top,
+      var(--meter-danger) 0%,
+      var(--meter-warning) 40%,
+      var(--meter-fill) 100%
+    );
+    border-radius: var(--radius-pill);
+  }
+  

@@ -1,8 +1,8 @@
 --[[
     System Automation Controller (Refactored, Lean OOP, DRY Event Registration)
     Author: Nikolas Smith, Q-SYS
-    Version: 3.5 | Date: 2025-09-10
-    Firmware Req: 10.0.0
+    Version: 3.5 | Date: 2025-12-30
+    Firmware Req: 10.1.0
     Notes:
     - UPDATED: Now complies with latest Lua Refactoring Prompt specifications
     - Enhanced validation: Comprehensive control validation with descriptive error messages
@@ -349,7 +349,7 @@ end
 
 function PowerModule:powerOn()
     self:debug("Powering On")
-    if controls.btnSystemOnTrig then controls.btnSystemOnTrig:Trigger() end
+    controls.btnSystemOnTrig:Trigger()
     self:enableDisablePowerControls(false)
     self.controller.state.isWarming = true
     setProp(controls.ledSystemWarming, "Boolean", true)
@@ -365,7 +365,7 @@ end
 
 function PowerModule:powerOff()
     self:debug("Powering Off")
-    if controls.btnSystemOffTrig then controls.btnSystemOffTrig:Trigger() end
+    controls.btnSystemOffTrig:Trigger()
     self:enableDisablePowerControls(false)
     self.controller.state.isCooling = true
     setProp(controls.ledSystemCooling, "Boolean", true)
@@ -398,24 +398,23 @@ end
 
 function MotionModule:checkMotion()
     self:debug("Checking Motion")
-    if controls.ledMotionIn and controls.ledMotionIn.Boolean then
+    if controls.ledMotionIn.Boolean then
         self.controller.state.motionTimeoutActive = false
         setProp(controls.ledMotionTimeoutActive, "Boolean", false)
         self.controller.timers.motion:Stop()
-        if controls.ledSystemPower and not controls.ledSystemPower.Boolean
+        if not controls.ledSystemPower.Boolean
             and not self.controller.state.motionGraceActive
-            and controls.txtMotionMode and controls.txtMotionMode.String == "Motion On/Off" then
+            and controls.txtMotionMode.String == "Motion On/Off" then
             self.controller:debugPrint("Turning System on from Motion")
             self.controller.powerModule:powerOn()
         end
         return
     end
-    if controls.txtMotionMode and (
-        controls.txtMotionMode.String == "Motion On/Off" or controls.txtMotionMode.String == "Motion Off") then
+    if (controls.txtMotionMode.String == "Motion On/Off" or controls.txtMotionMode.String == "Motion Off") then
         self:debug("Starting Motion Off Timer")
         self.controller.state.motionTimeoutActive = true
         setProp(controls.ledMotionTimeoutActive, "Boolean", true)
-        local timeout = (controls.motionTimeout and controls.motionTimeout.Value) or self.controller.config.motionTimeout
+        local timeout = (controls.motionTimeout.Value) or self.controller.config.motionTimeout
         self.controller.timers.motion:Start(timeout)
     end
 end
@@ -461,7 +460,7 @@ end
 function SystemAutomationController:getGainComponent(idx) return self.components.gains[idx] end
 function SystemAutomationController:getDisplayComponent(idx) return self.components.displays[idx] end
 function SystemAutomationController:getGainType(idx)
-    if controls.typeGain and controls.typeGain[idx] then return controls.typeGain[idx].String end
+    if controls.typeGain[idx] then return controls.typeGain[idx].String end
     if idx == 1 then return "Program" end
     return "Mic"
 end
@@ -631,16 +630,12 @@ function SystemAutomationController:getComponentNames()
         table.sort(list)
         table.insert(list, SystemAutomationController.clearString)
     end
-    if controls.compCallSync then controls.compCallSync.Choices = namesTable.namesCallSync end
-    if controls.compVideoBridge then 
-        for _, ctl in ipairs(getControlArray(controls.compVideoBridge)) do 
-            ctl.Choices = namesTable.namesVideoBridge 
-        end 
-    end
-    if controls.compSystemMute then controls.compSystemMute.Choices = namesTable.namesMute end
-    if controls.compACPR then controls.compACPR.Choices = namesTable.namesCamACPR end
-    if controls.compGains then for _, ctl in ipairs(controls.compGains) do ctl.Choices = namesTable.namesGain end end
-    if controls.devDisplays then for _, ctl in ipairs(controls.devDisplays) do ctl.Choices = namesTable.namesDisplay end end
+    controls.compCallSync.Choices = namesTable.namesCallSync
+    for _, ctl in ipairs(getControlArray(controls.compVideoBridge)) do ctl.Choices = namesTable.namesVideoBridge end
+    controls.compSystemMute.Choices = namesTable.namesMute
+    controls.compACPR.Choices = namesTable.namesCamACPR
+    for _, ctl in ipairs(controls.compGains) do ctl.Choices = namesTable.namesGain end
+    for _, ctl in ipairs(controls.devDisplays) do ctl.Choices = namesTable.namesDisplay end
 end
 
 ----------------[ UI/Component Status Handling ]----------------
@@ -684,17 +679,13 @@ end
 function SystemAutomationController:checkStatus()
     for _, isInvalid in pairs(self.components.invalid) do
         if isInvalid then
-            if controls.txtStatus then
-                controls.txtStatus.String = "Invalid Components"
-                controls.txtStatus.Value = 1
-            end
+            controls.txtStatus.String = "Invalid Components"
+            controls.txtStatus.Value = 1
             return
         end
     end
-    if controls.txtStatus then
-        controls.txtStatus.String = "OK"
-        controls.txtStatus.Value = 0
-    end
+    controls.txtStatus.String = "OK"
+    controls.txtStatus.Value = 0
 end
 
 ------[ Per-Component Setup/Assignment (wires events) ]------
@@ -808,14 +799,12 @@ function SystemAutomationController:videoBridgeCheckPrivacy(idx)
     self:debugPrint("Video Bridge [" .. idx .. "] Privacy State: " .. tostring(state))
     
     -- Update the appropriate button based on whether it's an array or single button
-    if controls.btnVideoPrivacy then
-        if isArr(controls.btnVideoPrivacy) and controls.btnVideoPrivacy[idx] then
-            controls.btnVideoPrivacy[idx].Boolean = state
-            -- Multiple buttons - update the specific button for this bridge
-        elseif not isArr(controls.btnVideoPrivacy) then
-            -- Single button - update it (typically represents primary bridge)
-            controls.btnVideoPrivacy.Boolean = state
-        end
+    if isArr(controls.btnVideoPrivacy) and controls.btnVideoPrivacy[idx] then
+        controls.btnVideoPrivacy[idx].Boolean = state
+        -- Multiple buttons - update the specific button for this bridge
+    elseif not isArr(controls.btnVideoPrivacy) then
+        -- Single button - update it (typically represents primary bridge)
+        controls.btnVideoPrivacy.Boolean = state
     end
 end
 
@@ -848,9 +837,7 @@ function SystemAutomationController:getVolumeLvl(idx)
     local gain = self:getGainComponent(idx)
     if not gain then return end
     local level = self:safeComponentAccess(gain, "gain", "getPosition")
-    if controls.knbVolumeFader and controls.knbVolumeFader[idx] then
-        controls.knbVolumeFader[idx].Position = level
-    end
+    controls.knbVolumeFader[idx].Position = level
     self:updateVolumeVisuals(idx)
     self:publishNotification()
 end
@@ -859,9 +846,7 @@ function SystemAutomationController:getVolumeMute(idx)
     local gain = self:getGainComponent(idx)
     if not gain then return end
     local state = self:safeComponentAccess(gain, "mute", "get")
-    if controls.btnVolumeMute and controls.btnVolumeMute[idx] then
-        controls.btnVolumeMute[idx].Boolean = state
-    end
+    controls.btnVolumeMute[idx].Boolean = state
     self:updateVolumeVisuals(idx)
     self:publishNotification()
 end
@@ -906,7 +891,7 @@ function SystemAutomationController:setFireAlarm(state)
         self.displayModule:powerAll(false)
         return
     end
-    if controls.ledSystemPower and controls.ledSystemPower.Boolean then
+    if controls.ledSystemPower.Boolean then
         self.audioModule:setSystemMute(false)
         self.displayModule:powerAll(true)
     end
@@ -929,11 +914,11 @@ end
 function SystemAutomationController:publishNotification()
     local systemState = {
         RoomName = self.roomName,
-        PowerState = controls.ledSystemPower and controls.ledSystemPower.Boolean or false,
-        SystemWarming = controls.ledSystemWarming and controls.ledSystemWarming.Boolean or false,
-        SystemCooling = controls.ledSystemCooling and controls.ledSystemCooling.Boolean or false,
-        AudioPrivacy = controls.btnAudioPrivacy and controls.btnAudioPrivacy.Boolean or false,
-        VideoPrivacy = controls.btnVideoPrivacy and controls.btnVideoPrivacy.Boolean or false,
+        PowerState = controls.ledSystemPower.Boolean or false,
+        SystemWarming = controls.ledSystemWarming.Boolean or false,
+        SystemCooling = controls.ledSystemCooling.Boolean or false,
+        AudioPrivacy = controls.btnAudioPrivacy.Boolean or false,
+        VideoPrivacy = controls.btnVideoPrivacy.Boolean or false,
         ACPRState = (self.components.camACPR and
             self.components.camACPR["TrackingBypass"] and
             self.components.camACPR["TrackingBypass"].Boolean) or false,
@@ -948,14 +933,13 @@ function SystemAutomationController:publishNotification()
             }
         end
     end
-    if controls.txtNotificationID and controls.txtNotificationID.String ~= "" then
+    if controls.txtNotificationID.String ~= "" then
         Notifications.Publish(controls.txtNotificationID.String, systemState)
     end
 end
 
 ----------------[ Default Config Selection UI Handler ]-----------------
 function SystemAutomationController:setupConfigSelection()
-    if not controls.selDefaultConfigs then return end
 
     controls.selDefaultConfigs.Choices = {
         "Conference Room",
@@ -1025,8 +1009,6 @@ end
 
 ----------------[ Gain Type Assignments ]-----------------
 function SystemAutomationController:setGainTypeAssignments(roomType)
-    if not controls.typeGain then return end
-    
     -- Use current room configuration if no roomType specified
     roomType = roomType or (controls.selDefaultConfigs and controls.selDefaultConfigs.String) or "Default"
     
@@ -1040,15 +1022,9 @@ function SystemAutomationController:setGainTypeAssignments(roomType)
     local assignments = gainTypeAssignments[roomType] or gainTypeAssignments["Default"]
     
     for i, gainType in ipairs(assignments) do
-        if controls.typeGain[i] then
-            if i == 1 then
-                -- First gain control is always Program and should remain disabled
-                controls.typeGain[i].String = "Program"
-                controls.typeGain[i].IsDisabled = true
-            else
-                controls.typeGain[i].String = gainType
-            end
-        end
+        -- First gain control is always Program and should remain disabled
+        controls.typeGain[i].String = i == 1 and "Program" or gainType
+        controls.typeGain[i].IsDisabled = i == 1
     end
 end
 
@@ -1059,18 +1035,9 @@ function SystemAutomationController:init()
     setProp(controls.txtMotionMode, "Choices", { "Motion On/Off", "Motion Off", "Motion Disabled" })
     
     -- Setup typeGain dropdown choices
-    if controls.typeGain then
-        local gainChoices = { "Program", "Mic", "Gain" }
-        for i, gainControl in ipairs(getControlArray(controls.typeGain)) do
-            if gainControl then
-                gainControl.Choices = gainChoices
-                if i == 1 then
-                    -- First gain control is always Program and should be disabled
-                    gainControl.String = "Program"
-                    gainControl.IsDisabled = true
-                end
-            end
-        end
+    local gainChoices = { "Program", "Mic", "Gain" }
+    for _, gainControl in ipairs(getControlArray(controls.typeGain)) do
+        gainControl.Choices = gainChoices
     end
     
     self:setGainTypeAssignments()
@@ -1108,7 +1075,7 @@ local function getDefaultConfig(roomType)
     local baseConfig = {
         defaultProgramVolume = 0.7,
         defaultMicVolume = 0.5, 
-        defaultGainVolume = 0.7
+        defaultGainVolume = 0.7  -- Now same as defaultProgramVolume
     }
     
     roomType = roomType or "Default"

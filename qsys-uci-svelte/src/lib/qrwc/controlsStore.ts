@@ -80,7 +80,7 @@ export const navButtonStores = [
 // Setup QRWC subscriptions once ready
 let subscriptionsInitialized = false;
 
-qrwcReady.subscribe((ready) => {
+qrwcReady.subscribe((ready: boolean) => {
 	if (!ready || subscriptionsInitialized) return;
 	
 	const qrwc = getQrwc();
@@ -180,42 +180,38 @@ qrwcReady.subscribe((ready) => {
 			}
 		}
 
-		// Subscribe to system controls
-		if (controls.btnStartSystem) {
-			controls.btnStartSystem.on('update', ({ Bool }: any) => btnStartSystem.set(!!Bool));
-		}
-		if (controls.btnNavShutdown) {
-			controls.btnNavShutdown.on('update', ({ Bool }: any) => btnNavShutdown.set(!!Bool));
-		}
-		if (controls.btnShutdownCancel) {
-			controls.btnShutdownCancel.on('update', ({ Bool }: any) => btnShutdownCancel.set(!!Bool));
-		}
-		if (controls.btnShutdownConfirm) {
-			controls.btnShutdownConfirm.on('update', ({ Bool }: any) => btnShutdownConfirm.set(!!Bool));
-		}
-
-		// Subscribe to help buttons
-		const helpButtonPairs = [
-			{ open: 'btnOpenHelpLaptopA', close: 'btnCloseHelpLaptopA' },
-			{ open: 'btnOpenHelpLaptopB', close: 'btnCloseHelpLaptopB' },
-			{ open: 'btnOpenHelpPCA', close: 'btnCloseHelpPCA' },
-			{ open: 'btnOpenHelpPCB', close: 'btnCloseHelpPCB' },
-			{ open: 'btnOpenHelpWirelessA', close: 'btnCloseHelpWirelessA' },
-			{ open: 'btnOpenHelpWirelessB', close: 'btnCloseHelpWirelessB' },
-			{ open: 'btnOpenHelpRouting', close: 'btnCloseHelpRouting' },
-			{ open: 'btnOpenHelpStreamMusic', close: 'btnCloseHelpStreamMusic' }
-		];
-
-		// Subscribe to progress controls
-		if (controls.knbProgressBar) {
-			controls.knbProgressBar.on('update', ({ Value }: any) => knbProgressBar.set(Value || 0));
-		}
-		if (controls.txtProgressBar) {
-			controls.txtProgressBar.on('update', ({ String: str }: any) => txtProgressBar.set(str || '0%'));
-		}
+		// UCI-only controls (btnStartSystem, btnNavShutdown, btnShutdownCancel, btnShutdownConfirm,
+		// help buttons, and progress controls) are not in Q-Sys design to subscribe to.
+		// They are UI buttons that trigger actions in the UCI itself.
+		// Only btnStartSystem and btnShutdownConfirm trigger Q-Sys actions (see store subscriptions below).
 
 		subscriptionsInitialized = true;
 		console.log('QRWC control subscriptions initialized');
+
+		// Set up handlers for UCI-only buttons that trigger Q-Sys actions
+		// btnStartSystem: writes to roomControlsComponent["btnSystemOnOff"].Boolean = true
+		btnStartSystem.subscribe((value: boolean) => {
+			if (value) {
+				const roomControlsComponent = qrwc.components?.RoomControls;
+				if (roomControlsComponent?.controls?.btnSystemOnOff) {
+					roomControlsComponent.controls.btnSystemOnOff.update({ Bool: true });
+					// Reset store after writing to Q-Sys
+					btnStartSystem.set(false);
+				}
+			}
+		});
+
+		// btnShutdownConfirm: writes to roomControlsComponent["btnSystemOnOff"].Boolean = false
+		btnShutdownConfirm.subscribe((value: boolean) => {
+			if (value) {
+				const roomControlsComponent = qrwc.components?.RoomControls;
+				if (roomControlsComponent?.controls?.btnSystemOnOff) {
+					roomControlsComponent.controls.btnSystemOnOff.update({ Bool: false });
+					// Reset store after writing to Q-Sys
+					btnShutdownConfirm.set(false);
+				}
+			}
+		});
 	} catch (error) {
 		console.error('Error initializing QRWC subscriptions:', error);
 	}
@@ -223,6 +219,16 @@ qrwcReady.subscribe((ready) => {
 
 // Control write functions
 export function writeControl(controlName: string, value: boolean | number | string): void {
+	// Handle UCI-only buttons that trigger Q-Sys actions via store subscriptions
+	if (controlName === 'btnStartSystem' && typeof value === 'boolean' && value) {
+		btnStartSystem.set(true);
+		return;
+	}
+	if (controlName === 'btnShutdownConfirm' && typeof value === 'boolean' && value) {
+		btnShutdownConfirm.set(true);
+		return;
+	}
+
 	const qrwc = getQrwc();
 	if (!qrwc) {
 		console.warn('QRWC not initialized, cannot write control:', controlName);

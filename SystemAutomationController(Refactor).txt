@@ -1,8 +1,8 @@
 --[[
     System Automation Controller (Refactored, Lean OOP, DRY Event Registration)
     Author: Nikolas Smith, Q-SYS
-    Version: 3.5 | Date: 2025-09-10
-    Firmware Req: 10.0.0
+    Version: 3.6 | Date: 2025-12-30
+    Firmware Req: 10.1.0
     Notes:
     - UPDATED: Now complies with latest Lua Refactoring Prompt specifications
     - Enhanced validation: Comprehensive control validation with descriptive error messages
@@ -349,7 +349,7 @@ end
 
 function PowerModule:powerOn()
     self:debug("Powering On")
-    if controls.btnSystemOnTrig then controls.btnSystemOnTrig:Trigger() end
+    controls.btnSystemOnTrig:Trigger()
     self:enableDisablePowerControls(false)
     self.controller.state.isWarming = true
     setProp(controls.ledSystemWarming, "Boolean", true)
@@ -365,7 +365,7 @@ end
 
 function PowerModule:powerOff()
     self:debug("Powering Off")
-    if controls.btnSystemOffTrig then controls.btnSystemOffTrig:Trigger() end
+    controls.btnSystemOffTrig:Trigger()
     self:enableDisablePowerControls(false)
     self.controller.state.isCooling = true
     setProp(controls.ledSystemCooling, "Boolean", true)
@@ -398,24 +398,23 @@ end
 
 function MotionModule:checkMotion()
     self:debug("Checking Motion")
-    if controls.ledMotionIn and controls.ledMotionIn.Boolean then
+    if controls.ledMotionIn.Boolean then
         self.controller.state.motionTimeoutActive = false
         setProp(controls.ledMotionTimeoutActive, "Boolean", false)
         self.controller.timers.motion:Stop()
-        if controls.ledSystemPower and not controls.ledSystemPower.Boolean
+        if not controls.ledSystemPower.Boolean
             and not self.controller.state.motionGraceActive
-            and controls.txtMotionMode and controls.txtMotionMode.String == "Motion On/Off" then
+            and controls.txtMotionMode.String == "Motion On/Off" then
             self.controller:debugPrint("Turning System on from Motion")
             self.controller.powerModule:powerOn()
         end
         return
     end
-    if controls.txtMotionMode and (
-        controls.txtMotionMode.String == "Motion On/Off" or controls.txtMotionMode.String == "Motion Off") then
+    if (controls.txtMotionMode.String == "Motion On/Off" or controls.txtMotionMode.String == "Motion Off") then
         self:debug("Starting Motion Off Timer")
         self.controller.state.motionTimeoutActive = true
         setProp(controls.ledMotionTimeoutActive, "Boolean", true)
-        local timeout = (controls.motionTimeout and controls.motionTimeout.Value) or self.controller.config.motionTimeout
+        local timeout = (controls.motionTimeout.Value) or self.controller.config.motionTimeout
         self.controller.timers.motion:Start(timeout)
     end
 end
@@ -461,7 +460,7 @@ end
 function SystemAutomationController:getGainComponent(idx) return self.components.gains[idx] end
 function SystemAutomationController:getDisplayComponent(idx) return self.components.displays[idx] end
 function SystemAutomationController:getGainType(idx)
-    if controls.typeGain and controls.typeGain[idx] then return controls.typeGain[idx].String end
+    if controls.typeGain[idx] then return controls.typeGain[idx].String end
     if idx == 1 then return "Program" end
     return "Mic"
 end
@@ -539,25 +538,18 @@ function SystemAutomationController:registerEventHandlers()
         bindArray(mapping.ctrls, mapping.handler)
     end
     
-    -- Component selection handlers - use batch reset pattern for consistency
-    -- When any component in an array changes, reset and repopulate the entire array
-    forEach(controls.compVideoBridge, function(i, ctrl)
-        bind(ctrl, function() 
-            self:resetVideoBridgeComponents()
-        end)
-    end)
+    -- Component selection handlers (with forEach optimization)
+    local componentMaps = {
+        { ctrls = controls.compVideoBridge, handler = function(i) self:setVideoBridgeComponent(i) end },
+        { ctrls = controls.compGains, handler = function(i) self:setGainComponent(i) end },
+        { ctrls = controls.devDisplays, handler = function(i) self:setDisplayComponent(i) end }
+    }
     
-    forEach(controls.compGains, function(i, ctrl)
-        bind(ctrl, function() 
-            self:resetGainComponents()
+    for _, mapping in ipairs(componentMaps) do
+        forEach(mapping.ctrls, function(i, ctrl)
+            bind(ctrl, function() mapping.handler(i) end)
         end)
-    end)
-    
-    forEach(controls.devDisplays, function(i, ctrl)
-        bind(ctrl, function() 
-            self:resetDisplayComponents()
-        end)
-    end)
+    end
     
     -- Special case: typeGain with conditional logic
     forEach(controls.typeGain, function(i, ctrl)
@@ -638,16 +630,12 @@ function SystemAutomationController:getComponentNames()
         table.sort(list)
         table.insert(list, SystemAutomationController.clearString)
     end
-    if controls.compCallSync then controls.compCallSync.Choices = namesTable.namesCallSync end
-    if controls.compVideoBridge then 
-        for _, ctl in ipairs(getControlArray(controls.compVideoBridge)) do 
-            ctl.Choices = namesTable.namesVideoBridge 
-        end 
-    end
-    if controls.compSystemMute then controls.compSystemMute.Choices = namesTable.namesMute end
-    if controls.compACPR then controls.compACPR.Choices = namesTable.namesCamACPR end
-    if controls.compGains then for _, ctl in ipairs(controls.compGains) do ctl.Choices = namesTable.namesGain end end
-    if controls.devDisplays then for _, ctl in ipairs(controls.devDisplays) do ctl.Choices = namesTable.namesDisplay end end
+    controls.compCallSync.Choices = namesTable.namesCallSync
+    for _, ctl in ipairs(getControlArray(controls.compVideoBridge)) do ctl.Choices = namesTable.namesVideoBridge end
+    controls.compSystemMute.Choices = namesTable.namesMute
+    controls.compACPR.Choices = namesTable.namesCamACPR
+    for _, ctl in ipairs(controls.compGains) do ctl.Choices = namesTable.namesGain end
+    for _, ctl in ipairs(controls.devDisplays) do ctl.Choices = namesTable.namesDisplay end
 end
 
 ----------------[ UI/Component Status Handling ]----------------
@@ -691,17 +679,13 @@ end
 function SystemAutomationController:checkStatus()
     for _, isInvalid in pairs(self.components.invalid) do
         if isInvalid then
-            if controls.txtStatus then
-                controls.txtStatus.String = "Invalid Components"
-                controls.txtStatus.Value = 1
-            end
+            controls.txtStatus.String = "Invalid Components"
+            controls.txtStatus.Value = 1
             return
         end
     end
-    if controls.txtStatus then
-        controls.txtStatus.String = "OK"
-        controls.txtStatus.Value = 0
-    end
+    controls.txtStatus.String = "OK"
+    controls.txtStatus.Value = 0
 end
 
 ------[ Per-Component Setup/Assignment (wires events) ]------
@@ -750,8 +734,25 @@ function SystemAutomationController:setCallSyncComponent()
     })
 end
 
--- Individual setter methods removed - use batch reset methods instead:
--- resetGainComponents(), resetDisplayComponents(), resetVideoBridgeComponents()
+function SystemAutomationController:setVideoBridgeComponent(idx)
+    local label = idx == 1 and "Video Bridge [Main]" or "Video Bridge [" .. idx .. "]"
+    self:setComponentByType(controls.compVideoBridge, "Video Bridge", 
+        { key = "videoBridge", index = idx, label = label }, {
+        ["toggle.privacy"] = function(ctrl, i) ctrl:videoBridgeCheckPrivacy(i) end
+    }, function(ctrl, i) ctrl:getVideoBridgePrivacy(i) end)
+end
+
+function SystemAutomationController:setGainComponent(idx)
+    local label = idx == 1 and "Program Volume [Gain 1]" or "Gain [" .. idx .. "]"
+    self:setComponentByType(controls.compGains, "Gain", 
+        { key = "gains", index = idx, label = label }, {
+        ["gain"] = function(ctrl, i) ctrl:getVolumeLvl(i) end,
+        ["mute"] = function(ctrl, i) ctrl:getVolumeMute(i) end
+    }, function(ctrl, i) 
+        ctrl:getVolumeLvl(i)
+        ctrl:getVolumeMute(i)
+    end)
+end
 
 function SystemAutomationController:setSystemMuteComponent()
     self:setComponentByType(controls.compSystemMute, "System Mute", "systemMute")
@@ -765,153 +766,45 @@ function SystemAutomationController:setCamACPRComponent()
     end)
 end
 
--- Individual setter methods removed - use batch reset methods instead
+function SystemAutomationController:setDisplayComponent(idx)
+    self:setComponentByType(controls.devDisplays, "Display", 
+        { key = "displays", index = idx }, {
+        ["PowerIsOn"] = function(ctrl, i) 
+            ctrl:debugPrint("Display [" .. i .. "] powered ON")
+        end,
+        ["PowerIsOff"] = function(ctrl, i) 
+            ctrl:debugPrint("Display [" .. i .. "] powered OFF")
+        end
+    })
+end
 
 function SystemAutomationController:getVideoBridgePrivacy(idx)
     self:videoBridgeCheckPrivacy(idx)
 end
 
-------------------[ Component Population Helpers (for batch reset) ]------------------
-function SystemAutomationController:populateGainComponent(ctrl, index)
-    if not ctrl or not ctrl.String or ctrl.String == "" or ctrl.String == self.clearString then
-        return nil
-    end
-    
-    local component = self:setComponent(ctrl, index == 1 and "Program Volume [Gain 1]" or "Gain [" .. index .. "]")
-    if not component then return nil end
-    
-    -- Bind event handlers
-    if component["gain"] then
-        component["gain"].EventHandler = function() self:getVolumeLvl(index) end
-    end
-    if component["mute"] then
-        component["mute"].EventHandler = function() self:getVolumeMute(index) end
-    end
-    
-    -- Initialize volume state
-    self:getVolumeLvl(index)
-    self:getVolumeMute(index)
-    
-    return component
-end
-
-function SystemAutomationController:populateDisplayComponent(ctrl, index)
-    if not ctrl or not ctrl.String or ctrl.String == "" or ctrl.String == self.clearString then
-        return nil
-    end
-    
-    local component = self:setComponent(ctrl, "Display [" .. index .. "]")
-    if not component then return nil end
-    
-    -- Bind event handlers
-    if component["PowerIsOn"] then
-        component["PowerIsOn"].EventHandler = function() 
-            self:debugPrint("Display [" .. index .. "] powered ON")
-        end
-    end
-    if component["PowerIsOff"] then
-        component["PowerIsOff"].EventHandler = function() 
-            self:debugPrint("Display [" .. index .. "] powered OFF")
-        end
-    end
-    
-    return component
-end
-
-function SystemAutomationController:populateVideoBridgeComponent(ctrl, index)
-    if not ctrl or not ctrl.String or ctrl.String == "" or ctrl.String == self.clearString then
-        return nil
-    end
-    
-    local label = index == 1 and "Video Bridge [Main]" or "Video Bridge [" .. index .. "]"
-    local component = self:setComponent(ctrl, label)
-    if not component then return nil end
-    
-    -- Bind event handlers
-    if component["toggle.privacy"] then
-        component["toggle.privacy"].EventHandler = function() self:videoBridgeCheckPrivacy(index) end
-    end
-    
-    -- Initialize privacy state
-    self:getVideoBridgePrivacy(index)
-    
-    return component
-end
-
 ------------------[ Batch Component Reset Methods ]------------------
+-- Simplified DRY pattern: reuse existing setter methods in a loop
 function SystemAutomationController:resetGainComponents()
-    if not controls.compGains then return end
-    
-    self:debugPrint("Resetting gain components array...")
-    
-    -- Clear existing components
-    for k in pairs(self.components.gains) do
-        self.components.gains[k] = nil
-    end
-    
-    -- Repopulate from controls
-    local gainControls = getControlArray(controls.compGains)
-    for i, ctrl in ipairs(gainControls) do
-        if ctrl then
-            self.components.gains[i] = self:populateGainComponent(ctrl, i)
-        end
-    end
-    
-    -- Apply volume defaults after reset
+    self:debugPrint("Resetting gain components...")
+    forEach(controls.compGains, function(i) self:setGainComponent(i) end)
     self:applyVolumeDefaults()
-    
-    self:debugPrint("Gain components reset completed")
 end
 
 function SystemAutomationController:resetDisplayComponents()
-    if not controls.devDisplays then return end
-    
-    self:debugPrint("Resetting display components array...")
-    
-    -- Clear existing components
-    for k in pairs(self.components.displays) do
-        self.components.displays[k] = nil
-    end
-    
-    -- Repopulate from controls
-    local displayControls = getControlArray(controls.devDisplays)
-    for i, ctrl in ipairs(displayControls) do
-        if ctrl then
-            self.components.displays[i] = self:populateDisplayComponent(ctrl, i)
-        end
-    end
-    
-    self:debugPrint("Display components reset completed")
+    self:debugPrint("Resetting display components...")
+    forEach(controls.devDisplays, function(i) self:setDisplayComponent(i) end)
 end
 
 function SystemAutomationController:resetVideoBridgeComponents()
-    if not controls.compVideoBridge then return end
-    
-    self:debugPrint("Resetting video bridge components array...")
-    
-    -- Clear existing components
-    for k in pairs(self.components.videoBridge) do
-        self.components.videoBridge[k] = nil
-    end
-    
-    -- Repopulate from controls
-    local bridgeControls = getControlArray(controls.compVideoBridge)
-    for i, ctrl in ipairs(bridgeControls) do
-        if ctrl then
-            self.components.videoBridge[i] = self:populateVideoBridgeComponent(ctrl, i)
-        end
-    end
-    
-    self:debugPrint("Video bridge components reset completed")
+    self:debugPrint("Resetting video bridge components...")
+    forEach(controls.compVideoBridge, function(i) self:setVideoBridgeComponent(i) end)
 end
 
 function SystemAutomationController:resetAllComponentArrays()
     self:debugPrint("Resetting all component arrays...")
-    
     self:resetGainComponents()
     self:resetDisplayComponents()
     self:resetVideoBridgeComponents()
-    
     self:debugPrint("All component arrays reset completed")
 end
 
@@ -932,14 +825,12 @@ function SystemAutomationController:videoBridgeCheckPrivacy(idx)
     self:debugPrint("Video Bridge [" .. idx .. "] Privacy State: " .. tostring(state))
     
     -- Update the appropriate button based on whether it's an array or single button
-    if controls.btnVideoPrivacy then
-        if isArr(controls.btnVideoPrivacy) and controls.btnVideoPrivacy[idx] then
-            controls.btnVideoPrivacy[idx].Boolean = state
-            -- Multiple buttons - update the specific button for this bridge
-        elseif not isArr(controls.btnVideoPrivacy) then
-            -- Single button - update it (typically represents primary bridge)
-            controls.btnVideoPrivacy.Boolean = state
-        end
+    if isArr(controls.btnVideoPrivacy) and controls.btnVideoPrivacy[idx] then
+        controls.btnVideoPrivacy[idx].Boolean = state
+        -- Multiple buttons - update the specific button for this bridge
+    elseif not isArr(controls.btnVideoPrivacy) then
+        -- Single button - update it (typically represents primary bridge)
+        controls.btnVideoPrivacy.Boolean = state
     end
 end
 
@@ -972,9 +863,7 @@ function SystemAutomationController:getVolumeLvl(idx)
     local gain = self:getGainComponent(idx)
     if not gain then return end
     local level = self:safeComponentAccess(gain, "gain", "getPosition")
-    if controls.knbVolumeFader and controls.knbVolumeFader[idx] then
-        controls.knbVolumeFader[idx].Position = level
-    end
+    controls.knbVolumeFader[idx].Position = level
     self:updateVolumeVisuals(idx)
     self:publishNotification()
 end
@@ -983,9 +872,7 @@ function SystemAutomationController:getVolumeMute(idx)
     local gain = self:getGainComponent(idx)
     if not gain then return end
     local state = self:safeComponentAccess(gain, "mute", "get")
-    if controls.btnVolumeMute and controls.btnVolumeMute[idx] then
-        controls.btnVolumeMute[idx].Boolean = state
-    end
+    controls.btnVolumeMute[idx].Boolean = state
     self:updateVolumeVisuals(idx)
     self:publishNotification()
 end
@@ -1030,7 +917,7 @@ function SystemAutomationController:setFireAlarm(state)
         self.displayModule:powerAll(false)
         return
     end
-    if controls.ledSystemPower and controls.ledSystemPower.Boolean then
+    if controls.ledSystemPower.Boolean then
         self.audioModule:setSystemMute(false)
         self.displayModule:powerAll(true)
     end
@@ -1053,11 +940,11 @@ end
 function SystemAutomationController:publishNotification()
     local systemState = {
         RoomName = self.roomName,
-        PowerState = controls.ledSystemPower and controls.ledSystemPower.Boolean or false,
-        SystemWarming = controls.ledSystemWarming and controls.ledSystemWarming.Boolean or false,
-        SystemCooling = controls.ledSystemCooling and controls.ledSystemCooling.Boolean or false,
-        AudioPrivacy = controls.btnAudioPrivacy and controls.btnAudioPrivacy.Boolean or false,
-        VideoPrivacy = controls.btnVideoPrivacy and controls.btnVideoPrivacy.Boolean or false,
+        PowerState = controls.ledSystemPower.Boolean or false,
+        SystemWarming = controls.ledSystemWarming.Boolean or false,
+        SystemCooling = controls.ledSystemCooling.Boolean or false,
+        AudioPrivacy = controls.btnAudioPrivacy.Boolean or false,
+        VideoPrivacy = controls.btnVideoPrivacy.Boolean or false,
         ACPRState = (self.components.camACPR and
             self.components.camACPR["TrackingBypass"] and
             self.components.camACPR["TrackingBypass"].Boolean) or false,
@@ -1072,15 +959,14 @@ function SystemAutomationController:publishNotification()
             }
         end
     end
-    if controls.txtNotificationID and controls.txtNotificationID.String ~= "" then
+    if controls.txtNotificationID.String ~= "" then
         Notifications.Publish(controls.txtNotificationID.String, systemState)
     end
 end
 
 ----------------[ Default Config Selection UI Handler ]-----------------
 function SystemAutomationController:setupConfigSelection()
-    if not controls.selDefaultConfigs then return end
-
+    
     controls.selDefaultConfigs.Choices = {
         "Conference Room",
         "Huddle Room",
@@ -1149,8 +1035,6 @@ end
 
 ----------------[ Gain Type Assignments ]-----------------
 function SystemAutomationController:setGainTypeAssignments(roomType)
-    if not controls.typeGain then return end
-    
     -- Use current room configuration if no roomType specified
     roomType = roomType or (controls.selDefaultConfigs and controls.selDefaultConfigs.String) or "Default"
     
@@ -1164,15 +1048,9 @@ function SystemAutomationController:setGainTypeAssignments(roomType)
     local assignments = gainTypeAssignments[roomType] or gainTypeAssignments["Default"]
     
     for i, gainType in ipairs(assignments) do
-        if controls.typeGain[i] then
-            if i == 1 then
-                -- First gain control is always Program and should remain disabled
-                controls.typeGain[i].String = "Program"
-                controls.typeGain[i].IsDisabled = true
-            else
-                controls.typeGain[i].String = gainType
-            end
-        end
+        -- First gain control is always Program and should remain disabled
+        controls.typeGain[i].String = i == 1 and "Program" or gainType
+        controls.typeGain[i].IsDisabled = i == 1
     end
 end
 
@@ -1183,29 +1061,21 @@ function SystemAutomationController:init()
     setProp(controls.txtMotionMode, "Choices", { "Motion On/Off", "Motion Off", "Motion Disabled" })
     
     -- Setup typeGain dropdown choices
-    if controls.typeGain then
-        local gainChoices = { "Program", "Mic", "Gain" }
-        for i, gainControl in ipairs(getControlArray(controls.typeGain)) do
-            if gainControl then
-                gainControl.Choices = gainChoices
-                if i == 1 then
-                    -- First gain control is always Program and should be disabled
-                    gainControl.String = "Program"
-                    gainControl.IsDisabled = true
-                end
-            end
-        end
+    local gainChoices = { "Program", "Mic", "Gain" }
+    for _, gainControl in ipairs(getControlArray(controls.typeGain)) do
+        gainControl.Choices = gainChoices
     end
     
     self:setGainTypeAssignments()
     
-    -- Initialize single components (unchanged)
+    -- Initialize components
     self:setCallSyncComponent()
     self:setSystemMuteComponent()
     self:setCamACPRComponent()
     
-    -- Initialize component arrays using batch reset pattern
-    self:resetAllComponentArrays()
+    forEach(controls.compVideoBridge, function(i) self:setVideoBridgeComponent(i) end)
+    forEach(controls.compGains, function(i) self:setGainComponent(i) end)
+    forEach(controls.devDisplays, function(i) self:setDisplayComponent(i) end)
     
     self:debugPrint("SystemAutomationController ready; "..self.audioModule:getGainCount().." gain controls detected.")
 end
