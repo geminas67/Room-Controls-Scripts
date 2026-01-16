@@ -50,6 +50,7 @@ local function forEach(ctrls, fn)
 end
 
 -- DRY utility: Clean up event handlers from old component before assigning new one
+-- Usage: cleanupComponentHandlers(oldComponent, controlNames, debugCallback)
 -- controlNames: table of control name strings (e.g., {"off.hook", "mute"})
 local function cleanupComponentHandlers(oldComponent, controlNames, debugCallback)
     if not oldComponent or not controlNames then return false end
@@ -584,30 +585,25 @@ end
 function ShureMXAController:cleanup()
     self.ledToggleTimer:Stop()
     
-    -- Clear event handlers for components using DRY utility
+    -- Clear event handlers for components
     local components = self.componentModule.components
     
-    -- Clean up callSync event handlers
-    cleanupComponentHandlers(
-        components.callSync,
-        {"off.hook", "mute"},
-        function(msg) self:debugPrint("[Cleanup] " .. msg) end
-    )
+    if components.callSync then
+        setProp(components.callSync["off.hook"], "EventHandler", nil)
+        setProp(components.callSync["mute"], "EventHandler", nil)
+    end
     
-    -- Clean up roomControls event handlers
-    cleanupComponentHandlers(
-        components.roomControls,
-        {"ledSystemPower", "ledFireAlarm"},
-        function(msg) self:debugPrint("[Cleanup] " .. msg) end
-    )
+    if components.roomControls then
+        setProp(components.roomControls["ledSystemPower"], "EventHandler", nil)
+        setProp(components.roomControls["ledFireAlarm"], "EventHandler", nil)
+    end
     
-    -- Clean up MXA device event handlers
-    for idx, device in pairs(components.mxaDevices) do
-        cleanupComponentHandlers(
-            device,
-            {"GlobalMute", "BrightnessLevel", "LedUnmuteColor"},
-            function(msg) self:debugPrint("[Cleanup MXA " .. idx .. "] " .. msg) end
-        )
+    for _, device in pairs(components.mxaDevices) do
+        if device then
+            setProp(device["GlobalMute"], "EventHandler", nil)
+            setProp(device["BrightnessLevel"], "EventHandler", nil)
+            setProp(device["LedUnmuteColor"], "EventHandler", nil)
+        end
     end
     
     -- Reset component references

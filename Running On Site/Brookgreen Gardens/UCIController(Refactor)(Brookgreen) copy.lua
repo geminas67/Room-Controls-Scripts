@@ -21,7 +21,6 @@ local controls = {
     btnNav04 = Controls.btnNav04, btnNav05 = Controls.btnNav05, btnNav06 = Controls.btnNav06,
     btnNav07 = Controls.btnNav07, btnNav08 = Controls.btnNav08, btnNav09 = Controls.btnNav09,
     btnNav10 = Controls.btnNav10, btnNav11 = Controls.btnNav11, btnNav12 = Controls.btnNav12,
-    btnNav13 = Controls.btnNav13,
     
     -- System Controls
     btnStartSystem      = Controls.btnStartSystem,
@@ -62,8 +61,6 @@ local controls = {
     pinLEDHDMI01Connect     = Controls.pinLEDHDMI01Connect,
     pinLEDHDMI02Connect     = Controls.pinLEDHDMI02Connect,
     pinLEDACPRBypassActive  = Controls.pinLEDACPRBypassActive,
-    pinLEDTouchActivity     = Controls.pinLEDTouchActivity,
-
     
 }
 
@@ -71,7 +68,7 @@ local function validateControls()
     -- Core navigation controls
     local required = {
         "btnNav01", "btnNav02", "btnNav03", "btnNav04", "btnNav05", "btnNav06",
-        "btnNav07", "btnNav08", "btnNav09", "btnNav10", "btnNav11", "btnNav12", "btnNav13",
+        "btnNav07", "btnNav08", "btnNav09", "btnNav10", "btnNav11", "btnNav12",
         "btnStartSystem", "btnNavShutdown", "btnShutdownCancel", "btnShutdownConfirm"
     }
     
@@ -80,8 +77,7 @@ local function validateControls()
         "knbProgressBar", "txtProgressBar",
         "btnOpenHelpLaptop", "btnOpenHelpPC", "btnOpenHelpWireless", "btnOpenHelpRouting", "btnOpenHelpStreamMusic",
         "btnCloseHelpLaptop", "btnCloseHelpPC", "btnCloseHelpWireless", "btnCloseHelpRouting", "btnCloseHelpStreamMusic",
-        "btnRouting01", "btnRouting02", "btnRouting03", "btnRouting04", "btnRouting05",
-        "pinLEDTouchActivity"
+        "btnRouting01", "btnRouting02", "btnRouting03", "btnRouting04", "btnRouting05"
     }
     
     local missing = {}
@@ -137,7 +133,7 @@ local function normalizeControlArrays()
     }
     
     -- Build navigation button array
-    for i = 1, 13 do
+    for i = 1, 12 do
         local btn = controls["btnNav" .. string.format("%02d", i)]
         if btn then controlsToNormalize.navButtons[i] = btn end
     end
@@ -320,7 +316,7 @@ function LayerModule:showLayer()
         "C05-Start", 
         "D01-ShutdownConfirm",
         "E01-SystemProgressWarming", "E02-SystemProgressCooling", "E05-SystemProgress",
-        "H01-PasscodeEntry","H05-RoomControls", 
+        "H05-RoomControls", 
         "I01-CallActive", "I02-HelpLaptop", "I03-HelpPC","I04-HelpWireless", "I05-HelpRouting", "I07-HelpStreamMusic",
         "J01-ConnectUSBLaptop", "J02-ConnectUSBPC", "J03-ACPRActive", "J04-CamPresetSaved","J05-ConferenceControls", 
         "L01-HDMI01Disconnected", "L05-Laptop",
@@ -414,19 +410,6 @@ function LayerModule:showLayer()
                 function() self.controller.sublayerModule:updateStreamMusicHelpState() end,
                 function() self.controller.sublayerModule:updateCallActiveState() end
             }
-        },
-        [self.controller.kLayerPasscode] = {
-            showLayers = {"H01-PasscodeEntry"},
-            callLayerFunctions = {
-                function() self:hideBaseLayers() end,
-                function()
-                    -- Reset timer to give user time to enter passcode
-                    self.controller:resetTouchInactivityTimer()
-                    -- Wait for user to enter passcode
-                    -- The EventHandler will call onPasscodeCorrect() when correct passcode is entered
-                end,
-                function() self.controller.sublayerModule:updateCallActiveState() end
-            }
         }
     }
     
@@ -454,109 +437,7 @@ function LayerModule:resetLayerStates()
     self:debug("Layer states reset")
 end
 
--------------------[ Passcode Module ]---------------------
-local PasscodeModule = setmetatable({}, BaseModule); PasscodeModule.__index = PasscodeModule
-function PasscodeModule.new(controller)
-    local self = BaseModule.new(controller, "Passcode")
-    setmetatable(self, PasscodeModule)
-    self.compPasscode = nil
-    self.roomIdentifier = nil
-    self.isEnabled = false
-    return self
-end
-
-function PasscodeModule:extractRoomFromPageName()
-    local pageName = self.controller.uciPage
-    -- Extract everything after "uci" with optional spaces
-    -- Examples: "uciGH(010)" -> "GH(010)", "uci GH(010)" -> "GH(010)"
-    local room = pageName:match("^uci%s*(.+)$")
-    if room then
-        -- Trim any trailing whitespace
-        room = room:match("^%s*(.-)%s*$")
-        self.roomIdentifier = room
-        self:debug("Extracted room identifier: " .. room)
-        return self.roomIdentifier
-    end
-    self:debug("Failed to extract room identifier from: " .. pageName)
-    return nil
-end
-
-function PasscodeModule:initializeComponent()
-    local roomId = self:extractRoomFromPageName()
-    if not roomId then
-        self:debug("Cannot initialize without room identifier")
-        return false
-    end
-
-    local componentName = "passcode" .. roomId
-    local success, component = pcall(function()
-        return Component.New(componentName)
-    end)
-    
-    if success and component then
-        self.compPasscode = component
-        self.isEnabled = true
-        self:debug("Passcode component initialized: " .. componentName)
-        self:registerPasscodeHandler()
-        return true
-    else
-        self:debug("Passcode component not found: " .. componentName .. " (feature disabled)")
-        return false
-    end
-end
-
-function PasscodeModule:registerPasscodeHandler()
-    if not self.compPasscode or not self.compPasscode["PasscodeCorrect"] then
-        self:debug("PasscodeCorrect control not found")
-        return false
-    end
-
-    self.compPasscode["PasscodeCorrect"].EventHandler = function(ctl)
-        self:onPasscodeCorrect(ctl.Boolean)
-    end
-
-    self:debug("PasscodeCorrect EventHandler registered for " .. self.roomIdentifier)
-    return true
-end
-
-
-function PasscodeModule:onPasscodeCorrect(isCorrect)
-    if not isCorrect then 
-        self:debug("Incorrect passcode entered")
-        return 
-    end
-    
-    self:debug("Correct passcode entered for " .. self.roomIdentifier)
-    
-    -- Hide passcode layer
-    self.controller.layerModule:updateLayerVisibility({"H01-PasscodeEntry"}, false, "fade")
-    
-    -- Start the system directly (bypass passcode check since we just validated it)
-    self.controller.roomAutomationModule:powerOn()
-    self.controller.progressModule:startLoadingBar(true)
-    self.controller:btnNavEventHandler(self.controller.kLayerWarming)
-end
-
-function PasscodeModule:isPasscodeCorrect()
-    if not self.isEnabled or not self.compPasscode then
-        return true -- If no passcode component, allow access
-    end
-
-    if self.compPasscode["PasscodeCorrect"] then
-        return self.compPasscode["PasscodeCorrect"].Boolean
-    end
-
-    return true -- Default to allowing access if control doesn't exist
-end
-
-function PasscodeModule:cleanup()
-    if self.compPasscode and self.compPasscode["PasscodeCorrect"] then
-        self.compPasscode["PasscodeCorrect"].EventHandler = nil
-    end
-    BaseModule.cleanup(self)
-end
-
-----------------------[ Sublayer Module ]---------------------
+-------------------[ Sublayer Module ]---------------------
 local SublayerModule = setmetatable({}, BaseModule); SublayerModule.__index = SublayerModule
 function SublayerModule.new(controller)
     local self = BaseModule.new(controller, "Sublayer")
@@ -921,9 +802,9 @@ function RoomAutomationModule:initializeComponent()
         self.roomControlsComponent = component
         self:debug("Room Controls Component referenced: " .. componentName)
         
-        -- Initialize previous state, use ledSystemPower as authoritative status indicator
-        if self.roomControlsComponent["ledSystemPower"] then
-            self.previousPowerState = self.roomControlsComponent["ledSystemPower"].Boolean
+        -- Initialize previous state
+        if self.roomControlsComponent["btnSystemOnOff"] then
+            self.previousPowerState = self.roomControlsComponent["btnSystemOnOff"].Boolean
             self:debug("Initial power state: " .. tostring(self.previousPowerState))
         end
         
@@ -939,10 +820,19 @@ function RoomAutomationModule:powerOn()
         self:debug("Cannot power on: Room Controls component not available")
         return false
     end
-    -- Set btnSystemOnOff control to trigger power on (ledSystemPower will update via SystemAutomationController)
-    local ok = pcall(function() self.roomControlsComponent["btnSystemOnOff"].Boolean = true end)
-    if ok then self:debug("Room powered ON") else self:debug("Failed to power on room automation") end
-    return ok
+    
+    local ok, result = pcall(function()
+        self.roomControlsComponent["btnSystemOnOff"].Boolean = true
+        return self.roomControlsComponent["btnSystemOnOff"].Boolean
+    end)
+    
+    if ok and result then
+        self:debug("Room powered ON")
+        return true
+    else
+        self:debug("Failed to power on room automation")
+        return false
+    end
 end
 
 function RoomAutomationModule:powerOff()
@@ -950,10 +840,19 @@ function RoomAutomationModule:powerOff()
         self:debug("Cannot power off: Room Controls component not available")
         return false
     end
-    -- Set btnSystemOnOff control to trigger power off (ledSystemPower will update via SystemAutomationController)
-    local ok = pcall(function() self.roomControlsComponent["btnSystemOnOff"].Boolean = false end)
-    if ok then self:debug("Room powered OFF") else self:debug("Failed to power off room automation") end
-    return ok
+    
+    local ok, result = pcall(function()
+        self.roomControlsComponent["btnSystemOnOff"].Boolean = false
+        return not self.roomControlsComponent["btnSystemOnOff"].Boolean
+    end)
+    
+    if ok and result then
+        self:debug("Room powered OFF")
+        return true
+    else
+        self:debug("Failed to power off room automation")
+        return false
+    end
 end
 
 function RoomAutomationModule:getTiming(isPoweringOn)
@@ -983,11 +882,11 @@ end
 
 function RoomAutomationModule:syncRoomControlsState()
     -- Guard clause: ensure component is available
-    if not self.roomControlsComponent or not self.roomControlsComponent["ledSystemPower"] then
+    if not self.roomControlsComponent or not self.roomControlsComponent["btnSystemOnOff"] then
         return
     end
     
-    local currentState = self.roomControlsComponent["ledSystemPower"].Boolean
+    local currentState = self.roomControlsComponent["btnSystemOnOff"].Boolean
     
     -- Only react to state changes
     if currentState == self.previousPowerState then
@@ -1127,22 +1026,18 @@ function UCIController.new(uciPage, defaultRoutingLayer, defaultActiveLayer, hid
     self.kLayerRouting      = 10; 
     self.kLayerDialer       = 11; 
     self.kLayerStreamMusic  = 12;
-    self.kLayerPasscode     = 13;
+    
     
     -- Initialize modules
     self.layerModule            = LayerModule.new(self)
     self.sublayerModule         = SublayerModule.new(self)
     self.routingModule          = RoutingModule.new(self)
-    self.passcodeModule         = PasscodeModule.new(self)
     self.videoSwitcherModule    = VideoSwitcherModule.new(self)
     self.roomAutomationModule   = RoomAutomationModule.new(self)
     self.progressModule         = ProgressModule.new(self)
     
     -- Sync timer for monitoring Room Controls state
     self.syncTimer              = nil
-    
-    -- Touch inactivity timer for passcode timeout
-    self.uciTouchInactivityTimer = Timer.New()
     
     -- Setup routing
     if defaultRoutingLayer then
@@ -1187,38 +1082,6 @@ function UCIController:stopSyncTimer()
     end
 end
 
--------------------[ Touch Inactivity Handler ]------------
-function UCIController:onPasscodeInactivity()
-    self:debug("Touch inactivity timeout - returning to Start layer")
-    self:btnNavEventHandler(self.kLayerStart)
-end
-
-function UCIController:resetTouchInactivityTimer()
-    -- Stop the timer if it's running
-    if self.uciTouchInactivityTimer then
-        self.uciTouchInactivityTimer:Stop()
-    end
-    
-    -- Check if we're actually on the Passcode layer
-    -- Use actual layer visibility check instead of relying on layerStates which might not be updated yet
-    local isOnPasscode = (self.varActiveLayer == self.kLayerPasscode)
-    
-    if isOnPasscode then
-        local timeout = tonumber(Uci.Variables.numTouchInactivityTimer.Value) or 60
-        if timeout <= 0 then
-            timeout = 60
-            self:debug("Warning: Invalid timeout value, using default 60s")
-        end
-        
-        self.uciTouchInactivityTimer.EventHandler = function() self:onPasscodeInactivity() end
-        self.uciTouchInactivityTimer:Start(timeout)
-        self:debug("Touch inactivity timer reset (" .. timeout .. "s)")
-    else
-        self:debug("Touch inactivity timer not started (not on Passcode layer)")
-    end
-end
-
-
 -------------------[ Event Handler Registration ]----------
 function UCIController:registerEventHandlers()
     -- Batch event registration using normalized control arrays
@@ -1241,8 +1104,7 @@ function UCIController:registerEventHandlers()
     -- System control handler map with direct object references
     local systemHandlerMap = {
         [controls.btnStartSystem] = function()
-            -- Use ensureSystemIsOn to handle passcode check and system state
-            self:ensureSystemIsOn(self.defaultActiveLayer)
+            self:startSystem()
         end,
         [controls.btnNavShutdown] = function()
             self.layerModule:updateLayerVisibility({"D01-ShutdownConfirm"}, true, "fade")
@@ -1266,13 +1128,24 @@ function UCIController:registerEventHandlers()
         bindPairedControls(pair.open, pair.close, pair.handler)
     end
     
+    -- Helper function to check and start system if needed
+    local function ensureSystemIsOn()
+        if self.roomControlsComponent and self.roomControlsComponent["btnSystemOnOff"] then
+            if not self.roomControlsComponent["btnSystemOnOff"].Boolean then
+                -- System is OFF, trigger start system
+                self:startSystem()
+            end
+        end
+    end
+    
     -- Pin state handler map
     -- BEST PRACTICE: Route all layer changes through btnNavEventHandler for centralized state management
     -- This ensures varActiveLayer, video switching, and navButton interlocking are always synchronized
     local pinHandlerMap = {
         [controls.pinLEDUSBLaptop] = function(ctl)
             if ctl.Boolean then 
-                self:ensureSystemIsOn(self.kLayerLaptop)
+                ensureSystemIsOn()
+                self:btnNavEventHandler(self.kLayerLaptop)
             else
                 -- Pin went false - only update sublayers, don't change navigation state
                 self.sublayerModule:updateConferenceState()
@@ -1280,7 +1153,8 @@ function UCIController:registerEventHandlers()
         end,
         [controls.pinLEDUSBPC] = function(ctl)
             if ctl.Boolean then 
-                self:ensureSystemIsOn(self.kLayerPC)
+                ensureSystemIsOn()
+                self:btnNavEventHandler(self.kLayerPC)
             else
                 -- Pin went false - only update sublayers, don't change navigation state
                 self.sublayerModule:updateConferenceState()
@@ -1288,25 +1162,29 @@ function UCIController:registerEventHandlers()
         end,
         [controls.pinLEDOffHookLaptop] = function(ctl)
             if ctl.Boolean then 
-                self:ensureSystemIsOn(self.kLayerLaptop)
+                ensureSystemIsOn()
+                self:btnNavEventHandler(self.kLayerLaptop)
             end
             -- When false, no action needed (call state change will be handled by pinCallActive)
         end,
         [controls.pinLEDOffHookPC] = function(ctl)
             if ctl.Boolean then 
-                self:ensureSystemIsOn(self.kLayerPC)
+                ensureSystemIsOn()
+                self:btnNavEventHandler(self.kLayerPC)
             end
             -- When false, no action needed (call state change will be handled by pinCallActive)
         end,
         [controls.pinLEDHDMI01Active] = function(ctl)
             if ctl.Boolean then 
-                self:ensureSystemIsOn(self.kLayerLaptop)
+                ensureSystemIsOn()
+                self:btnNavEventHandler(self.kLayerLaptop)
             end
             -- When false, HDMI disconnect will be handled by pinLEDHDMI01Connect
         end,
         [controls.pinLEDHDMI02Active] = function(ctl)
             if ctl.Boolean then 
-                self:ensureSystemIsOn(self.kLayerPC)
+                ensureSystemIsOn()
+                self:btnNavEventHandler(self.kLayerPC)
             end
             -- When false, HDMI disconnect will be handled by pinLEDHDMI02Connect
         end,
@@ -1314,8 +1192,7 @@ function UCIController:registerEventHandlers()
         [controls.pinLEDHDMI01Connect] = function() self.sublayerModule:updateHDMI01State() end,
         [controls.pinLEDHDMI02Connect] = function() self.sublayerModule:updateHDMI02State() end,
         [controls.pinLEDACPRBypassActive] = function() self.sublayerModule:updateACPRBypassState() end,
-        [controls.pinCallActive] = function() self.sublayerModule:updateCallActiveState() end,
-        [controls.pinLEDTouchActivity] = function(ctl) self:resetTouchInactivityTimer() end
+        [controls.pinCallActive] = function() self.sublayerModule:updateCallActiveState() end
     }
     
     -- Batch register all handler maps (help controls are bound above via paired controls)
@@ -1333,8 +1210,6 @@ end
 
 -------------------[ System Control Methods ]-------------
 function UCIController:startSystem()
-    -- NOTE: Passcode check is handled by ensureSystemIsOn() - don't check again here
-    -- This method should only be called after passcode validation
     self.roomAutomationModule:powerOn()
     self.progressModule:startLoadingBar(true)
     self:btnNavEventHandler(self.kLayerWarming)
@@ -1345,34 +1220,6 @@ function UCIController:shutdownSystem()
     self.roomAutomationModule:powerOff()
     self.progressModule:startLoadingBar(false)
     self:btnNavEventHandler(self.kLayerCooling)
-end
-
-function UCIController:ensureSystemIsOn(targetLayer)
-    targetLayer = targetLayer or self.defaultActiveLayer
-    
-    -- Check if system is already on
-    local isSystemOn = false
-    if self.roomAutomationModule.roomControlsComponent and 
-       self.roomAutomationModule.roomControlsComponent["ledSystemPower"] then
-        isSystemOn = self.roomAutomationModule.roomControlsComponent["ledSystemPower"].Boolean
-    end
-    
-    if isSystemOn then
-        -- System is already ON, navigate to target layer
-        self:debug("ensureSystemIsOn: System is already on, navigating to layer " .. targetLayer)
-        self:btnNavEventHandler(targetLayer)
-    else
-        -- System is OFF, need to start it
-        -- Check if passcode is enabled and correct
-        if self.passcodeModule.isEnabled and not self.passcodeModule:isPasscodeCorrect() then
-            self:debug("ensureSystemIsOn: Passcode required, navigating to passcode layer")
-            self:btnNavEventHandler(self.kLayerPasscode)
-        else
-            -- No passcode or already correct, start system
-            self:debug("ensureSystemIsOn: Starting system")
-            self:startSystem()
-        end
-    end
 end
 
 -------------------[ Core Navigation Logic ]---------------
@@ -1417,8 +1264,7 @@ function UCIController:interlock()
             [self.kLayerWireless]       = 9,
             [self.kLayerRouting]        = 10, 
             [self.kLayerDialer]         = 11, 
-            [self.kLayerStreamMusic]    = 12,
-            [self.kLayerPasscode]       = 13
+            [self.kLayerStreamMusic]    = 12
         }
     end
     
@@ -1543,9 +1389,6 @@ function UCIController:init()
     -- Initialize video switcher
     self.videoSwitcherModule:initialize()
     
-    -- Initialize passcode component
-    self.passcodeModule:initializeComponent()
-    
     -- Sync with Room Automation state if available
     if mySystemController and mySystemController.state then
         local systemPowerState = controls.ledSystemPower and controls.ledSystemPower.Boolean
@@ -1590,15 +1433,9 @@ function UCIController:cleanup()
     -- Stop sync timer
     self:stopSyncTimer()
     
-    -- Stop touch inactivity timer
-    if self.uciTouchInactivityTimer then
-        self.uciTouchInactivityTimer:Stop()
-        self.uciTouchInactivityTimer = nil
-    end
-    
     -- Cleanup all modules
     local modules = {
-        self.layerModule, self.sublayerModule, self.routingModule, self.passcodeModule,
+        self.layerModule, self.sublayerModule, self.routingModule,
         self.videoSwitcherModule, self.roomAutomationModule, self.progressModule
     }
     

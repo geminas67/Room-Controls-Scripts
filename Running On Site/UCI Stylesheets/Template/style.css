@@ -23,12 +23,13 @@
     --color-primary: #3b82f6;
     --color-secondary: #60a5fa;
     --color-neutral: #9ca3af;
-    --color-base: #101319;
-    --color-base-alt: #181c24;
-    --color-surface: #232834;
+    --color-base-dark: #101319;
+    --color-base-dark-alt: #181c24;
+    --color-base-light: #232834;
+    --color-base-light-alt: #2d333f;
     --color-border: #3a4253;
     --color-accent: #3b82f6;
-    --color-accent-muted: rgba(59, 130, 246, 0.15);
+    --color-accent-muted: lch(55.63% 66.78 285.24 / 0.15);
     --color-success: #22c55e;
     --color-warning: #facc15;
     --color-danger: #ef4444a2; 
@@ -39,7 +40,7 @@
     /* ====================== Typography ====================== */
     --font-sans: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont,
                  "Roboto", sans-serif;
-    --font-mono: "Consolas", "SF Mono", ui-monospace, monospace;
+    --font-mono: "JetBrains Mono", "Consolas", "SF Mono", ui-monospace, monospace;
   
     --font-size-xs: 10px;
     --font-size-sm: 11px;
@@ -74,9 +75,9 @@
   
     /* ====================== Borders & shadows ====================== */
     --border-default: 1px solid var(--color-border);
-    --shadow-sm: 0 2px 2px rgba(0, 0, 0, 0.4);
-    --shadow-md: 0 4px 4px rgba(0, 0, 0, 0.4);
-    --shadow-lg: 0 8px 8px rgba(0, 0, 0, 0.4);
+    --shadow-sm: 0 2px 2px lch(0% 0 0 / 0.4);
+    --shadow-md: 0 4px 4px lch(0% 0 0 / 0.4);
+    --shadow-lg: 0 8px 8px lch(0% 0 0 / 0.4);
   
     /* ====================== Fader / meter specific ====================== */
     --fader-track: var(--color-base-alt);

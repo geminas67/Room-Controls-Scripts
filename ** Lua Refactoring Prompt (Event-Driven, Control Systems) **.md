@@ -49,6 +49,60 @@ Guidelines:
 - Multiple controller instances with shared behavior
 - Need polymorphism for different device types
 
+### 1.3 Avoid Over-Abstraction: Single-Class with Utilities (Recommended for Maintainability)
+
+For most control scripts, prefer a **single-class structure with utility functions** over complex module inheritance hierarchies.
+
+**✅ DO: Keep Helpful Utilities**
+- Use `setProp()` to prevent unnecessary signal propagation (acts as insurance against feedback loops)
+- Use `bind()`, `bindArray()`, `forEach()` for clean, consistent event handler registration
+- Use `isArr()`, `getControlArray()` for array normalization
+- These utilities reduce boilerplate and improve performance without obscuring logic
+
+**❌ AVOID: Module Inheritance Complexity**
+- Don't create BaseModule classes with multiple inherited modules (ComponentModule, PrivacyModule, etc.)
+- Avoid forcing developers to trace through 3+ levels of indirection to understand flow
+- Don't hide simple operations behind module boundaries
+
+**Recommended Pattern:**
+```lua
+-- Utility functions at top (clear, reusable)
+local function setProp(ctrl, prop, val)
+    if ctrl and ctrl[prop] ~= val then ctrl[prop] = val end
+end
+
+local function bind(ctrl, handler)
+    if ctrl then ctrl.EventHandler = handler end
+end
+
+-- Single controller class with direct methods
+MyController = {}
+MyController.__index = MyController
+
+function MyController.new(config)
+    local self = setmetatable({}, MyController)
+    self.state = {}
+    self.components = {}
+    return self
+end
+
+-- Direct methods (no module indirection)
+function MyController:doSomething()
+    -- Logic is right here, easy to trace
+    setProp(self.component.Control, "Boolean", true)
+end
+```
+
+**Why This Matters:**
+- Code must be maintainable by non-senior programmers
+- Flow traceability is more important than theoretical architectural purity
+- Balance abstraction benefits against cognitive load
+
+**Documentation Requirements for Single-Class Pattern:**
+- Add comprehensive header with flow examples (e.g., "When user presses button X: 1. Handler fires at line Y, 2. Calls method Z...")
+- Include "Called from:" comments on every method showing where it's invoked
+- Explain the "why" not just the "what" in inline comments
+
 ---
 
 ## 2. Core Refactor Principles
@@ -67,7 +121,33 @@ Guidelines:
 
 - Normalize controls once at initialization (e.g., `normalizeControlArrays()` for nav buttons, routing buttons, pins).
 - Use shared utilities consistently: `isArr`, `getControlArray`, `setProp`, `bind`, `bindArray`, `forEach`, and `bindPairedControls`.
-- Ensure `setProp()` guards against redundant assignments to reduce unnecessary UI churn and race conditions.
+- **Always use `setProp()`** - It guards against redundant assignments to reduce unnecessary UI churn, feedback loops, and race conditions. This is your insurance policy against signal propagation issues.
+- **Prefer `bind()` and `bindArray()`** - These make event handler registration more consistent and readable than direct `control.EventHandler =` assignments.
+
+**Essential Utility Functions:**
+```lua
+-- Prevent unnecessary signal propagation (critical for performance)
+local function setProp(ctrl, prop, val)
+    if ctrl and ctrl[prop] ~= val then ctrl[prop] = val end
+end
+
+-- Clean event handler binding
+local function bind(ctrl, handler)
+    if ctrl then ctrl.EventHandler = handler end
+end
+
+-- Bind to arrays of controls
+local function bindArray(ctrls, handler)
+    for i, ctrl in ipairs(getControlArray(ctrls)) do
+        bind(ctrl, function(ctl) handler(i, ctl) end)
+    end
+end
+
+-- Iterate over control arrays
+local function forEach(ctrls, fn)
+    for i, ctrl in ipairs(getControlArray(ctrls)) do fn(i, ctrl) end
+end
+```
 
 ### 2.4 Batch Operations and Handler Maps
 
@@ -131,6 +211,8 @@ When refactoring or creating a script:
 
 - [ ] Functional modules used where state is simple/static.
 - [ ] Hybrid OOP/functional used where components/timers are dynamic.
+- [ ] **Single-class with utilities preferred** over complex module inheritance.
+- [ ] Code is traceable by non-senior programmers (flow is clear).
 
 **State and Lifecycle:**
 
@@ -142,8 +224,16 @@ When refactoring or creating a script:
 - [ ] Central navigation/layer handler.
 - [ ] Handler maps and normalized arrays for event registration.
 - [ ] `setProp()` and edge-aware pin handlers used consistently.
+- [ ] `bind()`, `bindArray()`, `forEach()` used for clean event registration.
 
 **Components and Timers:**
 
 - [ ] `cleanupComponentHandlers()` used before reassigning components.
 - [ ] Timers centralized and cleaned up in module/controller lifecycle.
+
+**Documentation and Maintainability:**
+
+- [ ] Comprehensive header with common scenario flows documented.
+- [ ] "Called from:" comments on methods showing invocation sources.
+- [ ] Inline comments explain "why" not just "what".
+- [ ] Code complexity matches team skill level (avoid over-abstraction).
