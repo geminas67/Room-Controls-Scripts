@@ -3,68 +3,12 @@
     Author: Nikolas Smith, Q-SYS
     Version: 3.0-Hybrid | Date: 2026-01-13
     Firmware Req: 10.0.0
-    
     SIMPLIFIED FOR MAINTAINABILITY:
     - Single class structure (no module inheritance)
     - Direct methods instead of module abstractions
     - Clear, traceable event flow
     - Comprehensive inline documentation
-    
-    ============================================
-    FLOW DOCUMENTATION - Common Scenarios:
-    ============================================
-    
-    SCENARIO 1: User presses Start System button
-      1. btnStartSystem EventHandler fires (line ~1750)
-      2. Calls self:startSystem() (line ~1570)
-      3. Powers on via roomControlsComponent (line ~830)
-      4. Starts warming progress bar (line ~950)
-      5. Navigates to kLayerWarming (line ~1580)
-      6. Shows warming animation layers
-    
-    SCENARIO 2: User presses a navigation button (e.g., btnNav07 for PCA)
-      1. btnNav07 EventHandler fires (line ~1730)
-      2. Calls self:btnNavEventHandler(7) (line ~1550)
-      3. Updates varActiveLayer to 7 (kLayerPCA)
-      4. Switches video input if video switcher enabled (line ~880)
-      5. Calls self:showLayer() (line ~450) to update layer visibility
-      6. Shows P01-PCA layer and relevant sublayers
-      7. Updates HDMI connection state (line ~650)
-      8. Updates conference controls if USB connected (line ~700)
-      9. Calls self:interlock() (line ~1580) to update button states
-    
-    SCENARIO 3: USB cable connected to PCA
-      1. pinLEDUSBPCA EventHandler fires (line ~1850)
-      2. Calls self:updateConferenceState() (line ~700)
-      3. Checks if HDMI is connected first (gate condition)
-      4. Shows J23-ConferenceControlsPCA layer
-      5. Hides "Connect USB" prompt layer
-      6. Shows camera selection and video privacy layers
-    
-    SCENARIO 4: HDMI cable connected to LaptopA (auto-switching)
-      1. pinLEDHDMIActiveLaptopA EventHandler fires (line ~1880)
-      2. Checks Boolean is true (positive edge)
-      3. Calls ensureSystemIsOn() to power system if needed
-      4. Calls self:btnNavEventHandler(kLayerLaptopA)
-      5. System auto-switches to LaptopA input
-    
-    SCENARIO 5: Room state changes (Combined -> Separated)
-      1. btnRoomState EventHandler fires (line ~1300)
-      2. Calls self:onRoomStateChanged() (line ~1310)
-      3. Updates navigation button visibility (hides opposite room's sources)
-      4. Updates "Start Room" vs "Start Rooms" legend
-      5. Updates conference controls layer visibility
-      6. Updates ACPR button visibility based on room state
-    
-    SCENARIO 6: System shutdown requested
-      1. btnNavShutdown EventHandler fires (line ~1760)
-      2. Shows D01-ShutdownConfirm layer
-      3. User presses btnShutdownConfirm (line ~1770)
-      4. Calls self:shutdownSystem() (line ~1590)
-      5. Powers off via roomControlsComponent
-      6. Starts cooling progress bar
-      7. Navigates to kLayerCooling
-      8. After cooldown, returns to kLayerStart
+
 ]]--
 
 -------------------[ Control References ]-------------------
@@ -208,8 +152,7 @@ local function bindPairedControls(openCtrl, closeCtrl, updateHandler)
 end
 
 -------------------[ Validation Functions ]-------------------
--- Check that all required controls exist before proceeding
--- This prevents cryptic nil reference errors later
+-- Check that all required controls exist before proceeding to prevent nil reference errors
 local function validateControls()
     local missing = {}
     for name, ctrl in pairs(controls) do
@@ -320,7 +263,6 @@ function UCIController.new(uciPage, defaultRoutingLayer, defaultActiveLayer, hid
     
     -- Layer configuration maps (initialized later)
     self.layerConfigs = nil
-    self.layerToButtonMap = nil
     
     -- Source data map: centralized place to define all source-related data
     -- This eliminates repetitive code and makes it easy to add new sources
@@ -405,11 +347,33 @@ function UCIController.new(uciPage, defaultRoutingLayer, defaultActiveLayer, hid
         ["I10-HelpStreamMusic"]= {open = "btnOpenHelpStreamMusic",close = "btnCloseHelpStreamMusic"},
     }
     
+    -- Generate layer arrays from source map to avoid repetition
+    self.allUSBConnectLayers = {}
+    self.allConferenceLayers = {}
+    self.allCameraLayers = {}
+    self.allVideoPrivacyLayers = {}
+    
+    for _, src in pairs(self.sources) do
+        if src.usbConnect then table.insert(self.allUSBConnectLayers, src.usbConnect) end
+        if src.confLayer then table.insert(self.allConferenceLayers, src.confLayer) end
+        if src.cameraLayer then table.insert(self.allCameraLayers, src.cameraLayer) end
+        if src.videoPrivacySeparate then table.insert(self.allVideoPrivacyLayers, src.videoPrivacySeparate) end
+        if src.videoPrivacyCombine then table.insert(self.allVideoPrivacyLayers, src.videoPrivacyCombine) end
+    end
+    
+    -- ACPR layer constants
+    self.acprLayers = {
+        combined = "J06-ACPRActiveCombined",
+        separated = "J07-ACPRActiveSeparated"
+    }
+    self.acprBtnLayers = {
+        combined = "J09-ACPRBtnCombined",
+        separated = "J10-ACPRBtnSeparated"
+    }
+    
     return self
 end
 
--- Debug print helper
--- Called from: All methods throughout the class
 function UCIController:debugPrint(msg)
     if self.debugging then 
         print("[" .. self.uciPage .. "] " .. msg) 
@@ -417,7 +381,6 @@ function UCIController:debugPrint(msg)
 end
 
 -------------------[ Layer Visibility Methods ]-------------------
--- Set layer visibility with error handling
 -- Called from: showLayer(), updateLayerVisibility(), all sublayer update methods
 function UCIController:safeSetLayerVisibility(layer, visible, transition)
     local ok, err = pcall(function()
@@ -432,7 +395,6 @@ function UCIController:safeSetLayerVisibility(layer, visible, transition)
     return ok
 end
 
--- Update multiple layers visibility at once
 -- Called from: showLayer(), all update methods
 function UCIController:updateLayerVisibility(layers, visible, transition)
     if not layers or visible == nil then return end
@@ -449,7 +411,6 @@ function UCIController:updateLayerVisibility(layers, visible, transition)
     end)
 end
 
--- Hide base layers (navbar, volume, base)
 -- Called from: showLayer() when layer config specifies hideBase=true
 function UCIController:hideBaseLayers()
     self:updateLayerVisibility({"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}, false, "none")
@@ -460,13 +421,10 @@ end
 function UCIController:showLayer()
     -- Step 1: Hide everything first for clean slate
     self:updateLayerVisibility(layersToHide, false, "none")
-
     -- Step 2: Base layers always visible unless config hides them
     self:updateLayerVisibility({"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}, true, "none")
-
     -- Step 3: Update navigation visibility based on room state
     self:updateNavigationVisibility()
-
     -- Step 4: Build layer configurations if not already cached
     if not self.layerConfigs then
         self.layerConfigs = self:buildLayerConfigs()
@@ -648,7 +606,8 @@ end
 -- Called from: updateConferenceState(), updateACPRBypassState(), updateConferenceControlsLayer()
 function UCIController:checkHDMIConnection()
     local src = self:getActiveSource()
-    if not src or not src.hdmiPin then return true end
+    if not src then return true end  -- No source = allow operation (optimistic for guard clauses)
+    if not src.hdmiPin then return false end  -- No hdmiPin = disconnected
     return src.hdmiPin.Boolean
 end
 
@@ -666,7 +625,6 @@ function UCIController:syncHelpButtonStates(helpLayer)
     setProp(closeBtn, "Boolean", false)
 end
 
--- Update call active indicator overlay
 -- Called from: Layer configs for all main layers, pinCallActive EventHandler
 function UCIController:updateCallActiveState()
     local isActive = controls.pinCallActive.Boolean or false
@@ -674,7 +632,6 @@ function UCIController:updateCallActiveState()
     self:debugPrint("Call Active: " .. (isActive and "Showing" or "Hiding"))
 end
 
--- Update camera preset saved indicator
 -- Called from: Layer configs for source layers, pinLEDPresetSaved EventHandler
 function UCIController:updatePresetSavedState()
     local isVisible = controls.pinLEDPresetSaved.Boolean or false
@@ -682,14 +639,13 @@ function UCIController:updatePresetSavedState()
     self:debugPrint("Preset Saved: " .. (isVisible and "Showing" or "Hiding"))
 end
 
--- Generic HDMI handler using source map
--- This handles both HDMI connected and disconnected states
+-- Generic HDMI handler using source map (This handles both HDMI connected and disconnected states)
 -- Called from: Layer configs when navigating to source layers, HDMI connection pin EventHandlers
 function UCIController:updateHDMIForActiveSource()
     local src = self:getActiveSource()
     if not src then return end
 
-    local isConnected = src.hdmiPin and src.hdmiPin.Boolean or false
+    local isConnected = self:checkHDMIConnection()
     
     if isConnected then
         -- HDMI is connected: show normal source layer
@@ -730,12 +686,11 @@ function UCIController:updateSourceHelpState(srcKey)
     if isVisible then
         -- Show help layer and hide conference controls
         self:updateLayerVisibility({src.helpLayer}, true, "fade")
-        self:updateLayerVisibility({
-            "J21-ConferenceControlsLaptopA","J22-ConferenceControlsLaptopB",
-            "J23-ConferenceControlsPCA","J24-ConferenceControlsPCB",
-            "J01-ConnectUSBLaptopA","J02-ConnectUSBLaptopB",
-            "J03-ConnectUSBPCA","J04-ConnectUSBPCB"
-        }, false, "none")
+        -- Hide all conference and USB connect layers using generated arrays
+        local hideLayers = {}
+        for _, layer in ipairs(self.allConferenceLayers) do table.insert(hideLayers, layer) end
+        for _, layer in ipairs(self.allUSBConnectLayers) do table.insert(hideLayers, layer) end
+        self:updateLayerVisibility(hideLayers, false, "none")
     else
         -- Hide help layer and restore conference state
         self:updateLayerVisibility({src.helpLayer}, false, "none")
@@ -760,12 +715,9 @@ function UCIController:updateConferenceState()
 
     -- HDMI gate: conference controls require HDMI connection
     if not self:checkHDMIConnection() then
-        local hideLayers = {
-            "J01-ConnectUSBLaptopA","J02-ConnectUSBLaptopB",
-            "J03-ConnectUSBPCA","J04-ConnectUSBPCB",
-            "J21-ConferenceControlsLaptopA","J22-ConferenceControlsLaptopB",
-            "J23-ConferenceControlsPCA","J24-ConferenceControlsPCB"
-        }
+        local hideLayers = {}
+        for _, layer in ipairs(self.allUSBConnectLayers) do table.insert(hideLayers, layer) end
+        for _, layer in ipairs(self.allConferenceLayers) do table.insert(hideLayers, layer) end
         if src.helpLayer then table.insert(hideLayers, src.helpLayer) end
         
         self:updateLayerVisibility(hideLayers, false, "none")
@@ -787,10 +739,7 @@ function UCIController:updateConferenceState()
     if usbConnected then
         -- USB connected: show conference controls
         self:updateLayerVisibility({src.confLayer}, true, "fade")
-        self:updateLayerVisibility({
-            "J01-ConnectUSBLaptopA","J02-ConnectUSBLaptopB",
-            "J03-ConnectUSBPCA","J04-ConnectUSBPCB"
-        }, false, "none")
+        self:updateLayerVisibility(self.allUSBConnectLayers, false, "none")
     else
         -- USB not connected: show "Connect USB" prompt
         self:updateLayerVisibility({src.usbConnect}, true, "fade")
@@ -804,13 +753,12 @@ function UCIController:updateConferenceState()
     self:debugPrint("Conference: " .. src.confLayer .. " " .. (usbConnected and "Connected" or "Disconnected"))
 end
 
--- ACPR Bypass State handler
 -- Called from: Layer configs when navigating to source layers, ACPR bypass pin EventHandlers
 function UCIController:updateACPRBypassState()
     -- Check if ACPR display is disabled in configuration
     if acprConfig.disableACPRShow then
         self:updateLayerVisibility({
-            "J06-ACPRActiveCombined", "J07-ACPRActiveSeparated"
+            self.acprLayers.combined, self.acprLayers.separated
         }, false, "none")
         self:debugPrint("ACPR Show logic disabled via acprConfig")
         return
@@ -825,26 +773,18 @@ function UCIController:updateACPRBypassState()
         return
     end
 
-    -- Get room state to determine which control and layer to use
+    -- Get room state to determine which control and layers to use
     local roomState = self:getRoomState()
-
-    local bypassControl, acprActiveLayer
-    if roomState == "separated" then
-        bypassControl = controls.pinLEDACPRBypassSeparated
-        acprActiveLayer = "J07-ACPRActiveSeparated"
-    else
-        bypassControl = controls.pinLEDACPRBypassCombined
-        acprActiveLayer = "J06-ACPRActiveCombined"
-    end
-
+    local isSeparated = (roomState == "separated")
+    
+    local bypassControl = isSeparated and controls.pinLEDACPRBypassSeparated or controls.pinLEDACPRBypassCombined
+    local acprActiveLayer = isSeparated and self.acprLayers.separated or self.acprLayers.combined
+    local acprInactiveLayer = isSeparated and self.acprLayers.combined or self.acprLayers.separated
+    
     local isBypassActive = bypassControl.Boolean or false
     
-    -- Hide the other ACPR Active layer based on room state
-    if roomState == "separated" then
-        self:updateLayerVisibility({"J06-ACPRActiveCombined"}, false, "none")
-    else
-        self:updateLayerVisibility({"J07-ACPRActiveSeparated"}, false, "none")
-    end
+    -- Hide the inactive ACPR layer for the current room state
+    self:updateLayerVisibility({acprInactiveLayer}, false, "none")
 
     -- Show/hide appropriate layers based on bypass state
     if not isBypassActive then
@@ -865,16 +805,74 @@ end
 
 -- Conference Controls Layer - comprehensive visibility management for all conference-related layers
 -- Called from: Layer configs, updateACPRBypassState(), onRoomStateChanged()
+-- Determine layer visibility for a single source
+function UCIController:determineSourceLayerVisibility(src, isActive, usbConnected, isCombined, showLayers, hideLayers)
+    local conferenceIsActive = false
+    
+    -- Camera selection: show only for active source when combined
+    if src.cameraLayer then
+        if isActive and isCombined then
+            table.insert(showLayers, src.cameraLayer)
+        else
+            table.insert(hideLayers, src.cameraLayer)
+        end
+    end
+    
+    -- Conference controls: show if USB connected and active
+    if isActive and usbConnected then
+        table.insert(showLayers, src.confLayer)
+        conferenceIsActive = true
+    else
+        table.insert(hideLayers, src.confLayer)
+    end
+    
+    -- Video privacy: show based on room state and conference controls
+    if src.videoPrivacySeparate and src.videoPrivacyCombine then
+        if isActive and usbConnected then
+            if isCombined then
+                table.insert(showLayers, src.videoPrivacyCombine)
+                table.insert(hideLayers, src.videoPrivacySeparate)
+            else
+                table.insert(showLayers, src.videoPrivacySeparate)
+                table.insert(hideLayers, src.videoPrivacyCombine)
+            end
+        else
+            table.insert(hideLayers, src.videoPrivacySeparate)
+            table.insert(hideLayers, src.videoPrivacyCombine)
+        end
+    end
+    
+    return conferenceIsActive
+end
+
+-- Determine ACPR button visibility
+function UCIController:determineACPRButtonVisibility(anyConferenceActive, isCombined, showLayers, hideLayers)
+    if not acprConfig.disableACPRShow and anyConferenceActive then
+        if isCombined then
+            table.insert(showLayers, self.acprBtnLayers.combined)
+            table.insert(hideLayers, self.acprBtnLayers.separated)
+        else
+            table.insert(showLayers, self.acprBtnLayers.separated)
+            table.insert(hideLayers, self.acprBtnLayers.combined)
+        end
+    else
+        table.insert(hideLayers, self.acprBtnLayers.combined)
+        table.insert(hideLayers, self.acprBtnLayers.separated)
+    end
+end
+
+-- Conference Controls Layer - orchestrates visibility updates
 function UCIController:updateConferenceControlsLayer()
-    -- HDMI gate: all conference controls require HDMI
+    -- HDMI gate: hide all conference-related layers if HDMI not connected
     if not self:checkHDMIConnection() then
-        self:updateLayerVisibility({
-            "J11-CameraSelectionLaptopA", "J12-CameraSelectionLaptopB", "J13-CameraSelectionPCA", "J14-CameraSelectionPCB",
-            "J21-ConferenceControlsLaptopA", "J22-ConferenceControlsLaptopB", 
-            "J23-ConferenceControlsPCA", "J24-ConferenceControlsPCB",
-            "J17-VideoPrivacySeparatedA", "J18-VideoPrivacySeparatedB", "J19-VideoPrivacyCombinedA", "J20-VideoPrivacyCombinedB",
-            "J09-ACPRBtnCombined", "J10-ACPRBtnSeparated"
-        }, false, "none")
+        local allHideLayers = {}
+        for _, layer in ipairs(self.allCameraLayers) do table.insert(allHideLayers, layer) end
+        for _, layer in ipairs(self.allConferenceLayers) do table.insert(allHideLayers, layer) end
+        for _, layer in ipairs(self.allVideoPrivacyLayers) do table.insert(allHideLayers, layer) end
+        table.insert(allHideLayers, self.acprBtnLayers.combined)
+        table.insert(allHideLayers, self.acprBtnLayers.separated)
+        
+        self:updateLayerVisibility(allHideLayers, false, "none")
         self:debugPrint("Conference controls blocked: HDMI not connected")
         return
     end
@@ -882,71 +880,27 @@ function UCIController:updateConferenceControlsLayer()
     local roomState = self:getRoomState()
     local isCombined = (roomState ~= "separated")
     
-    -- Build lists of layers to show/hide
+    -- Determine which layers to show based on active source and room state
     local showLayers = {}
     local hideLayers = {}
+    local anyConferenceActive = false
     
     -- Loop through all sources and determine visibility for each
     for srcKey, src in pairs(self.sources) do
         local isActive = (self.varActiveLayer == src.layerConst)
         local usbConnected = src.usbPin and src.usbPin.Boolean or false
         
-        -- Camera selection: show only for active source when combined
-        if src.cameraLayer then
-            if isActive and isCombined then
-                table.insert(showLayers, src.cameraLayer)
-            else
-                table.insert(hideLayers, src.cameraLayer)
-            end
-        end
-        
-        -- Conference controls: show if USB connected and active
-        if isActive and usbConnected then
-            table.insert(showLayers, src.confLayer)
-        else
-            table.insert(hideLayers, src.confLayer)
-        end
-        
-        -- Video privacy: show based on room state and conference controls
-        if src.videoPrivacySeparate and src.videoPrivacyCombine then
-            if isActive and usbConnected then
-                if isCombined then
-                    table.insert(showLayers, src.videoPrivacyCombine)
-                    table.insert(hideLayers, src.videoPrivacySeparate)
-                else
-                    table.insert(showLayers, src.videoPrivacySeparate)
-                    table.insert(hideLayers, src.videoPrivacyCombine)
-                end
-            else
-                table.insert(hideLayers, src.videoPrivacySeparate)
-                table.insert(hideLayers, src.videoPrivacyCombine)
-            end
-        end
-    end
-    
-    -- ACPR buttons: show based on room state and any conference controls active
-    local anyConferenceActive = false
-    for i = 1, #showLayers do
-        local layer = showLayers[i]
-        if layer:match("^J2[1-4]%-Conference") or 
-           self.layerStates[layer:match("J2[1-4]%-ConferenceControls%w+")] == true then
+        -- Track if any conference controls are active while building layer lists
+        local conferenceIsActive = self:determineSourceLayerVisibility(
+            src, isActive, usbConnected, isCombined, showLayers, hideLayers
+        )
+        if conferenceIsActive then
             anyConferenceActive = true
-            break
         end
     end
     
-    if not acprConfig.disableACPRShow and anyConferenceActive then
-        if isCombined then
-            table.insert(showLayers, "J09-ACPRBtnCombined")
-            table.insert(hideLayers, "J10-ACPRBtnSeparated")
-        else
-            table.insert(showLayers, "J10-ACPRBtnSeparated")
-            table.insert(hideLayers, "J09-ACPRBtnCombined")
-        end
-    else
-        table.insert(hideLayers, "J09-ACPRBtnCombined")
-        table.insert(hideLayers, "J10-ACPRBtnSeparated")
-    end
+    -- Determine ACPR button visibility based on conference state
+    self:determineACPRButtonVisibility(anyConferenceActive, isCombined, showLayers, hideLayers)
     
     -- Apply visibility changes to all layers in our lists
     for i = 1, #showLayers do
@@ -959,7 +913,6 @@ function UCIController:updateConferenceControlsLayer()
     self:debugPrint("Conference controls updated: " .. #showLayers .. " shown, " .. #hideLayers .. " hidden")
 end
 
--- Wireless help state handler
 -- Called from: Layer configs when navigating to wireless layer, wireless help button EventHandlers
 function UCIController:updateWirelessHelpState()
     local isVisible = controls.btnOpenHelpWirelessA.Boolean or false
@@ -968,7 +921,6 @@ function UCIController:updateWirelessHelpState()
     self:debugPrint("Wireless Help: " .. (isVisible and "Showing" or "Hiding"))
 end
 
--- Routing help state handler
 -- Called from: Routing help button EventHandlers
 function UCIController:updateRoutingHelpState()
     local isVisible = controls.btnOpenHelpRouting.Boolean or false
@@ -977,7 +929,6 @@ function UCIController:updateRoutingHelpState()
     self:debugPrint("Routing Help: " .. (isVisible and "Showing" or "Hiding"))
 end
 
--- Dialer help state handler
 -- Called from: Layer configs when navigating to dialer layer, dialer help button EventHandler
 function UCIController:updateDialerHelpState()
     local isVisible = controls.btnHelpDialer.Boolean or false
@@ -985,7 +936,6 @@ function UCIController:updateDialerHelpState()
     self:debugPrint("Dialer Help: " .. (isVisible and "Showing" or "Hiding"))
 end
 
--- Stream Music help state handler
 -- Called from: Layer configs when navigating to stream music layer, stream music help button EventHandlers
 function UCIController:updateStreamMusicHelpState()
     local isVisible = controls.btnOpenHelpStreamMusic.Boolean or false
@@ -995,7 +945,6 @@ function UCIController:updateStreamMusicHelpState()
 end
 
 -------------------[ Video Switcher Methods ]-------------------
--- Video Switcher Type definitions
 UCIController.SwitcherTypes = {
     AVProEdge = {
         componentType = "%PLUGIN%_0a62fae1-c3d6-308a-8b7f-3586d7abdf9d_%FP%_1d35ac9dec572bc00d3405021155333f",
@@ -1118,15 +1067,12 @@ function UCIController:switchToInput(uciButton)
 end
 
 -------------------[ Room Automation Methods ]-------------------
--- Initialize Room Controls component
 -- Called from: init()
 function UCIController:initializeRoomControlsComponent()
     local componentName = nil
     
     -- Try to get component name from UCI Variables
-    if Uci.Variables.compRoomControls then
-        componentName = Uci.Variables.compRoomControls.String
-    end
+    if Uci.Variables.compRoomControls then componentName = Uci.Variables.compRoomControls.String end
     
     -- Fallback: construct name from page name
     if not componentName then
@@ -1460,21 +1406,18 @@ function UCIController:shouldShowLayer(layerIndex)
         }
     }
     
-    -- When combined, all layers are available
     if roomState == "combinedA" or roomState == "combinedB" then
-        return true
+        return true --[[ All layers are available when rooms are combined ]]
     end
     
     -- When separated, check layer availability for this room
     if roomState == "separated" and layerAvailability[roomIdentity] then
         local isAvailable = layerAvailability[roomIdentity][layerIndex]
         if isAvailable ~= nil then
-            return isAvailable
+            return isAvailable --[[ Layer is available for this room ]]
         end
     end
-    
-    -- Default: allow layer
-    return true
+    return true --[[ Default: allow layer to be shown ]]
 end
 
 -- Get the appropriate room controls layer name based on room state
@@ -1651,29 +1594,9 @@ end
 -- Navigation button interlock - ensures only active button is highlighted
 -- Called from: btnNavEventHandler()
 function UCIController:interlock()
-    -- Build layer to button map if not already cached
-    if not self.layerToButtonMap then
-        self.layerToButtonMap = {
-            [self.kLayerAlarm]          = 1,
-            [self.kLayerIncomingCall]   = 2,
-            [self.kLayerStart]          = 3,
-            [self.kLayerWarming]        = 4,
-            [self.kLayerCooling]        = 5,
-            [self.kLayerRoomControls]   = 6,
-            [self.kLayerPCA]            = 7,
-            [self.kLayerPCB]            = 8,
-            [self.kLayerLaptopA]        = 9,
-            [self.kLayerLaptopB]        = 10,
-            [self.kLayerWireless]       = 11,
-            [self.kLayerRouting]        = 12,
-            [self.kLayerDialer]         = 13,
-            [self.kLayerStreamMusic]    = 14,
-            [self.kLayerRoomCombining]  = 15
-        }
-    end
-    
-    local activeButtonIndex = self.layerToButtonMap[self.varActiveLayer]
-    
+    -- Layer constants are already the button indices (1-15) 
+    local activeButtonIndex = self.varActiveLayer
+
     -- Loop through all navigation buttons and set their state
     for i = 1, 15 do
         local btn = controls["btnNav" .. string.format("%02d", i)]
@@ -1926,37 +1849,29 @@ function UCIController:init()
     self:initializeVideoSwitcher()
     self:initializeDivisibleSpace()
     
+    -- Set the default layer to start screen
+    self.varActiveLayer = self.kLayerStart
+    
     -- Determine initial layer based on system state
     -- Check if we can sync with existing System Automation Controller
     if mySystemController and mySystemController.state then
         local systemPowerState = false
         
         -- Get actual system power state from room controls component
-        if self.roomControlsComponent and 
-           self.roomControlsComponent["ledSystemPower"] then
+        if self.roomControlsComponent and self.roomControlsComponent["ledSystemPower"] then
             systemPowerState = self.roomControlsComponent["ledSystemPower"].Boolean
         end
         
-        if systemPowerState then
-            -- System is powered on
-            if mySystemController.state.isWarming then
-                -- System is currently warming up
+        if systemPowerState then--[[ System is powered on ]]
+            if mySystemController.state.isWarming then--[[ System is currently warming up ]]
                 self.varActiveLayer = self.kLayerWarming
                 self:startLoadingBar(true)
-            else
-                -- System is fully warmed up, go to default layer
+            else--[[ System is fully warmed up, go to default layer ]]
                 self.varActiveLayer = self:getDefaultLayerAfterWarming()
             end
-        else
-            -- System is powered off, show start screen
-            self.varActiveLayer = self.kLayerStart
         end
-        self:debugPrint("Synchronized with Room Automation state")
-    else
-        -- No system controller, default to start screen
-        self.varActiveLayer = self.kLayerStart
-        self:debugPrint("Using default initialization")
     end
+    self:debugPrint("Synchronized with Room Automation state")
     
     -- Hide specified navigation buttons (if any configured)
     for i = 1, #self.hiddenNavIndices do
@@ -2221,3 +2136,60 @@ Architecture:
     - Comprehensive inline documentation
 ]]--
 
+--[[     
+============================================
+FLOW DOCUMENTATION - Common Scenarios:
+============================================
+
+SCENARIO 1: User presses Start System button
+  1. btnStartSystem EventHandler fires (line ~1750)
+  2. Calls self:startSystem() (line ~1570)
+  3. Powers on via roomControlsComponent (line ~830)
+  4. Starts warming progress bar (line ~950)
+  5. Navigates to kLayerWarming (line ~1580)
+  6. Shows warming animation layers
+
+SCENARIO 2: User presses a navigation button (e.g., btnNav07 for PCA)
+  1. btnNav07 EventHandler fires (line ~1730)
+  2. Calls self:btnNavEventHandler(7) (line ~1550)
+  3. Updates varActiveLayer to 7 (kLayerPCA)
+  4. Switches video input if video switcher enabled (line ~880)
+  5. Calls self:showLayer() (line ~450) to update layer visibility
+  6. Shows P01-PCA layer and relevant sublayers
+  7. Updates HDMI connection state (line ~650)
+  8. Updates conference controls if USB connected (line ~700)
+  9. Calls self:interlock() (line ~1580) to update button states
+
+SCENARIO 3: USB cable connected to PCA
+  1. pinLEDUSBPCA EventHandler fires (line ~1850)
+  2. Calls self:updateConferenceState() (line ~700)
+  3. Checks if HDMI is connected first (gate condition)
+  4. Shows J23-ConferenceControlsPCA layer
+  5. Hides "Connect USB" prompt layer
+  6. Shows camera selection and video privacy layers
+
+SCENARIO 4: HDMI cable connected to LaptopA (auto-switching)
+  1. pinLEDHDMIActiveLaptopA EventHandler fires (line ~1880)
+  2. Checks Boolean is true (positive edge)
+  3. Calls ensureSystemIsOn() to power system if needed
+  4. Calls self:btnNavEventHandler(kLayerLaptopA)
+  5. System auto-switches to LaptopA input
+
+SCENARIO 5: Room state changes (Combined -> Separated)
+  1. btnRoomState EventHandler fires (line ~1300)
+  2. Calls self:onRoomStateChanged() (line ~1310)
+  3. Updates navigation button visibility (hides opposite room's sources)
+  4. Updates "Start Room" vs "Start Rooms" legend
+  5. Updates conference controls layer visibility
+  6. Updates ACPR button visibility based on room state
+
+SCENARIO 6: System shutdown requested
+  1. btnNavShutdown EventHandler fires (line ~1760)
+  2. Shows D01-ShutdownConfirm layer
+  3. User presses btnShutdownConfirm (line ~1770)
+  4. Calls self:shutdownSystem() (line ~1590)
+  5. Powers off via roomControlsComponent
+  6. Starts cooling progress bar
+  7. Navigates to kLayerCooling
+  8. After cooldown, returns to kLayerStart 
+  ]]--

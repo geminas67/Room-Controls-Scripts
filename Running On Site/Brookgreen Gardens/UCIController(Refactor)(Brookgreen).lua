@@ -1403,26 +1403,8 @@ function UCIController:interlock()
     local navButtons = self.normalizedControls.navButtons
     if not navButtons then return end
     
-    -- Layer to button index mapping (cached at class level for better performance)
-    if not self.layerToButtonMap then
-        self.layerToButtonMap = {
-            [self.kLayerAlarm]          = 1, 
-            [self.kLayerIncomingCall]   = 2, 
-            [self.kLayerStart]          = 3,
-            [self.kLayerWarming]        = 4, 
-            [self.kLayerCooling]        = 5, 
-            [self.kLayerRoomControls]   = 6,
-            [self.kLayerPC]             = 7, 
-            [self.kLayerLaptop]         = 8, 
-            [self.kLayerWireless]       = 9,
-            [self.kLayerRouting]        = 10, 
-            [self.kLayerDialer]         = 11, 
-            [self.kLayerStreamMusic]    = 12,
-            [self.kLayerPasscode]       = 13
-        }
-    end
-    
-    local activeButtonIndex = self.layerToButtonMap[self.varActiveLayer]
+    -- Layer constants are already the button indices (1-13) 
+    local activeButtonIndex = self.varActiveLayer
     
     -- Reset all buttons and set active one in single loop
     for i, btn in ipairs(navButtons) do
@@ -1432,12 +1414,6 @@ function UCIController:interlock()
         end
     end
     
-    --Reset routing buttons when not on routing layer
-    if self.varActiveLayer ~= self.kLayerRouting then
-        self.routingModule:resetRoutingButtons()
-    end
-end
-
 function UCIController:updateLegends()
     -- Use array-based approach for consistency with original version
     if not self.arrUCILegends or not self.arrUCIUserLabels then

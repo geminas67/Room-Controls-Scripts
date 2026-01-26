@@ -204,7 +204,10 @@ function LayerModule:hideBaseLayers()
 end
 
 local layersToHide = {
-    "A01-Alarm","B01-IncomingCall","C05-Start","D01-ShutdownConfirm",
+    "A01-Alarm",
+    "B01-IncomingCall",
+    "C05-Start",
+    "D01-ShutdownConfirm",
     "E01-SystemProgressWarming","E02-SystemProgressCooling","E05-SystemProgress",
     "H04-RoomCombining","H08-RoomControlsCombined","H09-RoomControlsSeparated","H10-RoomControls",
     "I01-CallActive","I02-HelpLaptopA","I03-HelpLaptopB","I04-HelpPCA","I05-HelpPCB",
@@ -487,6 +490,30 @@ function SublayerModule.new(controller)
         ["I10-HelpStreamMusic"]= {open = "btnOpenHelpStreamMusic",close = "btnCloseHelpStreamMusic"},
     }
 
+    -- Generate layer arrays from source map to avoid repetition
+    self.allUSBConnectLayers = {}
+    self.allConferenceLayers = {}
+    self.allCameraLayers = {}
+    self.allVideoPrivacyLayers = {}
+    
+    for _, src in pairs(self.sources) do
+        if src.usbConnect then table.insert(self.allUSBConnectLayers, src.usbConnect) end
+        if src.confLayer then table.insert(self.allConferenceLayers, src.confLayer) end
+        if src.cameraLayer then table.insert(self.allCameraLayers, src.cameraLayer) end
+        if src.videoPrivacySeparate then table.insert(self.allVideoPrivacyLayers, src.videoPrivacySeparate) end
+        if src.videoPrivacyCombine then table.insert(self.allVideoPrivacyLayers, src.videoPrivacyCombine) end
+    end
+    
+    -- ACPR layer constants
+    self.acprLayers = {
+        combined = "J06-ACPRActiveCombined",
+        separated = "J07-ACPRActiveSeparated"
+    }
+    self.acprBtnLayers = {
+        combined = "J09-ACPRBtnCombined",
+        separated = "J10-ACPRBtnSeparated"
+    }
+
     return self
 end
 
@@ -562,12 +589,11 @@ function SublayerModule:updateSourceHelpState(srcKey)
     local isVisible = src.btnOpen.Boolean or false
     if isVisible then
         self.controller.layerModule:updateLayerVisibility({src.helpLayer}, true, "fade")
-        self.controller.layerModule:updateLayerVisibility({
-            "J21-ConferenceControlsLaptopA","J22-ConferenceControlsLaptopB",
-            "J23-ConferenceControlsPCA","J24-ConferenceControlsPCB",
-            "J01-ConnectUSBLaptopA","J02-ConnectUSBLaptopB",
-            "J03-ConnectUSBPCA","J04-ConnectUSBPCB"
-        }, false, "none")
+        -- Hide all conference and USB connect layers using generated arrays
+        local hideLayers = {}
+        for _, layer in ipairs(self.allConferenceLayers) do table.insert(hideLayers, layer) end
+        for _, layer in ipairs(self.allUSBConnectLayers) do table.insert(hideLayers, layer) end
+        self.controller.layerModule:updateLayerVisibility(hideLayers, false, "none")
     else
         self.controller.layerModule:updateLayerVisibility({src.helpLayer}, false, "none")
         self:updateConferenceState()
@@ -589,12 +615,9 @@ function SublayerModule:updateConferenceState()
 
     -- HDMI gate
     if not self:checkHDMIConnection() then
-        local hideLayers = {
-            "J01-ConnectUSBLaptopA","J02-ConnectUSBLaptopB",
-            "J03-ConnectUSBPCA","J04-ConnectUSBPCB",
-            "J21-ConferenceControlsLaptopA","J22-ConferenceControlsLaptopB",
-            "J23-ConferenceControlsPCA","J24-ConferenceControlsPCB"
-        }
+        local hideLayers = {}
+        for _, layer in ipairs(self.allUSBConnectLayers) do table.insert(hideLayers, layer) end
+        for _, layer in ipairs(self.allConferenceLayers) do table.insert(hideLayers, layer) end
         if src.helpLayer then table.insert(hideLayers, src.helpLayer) end
         self.controller.layerModule:updateLayerVisibility(hideLayers, false, "none")
         if src.helpLayer then self:syncHelpButtonStates(src.helpLayer) end
@@ -609,10 +632,7 @@ function SublayerModule:updateConferenceState()
     local usbConnected = src.usbPin and src.usbPin.Boolean or false
     if usbConnected then
         self.controller.layerModule:updateLayerVisibility({src.confLayer}, true, "fade")
-        self.controller.layerModule:updateLayerVisibility({
-            "J01-ConnectUSBLaptopA","J02-ConnectUSBLaptopB",
-            "J03-ConnectUSBPCA","J04-ConnectUSBPCB"
-        }, false, "none")
+        self.controller.layerModule:updateLayerVisibility(self.allUSBConnectLayers, false, "none")
     else
         self.controller.layerModule:updateLayerVisibility({src.usbConnect}, true, "fade")
         self.controller.layerModule:updateLayerVisibility({src.confLayer, src.helpLayer}, false, "none")
@@ -625,7 +645,7 @@ end
 function SublayerModule:updateACPRBypassState()
     if acprConfig.disableACPRShow then
         self.controller.layerModule:updateLayerVisibility({
-            "J06-ACPRActiveCombined", "J07-ACPRActiveSeparated"
+            self.acprLayers.combined, self.acprLayers.separated
         }, false, "none")
         self:debug("ACPR Show logic disabled via acprConfig")
         return
@@ -640,26 +660,18 @@ function SublayerModule:updateACPRBypassState()
         return
     end
 
-    -- Get room state to determine which control and layer to use
+    -- Get room state to determine which control and layers to use
     local roomState = self.controller.divisibleSpaceModule:getRoomState()
-
-    local bypassControl, acprActiveLayer
-    if roomState == "separated" then
-        bypassControl = controls.pinLEDACPRBypassSeparated
-        acprActiveLayer = "J07-ACPRActiveSeparated"
-    else
-        bypassControl = controls.pinLEDACPRBypassCombined
-        acprActiveLayer = "J06-ACPRActiveCombined"
-    end
-
+    local isSeparated = (roomState == "separated")
+    
+    local bypassControl = isSeparated and controls.pinLEDACPRBypassSeparated or controls.pinLEDACPRBypassCombined
+    local acprActiveLayer = isSeparated and self.acprLayers.separated or self.acprLayers.combined
+    local acprInactiveLayer = isSeparated and self.acprLayers.combined or self.acprLayers.separated
+    
     local isBypassActive = bypassControl.Boolean or false
     
-    -- Hide the other ACPR Active layer based on room state
-    if roomState == "separated" then
-        self.controller.layerModule:updateLayerVisibility({"J06-ACPRActiveCombined"}, false, "none")
-    else
-        self.controller.layerModule:updateLayerVisibility({"J07-ACPRActiveSeparated"}, false, "none")
-    end
+    -- Hide the inactive ACPR layer for the current room state
+    self.controller.layerModule:updateLayerVisibility({acprInactiveLayer}, false, "none")
 
     -- Show/hide appropriate layers based on bypass state
     if not isBypassActive then
@@ -675,17 +687,74 @@ function SublayerModule:updateACPRBypassState()
     self:updateConferenceControlsLayer()
 end
 
--- Conference Controls Layer - uses source map for lookups
+-- Determine layer visibility for a single source
+function SublayerModule:determineSourceLayerVisibility(src, isActive, usbConnected, isCombined, showLayers, hideLayers)
+    local conferenceIsActive = false
+    
+    -- Camera selection: show only for active source when combined
+    if src.cameraLayer then
+        if isActive and isCombined then
+            table.insert(showLayers, src.cameraLayer)
+        else
+            table.insert(hideLayers, src.cameraLayer)
+        end
+    end
+    
+    -- Conference controls: show if USB connected and active
+    if isActive and usbConnected then
+        table.insert(showLayers, src.confLayer)
+        conferenceIsActive = true
+    else
+        table.insert(hideLayers, src.confLayer)
+    end
+    
+    -- Video privacy: show based on room state and conference controls
+    if src.videoPrivacySeparate and src.videoPrivacyCombine then
+        if isActive and usbConnected then
+            if isCombined then
+                table.insert(showLayers, src.videoPrivacyCombine)
+                table.insert(hideLayers, src.videoPrivacySeparate)
+            else
+                table.insert(showLayers, src.videoPrivacySeparate)
+                table.insert(hideLayers, src.videoPrivacyCombine)
+            end
+        else
+            table.insert(hideLayers, src.videoPrivacySeparate)
+            table.insert(hideLayers, src.videoPrivacyCombine)
+        end
+    end
+    
+    return conferenceIsActive
+end
+
+-- Determine ACPR button visibility
+function SublayerModule:determineACPRButtonVisibility(anyConferenceActive, isCombined, showLayers, hideLayers)
+    if not acprConfig.disableACPRShow and anyConferenceActive then
+        if isCombined then
+            table.insert(showLayers, self.acprBtnLayers.combined)
+            table.insert(hideLayers, self.acprBtnLayers.separated)
+        else
+            table.insert(showLayers, self.acprBtnLayers.separated)
+            table.insert(hideLayers, self.acprBtnLayers.combined)
+        end
+    else
+        table.insert(hideLayers, self.acprBtnLayers.combined)
+        table.insert(hideLayers, self.acprBtnLayers.separated)
+    end
+end
+
+-- Conference Controls Layer - orchestrates visibility updates
 function SublayerModule:updateConferenceControlsLayer()
-    -- HDMI gate
+    -- HDMI gate: hide all conference-related layers if HDMI not connected
     if not self:checkHDMIConnection() then
-        self.controller.layerModule:updateLayerVisibility({
-            "J11-CameraSelectionLaptopA", "J12-CameraSelectionLaptopB", "J13-CameraSelectionPCA", "J14-CameraSelectionPCB",
-            "J21-ConferenceControlsLaptopA", "J22-ConferenceControlsLaptopB", 
-            "J23-ConferenceControlsPCA", "J24-ConferenceControlsPCB",
-            "J17-VideoPrivacySeparatedA", "J18-VideoPrivacySeparatedB", "J19-VideoPrivacyCombinedA", "J20-VideoPrivacyCombinedB",
-            "J09-ACPRBtnCombined", "J10-ACPRBtnSeparated"
-        }, false, "none")
+        local allHideLayers = {}
+        for _, layer in ipairs(self.allCameraLayers) do table.insert(allHideLayers, layer) end
+        for _, layer in ipairs(self.allConferenceLayers) do table.insert(allHideLayers, layer) end
+        for _, layer in ipairs(self.allVideoPrivacyLayers) do table.insert(allHideLayers, layer) end
+        table.insert(allHideLayers, self.acprBtnLayers.combined)
+        table.insert(allHideLayers, self.acprBtnLayers.separated)
+        
+        self.controller.layerModule:updateLayerVisibility(allHideLayers, false, "none")
         self:debug("Conference controls blocked: HDMI not connected")
         return
     end
@@ -696,67 +765,24 @@ function SublayerModule:updateConferenceControlsLayer()
     -- Determine which layers to show based on active source and room state
     local showLayers = {}
     local hideLayers = {}
+    local anyConferenceActive = false
     
     -- Iterate through all sources and determine visibility
     for srcKey, src in pairs(self.sources) do
         local isActive = (self.controller.varActiveLayer == src.layerConst)
         local usbConnected = src.usbPin and src.usbPin.Boolean or false
         
-        -- Camera selection: show only for active source when combined
-        if src.cameraLayer then
-            if isActive and isCombined then
-                table.insert(showLayers, src.cameraLayer)
-            else
-                table.insert(hideLayers, src.cameraLayer)
-            end
-        end
-        
-        -- Conference controls: show if USB connected and active
-        if isActive and usbConnected then
-            table.insert(showLayers, src.confLayer)
-        else
-            table.insert(hideLayers, src.confLayer)
-        end
-        
-        -- Video privacy: show based on room state and conference controls
-        if src.videoPrivacySeparate and src.videoPrivacyCombine then
-            if isActive and usbConnected then
-                if isCombined then
-                    table.insert(showLayers, src.videoPrivacyCombine)
-                    table.insert(hideLayers, src.videoPrivacySeparate)
-                else
-                    table.insert(showLayers, src.videoPrivacySeparate)
-                    table.insert(hideLayers, src.videoPrivacyCombine)
-                end
-            else
-                table.insert(hideLayers, src.videoPrivacySeparate)
-                table.insert(hideLayers, src.videoPrivacyCombine)
-            end
-        end
-    end
-    
-    -- ACPR buttons: show based on room state and any conference controls active
-    local anyConferenceActive = false
-    for _, layer in ipairs(showLayers) do
-        if layer:match("^J2[1-4]%-Conference") or 
-           self.controller.layerModule.layerStates[layer:match("J2[1-4]%-ConferenceControls%w+")] == true then
+        -- Track if any conference controls are active while building layer lists
+        local conferenceIsActive = self:determineSourceLayerVisibility(
+            src, isActive, usbConnected, isCombined, showLayers, hideLayers
+        )
+        if conferenceIsActive then
             anyConferenceActive = true
-            break
         end
     end
     
-    if not acprConfig.disableACPRShow and anyConferenceActive then
-        if isCombined then
-            table.insert(showLayers, "J09-ACPRBtnCombined")
-            table.insert(hideLayers, "J10-ACPRBtnSeparated")
-        else
-            table.insert(showLayers, "J10-ACPRBtnSeparated")
-            table.insert(hideLayers, "J09-ACPRBtnCombined")
-        end
-    else
-        table.insert(hideLayers, "J09-ACPRBtnCombined")
-        table.insert(hideLayers, "J10-ACPRBtnSeparated")
-    end
+    -- Determine ACPR button visibility based on conference state
+    self:determineACPRButtonVisibility(anyConferenceActive, isCombined, showLayers, hideLayers)
     
     -- Apply visibility changes
     for _, layer in ipairs(showLayers) do
@@ -1612,27 +1638,8 @@ function UCIController:btnNavEventHandler(argIndex)
 end
 
 function UCIController:interlock()
-    if not self.layerToButtonMap then
-        self.layerToButtonMap = {
-            [self.kLayerAlarm]          = 1,
-            [self.kLayerIncomingCall]   = 2,
-            [self.kLayerStart]          = 3,
-            [self.kLayerWarming]        = 4,
-            [self.kLayerCooling]        = 5,
-            [self.kLayerRoomControls]   = 6,
-            [self.kLayerPCA]            = 7,
-            [self.kLayerPCB]            = 8,
-            [self.kLayerLaptopA]        = 9,
-            [self.kLayerLaptopB]        = 10,
-            [self.kLayerWireless]       = 11,
-            [self.kLayerRouting]        = 12,
-            [self.kLayerDialer]         = 13,
-            [self.kLayerStreamMusic]    = 14,
-            [self.kLayerRoomCombining]  = 15
-        }
-    end
-    
-    local activeButtonIndex = self.layerToButtonMap[self.varActiveLayer]
+    -- Layer constants are already the button indices (1-15) 
+    local activeButtonIndex = self.varActiveLayer
     
     for i = 1, 15 do
         local btn = controls["btnNav" .. string.format("%02d", i)]
@@ -1713,8 +1720,10 @@ function UCIController:init()
     self:initializeLegendArrays()
     self.roomAutomationModule:initializeComponent()
     self.videoSwitcherModule:initialize()
-    
     self.divisibleSpaceModule:initialize()
+    
+    -- Set the default layer to start screen
+    self.varActiveLayer = self.kLayerStart
     
     if mySystemController and mySystemController.state then
         local systemPowerState = false
@@ -1729,12 +1738,9 @@ function UCIController:init()
             else
                 self.varActiveLayer = self.divisibleSpaceModule:getDefaultLayerAfterWarming()
             end
-        else
-            self.varActiveLayer = self.kLayerStart
         end
         self:debug("Synchronized with Room Automation state")
     else
-        self.varActiveLayer = self.kLayerStart
         self:debug("Using default initialization")
     end
     

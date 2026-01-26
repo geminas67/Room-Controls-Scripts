@@ -875,6 +875,7 @@ function UCIController.new(uciPage, defaultRoutingLayer, defaultActiveLayer, hid
     self.kLayerRouting      = 10
     self.kLayerDialer       = 11
     self.kLayerStreamMusic  = 12
+    self.kLayerPasscode     = 13
     
     -- Routing state
     self.routingLayers = {
@@ -907,7 +908,7 @@ end
 -------------------[ Event Handler Registration ]----------
 function UCIController:registerEventHandlers()
     -- Navigation buttons
-    for i = 1, 12 do
+    for i = 1, 13 do
         local btn = controls["btnNav" .. string.format("%02d", i)]
         if btn then
             bind(btn, function() self:btnNavEventHandler(i) end)
@@ -1054,39 +1055,26 @@ function UCIController:btnNavEventHandler(argIndex)
 end
 
 function UCIController:interlock()
-    if not self.layerToButtonMap then
-        self.layerToButtonMap = {
-            [self.kLayerAlarm]          = 1,
-            [self.kLayerIncomingCall]   = 2,
-            [self.kLayerStart]          = 3,
-            [self.kLayerWarming]        = 4,
-            [self.kLayerCooling]        = 5,
-            [self.kLayerRoomControls]   = 6,
-            [self.kLayerPC]             = 7,
-            [self.kLayerLaptop]         = 8,
-            [self.kLayerWireless]       = 9,
-            [self.kLayerRouting]        = 10,
-            [self.kLayerDialer]         = 11,
-            [self.kLayerStreamMusic]    = 12
-        }
-    end
+    -- Layer constants are already the button indices (1-13) 
+    local activeButtonIndex = self.varActiveLayer
     
-    local activeButtonIndex = self.layerToButtonMap[self.varActiveLayer]
-    
-    for i = 1, 12 do
+    for i = 1, 13 do
         local btn = controls["btnNav" .. string.format("%02d", i)]
         if btn then
             local shouldBeActive = (i == activeButtonIndex)
             setProp(btn, "Boolean", shouldBeActive)
         end
     end
-    
-    if self.varActiveLayer ~= self.kLayerRouting then
-        self:interlockRoutingButtons()
-    end
 end
 
 -------------------[ Routing Sublayer Logic ]---------------
+function UCIController:getRoutingButtons()
+    return {
+        controls.btnRouting01, controls.btnRouting02, controls.btnRouting03,
+        controls.btnRouting04, controls.btnRouting05
+    }
+end
+
 function UCIController:showRoutingLayer()
     if self.activeRoutingLayer < 1 or self.activeRoutingLayer > #self.routingLayers then
         self.activeRoutingLayer = 1
@@ -1103,10 +1091,7 @@ function UCIController:showRoutingLayer()
 end
 
 function UCIController:interlockRoutingButtons()
-    local routingButtons = {
-        controls.btnRouting01, controls.btnRouting02, controls.btnRouting03,
-        controls.btnRouting04, controls.btnRouting05
-    }
+    local routingButtons = self:getRoutingButtons()
     for i, btn in ipairs(routingButtons) do
         if btn then
             btn.Boolean = (i == self.activeRoutingLayer)
@@ -1199,6 +1184,9 @@ function UCIController:init()
     self:initializeLegendArrays()
     self.roomAutomationModule:initializeComponent()
     self.videoSwitcherModule:initialize()
+
+    -- Set the default layer to start screen
+    self.varActiveLayer = self.kLayerStart
     
     if mySystemController and mySystemController.state then
         local systemPowerState = false
@@ -1213,12 +1201,9 @@ function UCIController:init()
             else
                 self.varActiveLayer = self.defaultActiveLayer
             end
-        else
-            self.varActiveLayer = self.kLayerStart
         end
         self:debug("Synchronized with Room Automation state")
     else
-        self.varActiveLayer = self.kLayerStart
         self:debug("Using default initialization")
     end
     

@@ -9,16 +9,29 @@ function funcUpdateLegends()
   Controls.btnNavRoom.Legend = Uci.Variables.navBtnRoomLegend.String
   Controls.btnNavDisplays.Legend = Uci.Variables.navBtnDisplaysLegend.String
   Controls.btnNavCameras.Legend = Uci.Variables.navBtnCamerasLegend.String
+  Controls.btnCam01Sel.Legend = Uci.Variables.btnCam01SelLegend.String
+  Controls.btnCam02Sel.Legend = Uci.Variables.btnCam02SelLegend.String
 end
 
 function funcShowCameraSublayer()
   if Controls.pinLEDUSB.Boolean then 
-  Uci.SetLayerVisibility( "classUCI", "C2_USB_Connected", true , "fade" )
-  Uci.SetLayerVisibility( "classUCI", "C3_USB_Connected_NOT", false , "none" )
+    Uci.SetLayerVisibility("classUCI", "C2_USB_Connected", true, "fade")
+    Uci.SetLayerVisibility("classUCI", "C3_USB_Connected_NOT", false, "none")
   else
-  Uci.SetLayerVisibility( "classUCI", "C2_USB_Connected", false , "none" )
-  Uci.SetLayerVisibility( "classUCI", "C3_USB_Connected_NOT", true , "fade" )
-  end --if
+    Uci.SetLayerVisibility("classUCI", "C2_USB_Connected", false, "none")
+    Uci.SetLayerVisibility("classUCI", "C3_USB_Connected_NOT", true, "fade")
+  end
+
+  for i, layer in ipairs(cameraLayers) do
+    local btn = camButtons[i]
+    if btn.Boolean then
+      Uci.SetLayerVisibility("classUCI", layer, true, "fade")
+      print("Set UCI to "..layer.." to show")
+    else
+      Uci.SetLayerVisibility("classUCI", layer, false, "none")
+      print("Set UCI to "..layer.." to hide")
+    end
+  end
 end
 --turn off ALL layers --turn on the layer of varActiveLayer
 function  funcShowLayer()
@@ -27,6 +40,8 @@ function  funcShowLayer()
   Uci.SetLayerVisibility( "classUCI", "C1_Cameras", false , "none" )
   Uci.SetLayerVisibility( "classUCI", "C2_USB_Connected", false , "none" )
   Uci.SetLayerVisibility( "classUCI", "C3_USB_Connected_NOT", false , "none" )
+  Uci.SetLayerVisibility( "classUCI", "C4_Camera_01_Presets", false , "none" )
+  Uci.SetLayerVisibility( "classUCI", "C5_Camera_02_Presets", false , "none" )
   Uci.SetLayerVisibility( "classUCI", "Y1_Base Controls", true , "fade" )
   Uci.SetLayerVisibility( "classUCI", "Z1_BG", true , "fade" )
 
@@ -40,7 +55,7 @@ function  funcShowLayer()
   end --if
 end
 
-function funcInterlock() --set ALL layers and buttons falsse, then set layer Visbiliity of the button with Boolean that is true
+function funcInterlock() --set ALL layers and buttons false, then set layer Visibility of the button with Boolean that is true
   Controls.btnNavRoom.Boolean = false 
   Controls.btnNavDisplays.Boolean = false 
   Controls.btnNavCameras.Boolean = false
@@ -53,7 +68,7 @@ function funcInterlock() --set ALL layers and buttons falsse, then set layer Vis
     Controls.btnNavCameras.Boolean = true
   end--if
 end 
---print varActiveLayer to Debugger
+--print varActiveLayer to Debugger window
 function funcDebugger()
   if varActiveLayer == kLayer_Room then
     print("Set UCI to Room") 
@@ -94,18 +109,49 @@ Controls.pinLEDUSB.EventHandler = function (ctl)
   funcDebugger()
 end
 
--------------------------------------------------------------------------------------------------------------------------------------
-
-Uci.Variables.navBtnRoomLegend.EventHandler = function ()
-  funcUpdateLegends()
+-- Table of camera selection buttons
+camButtons = {
+Controls.btnCam01Sel,
+Controls.btnCam02Sel
+}
+-- Table of camera preset layer names (expand as needed)
+cameraLayers = {
+  [1] = "C4_Camera_01_Presets",
+  [2] = "C5_Camera_02_Presets"
+}
+-- Camera selection function
+function selectCamera(index)
+  for i, btn in ipairs(camButtons) do
+    btn.Boolean = (i == index)
+  end
+  funcShowCameraSublayer()
 end
 
-Uci.Variables.navBtnDisplaysLegend.EventHandler = function ()
-  funcUpdateLegends()
+-- Factory function to capture index by value (fixes classic Lua closure issue)
+-- Without this, all handlers would reference the final loop value
+local function camButtonHandler(index)
+  return function()
+    selectCamera(index)
+  end
 end
 
-Uci.Variables.navBtnCamerasLegend.EventHandler = function ()
-  funcUpdateLegends()
+-- Assign event handlers using factory function to capture index
+for i, btn in ipairs(camButtons) do
+  btn.EventHandler = camButtonHandler(i)
+end
+
+-- Update UCI Legends
+
+local legendVars = {
+  Uci.Variables.navBtnRoomLegend,
+  Uci.Variables.navBtnDisplaysLegend,
+  Uci.Variables.navBtnCamerasLegend,
+  Uci.Variables.btnCam01SelLegend,
+  Uci.Variables.btnCam02SelLegend
+}
+
+for _, var in ipairs(legendVars) do
+  var.EventHandler = funcUpdateLegends
 end
 -------------------------------------------------------------------------------------------------------------------------------------
 
@@ -119,7 +165,7 @@ arrListBox = {
   Controls.listOut02,
 }
 
-function funcSetChoices()
+function funcSetNV32Choices()
   arrFriendlyNames = {
     --assign name of list box
     Uci.Variables.friendlyHDMI01.String,
@@ -148,12 +194,12 @@ function funcSetChoices()
   end--for
 end
 --list EventHandlers
-Uci.Variables.friendlyHDMI01.EventHandler = funcSetChoices
-Uci.Variables.friendlyHDMI02.EventHandler = funcSetChoices
-Uci.Variables.friendlyHDMI03.EventHandler = funcSetChoices
-Uci.Variables.friendlyGraphic01.EventHandler = funcSetChoices
-Uci.Variables.friendlyGraphic02.EventHandler = funcSetChoices
-Uci.Variables.friendlyGraphic03.EventHandler = funcSetChoices
+Uci.Variables.friendlyHDMI01.EventHandler = funcSetNV32Choices
+Uci.Variables.friendlyHDMI02.EventHandler = funcSetNV32Choices
+Uci.Variables.friendlyHDMI03.EventHandler = funcSetNV32Choices
+Uci.Variables.friendlyGraphic01.EventHandler = funcSetNV32Choices
+Uci.Variables.friendlyGraphic02.EventHandler = funcSetNV32Choices
+Uci.Variables.friendlyGraphic03.EventHandler = funcSetNV32Choices
 
 function funcVideoDebugger(argWho,argInput,argWhy)
   print(string.format("%s routed %s/%s because : %s", argWho, argInput, tblBabelFish[argInput], argWhy))
@@ -206,7 +252,7 @@ function funcInit()
   funcInterlock()
   funcDebugger()
   funcUpdateLegends()
-  funcSetChoices()
+  funcSetNV32Choices()
   funcSetNV32CodeName()
   print("UCI Initialized")
 end
