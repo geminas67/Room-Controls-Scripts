@@ -8,22 +8,16 @@
   
   ]] --
 
------------------------------------------------------------------------------------------------------------------
--- Constants Tables
------------------------------------------------------------------------------------------------------------------
+-----------------[ Constants ]-------------------
 
 InvalidComponents = {} -- table containing all components that are currently invalid
 
------------------------------------------------------------------------------------------------------------------
--- Constants
------------------------------------------------------------------------------------------------------------------
+-----------------[ Utility Functions ]-------------------
 
 Debugging = true -- set to true in order to print funcDebugger statements
 ClearString = "[Clear]" -- string used in combo boxes to clear out a component
 
------------------------------------------------------------------------------------------------------------------
--- Functions
------------------------------------------------------------------------------------------------------------------
+-----------------[ Functions ]-------------------
 
 function Debug(str) -- helper function that prints debug statements when enabled
     if Debugging then
@@ -31,9 +25,7 @@ function Debug(str) -- helper function that prints debug statements when enabled
     end--if
 end--func
 
------------------------------------------------------------------------------------------------------------------
----- Get and Valiadate Component 
------------------------------------------------------------------------------------------------------------------
+-----------------[ Component Setup ]-------------------
 function funcGetComponentNames()
     -- table to hold component names
     local tblNames = {
@@ -109,9 +101,7 @@ function SetComponent(ctl, componentType) -- a helper function that maps compone
     end--if
 end--func
 
------------------------------------------------------------------------------------------------------------------
----- Component Names
------------------------------------------------------------------------------------------------------------------
+-----------------[ Component Name Assignment ]-------------------
 function funcSetdevNV32()
   devNV32 = SetComponent(Controls.devNV32, "NV32-H")
   if devNV32 ~= nil then -- Success!
@@ -133,9 +123,7 @@ end--func
 
 Controls.devNV32.EventHandler = funcSetdevNV32
 
----------------------------------------------------------------------------------------
--- Constants and Variables
----------------------------------------------------------------------------------------
+-----------------[ Constants ]-------------------
 
 -- These variables represent the Input number of the NV32H
 kGraphic1 = 1
@@ -166,9 +154,7 @@ arrNV32Output = {
   kOutput2,
 }
 
----------------------------------------------------------------------------------------
--- Functions
----------------------------------------------------------------------------------------
+-----------------[ Functions ]-------------------
 
 -- funcSetVideoRoute(vInput, vOutput) sets the selected NV32H output to the selected input
 function funcSetVideoRoute(vInput, vOutput)
@@ -176,9 +162,7 @@ function funcSetVideoRoute(vInput, vOutput)
   print("funcSetVideoRoute(User Interaction) set Out "..tostring(vOutput).." to In "..tostring(vInput).." successfully")
 end--func
 
----------------------------------------------------------------------------------------
--- Controls
----------------------------------------------------------------------------------------
+-----------------[ Event Handlers ]-------------------
 
 -- ipairs Loop to write EventHandlers for btnNV32Out01 Array of controls
 for idx, ctl in ipairs(Controls.btnNV32Out01) do
@@ -194,9 +178,7 @@ for idx, ctl in ipairs(Controls.btnNV32Out02) do
   end--EH
 end--for
 
------------------------------------------------------------------------------------------------------------------
--- Run in Mainline
------------------------------------------------------------------------------------------------------------------
+-----------------[ Initialization ]-------------------
 
 function funcInit()
   funcGetComponentNames()                                     -- populate combo boxes for component selection with script names        

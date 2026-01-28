@@ -54,8 +54,8 @@ function  funcShowLayer()
     funcShowCameraSublayer()
   end --if
 end
-
-function funcInterlock() --set ALL layers and buttons false, then set layer Visibility of the button with Boolean that is true
+--set ALL layers and buttons false, then set layer Visibility of the button with Boolean that is true
+function funcInterlock() 
   Controls.btnNavRoom.Boolean = false 
   Controls.btnNavDisplays.Boolean = false 
   Controls.btnNavCameras.Boolean = false

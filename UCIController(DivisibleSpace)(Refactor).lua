@@ -1860,7 +1860,7 @@ local function createUCIController(targetPageName, defaultRoutingLayer, defaultA
             debugging = true,
             varActiveLayer = defaultActiveLayer,
             isInitialized = false,
-            btnNavEventHandler = function(self, layer)
+             ventHandler = function(self, layer)
                 print("Minimal UCI: Navigation to layer " .. layer .. " (limited functionality)")
             end,
             cleanup = function(self)
