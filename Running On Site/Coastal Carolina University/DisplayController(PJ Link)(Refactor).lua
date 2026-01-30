@@ -5,7 +5,8 @@
 ]]--
 
 local displayControls = {
-    displayPower = "Power",
+    displayPowerOn = "PowerOn",
+    displayPowerOff = "PowerOff",
     displayPowerStatus = "PowerStatus",
     currentInput = "VideoInput"
 }
@@ -31,7 +32,7 @@ local controls = {
     btnDisplayPowerAll = Controls.btnDisplayPowerAll,
     btnDisplayPowerOn = Controls.btnDisplayPowerOn,
     btnDisplayPowerOff = Controls.btnDisplayPowerOff,
-    btnDisplayPowerSingle = Controls.btnDisplayPowerSingle,
+    btnDisplayPowerToggle = Controls.btnDisplayPowerToggle,
     btnDisplayInputAll = Controls.btnDisplayInputAll
 }
 
@@ -58,7 +59,7 @@ local function bindArray(ctrls, handler)
 end
 
 local function normalizeControlArrays()
-    for _, name in ipairs({'devDisplays', 'btnDisplayPowerOn', 'btnDisplayPowerOff', 'btnDisplayPowerSingle'}) do
+    for _, name in ipairs({'devDisplays', 'btnDisplayPowerOn', 'btnDisplayPowerOff', 'btnDisplayPowerToggle'}) do
         local ctrl = controls[name]
         if ctrl and not isArr(ctrl) then controls[name] = {ctrl} end
     end
@@ -87,7 +88,7 @@ function PJLinkDisplayController.new(roomName, config)
     self.debugging = (config and config.debugging) or true
     self.clearString = "[Clear]"
     self.componentTypes = {
-        displays = "%PLUGIN%_80a40a84-e685-4b13-a5c4-fbdc12bd85e6_%FP%_5a33e0144dd58457817a00cb87f4f4a9",
+        displays = "%PLUGIN%_80a40a84-e685-4b13-a5c4-fbdc12bd85e6_%FP%_cac5837f40ef3a83d7365386eb4b8d16", -- PJLink Display
         roomControls = "device_controller_script"
     }
     self.components = { displays = {}, compRoomControls = nil, invalid = {} }
@@ -99,17 +100,21 @@ function PJLinkDisplayController.new(roomName, config)
     return self
 end
 
-function PJLinkDisplayController:debugPrint(str)
-    if self.debugging then print("["..self.roomName.."] "..str) end
+function PJLinkDisplayController:debugPrint(msg)
+    if self.debugging then print("["..self.roomName.."] "..msg) end
 end
 
 function PJLinkDisplayController:updateTimerConfig()
-    if not self.components.compRoomControls then return end
+    if not self.components.compRoomControls then 
+        self:debugPrint("No room controls component found - Using default timing values")
+        return 
+    end
     local comp = self.components.compRoomControls
     local warmup = comp.warmupTime and comp.warmupTime.Value
     local cooldown = comp.cooldownTime and comp.cooldownTime.Value
     if warmup and warmup > 0 then self.timerConfig.warmupTime = warmup end
     if cooldown and cooldown > 0 then self.timerConfig.cooldownTime = cooldown end
+    self:debugPrint("Timer config - Warmup: " .. self.timerConfig.warmupTime .. "s, Cooldown: " .. self.timerConfig.cooldownTime .. "s")
 end
 
 function PJLinkDisplayController:safeAccess(component, control, action, value)
@@ -124,23 +129,31 @@ end
 
 -------------------[ Display Methods ]-------------------
 function PJLinkDisplayController:powerAll(state)
+    self:debugPrint("Powering all displays: " .. tostring(state))
+    local control = state and displayControls.displayPowerOn or displayControls.displayPowerOff
     for i, display in pairs(self.components.displays) do
-        if display then self:safeAccess(display, displayControls.displayPower, "trigger") end
+        if display then self:safeAccess(display, control, "trigger") end
     end
     self.state.powerState = state
     setProp(controls.ledDisplayPower, "Boolean", state)
 end
 
-function PJLinkDisplayController:powerSingle(index)
+function PJLinkDisplayController:powerSingle(index, state)
+    self:debugPrint("Powering display " .. index .. " to: " .. tostring(state))
     local display = self.components.displays[index]
-    if display then self:safeAccess(display, displayControls.displayPower, "trigger") end
+    local control = state and displayControls.displayPowerOn or displayControls.displayPowerOff
+    if display then self:safeAccess(display, control, "trigger") end
 end
 
 function PJLinkDisplayController:setInputAll(input)
+    self:debugPrint("Setting all displays to input: " .. input)
     for i, display in pairs(self.components.displays) do
         local controlName = inputControls[input]
         if display and controlName and display[controlName] then
+            self:debugPrint("Setting display " .. i .. " input to: " .. input)
             self:safeAccess(display, controlName, "trigger")
+        else
+            self:debugPrint("Input control not found for: " .. tostring(input))
         end
     end
     self.state.lastInput = input
@@ -155,7 +168,7 @@ end
 
 -------------------[ Power Methods ]-------------------
 function PJLinkDisplayController:enablePowerControls(state)
-    for _, name in ipairs({"btnDisplayPowerOn", "btnDisplayPowerOff", "btnDisplayPowerSingle", "btnDisplayPowerAll", "btnDisplayInputAll"}) do
+    for _, name in ipairs({"btnDisplayPowerOn", "btnDisplayPowerOff", "btnDisplayPowerToggle", "btnDisplayPowerAll", "btnDisplayInputAll"}) do
         local ctrl = controls[name]
         if isArr(ctrl) then
             for _, btn in ipairs(ctrl) do setProp(btn, "IsDisabled", not state) end
@@ -166,7 +179,7 @@ function PJLinkDisplayController:enablePowerControls(state)
 end
 
 function PJLinkDisplayController:enablePowerControlIndex(index, state)
-    for _, name in ipairs({"btnDisplayPowerOn", "btnDisplayPowerOff", "btnDisplayPowerSingle"}) do
+    for _, name in ipairs({"btnDisplayPowerOn", "btnDisplayPowerOff", "btnDisplayPowerToggle"}) do
         local ctrl = controls[name]
         if ctrl and ctrl[index] then setProp(ctrl[index], "IsDisabled", not state) end
     end
@@ -178,8 +191,8 @@ function PJLinkDisplayController:updatePowerFeedback()
         if display then
             count = count + 1
             local powerStatus = self:safeAccess(display, displayControls.displayPowerStatus, "get")
-            if controls.btnDisplayPowerSingle and controls.btnDisplayPowerSingle[i] then
-                setProp(controls.btnDisplayPowerSingle[i], "Boolean", powerStatus)
+            if controls.btnDisplayPowerToggle and controls.btnDisplayPowerToggle[i] then
+                setProp(controls.btnDisplayPowerToggle[i], "Boolean", powerStatus)
             end
             if not powerStatus then allOn = false end
         end
@@ -188,30 +201,32 @@ function PJLinkDisplayController:updatePowerFeedback()
         setProp(controls.ledDisplayPower, "Boolean", allOn)
         setProp(controls.btnDisplayPowerAll, "Boolean", allOn)
         self.state.powerState = allOn
+        self:debugPrint("Power feedback updated - Powered: " .. count .. "/" .. self:getDisplayCount())
     end
 end
 
 function PJLinkDisplayController:powerOnDisplay(index)
-    self:powerSingle(index)
+    self:debugPrint("Powering on display " .. index)
+    self:powerSingle(index, true)
     self:enablePowerControlIndex(index, false)
-    local btn = controls.btnDisplayPowerOff
-    if btn and btn[index] then btn[index].Legend = "Please\nwait" end
+    self:setOppositePowerButtonLegend(index, true)
     self.state.isWarming = true
     setProp(controls.ledDisplayWarming, "Boolean", true)
     self.timers.warmup:Start(self.timerConfig.warmupTime)
 end
 
 function PJLinkDisplayController:powerOffDisplay(index)
-    self:powerSingle(index)
+    self:debugPrint("Powering off display " .. index)
+    self:powerSingle(index, false)
     self:enablePowerControlIndex(index, false)
-    local btn = controls.btnDisplayPowerOn
-    if btn and btn[index] then btn[index].Legend = "Please\nwait" end
+    self:setOppositePowerButtonLegend(index, false)
     self.state.isCooling = true
     setProp(controls.ledDisplayCooling, "Boolean", true)
     self.timers.cooldown:Start(self.timerConfig.cooldownTime)
 end
 
 function PJLinkDisplayController:powerOnAll()
+    self:debugPrint("Powering on all displays")
     self:powerAll(true)
     self:enablePowerControls(false)
     self.state.isWarming = true
@@ -222,16 +237,23 @@ function PJLinkDisplayController:powerOnAll()
 end
 
 function PJLinkDisplayController:powerOffAll()
+    self:debugPrint("Powering off all displays")
     self:powerAll(false)
     self:enablePowerControls(false)
     self.state.isCooling = true
     setProp(controls.ledDisplayCooling, "Boolean", true)
-    setProp(controls.ledDisplayPower, "Boolean", false)
+    setProp(controls.ledDisplayPower, "Boolean", false) 
     setProp(controls.btnDisplayPowerAll, "Boolean", false)
     self.timers.cooldown:Start(self.timerConfig.cooldownTime)
 end
 
+function PJLinkDisplayController:setOppositePowerButtonLegend(index, poweringOn)
+    local targetControl = poweringOn and controls.btnDisplayPowerOff or controls.btnDisplayPowerOn
+    if targetControl and targetControl[index] then targetControl[index].Legend = "Please\nwait" end
+end
+
 function PJLinkDisplayController:resetButtonLegends(index)
+    self:debugPrint("Resetting button legends for [ Display "..index.."]")
     if controls.btnDisplayPowerOn and controls.btnDisplayPowerOn[index] then
         controls.btnDisplayPowerOn[index].Legend = "On"
     end
@@ -244,6 +266,7 @@ end
 function PJLinkDisplayController:setComponent(ctrl, componentType)
     local name = ctrl and ctrl.String
     if not name or name == "" or name == self.clearString then
+        self:debugPrint("Invalid component selected: " .. tostring(name))
         if ctrl then ctrl.Color = "white" end
         self.components.invalid[componentType] = false
         self:checkStatus()
@@ -251,11 +274,13 @@ function PJLinkDisplayController:setComponent(ctrl, componentType)
     end
     local comp = Component.New(name)
     if #Component.GetControls(comp) < 1 then
+        self:debugPrint("Invalid component found: " .. tostring(name))
         if ctrl then ctrl.String = "[Invalid]"; ctrl.Color = "pink" end
         self.components.invalid[componentType] = true
         self:checkStatus()
         return nil
     end
+    self:debugPrint("Component set: " .. tostring(name))
     if ctrl then ctrl.Color = "white" end
     self.components.invalid[componentType] = false
     self:checkStatus()
@@ -265,16 +290,19 @@ end
 function PJLinkDisplayController:checkStatus()
     for _, v in pairs(self.components.invalid) do
         if v then
+            self:debugPrint("Invalid components found")
             setProp(controls.txtStatus, "String", "Invalid Components")
             setProp(controls.txtStatus, "Value", 1)
             return
         end
     end
+    self:debugPrint("Components are valid")
     setProp(controls.txtStatus, "String", "OK")
     setProp(controls.txtStatus, "Value", 0)
 end
 
 function PJLinkDisplayController:setRoomControlsComponent()
+    self:debugPrint("Setting room controls component")
     self.components.compRoomControls = self:setComponent(Controls.compRoomControls, "Room Controls")
     if self.components.compRoomControls then self:updateTimerConfig() end
 end
@@ -283,8 +311,11 @@ function PJLinkDisplayController:setDisplayComponent(index)
     if not Controls.devDisplays or not Controls.devDisplays[index] then return end
     self.components.displays[index] = self:setComponent(Controls.devDisplays[index], "Display ["..index.."]")
     if self.components.displays[index] then
+        self:debugPrint("Successfully set up display component " .. index)
         self:setupDisplayEvents(index)
         self:updatePowerFeedback()
+    else
+        self:debugPrint("Failed to set up display component " .. index)
     end
 end
 
@@ -315,6 +346,8 @@ function PJLinkDisplayController:getComponentNames()
         for i = 1, #Controls.devDisplays do
             Controls.devDisplays[i].Choices = names.DisplayNames
         end
+        self:debugPrint("Set choices for " .. #Controls.devDisplays .. " display controls")
+        self:debugPrint("Found " .. #names.DisplayNames .. " display components")
     end
     if Controls.compRoomControls then
         Controls.compRoomControls.Choices = names.RoomControlsNames
@@ -326,6 +359,7 @@ function PJLinkDisplayController:updateRoomName()
     local roomNameCtrl = self.components.compRoomControls["roomName"]
     if roomNameCtrl and roomNameCtrl.String ~= "" then
         self.roomName = "["..roomNameCtrl.String.."]"
+        self:debugPrint("Room name updated to: " .. self.roomName)
     end
     self:updateTimerConfig()
 end
@@ -333,23 +367,27 @@ end
 -------------------[ Event Registration ]-------------------
 function PJLinkDisplayController:registerTimers()
     self.timers.warmup.EventHandler = function()
+        self:debugPrint("Warmup Period Has Ended")
         self:enablePowerControls(true)
-        for i = 1, self.config.maxDisplays do
+        for i = 1, #Controls.devDisplays do
             self:enablePowerControlIndex(i, true)
             self:resetButtonLegends(i)
         end
         self.state.isWarming = false
         setProp(controls.ledDisplayWarming, "Boolean", false)
+        self.timers.warmup:Stop()
     end
     
     self.timers.cooldown.EventHandler = function()
+        self:debugPrint("Cooldown Period Has Ended")
         self:enablePowerControls(true)
-        for i = 1, self.config.maxDisplays do
+        for i = 1, #Controls.devDisplays do
             self:enablePowerControlIndex(i, true)
             self:resetButtonLegends(i)
         end
         self.state.isCooling = false
         setProp(controls.ledDisplayCooling, "Boolean", false)
+        self.timers.cooldown:Stop()
     end
 end
 
@@ -360,7 +398,7 @@ function PJLinkDisplayController:registerEvents()
     
     bindArray(controls.btnDisplayPowerOn, function(i) self:powerOnDisplay(i) end)
     bindArray(controls.btnDisplayPowerOff, function(i) self:powerOffDisplay(i) end)
-    bindArray(controls.btnDisplayPowerSingle, function(i, c) if c.Boolean then self:powerOnDisplay(i) else self:powerOffDisplay(i) end end)
+    bindArray(controls.btnDisplayPowerToggle, function(i, c) if c.Boolean then self:powerOnDisplay(i) else self:powerOffDisplay(i) end end)
     bindArray(controls.devDisplays, function(i) self:setDisplayComponent(i) end)
 end
 

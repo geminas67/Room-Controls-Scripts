@@ -1,134 +1,329 @@
+# Lua Refactoring Prompt (Event-Driven Control Systems)
+
 ## Objective
 
-Refactor Lua control scripts to be faster, more responsive, and easier to maintain by using functional patterns where state is simple and static, and a hybrid OOP/functional approach where state, components, or timers are dynamic.
+Refactor Lua control scripts to be **lean, observable, and maintainable** by:
+- Minimizing code complexity while preserving functionality
+- Providing comprehensive debug logging for all interactions
+- Using a single-class architecture with utility functions
+- Following the principle: **"An empty debug window is a useless one"**
 
 ---
 
-## 1. Choose the Right Architecture
+## 0. Core Philosophy: Lean Code + Rich Debug Output
 
-### 1.1 Prefer Functional Modules When Suitable
+### 0.1 Code Should Be Lean
 
-Use a functional/modular pattern (factory functions with closures) when:
+**Target Metrics:**
+- Aim for 50-70% code reduction from verbose implementations
+- Single-class structure with utility functions (not inheritance hierarchies)
+- Early returns and guard clauses instead of nested conditionals
+- Compact, readable formatting where appropriate
 
-- State is simple, mostly immutable, and event-driven (e.g., navigation, UI layers, static component references).
-- Component lifecycles are static (discovered once, rarely change at runtime).
-
-Guidelines:
-
-- Structure scripts as a collection of factory functions: `createXModule(deps) -> module`.
-- Manage module-local state via closures, not global/class fields, when the state does not need to be shared dynamically.
-- Pass explicit dependencies into factories (controls, config, stores) for testability and reuse.
-
-### 1.2 Use a Hybrid OOP/Functional Approach for Dynamic Systems
-
-Use a hybrid design (OOP shell + functional logic) when:
-
-- Components are created, assigned, or removed at runtime (dynamic arrays, `.Choices` selectors).
-- Long-lived mutable state and timers drive behavior (e.g., LED blink timers, fire alarm, power state).
-
-Guidelines:
-
-- Keep OOP at the “edges”: component discovery, lifecycle, timer creation, and integration with Q-SYS components.
-- Encapsulate business logic and state transitions as pure/pure-ish functions or small state machines invoked from the OOP shell.
-- Use a central state store (table with `get/set/subscribe`) when multiple modules share mutable state.
-
-**Hybrid Balance Guidelines:**
-
-- **OOP for:** stateful modules, timer management, dynamic component lifecycle
-- **Functional for:** data transformation utilities, event handler wiring, pure computations
-
-**When to Adjust the Balance:**
-
-**More functional if:**
-- No timers mutating state
-- Static component references (discovered once)
-- Simple, event-driven state changes
-
-**More OOP if:**
-- Need complex inheritance hierarchies
-- Multiple controller instances with shared behavior
-- Need polymorphism for different device types
-
-### 1.3 Avoid Over-Abstraction: Single-Class with Utilities (Recommended for Maintainability)
-
-For most control scripts, prefer a **single-class structure with utility functions** over complex module inheritance hierarchies.
-
-**✅ DO: Keep Helpful Utilities**
-- Use `setProp()` to prevent unnecessary signal propagation (acts as insurance against feedback loops)
-- Use `bind()`, `bindArray()`, `forEach()` for clean, consistent event handler registration
-- Use `isArr()`, `getControlArray()` for array normalization
-- These utilities reduce boilerplate and improve performance without obscuring logic
-
-**❌ AVOID: Module Inheritance Complexity**
-- Don't create BaseModule classes with multiple inherited modules (ComponentModule, PrivacyModule, etc.)
-- Avoid forcing developers to trace through 3+ levels of indirection to understand flow
-- Don't hide simple operations behind module boundaries
-
-**Recommended Pattern:**
+**Example:**
 ```lua
--- Utility functions at top (clear, reusable)
+-- ❌ VERBOSE (many lines, nested)
+if control ~= nil then
+    if control[prop] ~= value then
+        control[prop] = value
+    end
+end
+
+-- ✅ LEAN (early return, compact)
 local function setProp(ctrl, prop, val)
-    if ctrl and ctrl[prop] ~= val then ctrl[prop] = val end
+    if not ctrl or ctrl[prop] == val then return end
+    ctrl[prop] = val
+end
+```
+
+### 0.2 Debug Output Should Be Comprehensive
+
+**Philosophy:** Every significant action, state change, and interaction must be logged. Debug output is not optional—it's your primary troubleshooting tool.
+
+**What to Log:**
+- ✅ Initialization phases and configuration
+- ✅ Component discovery (what was found, how many)
+- ✅ Event handler registration (what handlers, how many controls)
+- ✅ Every routing/switching operation with source (user, UCI, system, etc.)
+- ✅ State changes (power on/off, mode changes, layer switches)
+- ✅ Integration events (UCI layer changes, system events)
+- ✅ Component validation (valid/invalid, errors, warnings)
+- ✅ Feedback from hardware (device responses, status updates)
+- ✅ User interactions (button presses with context)
+
+**What NOT to Log:**
+- ❌ Redundant "already at target state" checks (log once, not continuously)
+- ❌ Poll operations unless state actually changes
+- ❌ Internal utility operations that happen thousands of times
+
+**Debug Pattern:**
+```lua
+function MyController:debugPrint(str)
+    if self.debugging then print("["..self.roomName.."] "..str) end
+end
+
+-- Example outputs with context:
+self:debugPrint("=== Initialization Started ===")
+self:debugPrint("Configuration: debugging=true, enableOutput2=false")
+self:debugPrint("Discovered NV32 Router: devNV32_Device1")
+self:debugPrint("Registered 5 button handlers for Output 1")
+self:debugPrint("Routed Output 1 → Input 7 (Source: User Button)")
+self:debugPrint("UCI Layer changed: nil → 7")
+self:debugPrint("Fire Alarm ACTIVATED - storing current inputs")
+self:debugPrint("=== Initialization Complete ===")
+```
+
+**Debug Sections:**
+- Use `===` markers for major phases (Init, Cleanup, etc.)
+- Include source attribution: "(Source: User Button)", "(Source: UCI Layer 7)"
+- Show before/after for state changes: "Layer changed: 3 → 7"
+- Count things: "Registered 5 button handlers", "Found 3 components"
+- Mark critical events: "ACTIVATED", "CLEARED", "ERROR:"
+
+---
+
+## 1. Architecture: Single-Class with Utilities
+
+### 1.1 Standard Structure
+
+Use this consistent structure for all control scripts:
+
+```lua
+--[[
+  Script Name - Q-SYS Control Script
+  Brief description of what this controls
+]]--
+
+-------------------[ Controls ]-------------------
+local controls = {
+    control1 = Controls.control1,
+    control2 = Controls.control2
+}
+
+-------------------[ Utilities ]-------------------
+local function isArr(t)
+    return type(t) == "table" and t[1] ~= nil
+end
+
+local function setProp(ctrl, prop, val)
+    if not ctrl or ctrl[prop] == val then return end
+    ctrl[prop] = val
 end
 
 local function bind(ctrl, handler)
     if ctrl then ctrl.EventHandler = handler end
 end
 
--- Single controller class with direct methods
+local function bindArray(ctrls, handler)
+    if not ctrls then return end
+    local array = isArr(ctrls) and ctrls or { ctrls }
+    for i, ctrl in ipairs(array) do 
+        bind(ctrl, function(ctl) handler(i, ctl) end) 
+    end
+end
+
+local function normalizeControlArrays()
+    for _, name in ipairs({'arrayControl1', 'arrayControl2'}) do
+        local ctrl = controls[name]
+        if ctrl and not isArr(ctrl) then controls[name] = {ctrl} end
+    end
+end
+
+local function validateControls()
+    for _, name in ipairs({"required1", "required2"}) do
+        if not controls[name] then
+            print("ERROR: Missing required control: " .. name)
+            return false
+        end
+    end
+    return true
+end
+
+-------------------[ Controller ]-------------------
 MyController = {}
 MyController.__index = MyController
 
-function MyController.new(config)
+function MyController.new(roomName, config)
+    if not validateControls() then return nil end
+    normalizeControlArrays()
+    
     local self = setmetatable({}, MyController)
-    self.state = {}
-    self.components = {}
+    self.roomName = roomName or "Default"
+    self.debugging = (config and config.debugging) or true
+    self.clearString = "[Clear]"
+    self.components = { device = nil, invalid = {} }
+    self.state = { power = false, lastInput = {} }
+    self.timers = { monitor = Timer.New() }
+    
     return self
 end
 
--- Direct methods (no module indirection)
-function MyController:doSomething()
-    -- Logic is right here, easy to trace
-    setProp(self.component.Control, "Boolean", true)
+function MyController:debugPrint(str)
+    if self.debugging then print("["..self.roomName.."] "..str) end
+end
+
+-------------------[ Component Management ]-------------------
+function MyController:setComponent(ctrl, componentType)
+    local name = ctrl and ctrl.String
+    if not name or name == "" or name == self.clearString then
+        if ctrl then ctrl.Color = "white" end
+        self.components.invalid[componentType] = false
+        self:checkStatus()
+        self:debugPrint("No " .. componentType .. " component selected")
+        return nil
+    end
+    local comp = Component.New(name)
+    if #Component.GetControls(comp) < 1 then
+        if ctrl then ctrl.String = "[Invalid]"; ctrl.Color = "pink" end
+        self.components.invalid[componentType] = true
+        self:checkStatus()
+        self:debugPrint("ERROR: " .. componentType .. " component '" .. name .. "' is invalid")
+        return nil
+    end
+    if ctrl then ctrl.Color = "white" end
+    self.components.invalid[componentType] = false
+    self:checkStatus()
+    self:debugPrint("Set " .. componentType .. " component: " .. name)
+    return comp
+end
+
+function MyController:checkStatus()
+    for _, v in pairs(self.components.invalid) do
+        if v then
+            setProp(controls.txtStatus, "String", "Invalid Components")
+            setProp(controls.txtStatus, "Value", 1)
+            return
+        end
+    end
+    setProp(controls.txtStatus, "String", "OK")
+    setProp(controls.txtStatus, "Value", 0)
+end
+
+function MyController:getComponentNames()
+    local names = { DeviceNames = {} }
+    for _, comp in pairs(Component.GetComponents()) do
+        if comp.Type == self.componentTypes.device then
+            table.insert(names.DeviceNames, comp.Name)
+            self:debugPrint("Discovered Device: " .. comp.Name)
+        end
+    end
+    table.sort(names.DeviceNames)
+    table.insert(names.DeviceNames, self.clearString)
+    if controls.devDevice then controls.devDevice.Choices = names.DeviceNames end
+    self:debugPrint("Component discovery complete - " .. (#names.DeviceNames - 1) .. " devices found")
+end
+
+-------------------[ Event Registration ]-------------------
+function MyController:registerEvents()
+    bind(controls.devDevice, function() self:setDeviceComponent() end)
+    self:debugPrint("Registered event handler for devDevice")
+    
+    bindArray(controls.buttons, function(i) 
+        self:debugPrint("Button " .. i .. " pressed")
+        self:handleButton(i, "User Button") 
+    end)
+    self:debugPrint("Registered " .. #controls.buttons .. " button handlers")
+end
+
+-------------------[ Initialization ]-------------------
+function MyController:init()
+    self:debugPrint("=== Initialization Started ===")
+    self:debugPrint("Configuration: debugging=" .. tostring(self.debugging))
+    
+    self:getComponentNames()
+    self:setDeviceComponent()
+    
+    self:debugPrint("=== Initialization Complete ===")
+    self:debugPrint("Ready for operation")
+end
+
+-------------------[ Factory & Initialization ]-------------------
+local function getRoomName()
+    if controls.roomName and controls.roomName.String ~= "" then
+        return "["..controls.roomName.String.."]"
+    end
+    return "[Default Room]"
+end
+
+local success, controller = pcall(function()
+    local instance = MyController.new(getRoomName(), { debugging = true })
+    if not instance then error("Validation failed") end
+    instance:registerEvents()
+    instance:init()
+    return instance
+end)
+
+if success then
+    myController = controller
+    MyControllerInstance = controller
+    print("Controller initialized")
+else
+    print("ERROR: Failed to create controller: " .. tostring(controller))
 end
 ```
 
-**Why This Matters:**
-- Code must be maintainable by non-senior programmers
-- Flow traceability is more important than theoretical architectural purity
-- Balance abstraction benefits against cognitive load
+### 1.2 Why Single-Class Architecture?
 
-**Documentation Requirements for Single-Class Pattern:**
-- Add comprehensive header with flow examples (e.g., "When user presses button X: 1. Handler fires at line Y, 2. Calls method Z...")
-- Include "Called from:" comments on every method showing where it's invoked
-- Explain the "why" not just the "what" in inline comments
+**✅ ADVANTAGES:**
+- Clear, linear code flow (easy to trace and debug)
+- All logic in one file (no hunting across modules)
+- Minimal abstraction overhead
+- Maintainable by non-senior programmers
+- Consistent structure across all scripts
+- Debug output shows complete flow in one place
+
+**❌ AVOID:**
+- Multiple inheritance levels (BaseModule → ComponentModule → SpecificModule)
+- Abstract base classes that hide concrete implementations  
+- Module systems requiring tracing 3+ files to understand one operation
+- Over-engineered patterns prioritizing "clean architecture" over maintainability
+
+### 1.3 When to Deviate
+
+Only use multiple classes/modules when:
+- Building a reusable library shared across many scripts
+- Managing truly polymorphic behavior (same interface, radically different implementations)
+- The script is 2000+ lines and logically separates into distinct domains
+
+Otherwise: **one class, utility functions, clear sections**.
 
 ---
 
-## 2. Core Refactor Principles
+## 2. Core Refactoring Patterns
 
-### 2.1 Flatten Control Flow and Use Early Returns
+### 2.1 Flatten Control Flow with Early Returns
 
-- Start functions with guard clauses for invalid inputs, missing components, or disabled features, then return early.
-- Write the main path unindented after error/edge cases; avoid `else` chains following a `return`.
-
-### 2.2 Streamline Event Handlers
-
-- Keep handlers small: validate, update state, trigger necessary UI/logic, then exit.
-- For navigation, always route through a single central handler (e.g., `btnNavEventHandler`) instead of duplicating layer/state logic in multiple places.
-
-### 2.3 Normalize Controls and Use Utilities
-
-- Normalize controls once at initialization (e.g., `normalizeControlArrays()` for nav buttons, routing buttons, pins).
-- Use shared utilities consistently: `isArr`, `getControlArray`, `setProp`, `bind`, `bindArray`, `forEach`, and `bindPairedControls`.
-- **Always use `setProp()`** - It guards against redundant assignments to reduce unnecessary UI churn, feedback loops, and race conditions. This is your insurance policy against signal propagation issues.
-- **Prefer `bind()` and `bindArray()`** - These make event handler registration more consistent and readable than direct `control.EventHandler =` assignments.
-
-**Essential Utility Functions:**
+**Pattern:**
 ```lua
--- Prevent unnecessary signal propagation (critical for performance)
+-- ❌ NESTED
+function doSomething(input, output)
+    if input then
+        if output then
+            if self.enabled then
+                -- actual logic 3 levels deep
+            end
+        end
+    end
+end
+
+-- ✅ FLAT with early returns
+function doSomething(input, output)
+    if not input then return false end
+    if not output then return false end
+    if not self.enabled then return false end
+    -- actual logic at top level
+    return true
+end
+```
+
+### 2.2 Use Utilities Consistently
+
+**Essential Utilities (use everywhere):**
+```lua
+-- Prevents unnecessary UI updates and feedback loops
 local function setProp(ctrl, prop, val)
-    if ctrl and ctrl[prop] ~= val then ctrl[prop] = val end
+    if not ctrl or ctrl[prop] == val then return end
+    ctrl[prop] = val
 end
 
 -- Clean event handler binding
@@ -136,104 +331,493 @@ local function bind(ctrl, handler)
     if ctrl then ctrl.EventHandler = handler end
 end
 
--- Bind to arrays of controls
+-- Bind to control arrays
 local function bindArray(ctrls, handler)
-    for i, ctrl in ipairs(getControlArray(ctrls)) do
-        bind(ctrl, function(ctl) handler(i, ctl) end)
+    if not ctrls then return end
+    local array = isArr(ctrls) and ctrls or { ctrls }
+    for i, ctrl in ipairs(array) do 
+        bind(ctrl, function(ctl) handler(i, ctl) end) 
     end
-end
-
--- Iterate over control arrays
-local function forEach(ctrls, fn)
-    for i, ctrl in ipairs(getControlArray(ctrls)) do fn(i, ctrl) end
 end
 ```
 
-### 2.4 Batch Operations and Handler Maps
+**Why `setProp()` Matters:**
+- Prevents redundant Q-SYS control updates (expensive operation)
+- Guards against feedback loops
+- Acts as insurance against race conditions
+- Performance optimization (avoid unnecessary UI redraws)
 
-- Use handler maps (`{ [control] = handlerFn }`) and a single loop to register events instead of individual bindings.
-- Use configuration tables (e.g., `layerConfigs`) to drive layer show/hide and behavior instead of long `if/elseif` chains.
-- For repeated toggle pairs (open/close, on/off), use a generic `bindPairedControls()` helper to keep behavior DRY.
+### 2.3 Normalize Control Arrays Once
+
+**Pattern:**
+```lua
+local function normalizeControlArrays()
+    for _, name in ipairs({'btnOutput', 'btnInput', 'devDisplays'}) do
+        local ctrl = controls[name]
+        if ctrl and not isArr(ctrl) then 
+            controls[name] = {ctrl} 
+        end
+    end
+end
+
+-- Call once during initialization
+if not validateControls() then return nil end
+normalizeControlArrays()  -- Now all arrays are consistent
+```
+
+### 2.4 Validate Required Controls
+
+**Pattern:**
+```lua
+local function validateControls()
+    -- Check only truly required controls
+    for _, name in ipairs({"devDevice", "txtStatus", "btnPower"}) do
+        if not controls[name] then
+            print("ERROR: Missing required control: " .. name)
+            return false
+        end
+    end
+    return true
+end
+```
+
+### 2.5 Add Source Context to Operations
+
+**Pattern:**
+```lua
+-- ❌ NO CONTEXT
+function setRoute(input, output)
+    self:debugPrint("Routed to input " .. input)
+end
+
+-- ✅ WITH CONTEXT (know who triggered it)
+function setRoute(input, output, source)
+    local sourceStr = source and " (Source: " .. source .. ")" or ""
+    self:debugPrint("Routed Output " .. output .. " → Input " .. input .. sourceStr)
+end
+
+-- Call with context:
+self:setRoute(7, 1, "User Button")
+self:setRoute(7, 1, "UCI Layer 8")
+self:setRoute(7, 1, "System Power")
+self:setRoute(7, 1, "Fire Alarm")
+```
 
 ---
 
-## 3. State, Components, and Timers
+## 3. Component Management Patterns
 
-### 3.1 Centralize and Simplify State
+### 3.1 Standard Component Setup
 
-- Separate config/immutable data, runtime state, timer state, and component registries into distinct tables when complexity grows.
-- For shared state across modules, use a local state store with `get`/`set` and optional subscribers to observe changes.
+**Pattern:**
+```lua
+function MyController:setComponent(ctrl, componentType)
+    local name = ctrl and ctrl.String
+    
+    -- Handle empty/clear
+    if not name or name == "" or name == self.clearString then
+        if ctrl then ctrl.Color = "white" end
+        self.components.invalid[componentType] = false
+        self:checkStatus()
+        self:debugPrint("No " .. componentType .. " component selected")
+        return nil
+    end
+    
+    -- Validate component
+    local comp = Component.New(name)
+    if #Component.GetControls(comp) < 1 then
+        if ctrl then ctrl.String = "[Invalid]"; ctrl.Color = "pink" end
+        self.components.invalid[componentType] = true
+        self:checkStatus()
+        self:debugPrint("ERROR: " .. componentType .. " component '" .. name .. "' is invalid")
+        return nil
+    end
+    
+    -- Success
+    if ctrl then ctrl.Color = "white" end
+    self.components.invalid[componentType] = false
+    self:checkStatus()
+    self:debugPrint("Set " .. componentType .. " component: " .. name)
+    return comp
+end
+```
 
-### 3.2 Dynamic Component Management (Hybrid Area)
+### 3.2 Component Discovery with Logging
 
-- For scripts that dynamically assign components (via `.Choices`, DivisibleSpace, or discovery), keep a dedicated component registry/module.
-- Always implement `cleanupComponentHandlers(oldComponent, ...)` to remove prior event handlers before assigning new components, especially in divisible spaces.
+**Pattern:**
+```lua
+function MyController:getComponentNames()
+    local names = { DeviceNames = {}, ControlNames = {} }
+    
+    for _, comp in pairs(Component.GetComponents()) do
+        if comp.Type == self.componentTypes.device then
+            table.insert(names.DeviceNames, comp.Name)
+            self:debugPrint("Discovered Device: " .. comp.Name)
+        elseif comp.Type == self.componentTypes.controls then
+            table.insert(names.ControlNames, comp.Name)
+            self:debugPrint("Discovered Controls: " .. comp.Name)
+        end
+    end
+    
+    -- Sort and add clear option
+    for _, list in pairs(names) do
+        table.sort(list)
+        table.insert(list, self.clearString)
+    end
+    
+    -- Populate choices
+    if controls.devDevice then controls.devDevice.Choices = names.DeviceNames end
+    if controls.compControls then controls.compControls.Choices = names.ControlNames end
+    
+    -- Summary
+    self:debugPrint("Component discovery complete - " .. 
+                    (#names.DeviceNames - 1) .. " devices, " .. 
+                    (#names.ControlNames - 1) .. " controls found")
+end
+```
 
-### 3.3 Timers and Event Sources
+### 3.3 Component Event Handler Cleanup
 
-- Prefer timers that emit events (or call a small handler) rather than directly mutating many parts of the system.
-- Keep timer creation/cleanup in the OOP shell or controller module; keep timer-driven logic in small, testable functions.
+**Pattern:**
+```lua
+function MyController:setDeviceComponent()
+    -- Cleanup old handlers before switching
+    local device = self.components.device
+    if device then
+        if device["output1"] then device["output1"].EventHandler = nil end
+        if device["output2"] then device["output2"].EventHandler = nil end
+        self:debugPrint("Cleanup completed - switching devices")
+    end
+    
+    -- Set new component
+    self.components.device = self:setComponent(controls.devDevice, "Device")
+    device = self.components.device
+    if not device then return end
+    
+    -- Register new handlers with logging
+    if device["output1"] then
+        device["output1"].EventHandler = function(ctl)
+            self:updateFeedback(1, ctl.Value)
+            self:debugPrint("Device Feedback: Output 1 → " .. ctl.Value)
+        end
+        self:debugPrint("Registered feedback handler for Output 1")
+    end
+end
+```
 
 ---
 
-## 4. Control and Component Patterns
+## 4. Event Registration Patterns
 
-### 4.1 Validation and Initialization
+### 4.1 Register with Logging
 
-- Implement a `validateControls()` function that checks for required controls and logs missing ones; return early from construction if validation fails.
-- Normalize control arrays and compute caches (maps, legend arrays, HDMI pin maps) during initialization to simplify later code.
+**Pattern:**
+```lua
+function MyController:registerEvents()
+    -- Component selectors
+    bind(controls.devDevice, function() self:setDeviceComponent() end)
+    self:debugPrint("Registered event handler for devDevice")
+    
+    bind(controls.compControls, function() self:setControlsComponent() end)
+    self:debugPrint("Registered event handler for compControls")
+    
+    -- Button arrays with user feedback
+    bindArray(controls.btnOutput1, function(i) 
+        self:debugPrint("Output 1 Button " .. i .. " pressed")
+        self:setRoute(self.inputs[i], 1, "User Button") 
+    end)
+    self:debugPrint("Registered " .. #controls.btnOutput1 .. " button handlers for Output 1")
+    
+    -- Conditional registration
+    if self.enableOutput2 then
+        bindArray(controls.btnOutput2, function(i) 
+            self:debugPrint("Output 2 Button " .. i .. " pressed")
+            self:setRoute(self.inputs[i], 2, "User Button") 
+        end)
+        self:debugPrint("Registered " .. #controls.btnOutput2 .. " button handlers for Output 2")
+    end
+end
+```
 
-### 4.2 Dynamic Component Discovery and Selection
+### 4.2 Integration Event Handlers
 
-- Use `Component.GetComponents()` once to categorize available components and populate combo boxes or selection lists where appropriate.
-- Prefer Combo Boxes over many buttons when selecting from multiple components or rooms, provided it simplifies UI and logic.
-
-### 4.3 Generic Update and Error Reporting Utilities
-
-- Implement generic component-update helpers (e.g., `updateComponent(type, names, store, label)`) where many similar “set component” functions exist.
-- Centralize debug and error reporting utilities (e.g., `printOperationResult`, `handleBatchResult`) and use them across modules rather than re-implementing per domain.
+**Pattern:**
+```lua
+function MyController:setRoomControlsComponent()
+    self.components.roomControls = self:setComponent(controls.compRoomControls, "Room Controls")
+    local comp = self.components.roomControls
+    if not comp then return end
+    
+    -- System power handler with detailed logging
+    if comp["ledSystemPower"] then
+        comp["ledSystemPower"].EventHandler = function(ctl)
+            local state = ctl.Boolean
+            local targetInput = state and self.inputs.default or self.inputs.standby
+            self:debugPrint("System Power " .. (state and "ON" or "OFF") .. 
+                          " - switching to input " .. targetInput)
+            self:setRoute(targetInput, 1, "System Power")
+        end
+        self:debugPrint("Registered System Power handler")
+    end
+    
+    -- Fire alarm handler with state tracking
+    if comp["ledFireAlarm"] then
+        comp["ledFireAlarm"].EventHandler = function(ctl)
+            if ctl.Boolean and not self.state.fireAlarmActive then
+                self:debugPrint("Fire Alarm ACTIVATED - storing current inputs")
+                self.state.preFireAlarmInput = self.state.lastInput
+                self.state.fireAlarmActive = true
+                self:setRoute(self.inputs.alarm, 1, "Fire Alarm")
+            elseif not ctl.Boolean and self.state.fireAlarmActive then
+                self:debugPrint("Fire Alarm CLEARED - restoring previous inputs")
+                self.state.fireAlarmActive = false
+                self:setRoute(self.state.preFireAlarmInput or self.inputs.default, 1, "Fire Alarm Clear")
+            end
+        end
+        self:debugPrint("Registered Fire Alarm handler")
+    end
+end
+```
 
 ---
 
-## 5. Event-Driven DRY Patterns (Applied Across Architectures)
+## 5. Initialization Pattern
 
-- Route navigation and layer changes through a single handler to keep `varActiveLayer`, video switching, button interlocks, and sublayers in sync.
-- Differentiate positive/negative edges on pins (e.g., USB active vs inactive) so only positive edges trigger full navigation, while negative edges do minimal cleanup.
-- Use batch registration (`forEach` + handler maps) and normalized arrays to wire large UIs efficiently and consistently.
+### 5.1 Structured Init with Phase Logging
+
+**Pattern:**
+```lua
+function MyController:init()
+    self:debugPrint("=== Initialization Started ===")
+    
+    -- Log configuration
+    self:debugPrint("Configuration: debugging=" .. tostring(self.debugging) .. 
+                    ", enableOutput2=" .. tostring(self.enableOutput2) .. 
+                    ", uciEnabled=" .. tostring(self.uci.enabled))
+    
+    -- Discover components
+    self:getComponentNames()
+    
+    -- Setup components
+    self:setDeviceComponent()
+    self:setRoomControlsComponent()
+    
+    -- Set defaults
+    if self.components.device then
+        self:debugPrint("Setting default input selection to input " .. self.inputs.default)
+        self:setRoute(self.inputs.default, 1, "Initialization")
+        if self.enableOutput2 then 
+            self:setRoute(self.inputs.default, 2, "Initialization") 
+        end
+    else
+        self:debugPrint("WARNING: No device component available - skipping default input selection")
+    end
+    
+    -- Summary
+    self:debugPrint("=== Initialization Complete ===")
+    self:debugPrint("Active Outputs: " .. (self.enableOutput2 and "Output 1 & Output 2" or "Output 1 only"))
+    self:debugPrint("Ready for operation")
+end
+```
 
 ---
 
-## 6. Checklist
+## 6. State Management
+
+### 6.1 Organize State in Tables
+
+**Pattern:**
+```lua
+function MyController.new(roomName, config)
+    local self = setmetatable({}, MyController)
+    
+    -- Immutable configuration
+    self.roomName = roomName or "Default"
+    self.debugging = (config and config.debugging) or true
+    self.clearString = "[Clear]"
+    
+    -- Component registry
+    self.components = { 
+        device = nil, 
+        roomControls = nil, 
+        invalid = {} 
+    }
+    
+    -- Runtime state
+    self.state = { 
+        power = false,
+        lastInput = {}, 
+        preFireAlarmInput = {}, 
+        fireAlarmActive = false 
+    }
+    
+    -- Timers
+    self.timers = { 
+        monitor = Timer.New(),
+        cooldown = Timer.New()
+    }
+    
+    return self
+end
+```
+
+---
+
+## 7. Refactoring Checklist
 
 When refactoring or creating a script:
 
-**Architecture:**
+**Structure:**
+- [ ] Single-class architecture (not module hierarchy)
+- [ ] Utility functions at top (isArr, setProp, bind, bindArray)
+- [ ] Clear section markers (Controls, Utilities, Controller, Methods, Events, Init, Factory)
+- [ ] Code is traceable by non-senior programmers
 
-- [ ] Functional modules used where state is simple/static.
-- [ ] Hybrid OOP/functional used where components/timers are dynamic.
-- [ ] **Single-class with utilities preferred** over complex module inheritance.
-- [ ] Code is traceable by non-senior programmers (flow is clear).
+**Debug Logging:**
+- [ ] debugPrint() method implemented
+- [ ] Initialization logged with === phase markers
+- [ ] Component discovery logged (what found, how many)
+- [ ] Event registration logged (what handlers, how many)
+- [ ] All routing/switching includes source context
+- [ ] State changes logged (before/after where relevant)
+- [ ] Hardware feedback logged
+- [ ] Configuration logged at startup
 
-**State and Lifecycle:**
+**Code Quality:**
+- [ ] Early returns for invalid inputs
+- [ ] setProp() used for all control property assignments
+- [ ] bind()/bindArray() used for event registration
+- [ ] Control arrays normalized once at init
+- [ ] Required controls validated
+- [ ] Component handlers cleaned up before reassignment
 
-- [ ] Central state or store for shared mutable data.
-- [ ] Clear separation of config, state, timers, and components.
+**Metrics:**
+- [ ] Code reduced 50-70% from original (if refactoring)
+- [ ] Debug window shows complete operational flow
+- [ ] Every user interaction visible in debug output
+- [ ] Script is <500 lines (target for most controllers)
 
-**DRY and Events:**
+---
 
-- [ ] Central navigation/layer handler.
-- [ ] Handler maps and normalized arrays for event registration.
-- [ ] `setProp()` and edge-aware pin handlers used consistently.
-- [ ] `bind()`, `bindArray()`, `forEach()` used for clean event registration.
+## 8. Common Refactoring Wins
 
-**Components and Timers:**
+### 8.1 Before/After Examples
 
-- [ ] `cleanupComponentHandlers()` used before reassigning components.
-- [ ] Timers centralized and cleaned up in module/controller lifecycle.
+**Event Registration:**
+```lua
+-- BEFORE (verbose, repetitive)
+controls.btn1.EventHandler = function() self:handleBtn(1) end
+controls.btn2.EventHandler = function() self:handleBtn(2) end
+controls.btn3.EventHandler = function() self:handleBtn(3) end
+controls.btn4.EventHandler = function() self:handleBtn(4) end
+controls.btn5.EventHandler = function() self:handleBtn(5) end
 
-**Documentation and Maintainability:**
+-- AFTER (lean, scalable)
+bindArray(controls.buttons, function(i) self:handleBtn(i) end)
+self:debugPrint("Registered " .. #controls.buttons .. " button handlers")
+```
 
-- [ ] Comprehensive header with common scenario flows documented.
-- [ ] "Called from:" comments on methods showing invocation sources.
-- [ ] Inline comments explain "why" not just "what".
-- [ ] Code complexity matches team skill level (avoid over-abstraction).
+**State Changes:**
+```lua
+-- BEFORE (no context)
+outputControl.Value = input
+print("Route changed")
+
+-- AFTER (with context)
+function setRoute(input, output, source)
+    if outputControl.Value == input then 
+        self:debugPrint("Output " .. output .. " already set to input " .. input)
+        return false 
+    end
+    outputControl.Value = input
+    self.state.lastInput[output] = input
+    local sourceStr = source and " (Source: " .. source .. ")" or ""
+    self:debugPrint("Routed Output " .. output .. " → Input " .. input .. sourceStr)
+    return true
+end
+```
+
+**Component Setup:**
+```lua
+-- BEFORE (no validation feedback)
+self.device = Component.New(controls.devDevice.String)
+
+-- AFTER (with validation and logging)
+function setDeviceComponent()
+    self.components.device = self:setComponent(controls.devDevice, "Device")
+    if not self.components.device then return end
+    self:setupDeviceHandlers()
+end
+-- Logs: "Set Device component: devNV32_Main" or "ERROR: Device component 'xyz' is invalid"
+```
+
+---
+
+## 9. Debug Output Examples
+
+### 9.1 Typical Initialization Output
+
+```
+[Room 101] === Initialization Started ===
+[Room 101] Configuration: debugging=true, enableOutput2=false, uciEnabled=true
+[Room 101] Discovered NV32 Router: devNV32_Main
+[Room 101] Discovered Room Controls: compRoomControls_Main
+[Room 101] Component discovery complete - 1 NV32 routers, 1 Room Controls found
+[Room 101] Set NV32-H component: devNV32_Main
+[Room 101] Registered feedback handler for Output 1
+[Room 101] Set Room Controls component: compRoomControls_Main
+[Room 101] Registered System Power handler
+[Room 101] Registered Fire Alarm handler
+[Room 101] Registered event handler for devNV32
+[Room 101] Registered event handler for compRoomControls
+[Room 101] Registered 5 button handlers for Output 1
+[Room 101] Direct monitoring set up for UCI button layer 7
+[Room 101] Direct monitoring set up for UCI button layer 8
+[Room 101] Direct monitoring set up for UCI button layer 9
+[Room 101] UCI direct button monitoring configured for 3 buttons
+[Room 101] Setting default input selection to input 7
+[Room 101] Routed Output 1 → Input 7 (Source: Initialization)
+[Room 101] === Initialization Complete ===
+[Room 101] Active Outputs: Output 1 only
+[Room 101] Ready for operation
+```
+
+### 9.2 Typical Runtime Output
+
+```
+[Room 101] Output 1 Button 2 pressed
+[Room 101] Routed Output 1 → Input 8 (Source: User Button)
+[Room 101] Device Feedback: Output 1 → Input 8
+
+[Room 101] UCI Layer changed: 7 → 8
+[Room 101] UCI Layer 8 triggers input switch to 7
+[Room 101] Routed Output 1 → Input 7 (Source: UCI Layer 8)
+
+[Room 101] System Power ON - switching to input 7
+[Room 101] Routed Output 1 → Input 7 (Source: System Power)
+
+[Room 101] Fire Alarm ACTIVATED - storing current inputs and switching to alarm input
+[Room 101] Routed Output 1 → Input 2 (Source: Fire Alarm)
+[Room 101] Fire Alarm CLEARED - restoring previous inputs
+[Room 101] Routed Output 1 → Input 7 (Source: Fire Alarm Clear)
+```
+
+---
+
+## Summary
+
+**Lean Code:**
+- Single-class with utilities
+- Early returns, no deep nesting
+- Compact but readable
+- 50-70% reduction from verbose code
+
+**Rich Debug:**
+- Log all interactions with source context
+- Phase markers for init/cleanup
+- Count handlers/components/discoveries
+- Show before/after for state changes
+- **"An empty debug window is a useless one"**
+
+**Result:**
+Scripts that are easy to understand, quick to troubleshoot, and maintainable by the entire team.

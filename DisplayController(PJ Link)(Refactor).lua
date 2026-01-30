@@ -501,6 +501,7 @@ function PJLinkDisplayController:initPowerModule()
         
         resetPowerButtonLegends = function(index)
             -- Reset both button legends to default when re-enabled
+            selfRef:debugPrint("Resetting power button legends for display " .. index)
             if controls.btnDisplayPowerOn and controls.btnDisplayPowerOn[index] then
                 setButtonLegend(controls.btnDisplayPowerOn[index], "On")
             end
@@ -680,7 +681,7 @@ function PJLinkDisplayController:registerTimerHandlers()
     self.timers.warmup.EventHandler = function()
         self:debugPrint("Warmup Period Has Ended")
         self.powerModule.enableDisablePowerControls(true)
-        for i = 1, self.config.maxDisplays do
+        for i = 1, #Controls.devDisplays do
             self.powerModule.enableDisablePowerControlIndex(i, true)
             self.powerModule.resetPowerButtonLegends(i)
         end
@@ -692,7 +693,7 @@ function PJLinkDisplayController:registerTimerHandlers()
     self.timers.cooldown.EventHandler = function()
         self:debugPrint("Cooldown Period Has Ended")
         self.powerModule.enableDisablePowerControls(true)
-        for i = 1, self.config.maxDisplays do
+        for i = 1, #Controls.devDisplays do
             self.powerModule.enableDisablePowerControlIndex(i, true)
             self.powerModule.resetPowerButtonLegends(i)
         end

@@ -363,16 +363,16 @@ end--func
 
 --------## System Power ##--------
 function funcEnableDisablePowerControls(state)
-    Controls.SystemOnOff.IsDisabled = not state
-    Controls.SystemOn.IsDisabled = not state
-    Controls.SystemOff.IsDisabled = not state
+    Controls.btnSystemOnOff.IsDisabled = not state
+    Controls.btnSystemOn.IsDisabled = not state
+    Controls.btnSystemOff.IsDisabled = not state
 end--func
 
 function funcSetSystemPowerFB(state)
     Controls.SystemPower.Boolean = state -- update system power LED FB
-    Controls.SystemOnOff.Boolean = state -- update system power toggle FB
-    Controls.SystemOn.Boolean = state -- update system power on state trigger FB
-    Controls.SystemOff.Boolean = not state -- update system power off state trigger FB
+    Controls.btnSystemOnOff.Boolean = state -- update system power toggle FB
+    Controls.btnSystemOn.Boolean = state -- update system power on state trigger FB
+    Controls.btnSystemOff.Boolean = not state -- update system power off state trigger FB
 end--func
 
 function funcSystemPowerOn(route) -- turn system on
@@ -392,7 +392,7 @@ end--func
 
 function funcSystemPowerOff() -- turn system off
     funcDebug("Powering System Off")
-    Controls.SystemOffTrig:Trigger()
+    Controls.btnSystemOffTrig:Trigger()
     funcEnableDisablePowerControls(false) -- disable power controls
     Controls.SystemCooling.Boolean = true -- system is cooling
     CooldownTimer:Start(Controls.CooldownTime.Value) -- start timer for cooling fb
@@ -454,7 +454,7 @@ CooldownTimer.EventHandler = function()
     funcPublishNotification() -- publish notification of current system state
 end--EH
 
-Controls.SystemOnOff.EventHandler = function(ctl) -- event handler for on/off toggle
+Controls.btnSystemOnOff.EventHandler = function(ctl) -- event handler for on/off toggle
     if ctl.Boolean then -- system on
         funcSystemPowerOn()
     else
@@ -462,14 +462,14 @@ Controls.SystemOnOff.EventHandler = function(ctl) -- event handler for on/off to
     end--if
 end--EH
 
-Controls.SystemOff.EventHandler = function()
+Controls.btnSystemOff.EventHandler = function()
     funcSystemPowerOff()
     -- trigger system off
     Controls.MotionGraceActive.Boolean = true -- enable grace period
     GraceTimer:Start(Controls.MotionGracePeriod.Value) -- start grace timer
 end--EH
 
-Controls.SystemOn.EventHandler = function()
+Controls.btnSystemOn.EventHandler = function()
     -- trigger system on
     funcSystemPowerOn()
 end--EH
