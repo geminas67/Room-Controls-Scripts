@@ -103,7 +103,7 @@ SystemAutomationController = {}
 SystemAutomationController.__index = SystemAutomationController
 SystemAutomationController.clearString = "[Clear]"
 SystemAutomationController.componentTypes = {
-    callSync = "call_sync", videoBridge = "usb_uvc",
+    callSync = "call_sync", videoBridge = "onvif_camera_operative",
     displays = "%PLUGIN%_80a40a84-e685-4b13-a5c4-fbdc12bd85e6_%FP%_cac5837f40ef3a83d7365386eb4b8d16", -- PJLink Display
     gains = "gain", systemMute = "system_mute",
     camACPR = "%PLUGIN%_648260e3-c166-4b00-98ba-ba16ksnza4a63b0_%FP%_a4d2263b4380c424e16eebb67084f355"

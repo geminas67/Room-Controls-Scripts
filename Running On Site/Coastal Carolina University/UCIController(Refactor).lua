@@ -1,6 +1,5 @@
 --[[
   UCI Controller - Q-SYS Control Script
-  Manages touch panel interface layers, video switching, and room automation integration
   
   Author: Nikolas Smith, Q-SYS
   Version: 3.0 | Date: 2025-01-28
@@ -14,21 +13,7 @@
   - Optimized layer visibility batching and legend management
   - Video switcher auto-detection (NV32, Extron DXP, AVProEdge)
   - Passcode support with inactivity timeout
-  
-  Optimizations:
-  - No module wrappers or inheritance overhead
-  - Direct method calls throughout
-  - isArr() utility for consistent array handling
-  - normalizeControlArrays() for standardized control structures
-  - Legend arrays generated with loops instead of hardcoded lists
-  - Layer configs built once during initialization
-  - Simplified source map lookup (direct comparison)
-  - Optimized video switcher auto-detection (reduced nested loops)
-  - Consolidated help button sync logic with early exits
-  - Flattened event handler registration (single map)
-  - Batched layer visibility updates
-  - Enhanced error handling with pcall throughout
-  ]]
+]]
 
 -------------------[ Control References ]-------------------
 local controls = {
@@ -170,7 +155,7 @@ end
 
 local function validateControls()
     -- Optional controls (for passcode functionality)
-    local optionalControls = { "pinLEDTouchActivity" }
+    local optionalControls = { "pinLEDTouchActivity" } -- Only needed if passcode timeout is used
     
     local missing = {}
     local warnings = {}
@@ -273,7 +258,7 @@ function UCIController.new(uciPage, config)
     self.defaultActiveLayer = config.defaultActiveLayer or 8
     self.hiddenNavIndices = config.hiddenNavIndices or {}
     self.isInitialized = false
-    self.isInCall = false  -- Cached call state for efficient lookups
+    self.callActive = false  -- Cached call state for efficient lookups
     
     -- Layer constants
     self.kLayerAlarm        = 1
@@ -389,8 +374,11 @@ function UCIController:safeSetLayerVisibility(layer, visible, transition)
         Uci.SetLayerVisibility(self.uciPage, layer, visible, transition or "none")
     end)
     if ok then
+        -- Only log if the state actually changed
+        if self.layerStates[layer] ~= visible then
+            self:debug("Layer '" .. layer .. "' -> " .. tostring(visible))
+        end
         self.layerStates[layer] = visible
-        self:debug("Layer '" .. layer .. "' -> " .. tostring(visible))
     else
         self:debug("Warning: Layer '" .. layer .. "' not found: " .. tostring(err))
     end
@@ -404,10 +392,6 @@ function UCIController:updateLayerVisibility(layers, visible, transition)
             self:safeSetLayerVisibility(layer, visible, transition)
         end
     end
-end
-
-function UCIController:hideBaseLayers()
-    self:updateLayerVisibility({"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}, false, "none")
 end
 
 function UCIController:buildLayerConfigs()
@@ -439,29 +423,29 @@ function UCIController:buildLayerConfigs()
         [self.kLayerLaptop] = {
             show = {"L05-Laptop"},
             call = {
-                function() self:updateHDMIStateLaptop() end,
+                function() self:updateHDMIForActiveSource() end,
                 function() self:updateConferenceState() end,
                 function() self:updatePresetSavedState() end,
                 function() self:updateACPRBypassState() end,
-                function() self:updateLaptopHelpState() end,
+                function() self:updateSourceHelpState("Laptop") end,
                 function() self:updateCallActiveState() end
             }
         },
         [self.kLayerPC] = {
             show = {"P05-PC"},
             call = {
-                function() self:updateHDMIStatePC() end,
+                function() self:updateHDMIForActiveSource() end,
                 function() self:updateConferenceState() end,
                 function() self:updatePresetSavedState() end,
                 function() self:updateACPRBypassState() end,
-                function() self:updatePCHelpState() end,
+                function() self:updateSourceHelpState("PC") end,
                 function() self:updateCallActiveState() end
             }
         },
         [self.kLayerWireless] = {
             show = {"W05-Wireless"},
             call = {
-                function() self:updateWirelessHelpState() end,
+                function() self:updateSourceHelpState("Wireless") end,
                 function() self:updateCallActiveState() end
             }
         },
@@ -503,20 +487,18 @@ function UCIController:showLayer()
         self.layerConfigs = self:buildLayerConfigs()
     end
     
-    -- Hide everything
+    -- Hide everything first
     self:updateLayerVisibility(layersToHide, false, "none")
-
-    -- Base always on unless layer config hides it
-    self:updateLayerVisibility({"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}, true, "none")
 
     local active = self.varActiveLayer
     local config = self.layerConfigs[active]
     if not config then return end
 
-    if config.hideBase then
-        self:hideBaseLayers()
+    -- Show base layers only if config doesn't hide them
+    if not config.hideBase then
+        self:updateLayerVisibility({"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}, true, "none")
     end
-
+    
     if config.show then
         self:updateLayerVisibility(config.show, true, "fade")
     end
@@ -602,7 +584,7 @@ function UCIController:onPasscodeCorrect(isCorrect)
     -- Start the system directly (bypass passcode check since we just validated it)
     self:powerOn()
     self:startLoadingBar(true)
-    self:btnNavEventHandler(self.kLayerWarming)
+    self:btnNavEventHandler(self.kLayerWarming, "Passcode Correct")
 end
 
 function UCIController:isPasscodeCorrect()
@@ -647,7 +629,7 @@ function UCIController:syncHelpButtonStates(helpLayer)
 end
 
 function UCIController:isInCall()
-    return self.isInCall
+    return self.callActive
 end
 
 function UCIController:shouldAutoSwitchSource(triggerPinName)
@@ -673,14 +655,14 @@ function UCIController:shouldAutoSwitchSource(triggerPinName)
 end
 
 function UCIController:handlePrioritySourceSwitch(triggerPinName, targetLayer)
-    if self:shouldSwitchSource(triggerPinName) then
+    if self:shouldAutoSwitchSource(triggerPinName) then
         self:ensureSystemIsOn(targetLayer)
     end
 end
 
 function UCIController:updateCallActiveState()
     local isActive = controls.pinCallActive.Boolean or false
-    self.isInCall = isActive  -- Update cached state
+    self.callActive = isActive  -- Update cached state
     self:updateLayerVisibility({"I01-CallActive"}, isActive, isActive and "fade" or "none")
     self:debug("Call Active: " .. (isActive and "Showing" or "Hiding"))
     self:updateACPRBypassState()
@@ -713,24 +695,6 @@ function UCIController:updateHDMIForActiveSource()
         self:syncHelpButtonStates(src.helpLayer)
     end
     self:debug("HDMI " .. src.baseLayer .. ": Disconnected")
-end
-
-function UCIController:updateHDMIStateLaptop()
-    if self.varActiveLayer == self.kLayerLaptop then
-        self:updateHDMIForActiveSource()
-    end
-end
-
-function UCIController:updateHDMIStatePC()
-    if self.varActiveLayer == self.kLayerPC then
-        self:updateHDMIForActiveSource()
-    end
-end
-
-function UCIController:updateHDMIStateWireless()
-    if self.varActiveLayer == self.kLayerWireless then
-        self:updateHDMIForActiveSource()
-    end
 end
 
 -- Generic source help handler using source map
@@ -770,14 +734,6 @@ function UCIController:updateSourceHelpState(srcKey)
     self:debug(srcKey .. " Help: " .. (isVisible and "Showing" or "Hiding"))
 end
 
-function UCIController:updateLaptopHelpState()
-    self:updateSourceHelpState("Laptop")
-end
-
-function UCIController:updatePCHelpState()
-    self:updateSourceHelpState("PC")
-end
-
 -- Conference state using source map
 function UCIController:updateConferenceState()
     local src = self:getActiveSource()
@@ -794,6 +750,15 @@ function UCIController:updateConferenceState()
             self:syncHelpButtonStates(src.helpLayer)
         end
         self:debug("Conference blocked: HDMI not connected for " .. src.baseLayer)
+        return
+    end
+
+    -- ACPR priority gate: ACPR overrides conference controls when call is active
+    local isBypassActive = controls.pinLEDACPRBypassActive.Boolean or false
+    local isCallActive = controls.pinCallActive.Boolean or false
+    if not isBypassActive and isCallActive then
+        self:updateLayerVisibility({src.confLayer}, false, "none")
+        self:debug("Conference blocked: ACPR active during call")
         return
     end
 
@@ -846,10 +811,6 @@ function UCIController:updateACPRBypassState()
         self:updateLayerVisibility({"J03-ACPRActive"}, false, "none")
     end
     self:debug("ACPR Bypass: " .. (isBypassActive and "Active" or "Inactive") .. " | Call: " .. (isCallActive and "Active" or "Inactive"))
-end
-
-function UCIController:updateWirelessHelpState()
-    self:updateSourceHelpState("Wireless")
 end
 
 function UCIController:updateRoutingHelpState()
@@ -1042,11 +1003,11 @@ function UCIController:syncRoomControlsState() -- use ledSystemPower as authorit
     
     if currentState then
         self:startLoadingBar(true)
-        self:btnNavEventHandler(self.kLayerWarming)
+        self:btnNavEventHandler(self.kLayerWarming, "Room Automation Power On")
         self:debug("Synchronized to WARMING state")
     else
         self:startLoadingBar(false)
-        self:btnNavEventHandler(self.kLayerCooling)
+        self:btnNavEventHandler(self.kLayerCooling, "Room Automation Power Off")
         self:debug("Synchronized to COOLING state")
     end
 end
@@ -1075,7 +1036,7 @@ function UCIController:startLoadingBar(isPoweringOn)
             self:debug("Loading bar timeout reached")
             self.isAnimating = false
             if self.loadingTimer then self.loadingTimer:Stop(); self.loadingTimer = nil end
-            self:btnNavEventHandler(isPoweringOn and self.defaultActiveLayer or self.kLayerStart)
+            self:btnNavEventHandler(isPoweringOn and self.defaultActiveLayer or self.kLayerStart, "Loading Timeout")
         end
     end
     self.timeoutTimer:Start(300)
@@ -1093,7 +1054,7 @@ function UCIController:startLoadingBar(isPoweringOn)
             self.isAnimating = false
             
             local targetLayer = isPoweringOn and self.defaultActiveLayer or self.kLayerStart
-            self:btnNavEventHandler(targetLayer)
+            self:btnNavEventHandler(targetLayer, isPoweringOn and "Warmup Complete" or "Cooldown Complete")
         else
             self.loadingTimer:Start(interval)
         end
@@ -1106,7 +1067,7 @@ end
 -------------------[ Touch Inactivity Methods ]-------------------
 function UCIController:onPasscodeInactivity()
     self:debug("Touch inactivity timeout - returning to Start layer")
-    self:btnNavEventHandler(self.kLayerStart)
+    self:btnNavEventHandler(self.kLayerStart, "Inactivity Timeout")
 end
 
 function UCIController:resetTouchInactivityTimer()
@@ -1143,7 +1104,7 @@ function UCIController:registerEventHandlers()
     -- Navigation buttons
     for i, btn in ipairs(controls.btnNav) do
         if btn then
-            bind(btn, function() self:btnNavEventHandler(i) end)
+            bind(btn, function() self:btnNavEventHandler(i, "User Button") end)
         end
     end
     
@@ -1156,9 +1117,9 @@ function UCIController:registerEventHandlers()
     
     -- Help control pairs
     local helpControlPairs = {
-        {open = controls.btnOpenHelp.Laptop, close = controls.btnCloseHelp.Laptop, handler = function() self:updateLaptopHelpState() end},
-        {open = controls.btnOpenHelp.PC, close = controls.btnCloseHelp.PC, handler = function() self:updatePCHelpState() end},
-        {open = controls.btnOpenHelp.Wireless, close = controls.btnCloseHelp.Wireless, handler = function() self:updateWirelessHelpState() end},
+        {open = controls.btnOpenHelp.Laptop, close = controls.btnCloseHelp.Laptop, handler = function() self:updateSourceHelpState("Laptop") end},
+        {open = controls.btnOpenHelp.PC, close = controls.btnCloseHelp.PC, handler = function() self:updateSourceHelpState("PC") end},
+        {open = controls.btnOpenHelp.Wireless, close = controls.btnCloseHelp.Wireless, handler = function() self:updateSourceHelpState("Wireless") end},
         {open = controls.btnOpenHelp.Routing, close = controls.btnCloseHelp.Routing, handler = function() self:updateRoutingHelpState() end},
         {open = controls.btnOpenHelp.StreamMusic, close = controls.btnCloseHelp.StreamMusic, handler = function() self:updateStreamMusicHelpState() end}
     }
@@ -1226,13 +1187,13 @@ function UCIController:registerEventHandlers()
             self:updatePresetSavedState()
         end,
         [controls.pinLEDHDMI01Connect] = function()
-            self:updateHDMIStatePC()
+            self:updateHDMIForActiveSource()
         end,
         [controls.pinLEDHDMI02Connect] = function()
-            self:updateHDMIStateLaptop()
+            self:updateHDMIForActiveSource()
         end,
         [controls.pinLEDHDMI03Connect] = function()
-            self:updateHDMIStateWireless()
+            self:updateHDMIForActiveSource()
         end,
         [controls.pinLEDACPRBypassActive] = function()
             self:updateACPRBypassState()
@@ -1259,14 +1220,14 @@ function UCIController:startSystem()
     -- This method should only be called after passcode validation
     self:powerOn()
     self:startLoadingBar(true)
-    self:btnNavEventHandler(self.kLayerWarming)
+    self:btnNavEventHandler(self.kLayerWarming, "System Start")
 end
 
 function UCIController:shutdownSystem()
     self:updateLayerVisibility({"D01-ShutdownConfirm"}, false, "fade")
     self:powerOff()
     self:startLoadingBar(false)
-    self:btnNavEventHandler(self.kLayerCooling)
+    self:btnNavEventHandler(self.kLayerCooling, "System Shutdown")
 end
 
 function UCIController:ensureSystemIsOn(targetLayer)
@@ -1282,13 +1243,13 @@ function UCIController:ensureSystemIsOn(targetLayer)
     if isSystemOn then
         -- System is already ON, navigate to target layer
         self:debug("ensureSystemIsOn: System is already on, navigating to layer " .. targetLayer)
-        self:btnNavEventHandler(targetLayer)
+        self:btnNavEventHandler(targetLayer, "Source Active")
     else
         -- System is OFF, need to start it
         -- Check if passcode is enabled and correct
         if self.passcodeEnabled and not self:isPasscodeCorrect() then
             self:debug("ensureSystemIsOn: Passcode required, navigating to passcode layer")
-            self:btnNavEventHandler(self.kLayerPasscode)
+            self:btnNavEventHandler(self.kLayerPasscode, "Passcode Required")
         else
             -- No passcode or already correct, start system
             self:debug("ensureSystemIsOn: Starting system")
@@ -1299,21 +1260,22 @@ end
 
 
 -------------------[ Navigation Methods ]-------------------
-function UCIController:btnNavEventHandler(argIndex)
+function UCIController:btnNavEventHandler(argIndex, source)
+    source = source or "Navigation"
     local previousLayer = self.varActiveLayer
     self.varActiveLayer = argIndex
     
     if self.videoSwitcherEnabled then
         local inputNumber = self.uciToInputMapping[argIndex]
         if inputNumber then
-            self:debug("Triggering video switch to input " .. inputNumber)
+            self:debug("Video switch to input " .. inputNumber .. " (Source: " .. source .. ")")
             self:switchToInput(inputNumber, argIndex)
         end
     end
     
     self:showLayer()
     self:interlock()
-    self:debug("Layer changed from " .. previousLayer .. " to " .. argIndex)
+    self:debug("Layer " .. previousLayer .. " → " .. argIndex .. " (Source: " .. source .. ")")
 end
 
 function UCIController:interlock()
@@ -1386,58 +1348,47 @@ end
 
 -------------------[ Legend Management ]-------------------
 function UCIController:initializeLegendArrays()
+    local legendConfig = {
+        {suffix = "Nav", count = 13},        -- Navigation labels (Nav01 - Nav13)
+        {suffix = "Routing", count = 5},     -- Routing labels (Routing01 - Routing05)
+        {suffix = "VidSrc", count = 12},     -- Audio source labels (AudSrc01 - AudSrc12)
+        {suffix = "Gain", count = 10},       -- Gain labels (Gain01 - Gain10)
+        {suffix = "Display", count = 4},      -- Display labels (Display01 - Display04)
+        {single = {"NavShutdown", "RoomNameNav", "RoomNameStart", "RoutingRooms",
+        "RoutingSources", "GainPGM"}}, -- Single labels
+    }
+    
     self.arrUCILegends = {}
     self.arrUCIUserLabels = {}
     local idx = 0
     
-    -- Helper function to add legend pair
-    local function addLegend(controlName, varName)
-        idx = idx + 1
-        self.arrUCILegends[idx] = Controls[controlName]
-        self.arrUCIUserLabels[idx] = Uci.Variables[varName]
-    end
-    
-    -- Helper function to add numbered legends (e.g., Nav01-Nav12)
-    local function addNumberedLegends(prefix, count)
-        for i = 1, count do
-            local padded = string.format("%02d", i)
-            addLegend(prefix .. padded, "txtLabel" .. prefix .. padded)
-        end
-    end
-    
-    -- Navigation labels (txtNav01 - txtNav12)
-    addNumberedLegends("txtNav", 13)
-    
-    -- System labels
-    addLegend("txtNavShutdown", "txtLabelNavShutdown")
-    addLegend("txtRoomNameNav", "txtLabelRoomNameNav")
-    addLegend("txtRoomNameStart", "txtLabelRoomNameStart")
-    
-    -- Routing labels
-    addLegend("txtRoutingRooms", "txtLabelRoutingRooms")
-    addNumberedLegends("txtRouting", 5)
-    addLegend("txtRoutingSources", "txtLabelRoutingSources")
-    
-    -- Audio source labels (txtAudSrc01 - txtAudSrc12)
-    addNumberedLegends("txtAudSrc", 12)
-    
-    -- Gain labels
-    addLegend("txtGainPGM", "txtLabelGainPGM")
-    addNumberedLegends("txtGain", 10)
-    
-    -- Display labels (txtDisplay01 - txtDisplay04)
-    addNumberedLegends("txtDisplay", 4)
-    
-    -- Register event handlers for label updates
-    for i, label in ipairs(self.arrUCIUserLabels) do
-        if label then
-            label.EventHandler = function()
-                self:updateLegends()
+    for _, config in ipairs(legendConfig) do
+        if config.suffix then
+            for i = 1, config.count do
+                idx = idx + 1
+                local name = config.suffix .. string.format("%02d", i)
+                self.arrUCILegends[idx] = Controls["txt" .. name]
+                self.arrUCIUserLabels[idx] = Uci.Variables["txtLabel" .. name]
+            end
+        elseif config.single then
+            for _, name in ipairs(config.single) do
+                idx = idx + 1
+                self.arrUCILegends[idx] = Controls["txt" .. name]
+                self.arrUCIUserLabels[idx] = Uci.Variables["txtLabel" .. name]
             end
         end
     end
     
-    self:debug("Legend arrays initialized with " .. #self.arrUCILegends .. " controls (optimized loop generation)")
+    -- Register event handlers
+    for i, label in ipairs(self.arrUCIUserLabels) do
+        if label then 
+            label.EventHandler = function() 
+                self:updateLegends() 
+            end 
+        end
+    end
+    
+    self:debug("Legend arrays initialized with " .. #self.arrUCILegends .. " controls and " .. #self.arrUCIUserLabels .. " variables")
 end
 
 -------------------[ Initialization ]-------------------
@@ -1499,12 +1450,12 @@ function UCIController:startSyncTimer()
     end
     
     local success, timer = pcall(function()
-        local t = Timer.New()
-        t.EventHandler = function()
+        local roomControlsTimer = Timer.New()
+        roomControlsTimer.EventHandler = function()
             self:syncRoomControlsState()
-            t:Start(1)
+            roomControlsTimer:Start(1)
         end
-        return t
+        return roomControlsTimer
     end)
     
     if success and timer then
@@ -1577,13 +1528,13 @@ local function createUCIController(targetPageName, config)
     config = config or getDefaultConfig()
     
     local pageNames = {
-        targetPageName,
-        targetPageName:gsub("%s+", " "),
-        targetPageName:gsub("%s+", ""),
-        targetPageName:gsub("%(", ""):gsub("%)", ""),
-        targetPageName:gsub("%s+", "-"):gsub("%(", ""):gsub("%)", ""),
-        "UCI " .. targetPageName,
-        targetPageName:match("^(.-)%s*%(") or targetPageName
+        targetPageName,                                                 -- 1. Original: "Routing  Panel  (Main)"
+        targetPageName:gsub("%s+", " "),                                -- 2. Normalized spaces: "Routing Panel (Main)"
+        targetPageName:gsub("%s+", ""),                                 -- 3. No spaces: "RoutingPanel(Main)"
+        targetPageName:gsub("%(", ""):gsub("%)", ""),                   -- 4. No parentheses: "Routing  Panel  Main"
+        targetPageName:gsub("%s+", "-"):gsub("%(", ""):gsub("%)", ""),  -- 5. Dashes instead of spaces, no parens: "Routing-Panel-Main"
+        "UCI " .. targetPageName,                                       -- 6. With "UCI " prefix: "UCI Routing  Panel  (Main)"
+        targetPageName:match("^(.-)%s*%(") or targetPageName            -- 7. Everything before first parenthesis: "Routing  Panel"
     }
     
     local lastError = nil

@@ -1,7 +1,7 @@
 --[[
-    Simple Display Controller - Time of Day Shutdown (System Reset) (Refactored)
+    Time of Day Shutdown (System Reset)
     Author: Nikolas Smith, Q-SYS
-    Version: 1.1 | Date: 2025-12-17
+    Version: 1.0 | Date: 2026-02-01
     Firmware Req: 10.0.0
     Description: Responds to Time of Day Active change and triggers Power Off commands.
 ]]
@@ -34,9 +34,6 @@ local controls = {
 }
 
 -------------------[ Utility Functions ]-------------------
-local function isArr(t)
-    return type(t) == "table" and t[1] ~= nil
-end
 
 local function setProp(ctrl, prop, val)
     if not ctrl or ctrl[prop] == val then return false end
@@ -46,14 +43,6 @@ end
 
 local function bind(ctrl, handler)
     if ctrl and handler then ctrl.EventHandler = handler end
-end
-
-local function bindArray(ctrls, handler)
-    if not ctrls then return end
-    local array = isArr(ctrls) and ctrls or { ctrls }
-    for i, ctrl in ipairs(array) do 
-        bind(ctrl, function(ctl) handler(i, ctl) end) 
-    end
 end
 
 -- Debug logging helper
@@ -133,11 +122,6 @@ local function validateControls()
     
     print("TimeOfDayShutdown validation passed")
     return true
-end
-
--------------------[ Control Normalization ]-------------------
-local function normalizeControlArrays()
-    -- No arrays to normalize in this script
 end
 
 -------------------[ Core Logic ]-------------------
@@ -239,7 +223,6 @@ local function funcInit()
         return
     end
     
-    normalizeControlArrays()
     registerEventHandlers()
     
     print("TimeOfDayShutdown initialized successfully")

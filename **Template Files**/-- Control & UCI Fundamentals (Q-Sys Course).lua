@@ -1,3 +1,26 @@
+-------------------[ Controls ]-------------------
+local controls = {
+  btnNavRoom = Controls.btnNavRoom,
+  btnNavDisplays = Controls.btnNavDisplays,
+  btnNavCameras = Controls.btnNavCameras,
+  pinLEDUSB = Controls.pinLEDUSB,
+  listOut01 = Controls.listOut01,
+  listOut02 = Controls.listOut02,
+  pinLEDLaptop01Active = Controls.pinLEDLaptop01Active,
+  pinLEDLaptop02Active = Controls.pinLEDLaptop02Active,
+  -- UCI Variables
+  navBtnRoomLegend = Uci.Variables.navBtnRoomLegend,
+  navBtnDisplaysLegend = Uci.Variables.navBtnDisplaysLegend,
+  navBtnCamerasLegend = Uci.Variables.navBtnCamerasLegend,
+  varNV32CodeName = Uci.Variables.varNV32CodeName,
+  friendlyHDMI01 = Uci.Variables.friendlyHDMI01,
+  friendlyHDMI02 = Uci.Variables.friendlyHDMI02,
+  friendlyHDMI03 = Uci.Variables.friendlyHDMI03,
+  friendlyGraphic01 = Uci.Variables.friendlyGraphic01,
+  friendlyGraphic02 = Uci.Variables.friendlyGraphic02,
+  friendlyGraphic03 = Uci.Variables.friendlyGraphic03,
+}
+
 -- Constants --
 kLayer_Room = 1
 kLayer_Displays = 2
@@ -6,13 +29,13 @@ varActiveLayer = kLayer_Room
 
 -- Functions --
 function funcUpdateLegends()
-  Controls.btnNavRoom.Legend = Uci.Variables.navBtnRoomLegend.String
-  Controls.btnNavDisplays.Legend = Uci.Variables.navBtnDisplaysLegend.String
-  Controls.btnNavCameras.Legend = Uci.Variables.navBtnCamerasLegend.String
+  controls.btnNavRoom.Legend = Uci.Variables.navBtnRoomLegend.String
+  controls.btnNavDisplays.Legend = Uci.Variables.navBtnDisplaysLegend.String
+  controls.btnNavCameras.Legend = Uci.Variables.navBtnCamerasLegend.String
 end
 
 function funcShowCameraSublayer()
-  if Controls.pinLEDUSB.Boolean then 
+  if controls.pinLEDUSB.Boolean then 
   Uci.SetLayerVisibility( "classUCI", "C2_USB_Connected", true , "fade" )
   Uci.SetLayerVisibility( "classUCI", "C3_USB_Connected_NOT", false , "none" )
   else
@@ -41,16 +64,16 @@ function  funcShowLayer()
 end
 
 function funcInterlock() --set ALL layers and buttons falsse, then set layer Visbiliity of the button with Boolean that is true
-  Controls.btnNavRoom.Boolean = false 
-  Controls.btnNavDisplays.Boolean = false 
-  Controls.btnNavCameras.Boolean = false
+  controls.btnNavRoom.Boolean = false 
+  controls.btnNavDisplays.Boolean = false 
+  controls.btnNavCameras.Boolean = false
 
   if varActiveLayer == kLayer_Room then
-    Controls.btnNavRoom.Boolean = true 
+    controls.btnNavRoom.Boolean = true 
   elseif varActiveLayer == kLayer_Displays then 
-    Controls.btnNavDisplays.Boolean = true 
+    controls.btnNavDisplays.Boolean = true 
   elseif varActiveLayer == kLayer_Cameras then
-    Controls.btnNavCameras.Boolean = true
+    controls.btnNavCameras.Boolean = true
   end--if
 end 
 --print varActiveLayer to Debugger
@@ -63,29 +86,30 @@ function funcDebugger()
     print("Set UCI to Cameras") 
   end--if
 end 
+
 --btnNavRoom is Active
-Controls.btnNavRoom.EventHandler = function ()
+controls.btnNavRoom.EventHandler = function ()
   varActiveLayer = kLayer_Room
   funcShowLayer()
   funcInterlock()
   funcDebugger()
 end
 --btnNavDisplays is Active
-Controls.btnNavDisplays.EventHandler = function ()
+controls.btnNavDisplays.EventHandler = function ()
   varActiveLayer = kLayer_Displays
   funcShowLayer()
   funcInterlock()
   funcDebugger()
 end
 --btnNavCameras is Active
-Controls.btnNavCameras.EventHandler = function ()
+controls.btnNavCameras.EventHandler = function ()
   varActiveLayer = kLayer_Cameras
   funcShowLayer()
   funcInterlock()
   funcDebugger()
 end
-
-Controls.pinLEDUSB.EventHandler = function (ctl)
+--btnNavCameras is Active
+controls.pinLEDUSB.EventHandler = function (ctl)
   if ctl.Boolean then
   varActiveLayer = kLayer_Cameras
   end--if
@@ -115,8 +139,8 @@ end
 Uci.Variables.varNV32CodeName.EventHandler = funcSetNV32CodeName
 
 arrListBox = {
-  Controls.listOut01,
-  Controls.listOut02,
+  controls.listOut01,
+  controls.listOut02,
 }
 
 function funcSetChoices()
@@ -147,6 +171,7 @@ function funcSetChoices()
     ctl.Choices = arrFriendlyNames
   end--for
 end
+
 --list EventHandlers
 Uci.Variables.friendlyHDMI01.EventHandler = funcSetChoices
 Uci.Variables.friendlyHDMI02.EventHandler = funcSetChoices
@@ -170,6 +195,7 @@ for i, ctl in ipairs(arrListBox) do
     funcVideoSwitch(i, ctl.String)--devNV32["hdmi.out."..i..".select.pretty.name"].String = tblBabelFish[ctl.String]
   end--for
 end
+
 funcSetNV32CodeName()
 --NV32 gives a new "Pretty Name"
 --translate "Pretty Name" into "Friendly Name"
@@ -180,20 +206,21 @@ for i = 1, 2 do --for loop each list box...
     arrListBox[i].String = tblBabelFish[ctl.String]
   end
 end
+
 -- Routing Display and Laptop constants --
 kDisplay01 = 1
 kDisplay02 = 2
 kLaptop01 = 1
 kLaptop02 = 2
 
-Controls.pinLEDLaptop01Active.EventHandler = function (ctl)
+controls.pinLEDLaptop01Active.EventHandler = function (ctl)
   if ctl.Boolean then 
     funcVideoSwitch(kDisplay01, arrFriendlyNames[kLaptop01])
     funcVideoSwitch(kDisplay02, arrFriendlyNames[kLaptop01])
   end--if 
 end
 
-Controls.pinLEDLaptop02Active.EventHandler = function (ctl)
+controls.pinLEDLaptop02Active.EventHandler = function (ctl)
   if ctl.Boolean then
     funcVideoSwitch(kDisplay01, arrFriendlyNames[kLaptop02])
     funcVideoSwitch(kDisplay02, arrFriendlyNames[kLaptop02])

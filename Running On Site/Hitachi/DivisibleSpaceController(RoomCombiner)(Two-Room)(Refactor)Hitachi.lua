@@ -1,122 +1,107 @@
 --[[
-  Divisible Space Controller - Two Room Version (Refactored, State-Based)
+  Divisible Space Controller - Two Room Version (Refactored)
   Author: Nikolas Smith, Q-SYS
-  Version: 2.0 | Date: 2025-11-18
+  Version: 3.1 | Date: 2025-01-30
   Firmware Req: 10.0.1+
-  Notes:
-  - SIMPLIFIED: State-based control via btnRoomState interlock (Separated/RmA Combined/RmB Combined)
-  - Components discovered programmatically via Component.GetComponents() at init
-  - btnRoomState is single source of truth for walls, gain routing, power sync, and UI state
-  - Complies with Lua Refactoring Prompt specifications
+  
+  Features:
+  - Single-class architecture with data-driven routing engine
+  - State-based control via btnRoomState interlock (Separated/RmA Combined/RmB Combined)
+  - Comprehensive debug logging with phase markers
 ]]
 
------------------------------[ Configuration Tables ]-----------------------------
-local roomNames = {"RoomA", "RoomB"}
-
--- Room number mapping for audio router logic
-local roomNumberMap = {
-  RoomA = 1, RoomB = 2
-}
-local numberToRoomMap = {[1] = "RoomA", [2] = "RoomB"}
-
--- compGains name mapping - index follows roomNumberMap
-local gainControlNames = {"lvlPGMCollabA", "lvlPGMCollabB"}
-
--- compACPR name mapping - index follows roomNumberMap
-local acprControlNames = {"compACPRCollabA", "compACPRCollabB"}
-
--- ACPR routing configuration
--- Set to true to disable ACPR component routing (assignment and routing)
--- Set to false to re-enable ACPR component routing (for future use)
-local acprConfig = {
-    disableACPRRouting = false  -- Set to false to re-enable ACPR component routing
-}
-
--- hidVideoBridge routing configuration
--- Set to true to disable hidVideoBridge routing
--- Set to false to re-enable hidVideoBridge routing (for future use)
-local hidVideoBridgeConfig = {
-    disableHidVideoBridgeRouting = true  -- Set to false to re-enable hidVideoBridge routing
-}
-
--- hidVideoBridge name mapping - index follows roomNumberMap
-local hidVideoBridgeNames = {"hidVideoBridgeDSP-01CollabA", "hidVideoBridgeIOB-01CollabB"}
-
--- Matrix mixer mute control name mapping
-local matrixMixerMutes = {"input.2.output.6.mute", "input.3.output.5.mute", "input.4.output.2.mute", "input.4.output.4.mute", "input.5.output.1.mute", "input.5.output.3.mute"}
-
--- MXA component name mapping - index follows roomNumberMap
-local callSyncNames = {"callSyncCollabA", "callSyncCollabB"}
-local roomControlNames = {"compRoomControlsCollabA", "compRoomControlsCollabB"}
-
--- UCI Status name mapping -- index follows roomNumberMap
-local uciNames = {"uciCollabB", "uciCollabA"}
-
--- ACPR component name mapping 
-local acprOutputNames = {"01", "02"}
-
--- Component name patterns for discovery
-local componentPatterns = {
-  roomControls = "^compRoomControls",         -- Expects: compRoomControlsCollabA, compRoomControlsCollabB
-  roomCombiner = "^compRoomCombiner",         -- Expects: compRoomCombiner
-  camRouter = "^compCamRouter",               -- Expects: compCamRouter
-  matrixMixer = "^compMixerAudioCollab",      -- Expects: compMixerAudioCollab
-  mxaControls = "^compMXAControlsCollab",     -- Expects: compMXAControlsCollabA, compMXAControlsCollabB
-  uciStatus = "^statusControlUCICollab",      -- Expects: statusControlUCICollabB
-  acprComponents = "^compACPRCollab",         -- Expects: compACPRCollabA, compACPRCollabB, compACPRCollabCombined
+-----------------------------[ Configuration ]-----------------------------
+local config = {
+  rooms = {"RoomA", "RoomB"},
+  
+  components = {
+    gains = {"lvlPGMCollabA", "lvlPGMCollabB"},
+    acpr = {"compACPRCollabA", "compACPRCollabB", combined = "compACPRCollabCombined"},
+    acprOutputs = {"01", "02"},
+    callSync = {"callSyncCollabA", "callSyncCollabB"},
+    roomControls = {"compRoomControlsCollabA", "compRoomControlsCollabB"},
+    uciNames = {"uciCollabB", "uciCollabA"},
+    matrixMixerMutes = {
+      "input.2.output.6.mute", "input.3.output.5.mute", 
+      "input.4.output.2.mute", "input.4.output.4.mute", 
+      "input.5.output.1.mute", "input.5.output.3.mute"
+    }
+  },
+  
+  features = {
+    disableACPRRouting = false, -- Set to true to disable ACPR component routing (assignment and routing) (for future use)  
+  },
+  
+  patterns = {
+    roomControls = "^compRoomControls",
+    roomCombiner = "^compRoomCombiner",
+    camRouter = "^compCamRouter",
+    matrixMixer = "^compMixerAudioCollab",
+    mxaControls = "^compMXAControlsCollab",
+    uciStatus = "^statusControlUCICollab",
+    uciController = "^uciControllerCollabA$",
+    acprComponents = "^compACPRCollab"
+  },
+  
+  uciButtons = {
+    {name = "btnNav07", room = "RoomA", desc = "RoomA-PC"},
+    {name = "btnNav09", room = "RoomA", desc = "RoomA-Laptop"},
+    {name = "btnNav08", room = "RoomB", desc = "RoomB-PC"},
+    {name = "btnNav10", room = "RoomB", desc = "RoomB-Laptop"}
+  },
+  
 }
 
--------------------[ Control References ]-------------------
-local controls = {
-  txtStatus         = Controls.txtStatus,
-  btnRoomState      = Controls.btnRoomState,  -- Interlock: 1=Separated, 2=RmA Combined, 3=RmB Combined
-}
-
-local function validateControls()
-  local required = {
-    txtStatus         = controls.txtStatus,
-    btnRoomState      = controls.btnRoomState
+-- Data-driven routing configuration (defined after config to avoid circular reference)
+config.routingRules = {
+  -- Simple routing: one control per room
+  simple = {
+    gain = {
+      enabled = true,
+      targetControl = "compGains 1",
+      componentKey = "roomControls",
+      getName = "Gain routing",
+      separated = function(i) return config.components.gains[i] end,
+      combined = function(priorityIdx) return config.components.gains[priorityIdx] end
+    },
+    
+    acpr = {
+      enabled = function() return not config.features.disableACPRRouting end,
+      targetControl = "compACPR",
+      componentKey = "roomControls",
+      getName = "ACPR assignment",
+      separated = function(i) return config.components.acpr[i] end,
+      combined = function(priorityIdx) return config.components.acpr.combined end
+    },
+  },
+  
+  -- Multi-control routing: multiple controls per room
+  multiControl = {
+    mxaControls = {
+      enabled = true,
+      componentKey = "mxaControls",
+      getName = "MXA controls routing",
+      controls = {
+        {name = "compCallSync", 
+         separated = function(i) return config.components.callSync[i] end,
+         combined = function(pIdx) return config.components.callSync[pIdx] end},
+        {name = "compRoomControls", 
+         separated = function(i) return config.components.roomControls[i] end,
+         combined = function(pIdx) return config.components.roomControls[pIdx] end}
+      }
+    }
   }
-  
-  local missing = {}
-  
-  for name, control in pairs(required) do
-    if not control then 
-      table.insert(missing, name) 
-    end
-  end
-  
-  if #missing > 0 then
-    print("ERROR: DivisibleSpaceController missing required controls:")
-    for _, name in ipairs(missing) do
-      print("  - " .. name)
-    end
-    print("Controller initialization aborted.")
-    return false
-  end
-  
-  return true
-end
+}
 
--------------------[ Utility Functions ]-------------------
+-------------------[ Controls ]-------------------
+local controls = {
+  txtStatus = Controls.txtStatus,
+  btnRoomState = Controls.btnRoomState  -- Interlock: 1=Separated, 2=RmA Combined, 3=RmB Combined
+}
+
+-------------------[ Utilities ]-------------------
 local function isArr(t)
   return type(t) == "table" and t[1] ~= nil
-end
-
-local function getControlArray(ctrl)
-  if isArr(ctrl) then return ctrl end
-  return type(ctrl) == "table" and { ctrl } or {}
-end
-
-local function normalizeControlArrays()
-  local arrayControls = {'btnRoomState'}
-  
-  for _, controlName in ipairs(arrayControls) do
-    local ctrl = controls[controlName]
-    if ctrl and not isArr(ctrl) then
-      controls[controlName] = { ctrl }
-    end
-  end
 end
 
 local function setProp(ctrl, prop, val)
@@ -124,505 +109,128 @@ local function setProp(ctrl, prop, val)
   ctrl[prop] = val
 end
 
-local function bind(control, handler)
-  if not control or not handler then return false end
-  local success, _ = pcall(function()
-    control.EventHandler = handler
-  end)
+local function bind(ctrl, handler)
+  if not ctrl or not handler then return false end
+  local success = pcall(function() ctrl.EventHandler = handler end)
   return success
 end
 
 local function bindArray(ctrls, handler)
   if not ctrls or not handler then return false end
-  local controlArray = getControlArray(ctrls)
-  local bindCount = 0
-  for i, ctrl in ipairs(controlArray) do
-    if ctrl then
-      if bind(ctrl, function(ctl) 
-        local success, err = pcall(handler, i, ctl)
-        if not success then
-          print("Event handler error for control index " .. i .. ": " .. tostring(err))
-        end
-      end) then
-        bindCount = bindCount + 1
-      end
+  local array = isArr(ctrls) and ctrls or {ctrls}
+  local count = 0
+  for i, ctrl in ipairs(array) do
+    if ctrl and bind(ctrl, function(ctl) 
+      local ok, err = pcall(handler, i, ctl)
+      if not ok then print("ERROR: Handler failed at index " .. i .. ": " .. tostring(err)) end
+    end) then
+      count = count + 1
     end
   end
-  return bindCount > 0
+  return count > 0
 end
 
-local function forEach(ctrls, fn)
-  for i, ctrl in ipairs(getControlArray(ctrls)) do fn(i, ctrl) end
-end
-
-local function tableContains(t, val)
-  for _, v in ipairs(t) do
-    if v == val then return true end
-  end
-  return false
-end
-
--------------------[ Base Module Class ]------------------
-local BaseModule = {}; BaseModule.__index = BaseModule
-
-function BaseModule.new(controller, name)
-  local self = setmetatable({}, BaseModule)
-  self.controller = controller
-  self.name = name or "Module"
-  self.initialized = false
-  return self
-end
-
-function BaseModule:debug(msg)
-  if self.controller and self.controller.debugPrint then
-    self.controller:debugPrint("[" .. self.name .. "] " .. msg)
-  end
-end
-
-function BaseModule:init()
-  self.initialized = true
-  self:debug("Module initialized")
-end
-
-function BaseModule:cleanup() 
-  self.initialized = false
-  self:debug("Cleanup complete") 
-end
-
--------------------[ Component Discovery Module ]-------------------
-local ComponentModule = setmetatable({}, {__index = BaseModule})
-ComponentModule.__index = ComponentModule
-
-function ComponentModule.new(controller)
-  local self = BaseModule.new(controller, "ComponentModule")
-  setmetatable(self, ComponentModule)
-  self:init()
-  return self
-end
-
-function ComponentModule:discoverAndAssignComponents()
-  self:debug("Discovering components programmatically...")
-  
-  local discovered = {
-    roomCombiner = nil,
-    matrixMixer = nil,
-    roomControls = {},
-    mxaControls = {},
-    uciStatus = nil,
-    uciController = nil,
-    acprComponents = {},
-    camRouter = nil
-  }
-
-  -- Discover all components
-  for _, component in ipairs(Component.GetComponents()) do
-    -- Find room combiner
-    if component.Name:match(componentPatterns.roomCombiner) then
-      discovered.roomCombiner = Component.New(component.Name)
-      self:debug("Found room combiner: " .. component.Name)
-    end
-    
-    -- Find matrix mixer
-    if component.Name:match(componentPatterns.matrixMixer) then
-      discovered.matrixMixer = Component.New(component.Name)
-      self:debug("Found matrix mixer: " .. component.Name)
-    end
-    
-    -- Find room controls (compRoomControlsA, compRoomControlsB)
-    if component.Name:match(componentPatterns.roomControls) then
-      local comp = Component.New(component.Name)
-      if comp then
-        -- Determine which room this belongs to based on name suffix
-        if component.Name:match("A$") or component.Name:match("1$") then
-          discovered.roomControls[1] = comp
-          self:debug("Found RoomA controls: " .. component.Name)
-        elseif component.Name:match("B$") or component.Name:match("2$") then
-          discovered.roomControls[2] = comp
-          self:debug("Found RoomB controls: " .. component.Name)
-        end
-      end
-    end
-
-    -- Find MXA controls (compMXAControlsCollabA, compMXAControlsCollabB)
-    if component.Name:match(componentPatterns.mxaControls) then
-      local comp = Component.New(component.Name)
-      if comp then
-        -- Determine which room this belongs to based on name suffix
-        if component.Name:match("A$") or component.Name:match("1$") then
-          discovered.mxaControls[1] = comp
-          self:debug("Found RoomA MXA controls: " .. component.Name)
-        elseif component.Name:match("B$") or component.Name:match("2$") then
-          discovered.mxaControls[2] = comp
-          self:debug("Found RoomB MXA controls: " .. component.Name)
-        end
-      end
-    end
-
-    -- Find UCI status (statusControlUCICollabB)
-    if component.Name:match(componentPatterns.uciStatus) then
-      discovered.uciStatus = Component.New(component.Name)
-      self:debug("Found UCI status: " .. component.Name)
-    end
-    
-    -- Find UCI controller (uciControllerCollabA)
-    if component.Name == "uciControllerCollabA" then
-      discovered.uciController = Component.New(component.Name)
-      self:debug("Found UCI controller: " .. component.Name)
-    end
-
-    -- Find ACPR components (compACPRCollabA, compACPRCollabB, compACPRCollabCombined)
-    if component.Name:match(componentPatterns.acprComponents) then
-      local comp = Component.New(component.Name)
-      if comp then
-        -- Determine which room this belongs to based on name suffix
-        if component.Name:match("A$") or component.Name:match("1$") then
-          discovered.acprComponents[1] = comp
-          self:debug("Found RoomA ACPR: " .. component.Name)
-        elseif component.Name:match("B$") or component.Name:match("2$") then
-          discovered.acprComponents[2] = comp
-          self:debug("Found RoomB ACPR: " .. component.Name)
-        elseif component.Name:match("Combined$") then
-          discovered.acprComponents[3] = comp
-          self:debug("Found Combined ACPR: " .. component.Name)
-        end
-      end
-    end
-
-    -- Find cam router (compCamRouter)
-    if component.Name:match(componentPatterns.camRouter) then
-      discovered.camRouter = Component.New(component.Name)
-      self:debug("Found cam router: " .. component.Name)
-    end
-  end
-
-  return discovered
-end
-
--------------------[ Power Synchronization Module ]-------------------
-local PowerSyncModule = setmetatable({}, {__index = BaseModule})
-PowerSyncModule.__index = PowerSyncModule
-
-function PowerSyncModule.new(controller)
-  local self = BaseModule.new(controller, "PowerSyncModule")
-  setmetatable(self, PowerSyncModule)
-  self.syncInProgress = false
-  self:init()
-  return self
-end
-
-function PowerSyncModule:setupRoomPowerEventHandlers()
-  self:debug("Setting up room power state event handlers...")
- 
-  -- Configuration-driven handler setup (DRY pattern per Lua Refactoring Prompt #28)
-  local handlerConfigs = {
-    {
-      controlName = "ledSystemPower",
-      handlerMethod = "onRoomPowerChanged",
-      description = "power"
-    },
-    {
-      controlName = "ledSystemCooling",
-      handlerMethod = "onRoomCoolingChanged",
-      description = "cooling"
-    }
-  }
- 
-  local handlersSetup = 0
-  local totalExpected = #roomNames * #handlerConfigs
- 
-  for i, roomName in ipairs(roomNames) do
-    local comp = self.controller.components.roomControls[i]
-    if comp then
-      -- Bind all handlers for this room using configuration table
-      for _, config in ipairs(handlerConfigs) do
-        local control = comp[config.controlName]
-        if control then
-          local handler = function()
-            self[config.handlerMethod](self, roomName, i)
-          end
-          if bind(control, handler) then
-            handlersSetup = handlersSetup + 1
-            self:debug(config.description:sub(1,1):upper() .. config.description:sub(2) .. " event handler set for " .. roomName .. " (monitoring " .. config.controlName .. ")")
-          else
-            self:debug("WARNING: Failed to bind " .. config.description .. " handler for " .. roomName)
-          end
-        else
-          self:debug("WARNING: Could not set " .. config.description .. " handler for " .. roomName .. " - " .. config.controlName .. " control not found")
-        end
-      end
-    else
-      self:debug("WARNING: Component not found for " .. roomName)
-    end
-  end
- 
-  self:debug("Room power event handlers setup: " .. handlersSetup .. "/" .. totalExpected .. " successful")
-end
-
-function PowerSyncModule:onRoomCoolingChanged(roomName, roomIndex)
-  self:debug("Cooling state changed for " .. roomName .. " - updating button states...")
-  
-  -- Update btnRoomState button disabled states when cooling state changes
-  if self.controller.wallModule then
-    self.controller.wallModule:updateBtnRoomStateDisabledStates()
-  end
-end
-
-function PowerSyncModule:onRoomPowerChanged(roomName, roomIndex)
-  if self.syncInProgress then
-    self:debug("Sync already in progress - ignoring power change for " .. roomName)
-    return
-  end
-
-  self:debug("Power state changed for " .. roomName .. " - checking for combined rooms...")
-
-  -- Update btnRoomState button disabled states based on power state
-  if self.controller.wallModule then
-    self.controller.wallModule:updateBtnRoomStateDisabledStates()
-  end
-
-  -- Only sync if rooms are combined
-  if self.controller:isRoomsSeparated() then
-    self:debug(roomName .. " is in separated state - no power sync needed")
-    return
-  end
-  
-  -- Get the new power state of the changed room
-  local newPowerState = self.controller:isRoomPoweredOn(roomName)
-  self:debug(roomName .. " new power state: " .. (newPowerState and "ON" or "OFF"))
-  
-  -- Check for automatic separation if room powered off
-  if not newPowerState then
-    self:debug("Room " .. roomName .. " powered OFF - checking if all combined rooms are now off...")
-    if self:shouldAutoSeparate() then
-      self:debug("All rooms are OFF - automatically separating rooms")
-      self:separateRooms()
-      return -- No need to sync power states if we're separating
-    end
-  end
-  
-  -- Find all other rooms in the combination to synchronize
-  -- In combined state, ANY room change should sync to ALL other rooms
-  local roomsToSync = {}
-  for i, rn in ipairs(roomNames) do
-    if rn ~= roomName then
-      table.insert(roomsToSync, rn)
-    end
-  end
-  
-  if #roomsToSync == 0 then
-    self:debug("No other rooms to sync with " .. roomName)
-    return
-  end
-  
-  self:debug("Synchronizing power state (" .. (newPowerState and "ON" or "OFF") .. ") from " .. roomName .. " to combined rooms: " .. table.concat(roomsToSync, ", "))
-  
-  -- Perform the synchronization
-  self:syncPowerToRooms(roomsToSync, newPowerState)
-  
-  -- Update UCI status routing after power change (may switch between uciCollabA/uciCollabB based on RoomB power)
-  self.controller:applyUCIStatusRouting()
-end
-
-function PowerSyncModule:syncPowerToRooms(roomsToSync, powerState)
-  self.syncInProgress = true
- 
-  local syncedRooms = 0
-  local syncErrors = {}
- 
-  for _, roomName in ipairs(roomsToSync) do
-    local roomIndex = self:getRoomIndex(roomName)
-    if roomIndex then
-      local comp = self.controller.components.roomControls[roomIndex]
-      if comp and comp["ledSystemPower"] and comp["btnSystemOnOff"] then
-        -- CONTROL/STATUS PATTERN:
-        -- Read ledSystemPower (status) to check current state
-        local currentState = comp["ledSystemPower"].Boolean
-        if currentState ~= powerState then
-          -- Write to btnSystemOnOff (control) to trigger power change
-          -- SystemAutomationController will then update ledSystemPower (status) to reflect actual state
-          setProp(comp["btnSystemOnOff"], "Boolean", powerState)
-          syncedRooms = syncedRooms + 1
-          self:debug("SYNCED: " .. roomName .. " -> btnSystemOnOff set to " .. (powerState and "ON" or "OFF"))
-        else
-          self:debug("SKIP: " .. roomName .. " already " .. (powerState and "ON" or "OFF") .. " (per ledSystemPower)")
-        end
-      else
-        local errorMsg = roomName .. ": Component or required controls not found"
-        table.insert(syncErrors, errorMsg)
-        self:debug("ERROR: " .. errorMsg)
-      end
-    else
-      local errorMsg = roomName .. ": Room index not found"
-      table.insert(syncErrors, errorMsg)
-      self:debug("ERROR: " .. errorMsg)
-    end
-  end
- 
-  if self.controller.printOperationResult then
-    self.controller:printOperationResult("Power sync", syncedRooms, #roomsToSync, syncErrors)
-  end
- 
-  self.syncInProgress = false
-end
-
-function PowerSyncModule:shouldAutoSeparate()
-  -- Check if ALL rooms are powered off
-  local allRoomsOff = true
-  
-  for i, roomName in ipairs(roomNames) do
-    local roomPowerState = self.controller:isRoomPoweredOn(roomName)
-    self:debug("Checking " .. roomName .. " power state: " .. (roomPowerState and "ON" or "OFF"))
-    
-    if roomPowerState then
-      allRoomsOff = false
-      self:debug("Found " .. roomName .. " still powered ON - separation not needed")
-      break
-    end
-  end
-  
-  self:debug("Auto-separation check: all rooms off = " .. tostring(allRoomsOff))
-  return allRoomsOff
-end
-
-function PowerSyncModule:separateRooms()
-  self:debug("Executing automatic room separation...")
-  
-  -- Set sync flag to prevent recursive power change handlers
-  self.syncInProgress = true
-  
-  -- STEP 1: Power OFF all rooms first to allow wall movement
-  -- CONTROL/STATUS PATTERN: Read ledSystemPower (status), write to btnSystemOnOff (control)
-  local roomsPoweredOff = 0
-  for i, roomName in ipairs(roomNames) do
-    local comp = self.controller.components.roomControls[i]
-    if comp and comp["ledSystemPower"] and comp["btnSystemOnOff"] then
-      if comp["ledSystemPower"].Boolean then -- Check status
-        self:debug("Powering OFF " .. roomName .. " before separation")
-        setProp(comp["btnSystemOnOff"], "Boolean", false) -- Trigger control
-        roomsPoweredOff = roomsPoweredOff + 1
-      end
-    end
-  end
-  
-  self:debug("Powered OFF " .. roomsPoweredOff .. " rooms before separation")
-  
-  -- STEP 2: Set btnRoomState to Separated (button 1)
-  if controls.btnRoomState and controls.btnRoomState[1] then
-    setProp(controls.btnRoomState[1], "Boolean", true)
-    self:debug("Set btnRoomState to Separated")
-    
-    -- Apply interlock to ensure other buttons are off
-    self.controller:applyBtnRoomStateInterlock(1)
-    
-    -- Directly call applyRoomState since EventHandlers don't fire on programmatic changes
-    self.controller:applyRoomState()
-  end
-  
-  -- STEP 3: Update btnRoomState button disabled states (all rooms are now off, so enable combine buttons)
-  if self.controller.wallModule then
-    self.controller.wallModule:updateBtnRoomStateDisabledStates()
-  end
-  
-  -- Clear sync flag
-  self.syncInProgress = false
-end
-
-function PowerSyncModule:getRoomIndex(roomName)
-  for i, rn in ipairs(roomNames) do
-    if rn == roomName then
-      return i
-    end
-  end
-  return nil
-end
-
--------------------[ Wall Module ]-------------------
-local WallModule = setmetatable({}, {__index = BaseModule})
-WallModule.__index = WallModule
-
-function WallModule.new(controller)
-  local self = BaseModule.new(controller, "WallModule")
-  setmetatable(self, WallModule)
-  self:init()
-  return self
-end
-
-function WallModule:updateWallState()
-  self:debug("Updating wall state based on btnRoomState...")
-  
-  if not self.controller.components.roomCombiner then
-    self:debug("No room combiner available")
-    return
-  end
-  
-  local roomState = self.controller:getRoomState()
-  local wallShouldBeOpen = (roomState ~= "Separated")
-  
-  -- For two-room setup, only one wall (wall.1.open)
-  local wallControl = self.controller.components.roomCombiner["wall.1.open"]
-  
-  if wallControl then
-    setProp(wallControl, "Boolean", wallShouldBeOpen)
-    self:debug("Wall set to " .. (wallShouldBeOpen and "OPEN" or "CLOSED") .. " (State: " .. roomState .. ")")
-  else
-    self:debug("ERROR: Wall control not found on room combiner")
-  end
-end
-
-function WallModule:canChangeWallState()
-  -- Check if any room is powered on (using ledSystemPower as authoritative status indicator)
-  -- CONTROL/STATUS PATTERN: Always read power state from ledSystemPower (status)
-  for _, roomName in ipairs(roomNames) do
-    if self.controller:isRoomPoweredOn(roomName) then
-      self:debug("Wall change blocked - " .. roomName .. " is powered on")
+local function validateControls()
+  local required = {"txtStatus", "btnRoomState"}
+  for _, name in ipairs(required) do
+    if not controls[name] then
+      print("ERROR: Missing required control: " .. name)
       return false
     end
   end
   return true
 end
 
-function WallModule:updateBtnRoomStateDisabledStates()
-  self:debug("Updating btnRoomState button disabled states...")
-  
-  -- Check if ANY room is powered on
-  local anyRoomOn = false
-  local anyRoomCooling = false
-  local roomStates = {}
-  
-  for _, roomName in ipairs(roomNames) do
-    local isRoomOn = self.controller:isRoomPoweredOn(roomName)
-    table.insert(roomStates, roomName .. ":" .. (isRoomOn and "ON" or "OFF"))
-    if isRoomOn then
-      anyRoomOn = true
-    end
-    
-    -- Check if room is cooling (prevent turning on while cooling down)
-    local isRoomCooling = self.controller:isRoomCooling(roomName)
-    if isRoomCooling then
-      anyRoomCooling = true
-      table.insert(roomStates, roomName .. ":COOLING")
-    end
+local function normalizeControlArrays()
+  for _, name in ipairs({'btnRoomState'}) do
+    local ctrl = controls[name]
+    if ctrl and not isArr(ctrl) then controls[name] = {ctrl} end
   end
-  
-  -- Disable combine buttons (2 and 3) if any room is powered on OR cooling
-  -- btnRoomState[1] = Separated (always enabled)
-  -- btnRoomState[2] = RoomA Combined (disable when any room is ON or cooling)
-  -- btnRoomState[3] = RoomB Combined (disable when any room is ON or cooling)
-  local shouldDisable = anyRoomOn or anyRoomCooling
-  if controls.btnRoomState then
-    if controls.btnRoomState[2] then
-      setProp(controls.btnRoomState[2], "IsDisabled", shouldDisable)
-    end
-    if controls.btnRoomState[3] then
-      setProp(controls.btnRoomState[3], "IsDisabled", shouldDisable)
-    end
-  end
-  
-  self:debug("btnRoomState[2,3] " .. (shouldDisable and "DISABLED" or "ENABLED") .. 
-             " [" .. table.concat(roomStates, ", ") .. "]")
 end
 
--------------------[ DivisibleSpaceController (Main Orchestrator) ]-------------------
+-------------------[ Generic Routing Engine ]-------------------
+-- Generic function to apply simple routing rules (one control per room)
+local function applySimpleRouting(self, rule, ruleName)
+  local enabled
+  if type(rule.enabled) == "function" then
+    enabled = rule.enabled()
+  else
+    enabled = rule.enabled
+  end
+  if not enabled then
+    self:debugPrint(ruleName .. " disabled")
+    return
+  end
+  
+  local isSeparated = self:isRoomsSeparated()
+  local priorityRoom = self:getPriorityRoom()
+  local priorityIdx = priorityRoom and ((priorityRoom == "RoomA") and 1 or 2)
+  local success, errors = 0, {}
+  
+  for i, room in ipairs(config.rooms) do
+    local comp = self.components[rule.componentKey][i]
+    
+    if comp and comp[rule.targetControl] then
+      local value = isSeparated and rule.separated(i) or rule.combined(priorityIdx)
+      
+      if value and value ~= "" then
+        setProp(comp[rule.targetControl], "String", value)
+        success = success + 1
+        self:debugPrint(room .. " -> " .. rule.targetControl .. ": " .. value)
+      else
+        table.insert(errors, room .. ": Invalid value")
+      end
+    else
+      table.insert(errors, room .. ": " .. rule.targetControl .. " not found")
+    end
+  end
+  
+  self:printOperationResult(rule.getName, success, #config.rooms, errors)
+end
+
+-- Generic function to apply multi-control routing rules
+local function applyMultiControlRouting(self, rule, ruleName)
+  local enabled
+  if type(rule.enabled) == "function" then
+    enabled = rule.enabled()
+  else
+    enabled = rule.enabled
+  end
+  if not enabled then
+    self:debugPrint(ruleName .. " disabled")
+    return
+  end
+  
+  local isSeparated = self:isRoomsSeparated()
+  local priorityRoom = self:getPriorityRoom()
+  local priorityIdx = priorityRoom and ((priorityRoom == "RoomA") and 1 or 2)
+  local success, errors = 0, {}
+  local total = #config.rooms * #rule.controls
+  
+  for i, room in ipairs(config.rooms) do
+    local comp = self.components[rule.componentKey][i]
+    
+    for _, ctrl in ipairs(rule.controls) do
+      if comp and comp[ctrl.name] then
+        local value = isSeparated and ctrl.separated(i) or ctrl.combined(priorityIdx)
+        
+        if value then
+          setProp(comp[ctrl.name], "String", value)
+          success = success + 1
+          self:debugPrint(room .. " -> " .. ctrl.name .. ": " .. value)
+        else
+          table.insert(errors, room .. ": Invalid " .. ctrl.name)
+        end
+      else
+        table.insert(errors, room .. ": " .. ctrl.name .. " not found")
+      end
+    end
+  end
+  
+  self:printOperationResult(rule.getName, success, total, errors)
+end
+
+-------------------[ DivisibleSpaceController ]-------------------
 local DivisibleSpaceController = {}
 DivisibleSpaceController.__index = DivisibleSpaceController
 
@@ -630,6 +238,7 @@ function DivisibleSpaceController.new(roomName, debugging)
   local self = setmetatable({}, DivisibleSpaceController)
   self.roomName = roomName or "Two Room Divisible Space"
   self.debugging = debugging ~= false
+  self.syncInProgress = false
   
   self.components = {
     roomCombiner = nil,
@@ -640,237 +249,381 @@ function DivisibleSpaceController.new(roomName, debugging)
     uciController = nil,
     acprComponents = {},
     camRouter = nil,
-    gainComponents = {} -- Cache gain components to avoid repeated Component.New() calls
+    gainComponents = {}
   }
-  
-  self.componentModule = ComponentModule.new(self)
-  self.powerSyncModule = PowerSyncModule.new(self)
-  self.wallModule = WallModule.new(self)
   
   return self
 end
 
 function DivisibleSpaceController:debugPrint(str)
-  if self.debugging then
-    print("[" .. (self.roomName or "DivisibleSpace") .. "] " .. str)
+  if self.debugging then print("[" .. self.roomName .. "] " .. str) end
+end
+
+function DivisibleSpaceController:printOperationResult(operation, success, total, errors)
+  self:debugPrint(operation .. " complete: " .. success .. "/" .. total .. " successful")
+  if errors and #errors > 0 then
+    for _, err in ipairs(errors) do self:debugPrint("  ERROR: " .. err) end
   end
 end
 
-function DivisibleSpaceController:printOperationResult(operationType, successCount, totalCount, errorList)
-  self:debugPrint(operationType .. " complete: " .. successCount .. "/" .. totalCount .. " successful")
-  if errorList and #errorList > 0 then
-    self:debugPrint(operationType .. " errors: " .. #errorList)
-    for _, error in ipairs(errorList) do
-      self:debugPrint(" - " .. error)
+function DivisibleSpaceController:getRoomIndex(roomName)
+  for i, name in ipairs(config.rooms) do
+    if name == roomName then return i end
+  end
+  return nil
+end
+
+-------------------[ Component Discovery ]-------------------
+function DivisibleSpaceController:discoverComponents()
+  self:debugPrint("=== Component Discovery Started ===")
+  
+  local discoveryMap = {
+    {pattern = config.patterns.roomCombiner, key = "roomCombiner", single = true},
+    {pattern = config.patterns.matrixMixer, key = "matrixMixer", single = true},
+    {pattern = config.patterns.roomControls, key = "roomControls", indexed = true},
+    {pattern = config.patterns.mxaControls, key = "mxaControls", indexed = true},
+    {pattern = config.patterns.uciStatus, key = "uciStatus", single = true},
+    {pattern = config.patterns.uciController, key = "uciController", single = true, exact = true},
+    {pattern = config.patterns.acprComponents, key = "acprComponents", indexed = true, hasCombined = true},
+    {pattern = config.patterns.camRouter, key = "camRouter", single = true}
+  }
+  
+  local function matchesPattern(name, map)
+    return map.exact and name == map.pattern:gsub("^%^", ""):gsub("%$$", "") or name:match(map.pattern)
+  end
+  
+  local function getIndexFromName(name, hasCombined)
+    return name:match("A$") and 1 or 
+           name:match("B$") and 2 or 
+           (hasCombined and name:match("Combined$") and 3)
+  end
+  
+  local foundCount = 0
+  for _, comp in ipairs(Component.GetComponents()) do
+    for _, map in ipairs(discoveryMap) do
+      if matchesPattern(comp.Name, map) then
+        local component = Component.New(comp.Name)
+        if component then
+          if map.single then
+            self.components[map.key] = component
+            self:debugPrint("Found " .. map.key .. ": " .. comp.Name)
+            foundCount = foundCount + 1
+          elseif map.indexed then
+            local idx = getIndexFromName(comp.Name, map.hasCombined)
+            if idx then
+              self.components[map.key][idx] = component
+              self:debugPrint("Found " .. map.key .. "[" .. idx .. "]: " .. comp.Name)
+              foundCount = foundCount + 1
+            end
+          end
+        end
+      end
     end
   end
+  
+  self:debugPrint("=== Component Discovery Complete: " .. foundCount .. " components found ===")
 end
 
-----------------[ Component Caching ]--------------------------
 function DivisibleSpaceController:cacheGainComponents()
-  self:debugPrint("Caching gain components...")
-  
-  for i, gainName in ipairs(gainControlNames) do
+  for i, gainName in ipairs(config.components.gains) do
     local gainComp = Component.New(gainName)
     if gainComp then
       self.components.gainComponents[i] = gainComp
-      self:debugPrint("Cached gain component: " .. gainName)
+      self:debugPrint("Cached gain: " .. gainName)
     else
-      self:debugPrint("WARNING: Failed to cache gain component: " .. gainName)
+      self:debugPrint("WARNING: Failed to cache gain: " .. gainName)
     end
   end
-  
-  self:debugPrint("Gain components cached: " .. #self.components.gainComponents .. "/" .. #gainControlNames)
 end
 
-----------------[ Initialization ]--------------------------
-function DivisibleSpaceController:init()
-  self:debugPrint("Starting initialization...")
+-------------------[ Initialization ]-------------------
+function DivisibleSpaceController:validateComponents()
+  local warnings = {}
   
-  -- Discover and assign components programmatically
-  local discovered = self.componentModule:discoverAndAssignComponents()
-  self.components.roomCombiner = discovered.roomCombiner
-  self.components.matrixMixer = discovered.matrixMixer
-  self.components.roomControls = discovered.roomControls
-  self.components.mxaControls = discovered.mxaControls
-  self.components.uciStatus = discovered.uciStatus
-  self.components.uciController = discovered.uciController
-  self.components.acprComponents = discovered.acprComponents
-  self.components.camRouter = discovered.camRouter
-  -- Verify critical components
-  if not self.components.roomCombiner then
-    self:debugPrint("WARNING: Room combiner not found")
-  end
-
-  if not self.components.matrixMixer then
-    self:debugPrint("WARNING: Matrix mixer not found")
-  end
+  -- Validate single components
+  local singleComponents = {
+    {key = "roomCombiner", desc = "Room combiner"},
+    {key = "matrixMixer", desc = "Matrix mixer"},
+    {key = "uciStatus", desc = "UCI status"},
+    {key = "camRouter", desc = "Cam router"}
+  }
   
-  for i, roomName in ipairs(roomNames) do
-    if not self.components.roomControls[i] then
-      self:debugPrint("WARNING: Room controls for " .. roomName .. " not found")
-    end
-    if not self.components.mxaControls[i] then
-      self:debugPrint("WARNING: MXA controls for " .. roomName .. " not found")
-    end
-    if not self.components.uciStatus then
-      self:debugPrint("WARNING: UCI status not found")
-    end
-    if not self.components.acprComponents[i] then
-      self:debugPrint("WARNING: ACPR components for " .. roomName .. " not found")
-    end
-    if not self.components.camRouter then
-      self:debugPrint("WARNING: Cam router not found")
+  for _, comp in ipairs(singleComponents) do
+    if not self.components[comp.key] then
+      table.insert(warnings, comp.desc)
     end
   end
   
-  -- Check for Combined ACPR component (index 3)
+  -- Validate per-room components
+  local roomComponents = {
+    {key = "roomControls", desc = "controls"},
+    {key = "mxaControls", desc = "MXA"},
+    {key = "acprComponents", desc = "ACPR"}
+  }
+  
+  for i, room in ipairs(config.rooms) do
+    for _, comp in ipairs(roomComponents) do
+      if not self.components[comp.key][i] then
+        table.insert(warnings, room .. " " .. comp.desc)
+      end
+    end
+  end
+  
+  -- Validate combined ACPR
   if not self.components.acprComponents[3] then
-    self:debugPrint("WARNING: Combined ACPR component not found")
+    table.insert(warnings, "Combined ACPR")
   end
   
-  -- Cache gain components to optimize repeated access
-  self:cacheGainComponents()
-  
-  -- Register event handlers
-  self:registerEventHandlers()
-  
-  -- Set initial state
-  self:applyRoomState()
-  
-  -- Setup power event handlers
-  if self.powerSyncModule then
-    self.powerSyncModule:setupRoomPowerEventHandlers()
+  if #warnings > 0 then
+    self:debugPrint("WARNING: Missing components: " .. table.concat(warnings, ", "))
   end
   
-  -- Setup UCI button event handlers (for dynamic priority room changes)
-  self:setupUCIButtonEventHandlers()
-  
-  -- Update initial btnRoomState button disabled states based on current power state
-  if self.wallModule then
-    self.wallModule:updateBtnRoomStateDisabledStates()
-  end
-  
-  self:checkStatus()
-  self:debugPrint("Initialization complete")
+  return #warnings
 end
 
-------------------[ Event Handler Registration ]----------------------
-function DivisibleSpaceController:registerEventHandlers()
-  self:debugPrint("Registering event handlers...")
+function DivisibleSpaceController:init()
+  self:debugPrint("=== Initialization Started ===")
   
-  -- btnRoomState interlock handler with explicit interlock logic
-  -- Ensures only one button is true at a time (mutually exclusive)
+  self:discoverComponents()
+  self:validateComponents()
+  self:cacheGainComponents()
+  self:registerEventHandlers()
+  self:setupRoomPowerEventHandlers()
+  self:setupUCIButtonEventHandlers()
+  self:applyRoomState()
+  self:updateBtnRoomStateDisabledStates()
+  self:checkStatus()
+  
+  self:debugPrint("=== Initialization Complete ===")
+end
+
+-------------------[ Event Registration ]-------------------
+function DivisibleSpaceController:registerEventHandlers()
   if controls.btnRoomState then
     bindArray(controls.btnRoomState, function(i, ctl)
       if ctl.Boolean then
-        self:debugPrint("Room state button " .. i .. " pressed: " .. self:getRoomStateFromIndex(i))
-        
-        -- Apply interlock: set all other buttons to false
+        self:debugPrint("btnRoomState[" .. i .. "] pressed: " .. self:getRoomStateFromIndex(i))
         self:applyBtnRoomStateInterlock(i)
-        
-        -- Apply the room state configuration
         self:applyRoomState()
       end
     end)
-    self:debugPrint("btnRoomState event handlers registered with interlock")
+    self:debugPrint("Registered btnRoomState handlers")
+  end
+end
+
+function DivisibleSpaceController:setupRoomPowerEventHandlers()
+  self:debugPrint("Setting up room power event handlers...")
+  
+  local handlers = {
+    {control = "ledSystemPower", method = "onRoomPowerChanged"},
+    {control = "ledSystemCooling", method = "onRoomCoolingChanged"}
+  }
+  
+  local function bindHandler(comp, handler, room, i)
+    if comp[handler.control] then
+      return bind(comp[handler.control], function() self[handler.method](self, room, i) end)
+    end
+    return false
   end
   
-  self:debugPrint("Event handlers setup complete")
+  local count = 0
+  for i, room in ipairs(config.rooms) do
+    local comp = self.components.roomControls[i]
+    if comp then
+      for _, handler in ipairs(handlers) do
+        if bindHandler(comp, handler, room, i) then count = count + 1 end
+      end
+    end
+  end
+  
+  self:debugPrint("Registered " .. count .. " power/cooling handlers")
 end
 
 function DivisibleSpaceController:setupUCIButtonEventHandlers()
-  self:debugPrint("Setting up UCI input selection event handlers...")
-  
   if not self.components.uciController then
-    self:debugPrint("WARNING: UCI controller component not found - skipping UCI button event handlers")
+    self:debugPrint("WARNING: UCI controller not found - skipping UCI button handlers")
     return
   end
   
-  -- Configuration-driven handler setup (DRY pattern per Lua Refactoring Prompt #28)
-  -- Reusing pattern from PowerSyncModule:setupRoomPowerEventHandlers()
-  local buttonConfigs = {
-    {
-      buttonName = "btnNav07",
-      priorityRoom = "RoomA",
-      description = "RoomA-PC"
-    },
-    {
-      buttonName = "btnNav09",
-      priorityRoom = "RoomA",
-      description = "RoomA-Laptop"
-    },
-    {
-      buttonName = "btnNav08",
-      priorityRoom = "RoomB",
-      description = "RoomB-PC"
-    },
-    {
-      buttonName = "btnNav10",
-      priorityRoom = "RoomB",
-      description = "RoomB-Laptop"
-    }
-  }
-  
-  local handlersSetup = 0
-  
-  -- Bind all handlers using configuration table
-  for _, config in ipairs(buttonConfigs) do
-    local button = self.components.uciController[config.buttonName]
-    if button then
-      local handler = function()
-        self:onUCIInputSelectionChanged()
-      end
-      -- Reuse existing bind() utility function
-      if bind(button, handler) then
-        handlersSetup = handlersSetup + 1
-        self:debugPrint("UCI button event handler set for " .. config.buttonName .. " (" .. config.description .. ")")
-      else
-        self:debugPrint("WARNING: Failed to bind handler for " .. config.buttonName)
-      end
-    else
-      self:debugPrint("WARNING: Could not set handler for " .. config.buttonName .. " - button not found")
+  local count = 0
+  for _, btn in ipairs(config.uciButtons) do
+    local button = self.components.uciController[btn.name]
+    if button and bind(button, function() self:onUCIInputSelectionChanged() end) then
+      self:debugPrint("Registered UCI button: " .. btn.name .. " (" .. btn.desc .. ")")
+      count = count + 1
     end
   end
   
-  self:debugPrint("UCI button event handlers setup: " .. handlersSetup .. "/" .. #buttonConfigs .. " successful")
+  self:debugPrint("Registered " .. count .. "/" .. #config.uciButtons .. " UCI button handlers")
+end
+
+-------------------[ Power Event Handlers ]-------------------
+function DivisibleSpaceController:onRoomCoolingChanged(roomName, roomIndex)
+  self:debugPrint("Cooling state changed: " .. roomName)
+  self:updateBtnRoomStateDisabledStates()
+end
+
+function DivisibleSpaceController:onRoomPowerChanged(roomName, roomIndex)
+  if self.syncInProgress then
+    self:debugPrint("Sync in progress - ignoring power change for " .. roomName)
+    return
+  end
+  
+  self:debugPrint("=== Power State Changed: " .. roomName .. " ===")
+  self:updateBtnRoomStateDisabledStates()
+  
+  if self:isRoomsSeparated() then
+    self:debugPrint(roomName .. " is separated - no sync needed")
+    return
+  end
+  
+  local newPowerState = self:isRoomPoweredOn(roomName)
+  self:debugPrint(roomName .. " power: " .. (newPowerState and "ON" or "OFF"))
+  
+  -- Check for auto-separation if all rooms are off
+  if not newPowerState and self:shouldAutoSeparate() then
+    self:debugPrint("All rooms OFF - auto-separating")
+    self:separateRooms()
+    return
+  end
+  
+  -- Sync power to other rooms
+  local roomsToSync = {}
+  for _, rn in ipairs(config.rooms) do
+    if rn ~= roomName then table.insert(roomsToSync, rn) end
+  end
+  
+  if #roomsToSync > 0 then
+    self:debugPrint("Syncing power (" .. (newPowerState and "ON" or "OFF") .. ") to: " .. table.concat(roomsToSync, ", "))
+    self:syncPowerToRooms(roomsToSync, newPowerState)
+    self:applyUCIStatusRouting()
+  end
 end
 
 function DivisibleSpaceController:onUCIInputSelectionChanged()
-  self:debugPrint("UCI input selection changed - checking for priority room update...")
+  if self:isRoomsSeparated() then return end
   
-  -- Reuse existing patterns: Check room state and power state
-  if self:isRoomsSeparated() then
-    self:debugPrint("Rooms are separated - no priority room change needed")
+  if not self:checkAnyRoomState(self.isRoomPoweredOn) then
+    self:debugPrint("UCI button changed but system OFF - routing will apply on power on")
     return
   end
   
-  -- Check if system is already On (any room powered on)
-  -- Reuse existing isRoomPoweredOn() method (CONTROL/STATUS pattern)
-  local anyRoomOn = false
-  for _, roomName in ipairs(roomNames) do
-    if self:isRoomPoweredOn(roomName) then
-      anyRoomOn = true
-      self:debugPrint("System is ON (" .. roomName .. " powered on) - will re-apply priority-dependent routing")
-      break
+  local newPriority = self:getPriorityRoom()
+  if newPriority then
+    self:debugPrint("Priority room changed to " .. newPriority .. " - re-applying routing")
+    self:applyPriorityDependentRouting()
+  end
+end
+
+-------------------[ Power Synchronization ]-------------------
+function DivisibleSpaceController:getRoomControlComponent(roomName)
+  local idx = self:getRoomIndex(roomName)
+  return idx and self.components.roomControls[idx]
+end
+
+function DivisibleSpaceController:syncPowerToRooms(roomsToSync, powerState)
+  self.syncInProgress = true
+  local synced, errors = 0, {}
+  local stateStr = powerState and "ON" or "OFF"
+  
+  for _, roomName in ipairs(roomsToSync) do
+    local comp = self:getRoomControlComponent(roomName)
+    if comp and comp["ledSystemPower"] and comp["btnSystemOnOff"] then
+      if comp["ledSystemPower"].Boolean ~= powerState then
+        setProp(comp["btnSystemOnOff"], "Boolean", powerState)
+        synced = synced + 1
+        self:debugPrint("SYNCED: " .. roomName .. " -> " .. stateStr)
+      else
+        self:debugPrint("SKIP: " .. roomName .. " already " .. stateStr)
+      end
+    else
+      table.insert(errors, roomName .. ": Controls not found")
     end
   end
   
-  if not anyRoomOn then
-    self:debugPrint("System is OFF - priority room change noted but routing will apply when system powers on")
-    return
+  self:printOperationResult("Power sync", synced, #roomsToSync, errors)
+  self.syncInProgress = false
+end
+
+function DivisibleSpaceController:shouldAutoSeparate()
+  return not self:checkAnyRoomState(self.isRoomPoweredOn)
+end
+
+function DivisibleSpaceController:separateRooms()
+  self:debugPrint("=== Auto-Separating Rooms ===")
+  self.syncInProgress = true
+  
+  -- Power off all rooms
+  for i, room in ipairs(config.rooms) do
+    local comp = self.components.roomControls[i]
+    if comp and comp["ledSystemPower"] and comp["ledSystemPower"].Boolean then
+      setProp(comp["btnSystemOnOff"], "Boolean", false)
+      self:debugPrint("Powered OFF: " .. room)
+    end
   end
   
-  -- Get current priority room to detect if it changed
-  local newPriorityRoom = self:getPriorityRoom()
+  -- Set to separated state
+  self:setRoomStateIndex(1)  -- Index 1 = Separated
+  self:updateBtnRoomStateDisabledStates()
+  self.syncInProgress = false
+  self:debugPrint("=== Auto-Separation Complete ===")
+end
+
+function DivisibleSpaceController:setRoomStateIndex(index)
+  if controls.btnRoomState and controls.btnRoomState[index] then
+    setProp(controls.btnRoomState[index], "Boolean", true)
+    self:applyBtnRoomStateInterlock(index)
+    self:applyRoomState()
+  end
+end
+
+-------------------[ Wall Management ]-------------------
+function DivisibleSpaceController:updateWallState()
+  if not self.components.roomCombiner then return end
   
-  if newPriorityRoom then
-    self:debugPrint("Priority room changed to: " .. newPriorityRoom .. " - re-applying routing")
-    -- Reuse existing applyPriorityDependentRouting() method
-    self:applyPriorityDependentRouting()
+  local roomState = self:getRoomState()
+  local wallShouldBeOpen = (roomState ~= "Separated")
+  local wallControl = self.components.roomCombiner["wall.1.open"]
+  
+  if wallControl then
+    setProp(wallControl, "Boolean", wallShouldBeOpen)
+    self:debugPrint("Wall: " .. (wallShouldBeOpen and "OPEN" or "CLOSED") .. " (State: " .. roomState .. ")")
   else
-    self:debugPrint("No priority room detected from UCI buttons - keeping current routing")
+    self:debugPrint("ERROR: Wall control not found")
   end
+end
+
+function DivisibleSpaceController:canChangeWallState()
+  for _, room in ipairs(config.rooms) do
+    if self:isRoomPoweredOn(room) then
+      self:debugPrint("Wall change blocked - " .. room .. " is powered on")
+      return false
+    end
+  end
+  return true
+end
+
+function DivisibleSpaceController:updateBtnRoomStateDisabledStates()
+  local states = {}
+  local anyActive = false
+  
+  for _, room in ipairs(config.rooms) do
+    local isOn = self:isRoomPoweredOn(room)
+    local isCooling = self:isRoomCooling(room)
+    local state = isOn and "ON" or (isCooling and "COOLING" or "OFF")
+    table.insert(states, room .. ":" .. state)
+    anyActive = anyActive or isOn or isCooling
+  end
+  
+  -- Disable combine buttons (indices 2 & 3) when any room is on or cooling
+  for i = 2, 3 do
+    if controls.btnRoomState and controls.btnRoomState[i] then
+      setProp(controls.btnRoomState[i], "IsDisabled", anyActive)
+    end
+  end
+  
+  self:debugPrint("btnRoomState[2,3] " .. (anyActive and "DISABLED" or "ENABLED") .. 
+                 " [" .. table.concat(states, ", ") .. "]")
 end
 
 ------------------[ Room State Management ]----------------------
@@ -908,39 +661,27 @@ function DivisibleSpaceController:getRoomStateFromIndex(index)
 end
 
 function DivisibleSpaceController:getPriorityRoom()
-  local roomState = self:getRoomState()
+  if self:isRoomsSeparated() then return nil end
   
-  -- If separated, no priority room
-  if self:isRoomsSeparated() then
-    return nil
-  end
-  
-  -- When combined, check UCI button states first (override btnRoomState priority)
+  -- Check UCI button states first (override btnRoomState priority)
   if self.components.uciController then
-    local btnNav07 = self.components.uciController["btnNav07"]
-    local btnNav08 = self.components.uciController["btnNav08"]
-    local btnNav09 = self.components.uciController["btnNav09"]
-    local btnNav10 = self.components.uciController["btnNav10"]
-    
-    -- Check for RoomA priority: btnNav07 OR btnNav09
-    if (btnNav07 and btnNav07.Boolean) or (btnNav09 and btnNav09.Boolean) then
-      return "RoomA"
-    end
-    
-    -- Check for RoomB priority: btnNav08 OR btnNav10
-    if (btnNav08 and btnNav08.Boolean) or (btnNav10 and btnNav10.Boolean) then
-      return "RoomB"
+    -- Check if any button for a specific room is active
+    for _, btn in ipairs(config.uciButtons) do
+      local button = self.components.uciController[btn.name]
+      if button and button.Boolean then
+        return btn.room
+      end
     end
   end
   
   -- Fallback to btnRoomState logic if no UCI buttons are active
-  if roomState == "RoomA_Combined" then
-    return "RoomA"
-  elseif roomState == "RoomB_Combined" then
-    return "RoomB"
-  end
+  local roomState = self:getRoomState()
+  local stateToRoom = {
+    RoomA_Combined = "RoomA",
+    RoomB_Combined = "RoomB"
+  }
   
-  return nil
+  return stateToRoom[roomState]
 end
 
 function DivisibleSpaceController:isRoomsSeparated()
@@ -948,592 +689,294 @@ function DivisibleSpaceController:isRoomsSeparated()
 end
 
 function DivisibleSpaceController:applyRoomState()
-  self:debugPrint("Applying room state configuration...")
+  self:debugPrint("=== Applying Room State Configuration ===")
   
   local roomState = self:getRoomState()
   self:debugPrint("Current state: " .. roomState)
   
-  -- Check if wall can be changed
-  if not self.wallModule:canChangeWallState() then
-    self:debugPrint("Cannot change room state - rooms are powered on")
-    -- Revert btnRoomState to previous state (separated)
+  -- STEP 1: Validate wall can move (prevent changes while powered on)
+  if not self:canChangeWallState() then
+    self:debugPrint("BLOCKED: Cannot change state - rooms are powered on")
     if controls.btnRoomState and controls.btnRoomState[1] then
       setProp(controls.btnRoomState[1], "Boolean", true)
     end
     return
   end
   
-  -- Update wall state
-  if self.wallModule then
-    self.wallModule:updateWallState()
-  end
+  -- STEP 2: Physical wall movement
+  self:updateWallState()
   
-  -- Update gain routing
+  -- STEP 3: Audio routing (must happen before power sync)
   self:applyGainRouting()
-  
-  -- Update matrix mixer mutes
   self:applyMatrixMixerMutes()
-
-  -- Update acpr assignment
-  self:applyACPRAssignment()
-
-  -- Update MXA component routing
-  self:applyMXAControlsRouting()
   
-  -- Update UCI status routing
+  -- STEP 4: Component assignments
+  self:applyACPRAssignment()
+  self:applyMXAControlsRouting()
   self:applyUCIStatusRouting()
   
-  -- Update ACPR component routing
+  -- STEP 5: Video routing
   self:applyACPRComponentRouting()
-
-  -- Update cam router routing
   self:applyCamRouterRouting()
-
-  -- Update hid video bridge routing
-  self:applyHidVideoBridgeRouting()
   
-  -- Sync power state when combining rooms
+  -- STEP 6: Power synchronization (last, after all routing is configured)
   if roomState ~= "Separated" then
     self:syncPowerOnCombine()
   end
   
   self:checkStatus()
+  self:debugPrint("=== Room State Configuration Complete ===")
 end
 
 function DivisibleSpaceController:syncPowerOnCombine()
-  self:debugPrint("Syncing power state on room combine...")
-  
-  local priorityRoom = self:getPriorityRoom()
-  if not priorityRoom then
-    self:debugPrint("No priority room - skipping power sync")
-    return
-  end
-  
-  -- When combining, check if ANY room is powered on and sync that state to all others
-  -- This ensures if either room is ON when combining, both rooms power on
-  local anyRoomOn = false
-  for _, roomName in ipairs(roomNames) do
-    if self:isRoomPoweredOn(roomName) then
-      anyRoomOn = true
-      self:debugPrint("Found " .. roomName .. " powered ON - will sync ON state to all rooms")
-      break
-    end
-  end
-  
-  -- Sync the determined power state to ALL rooms
-  if anyRoomOn and self.powerSyncModule then
+  if self:checkAnyRoomState(self.isRoomPoweredOn) then
     self:debugPrint("Syncing power (ON) to all rooms in combination")
-    self.powerSyncModule:syncPowerToRooms(roomNames, true)
+    self:syncPowerToRooms(config.rooms, true)
   else
-    self:debugPrint("All rooms are OFF - no power sync needed on combine")
+    self:debugPrint("All rooms OFF - no power sync needed")
   end
 end
 
 function DivisibleSpaceController:applyPriorityDependentRouting()
   self:debugPrint("Re-applying priority-dependent routing...")
-  
-  -- Reuse existing routing methods (DRY principle - no duplicate logic)
   self:applyGainRouting()
   self:applyMXAControlsRouting()
-  self:applyHidVideoBridgeRouting()
   self:applyACPRComponentRouting()
+  self:applyCamRouterRouting()
 end
 
+-------------------[ Audio Routing ]-------------------
 function DivisibleSpaceController:applyGainRouting()
-  self:debugPrint("Applying gain routing based on room state...")
-  
-  local isSeparated = self:isRoomsSeparated()
-  local priorityRoom = self:getPriorityRoom()
-  
-  local routingErrors = {}
-  local successfulRoutings = 0
-  
-  for i, roomName in ipairs(roomNames) do
-    local roomComp = self.components.roomControls[i]
-    
-    if roomComp and roomComp["compGains 1"] then
-      local gainControlName = nil
+  -- Handle gain muting logic for combined mode
+  if not self:isRoomsSeparated() then
+    local priorityRoom = self:getPriorityRoom()
+    if priorityRoom then
+      local priorityIdx = (priorityRoom == "RoomA") and 1 or 2
+      local nonPriorityIdx = 3 - priorityIdx
+      local nonPriorityGain = self.components.gainComponents[nonPriorityIdx]
+      local priorityGain = self.components.gainComponents[priorityIdx]
       
-      if isSeparated then
-        -- Each room uses own gain
-        gainControlName = gainControlNames[i]
-      else
-        -- Combined: use priority room's gain and mute non-priority gain
-        -- Use cached gain components for efficiency
-        local priorityIndex = (priorityRoom == "RoomA") and 1 or 2
-        local nonPriorityIndex = 3 - priorityIndex  -- Quick swap: 1<->2
-        
-        gainControlName = gainControlNames[priorityIndex]
-        
-        -- Get cached gain components
-        local nonPriorityGain = self.components.gainComponents[nonPriorityIndex]
-        local priorityGain = self.components.gainComponents[priorityIndex]
-        
-        -- Mute non-priority room, unmute priority room
-        if nonPriorityGain and nonPriorityGain["mute"] then
-          setProp(nonPriorityGain["mute"], "Boolean", true)
-        end
-        if priorityGain and priorityGain["mute"] then
-          setProp(priorityGain["mute"], "Boolean", false)
-        end
+      if nonPriorityGain and nonPriorityGain["mute"] then
+        setProp(nonPriorityGain["mute"], "Boolean", true)
+        self:debugPrint("Muted gain[" .. nonPriorityIdx .. "]")
       end
-      
-      if gainControlName and gainControlName ~= "" then
-        setProp(roomComp["compGains 1"], "String", gainControlName)
-        successfulRoutings = successfulRoutings + 1
-        self:debugPrint(roomName .. " -> Gain: " .. gainControlName)
-      else
-        table.insert(routingErrors, roomName .. ": Invalid gain control")
+      if priorityGain and priorityGain["mute"] then
+        setProp(priorityGain["mute"], "Boolean", false)
+        self:debugPrint("Unmuted gain[" .. priorityIdx .. "]")
       end
-    else
-      table.insert(routingErrors, roomName .. ": Component or compGains 1 not found")
     end
   end
   
-  self:printOperationResult("Gain routing", successfulRoutings, #roomNames, routingErrors)
+  -- Apply routing using generic engine
+  applySimpleRouting(self, config.routingRules.simple.gain, "Gain routing")
 end
 
 function DivisibleSpaceController:applyMatrixMixerMutes()
-  self:debugPrint("Applying matrix mixer mutes based on room state...")
-  
   if not self.components.matrixMixer then
-    self:debugPrint("WARNING: Matrix mixer component not found - skipping mute control")
+    self:debugPrint("WARNING: Matrix mixer not found")
     return
   end
   
-  local isSeparated = self:isRoomsSeparated()
+  local muteState = self:isRoomsSeparated()  -- Separated = muted, Combined = unmuted
+  local success = 0
+  local errors = {}
   
-  -- When separated: mutes = true (muted)
-  -- When combined: mutes = false (unmuted)
-  local muteState = isSeparated
-  
-  local muteErrors = {}
-  local successfulMutes = 0
-  
-  for _, muteControlName in ipairs(matrixMixerMutes) do
-    local muteControl = self.components.matrixMixer[muteControlName]
-    
-    if muteControl then
-      setProp(muteControl, "Boolean", muteState)
-      successfulMutes = successfulMutes + 1
-      self:debugPrint(muteControlName .. " -> " .. (muteState and "MUTED" or "UNMUTED"))
+  for _, muteName in ipairs(config.components.matrixMixerMutes) do
+    local mute = self.components.matrixMixer[muteName]
+    if mute then
+      setProp(mute, "Boolean", muteState)
+      success = success + 1
+      self:debugPrint(muteName .. " -> " .. (muteState and "[ Muted ]" or "[ Unmuted ]"))
     else
-      table.insert(muteErrors, muteControlName .. ": Control not found")
+      table.insert(errors, muteName .. ": Not found")
     end
   end
   
-  self:printOperationResult("Matrix mixer mutes", successfulMutes, #matrixMixerMutes, muteErrors)
+  self:printOperationResult("Matrix mixer mutes", success, #config.components.matrixMixerMutes, errors)
 end
 
+-------------------[ Component Assignments ]-------------------
 function DivisibleSpaceController:applyACPRAssignment()
-  -- Early return if ACPR routing is disabled (non-destructive, can be re-enabled)
-  if acprConfig.disableACPRRouting then
-    self:debugPrint("ACPR assignment disabled via acprConfig")
-    return
-  end
-
-  self:debugPrint("Applying acpr assignment based on room state...")
-  
-  local isSeparated = self:isRoomsSeparated()
-  
-  local routingErrors = {}
-  local successfulRoutings = 0
-  
-  for i, roomName in ipairs(roomNames) do
-    local roomComp = self.components.roomControls[i]
-    
-    if roomComp and roomComp["compACPR"] then
-      local acprControlName = nil
-      
-      if isSeparated then
-        -- Each room uses own ACPR
-        acprControlName = acprControlNames[i]
-      else
-        -- Combined: all rooms use combined ACPR
-        acprControlName = "compACPRCollabCombined"
-      end
-      
-      if acprControlName and acprControlName ~= "" then
-        setProp(roomComp["compACPR"], "String", acprControlName)
-        successfulRoutings = successfulRoutings + 1
-        self:debugPrint(roomName .. " -> ACPR: " .. acprControlName)
-      else
-        table.insert(routingErrors, roomName .. ": Invalid ACPR control")
-      end
-    else
-      table.insert(routingErrors, roomName .. ": Component or compACPR not found")
-    end
-  end
-  
-  self:printOperationResult("acpr assignment", successfulRoutings, #roomNames, routingErrors)
+  applySimpleRouting(self, config.routingRules.simple.acpr, "ACPR assignment")
 end
 
 function DivisibleSpaceController:applyMXAControlsRouting()
-  self:debugPrint("Applying MXA component routing based on room state...")
-  
-  local isSeparated = self:isRoomsSeparated()
-  local priorityRoom = self:getPriorityRoom()
-
-  local routingErrors = {}
-  local successfulRoutings = 0
-  local totalExpectedOperations = #roomNames * 2  -- 2 operations per room (callSync + compRoomControls)
-
-  for i, roomName in ipairs(roomNames) do
-    -- Determine control names based on room state
-    local callSyncName = nil
-    local roomControlName = nil
-
-    if isSeparated then
-      -- Each room uses own values
-      callSyncName = callSyncNames[i]
-      roomControlName = roomControlNames[i]
-    else
-      -- Combined: use priority room's values
-      if priorityRoom == "RoomA" then
-        callSyncName = callSyncNames[1]
-        roomControlName = roomControlNames[1]
-      elseif priorityRoom == "RoomB" then
-        callSyncName = callSyncNames[2]
-        roomControlName = roomControlNames[2]
-      end
-    end
-
-    -- Get mxaControls component once
-    local mxaComp = self.components.mxaControls[i]
-
-    -- Define controls to set (control name, value, display name)
-    local controlsToSet = {
-      {controlName = "compCallSync", value = callSyncName, displayName = "callSync"},
-      {controlName = "compRoomControls", value = roomControlName, displayName = "compRoomControls"}
-    }
-
-    -- Set each control
-    for _, control in ipairs(controlsToSet) do
-      if mxaComp and mxaComp[control.controlName] then
-        if control.value and control.value ~= "" then
-          setProp(mxaComp[control.controlName], "String", control.value)
-          successfulRoutings = successfulRoutings + 1
-          self:debugPrint(roomName .. " -> MXA " .. control.displayName .. ": " .. control.value)
-        else
-          table.insert(routingErrors, roomName .. ": Invalid " .. control.displayName .. " control name")
-        end
-      else
-        table.insert(routingErrors, roomName .. ": MXA controls component or " .. control.displayName .. " control not found")
-      end
-    end
-  end
-
-  self:printOperationResult("MXA controls routing", successfulRoutings, totalExpectedOperations, routingErrors)
+  applyMultiControlRouting(self, config.routingRules.multiControl.mxaControls, "MXA controls routing")
 end
 
 function DivisibleSpaceController:applyUCIStatusRouting()
-  self:debugPrint("Applying UCI status routing based on room state...")
-
   if not self.components.uciStatus then
-    self:debugPrint("WARNING: UCI status component not found - skipping UCI status routing")
+    self:debugPrint("WARNING: UCI status not found")
     return
   end
   
-  local isSeparated = self:isRoomsSeparated()
-  
-  local routingErrors = {}
-  local successfulRoutings = 0
-  
-  -- Determine which UCI name to set based on room state
   local uciValue
-  if isSeparated then
-    uciValue = "uciCollabB"  -- uciCollabB when separated
+  if self:isRoomsSeparated() then
+    uciValue = config.components.uciNames[1]  -- Separated default: uciCollabB
   else
-    -- Only use uciCollabA when combined if RoomB system power is on
-    local roomBControls = self.components.roomControls[2]
-    if roomBControls and roomBControls["ledSystemPower"] and roomBControls["ledSystemPower"].Boolean then
-      uciValue = "uciCollabA"  -- uciCollabA when combined and RoomB is powered on
-    else
-      uciValue = "uciCollabB"  -- Fallback to uciCollabB if RoomB power is off or component not found
-      self:debugPrint("WARNING: RoomB system power is off or component not found - using uciCollabB instead of uciCollabA")
+    -- Combined: Use uciCollabA if RoomB is powered on, otherwise uciCollabB
+    uciValue = self:isRoomPoweredOn("RoomB") and 
+               config.components.uciNames[2] or 
+               config.components.uciNames[1]
+    if not self:isRoomPoweredOn("RoomB") then
+      self:debugPrint("RoomB power OFF - using " .. uciValue)
     end
   end
   
-  -- Find the UCI status component
-  if self.components.uciStatus then
-    -- Set the current.uci control on the component
-    local statusControl = self.components.uciStatus["current.uci"]
-    if statusControl then
-      setProp(statusControl, "String", uciValue)
-      successfulRoutings = 1
-      self:debugPrint("UCI status routing: statusControl -> " .. uciValue)
-    else
-      table.insert(routingErrors, "UCI status component: statusControl -> " .. uciValue .. " control not found")
-      self:debugPrint("ERROR: statusControl -> " .. uciValue .. " control not found on UCI status component")
-    end
+  local statusControl = self.components.uciStatus["current.uci"]
+  if statusControl then
+    setProp(statusControl, "String", uciValue)
+    self:debugPrint("UCI status: " .. uciValue)
   else
-    table.insert(routingErrors, "UCI status component: Component not found")
-    self:debugPrint("ERROR: UCI status component not found")
+    self:debugPrint("ERROR: UCI status control not found")
   end
-  
-  self:printOperationResult("UCI status routing", successfulRoutings, #uciNames, routingErrors)
 end
 
-function DivisibleSpaceController:applyHidVideoBridgeRouting()
-  -- Early return if hidVideoBridge routing is disabled (non-destructive, can be re-enabled)
-  if hidVideoBridgeConfig.disableHidVideoBridgeRouting then
-    self:debugPrint("Hid video bridge routing disabled via hidVideoBridgeConfig")
-    return
-  end
-
-  self:debugPrint("Applying hid video bridge routing based on room state...")
-  
-  local isSeparated = self:isRoomsSeparated()
-  local priorityRoom = self:getPriorityRoom()
-
-  local routingErrors = {}
-  local successfulRoutings = 0
-
-  for i, roomName in ipairs(roomNames) do
-    local roomComp = self.components.roomControls[i]
-
-    if roomComp and roomComp["compVideoBridge 1"] then
-      local hidVideoBridgeName = nil
-
-      if isSeparated then
-        -- Each room uses own Hid Video Bridge
-        hidVideoBridgeName = hidVideoBridgeNames[i]
-      else
-        -- Combined: use priority room's Hid Video Bridge
-        if priorityRoom == "RoomA" then
-          hidVideoBridgeName = hidVideoBridgeNames[1]
-        elseif priorityRoom == "RoomB" then
-          hidVideoBridgeName = hidVideoBridgeNames[2]
-        end
-      end
-      
-      if hidVideoBridgeName and hidVideoBridgeName ~= "" then
-        setProp(roomComp["compVideoBridge 1"], "String", hidVideoBridgeName)
-        -- EventHandler on SystemAutomationController will fire automatically
-        -- (external changes from different scripts DO trigger EventHandlers)
-        -- This will clean up old VideoBridge handlers and bind new ones
-        successfulRoutings = successfulRoutings + 1
-        self:debugPrint(roomName .. " -> Hid Video Bridge: " .. hidVideoBridgeName)
-      else
-        table.insert(routingErrors, roomName .. ": Invalid Hid Video Bridge control")
-      end
-    else
-      table.insert(routingErrors, roomName .. ": Component or hidVideoBridge 1 not found")
-    end
-  end
-
-  self:printOperationResult("Hid video bridge routing", successfulRoutings, #roomNames, routingErrors)
-end
-
+-------------------[ Video Routing ]-------------------
 function DivisibleSpaceController:applyACPRComponentRouting()
-  -- Early return if ACPR routing is disabled (non-destructive, can be re-enabled)
-  if acprConfig.disableACPRRouting then
-    self:debugPrint("ACPR component routing disabled via acprConfig")
+  if config.features.disableACPRRouting then
+    self:debugPrint("ACPR component routing disabled")
     return
   end
-
-  self:debugPrint("Applying ACPR component routing based on room state...")
   
   local isSeparated = self:isRoomsSeparated()
   local priorityRoom = self:getPriorityRoom()
+  local success, errors = 0, {}
   
-  local routingErrors = {}
-  local successfulRoutings = 0
+  -- Apply TrackingBypass settings
+  local bypassSettings = isSeparated and 
+    {{idx = 3, desc = "Combined"}} or 
+    {{idx = 1, desc = "1"}, {idx = 2, desc = "2"}}
   
-  if isSeparated then 
-    -- Separated: Set TrackingBypass to true for component 3 (callSync["off.hook"] handles false)
-    local acprComp3 = self.components.acprComponents[3]
-    if acprComp3 and acprComp3["TrackingBypass"] then
-      setProp(acprComp3["TrackingBypass"], "Boolean", true)
-      successfulRoutings = successfulRoutings + 1
-      self:debugPrint("ACPR[3] -> TrackingBypass: true (Separated)")
+  for _, setting in ipairs(bypassSettings) do
+    local acprComp = self.components.acprComponents[setting.idx]
+    if acprComp and acprComp["TrackingBypass"] then
+      setProp(acprComp["TrackingBypass"], "Boolean", true)
+      success = success + 1
+      self:debugPrint("ACPR[" .. setting.desc .. "] -> TrackingBypass: true")
     else
-      table.insert(routingErrors, "ACPR[3]: Component or TrackingBypass control not found")
-    end
-  else
-    -- Combined: Set TrackingBypass to true for components 1 and 2 (callSync["off.hook"] handles false)
-    for i = 1, 2 do
-      local acprComp = self.components.acprComponents[i]
-      if acprComp and acprComp["TrackingBypass"] then
-        setProp(acprComp["TrackingBypass"], "Boolean", true)
-        successfulRoutings = successfulRoutings + 1
-        self:debugPrint("ACPR[" .. i .. "] -> TrackingBypass: true (Combined)")
-      else
-        table.insert(routingErrors, "ACPR[" .. i .. "]: Component or TrackingBypass control not found")
-      end
-    end
-    
-    -- Set CameraRouterOutput on component 3 based on priorityRoom
-    -- make note to also set "Disable".Boolean on acrpComp[1] and acrpComp[2]
-    if priorityRoom then
-      local outputValue = nil
-      if priorityRoom == "RoomA" then
-        outputValue = acprOutputNames[1]  -- "01"
-      elseif priorityRoom == "RoomB" then
-        outputValue = acprOutputNames[2]  -- "02"
-      end
-      
-      if outputValue and acprComp3 and acprComp3["CameraRouterOutput"] then
-        setProp(acprComp3["CameraRouterOutput"], "String", outputValue)
-        successfulRoutings = successfulRoutings + 1
-        self:debugPrint("ACPR[3] -> CameraRouterOutput: " .. outputValue .. " (Priority: " .. priorityRoom .. ")")
-      else
-        if not outputValue then
-          table.insert(routingErrors, "ACPR[3]: Invalid priorityRoom: " .. tostring(priorityRoom))
-        else
-          table.insert(routingErrors, "ACPR[3]: Component or CameraRouterOutput control not found")
-        end
-      end
-    else
-      table.insert(routingErrors, "ACPR[3]: No priorityRoom in combined state")
+      table.insert(errors, "ACPR[" .. setting.desc .. "]: TrackingBypass not found")
     end
   end
   
-  self:printOperationResult("ACPR component routing", successfulRoutings, 3, routingErrors)
+  -- Set CameraRouterOutput when combined
+  if not isSeparated and priorityRoom then
+    local acprComp3 = self.components.acprComponents[3]
+    if acprComp3 and acprComp3["CameraRouterOutput"] then
+      local outputValue = (priorityRoom == "RoomA") and config.components.acprOutputs[1] or config.components.acprOutputs[2]
+      setProp(acprComp3["CameraRouterOutput"], "String", outputValue)
+      success = success + 1
+      self:debugPrint("ACPR[Combined] -> CameraRouterOutput: " .. outputValue .. " (Priority: " .. priorityRoom .. ")")
+    else
+      table.insert(errors, "ACPR[Combined]: CameraRouterOutput not found")
+    end
+  end
+  
+  self:printOperationResult("ACPR component routing", success, 3, errors)
 end
 
 function DivisibleSpaceController:applyCamRouterRouting()
-  self:debugPrint("Applying cam router routing based on room state...")
-  
-  local isSeparated = self:isRoomsSeparated()
-  
-  local routingErrors = {}
-  local successfulRoutings = 0
-  
-  local camRouterComp = self.components.camRouter
-  
-  if not camRouterComp then
-    self:debugPrint("WARNING: Cam router component not found - skipping cam router routing")
+  if not self.components.camRouter then
+    self:debugPrint("WARNING: Cam router not found")
     return
   end
-
-  -- Configuration: values for each control based on room state
-  -- Separated: select.1 = 1, select.2 = 2
-  -- Combined: select.1 = 1, select.2 = 1
-  local routingConfig = {
-    {controlName = "select.1", separatedValue = 1, combinedValue = 1},
-    {controlName = "select.2", separatedValue = 2, combinedValue = 1}
+  
+  local isSeparated = self:isRoomsSeparated()
+  local priorityRoom = self:getPriorityRoom()
+  local success, errors = 0, {}
+  
+  -- Camera router routes: Separated (1->1, 2->2), CombinedA (both->1), CombinedB (both->2)
+  local routes = {
+    {control = "select.1", separated = 1, combinedA = 1, combinedB = 2},
+    {control = "select.2", separated = 2, combinedA = 1, combinedB = 2}
   }
   
-  local stateLabel = isSeparated and "Separated" or "Combined"
-  
-  for _, config in ipairs(routingConfig) do
-    local control = camRouterComp[config.controlName]
-    local value = isSeparated and config.separatedValue or config.combinedValue
-    
+  for _, route in ipairs(routes) do
+    local control = self.components.camRouter[route.control]
     if control then
+      local value = isSeparated and route.separated or 
+                    (priorityRoom == "RoomA" and route.combinedA or route.combinedB)
       setProp(control, "Value", value)
-      successfulRoutings = successfulRoutings + 1
-      self:debugPrint("Cam Router -> " .. config.controlName .. ": " .. value .. " (" .. stateLabel .. ")")
+      success = success + 1
+      self:debugPrint("Cam Router " .. route.control .. " -> " .. value)
     else
-      table.insert(routingErrors, "Cam Router: " .. config.controlName .. " control not found")
+      table.insert(errors, route.control .. " not found")
     end
   end
   
-  self:printOperationResult("Cam router routing", successfulRoutings, #routingConfig, routingErrors)
+  self:printOperationResult("Cam router routing", success, #routes, errors)
+end
+
+-------------------[ Status & Utilities ]-------------------
+function DivisibleSpaceController:getRoomControlState(roomName, controlName)
+  local comp = self:getRoomControlComponent(roomName)
+  return comp and comp[controlName] and comp[controlName].Boolean or false
 end
 
 function DivisibleSpaceController:isRoomPoweredOn(roomName)
-  -- CONTROL/STATUS PATTERN: Always read power state from ledSystemPower (status), never from btnSystemOnOff
-  -- ledSystemPower reflects the actual system state set by SystemAutomationController
-  -- btnSystemOnOff is a control input that may not reflect actual state (delays, failures, etc.)
-  for i, rn in ipairs(roomNames) do
-    if rn == roomName then
-      local comp = self.components.roomControls[i]
-      if comp and comp["ledSystemPower"] then
-        return comp["ledSystemPower"].Boolean
-      end
-      return false
-    end
-  end
-  return false
+  return self:getRoomControlState(roomName, "ledSystemPower")
 end
 
 function DivisibleSpaceController:isRoomCooling(roomName)
-  -- CONTROL/STATUS PATTERN: Read cooling state from ledSystemCooling (status indicator)
-  -- ledSystemCooling reflects the actual cooling state set by SystemAutomationController
-  -- This prevents system from being turned on while cooling down
-  for i, rn in ipairs(roomNames) do
-    if rn == roomName then
-      local comp = self.components.roomControls[i]
-      if comp and comp["ledSystemCooling"] then
-        return comp["ledSystemCooling"].Boolean == true
-      end
-      return false
-    end
+  return self:getRoomControlState(roomName, "ledSystemCooling")
+end
+
+function DivisibleSpaceController:checkAnyRoomState(checkFunc)
+  for _, room in ipairs(config.rooms) do
+    if checkFunc(self, room) then return true end
   end
   return false
 end
 
 function DivisibleSpaceController:checkStatus()
-  local statusMsg = "OK"
-  local statusValue = 0
+  local msg = "OK"
+  local val = 0
   
-  -- Check components
   if not self.components.roomCombiner then
-    statusMsg = "Room Combiner Missing"
-    statusValue = 1
+    msg = "Room Combiner Missing"
+    val = 1
   end
   
-  local connectedRooms = 0
-  for i = 1, #roomNames do
-    if self.components.roomControls[i] then
-      connectedRooms = connectedRooms + 1
-    end
+  local connected = 0
+  for i = 1, #config.rooms do
+    if self.components.roomControls[i] then connected = connected + 1 end
   end
   
-  if connectedRooms < #roomNames then
-    statusMsg = statusMsg .. " (Rooms: " .. connectedRooms .. "/" .. #roomNames .. ")"
-    statusValue = 1
+  if connected < #config.rooms then
+    msg = msg .. " (Rooms: " .. connected .. "/" .. #config.rooms .. ")"
+    val = 1
   end
   
-  -- Add current state to status
-  local roomState = self:getRoomState()
-  statusMsg = statusMsg .. " | State: " .. roomState
+  msg = msg .. " | State: " .. self:getRoomState()
   
   if controls.txtStatus then
-    controls.txtStatus.String = statusMsg
-    controls.txtStatus.Value = statusValue
+    controls.txtStatus.String = msg
+    controls.txtStatus.Value = val
   end
 end
 
-function DivisibleSpaceController:cleanup()
-  local modules = {self.componentModule, self.powerSyncModule, self.wallModule}
-  for _, module in ipairs(modules) do
-    if module and module.cleanup then module:cleanup() end
-  end
-  
-  self:debugPrint("Cleanup completed")
-end
-
--------------------[ Initialization ]-------------------
-local function createDivisibleSpaceController(roomName, debugging)
-  if not roomName or roomName == "" then
-    print("ERROR: createDivisibleSpaceController requires a valid roomName")
-    return nil
-  end
-  
-  debugging = debugging ~= false
-  
-  local success, controller = pcall(function()
-    print("Initializing DivisibleSpaceController for " .. roomName)
-    if not validateControls() then
-      error("Control validation failed")
-    end
+-------------------[ Factory & Initialization ]-------------------
+local function createController(roomName, debugging)
+  local success, result = pcall(function()
+    print("=== Initializing DivisibleSpaceController: " .. roomName .. " ===")
+    
+    if not validateControls() then error("Control validation failed") end
     normalizeControlArrays()
-    local object = DivisibleSpaceController.new(roomName, debugging)
-    if not object then error("Controller constructor returned nil") end
-    object:init()
-    return object
+    
+    local controller = DivisibleSpaceController.new(roomName, debugging)
+    if not controller then error("Constructor returned nil") end
+    
+    controller:init()
+    return controller
   end)
   
-  if success and controller then
+  if success and result then
     print("✓ DivisibleSpaceController successfully created")
-    _G.myDivisibleController = controller
-    return controller
+    _G.myDivisibleController = result
+    return result
   else
-    print("✗ ERROR: DivisibleSpaceController creation failed: " .. tostring(controller))
-    if controls and controls.txtStatus then
+    print("✗ ERROR: Failed to create controller: " .. tostring(result))
+    if controls.txtStatus then
       controls.txtStatus.String = "INIT FAILED"
       controls.txtStatus.Value = 2
     end
@@ -1541,5 +984,5 @@ local function createDivisibleSpaceController(roomName, debugging)
   end
 end
 
-------------------------[ Startup ]------------------------
-local myDivisibleController = createDivisibleSpaceController("Two Room Divisible Space", true)
+-------------------[ Startup ]-------------------
+local myDivisibleController = createController("Two Room Divisible Space", true)

@@ -403,6 +403,80 @@ self:setRoute(7, 1, "System Power")
 self:setRoute(7, 1, "Fire Alarm")
 ```
 
+### 2.6 Variable Naming Conventions
+
+**Philosophy:** Code must be readable when you return to troubleshoot it 3+ months later.
+
+**✅ ACCEPTABLE Abbreviations:**
+
+**3-Letter Control Prefixes** (consistently used in Q-SYS):
+```lua
+-- These are acceptable and widely understood:
+btn = button      -- btnPower, btnMute, btnPreset1
+txt = text        -- txtStatus, txtRoomName, txtMessage
+ctl = control     -- ctlVolume, ctlFrequency
+msg = message     -- msgError, msgStatus
+str = string      -- strDeviceName, strInput
+cam = camera      -- camMain, camPreset1
+mxr = mixer       -- mxrMain, mxrZone1
+lvl = level       -- lvlMaster, lvlProgram
+dev = device      -- devDisplay, devRouter
+led = LED         -- ledPower, ledStatus
+```
+
+**Loop Iterators** (universally accepted):
+```lua
+-- These are standard and acceptable:
+for i = 1, #array do            -- ✅ 'i' for index
+for i, item in ipairs(list) do  -- ✅ 'i' for index
+for k, v in pairs(table) do     -- ✅ 'k' and 'v' for key/value
+```
+
+**❌ UNACCEPTABLE Single-Letter Variables:**
+
+```lua
+-- ❌ BAD - what are these 3 months later?
+for r = 1, #roomList do
+    local p = presets[r]
+    local c = cameras[r]
+    local t = timers[r]
+    controls.devCams[r].String = c[1]  -- What is 'c'? 'r'? 
+end
+
+-- ✅ GOOD - clear and maintainable
+for roomIdx = 1, #roomList do
+    local preset = presets[roomIdx]
+    local camera = cameras[roomIdx]
+    local timer = timers[roomIdx]
+    controls.devCams[roomIdx].String = camera[1]
+end
+
+-- ❌ BAD - cryptic function parameters
+function setRoute(i, o, s)
+    if not i or not o then return end
+    -- What are 'i', 'o', 's'?
+end
+
+-- ✅ GOOD - self-documenting
+function setRoute(input, output, source)
+    if not input or not output then return end
+    -- Clear what each parameter represents
+end
+```
+
+**Why This Matters:**
+- When troubleshooting in production, you need instant comprehension
+- Single-letter variables create cognitive load ("what was `r` again?")
+- 3-letter control prefixes are Q-SYS conventions (acceptable)
+- The few extra characters are worth months of clarity
+- Future you (and your teammates) will thank you
+
+**Exception:**
+Loop iterators (`i`, `k`, `v`) are universally taught and acceptable because:
+- They have a single, well-defined scope (the loop)
+- They're used immediately and discarded
+- They're a standard convention across all programming languages
+
 ---
 
 ## 3. Component Management Patterns
@@ -690,6 +764,8 @@ When refactoring or creating a script:
 - [ ] Control arrays normalized once at init
 - [ ] Required controls validated
 - [ ] Component handlers cleaned up before reassignment
+- [ ] No single-letter variables (except loop iterators: i, k, v)
+- [ ] 3-letter control prefixes used consistently (btn, txt, ctl, etc.)
 
 **Metrics:**
 - [ ] Code reduced 50-70% from original (if refactoring)

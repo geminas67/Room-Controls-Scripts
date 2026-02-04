@@ -40,10 +40,6 @@ local controls = {
 }
 
 -------------------[ Utility Functions ]-------------------
-local function isArr(t)
-    return type(t) == "table" and t[1] ~= nil
-end
-
 local function setProp(ctrl, prop, val)
     if not ctrl or ctrl[prop] == val then return false end
     ctrl[prop] = val
@@ -52,14 +48,6 @@ end
 
 local function bind(ctrl, handler)
     if ctrl and handler then ctrl.EventHandler = handler end
-end
-
-local function bindArray(ctrls, handler)
-    if not ctrls then return end
-    local array = isArr(ctrls) and ctrls or { ctrls }
-    for i, ctrl in ipairs(array) do 
-        bind(ctrl, function(ctl) handler(i, ctl) end) 
-    end
 end
 
 -- Debug logging helper

@@ -1664,49 +1664,47 @@ function UCIController:updateLegends()
     end
 end
 
--------------------[ Legend Array Initialization ]----------
+-------------------[ Legend Management ]-------------------
 function UCIController:initializeLegendArrays()
+    local legendConfig = {
+        {prefix = "txtNav", count = 15},
+        {single = "txtNavShutdown"},
+        {single = "txtRoomNameNav"},
+        {single = "txtRoomNameStart"},
+        {single = "txtRoutingRooms"},
+        {prefix = "txtRouting", count = 12},
+        {single = "txtRoutingSources"},
+        {prefix = "txtVidSrc", count = 12},
+        {single = "txtGainPGM"},
+        {prefix = "txtGain", count = 10},
+        {prefix = "txtDisplay", count = 12}
+    }
+    
     self.arrUCILegends = {}
-    local legendControls = {
-        "txtNav01", "txtNav02", "txtNav03", "txtNav04",
-        "txtNav05", "txtNav06", "txtNav07", "txtNav08",
-        "txtNav09", "txtNav10", "txtNav11", "txtNav12", "txtNav13","txtNav14","txtNav15",
-        "txtNavShutdown", "txtRoomNameNav", "txtRoomNameStart",
-        "txtRoutingRooms", "txtRouting01", "txtRouting02", "txtRouting03","txtRouting04", 
-        "txtRouting05", "txtRouting06", "txtRouting07", "txtRouting08", "txtRouting09", "txtRouting10", "txtRouting11", "txtRouting12", "txtRoutingSources",
-        "txtVidSrc01", "txtVidSrc02", "txtVidSrc03", "txtVidSrc04", "txtVidSrc05", "txtVidSrc06", "txtVidSrc07", "txtVidSrc08", "txtVidSrc09", "txtVidSrc10", "txtVidSrc11", "txtVidSrc12", 
-        "txtGainPGM", 
-        "txtGain01", "txtGain02", "txtGain03", "txtGain04","txtGain05", "txtGain06", "txtGain07", "txtGain08", "txtGain09", "txtGain10",
-        "txtDisplay01", "txtDisplay02", "txtDisplay03", "txtDisplay04", "txtDisplay05", "txtDisplay06", "txtDisplay07", "txtDisplay08", "txtDisplay09", "txtDisplay10", "txtDisplay11", "txtDisplay12", 
-    }
-    
-    for i, controlName in ipairs(legendControls) do
-        self.arrUCILegends[i] = Controls[controlName]
-    end
-    
     self.arrUCIUserLabels = {}
-    local userLabelVariables = {
-        "txtLabelNav01", "txtLabelNav02", "txtLabelNav03", "txtLabelNav04",
-        "txtLabelNav05", "txtLabelNav06", "txtLabelNav07", "txtLabelNav08",
-        "txtLabelNav09", "txtLabelNav10", "txtLabelNav11", "txtLabelNav12", "txtLabelNav13","txtLabelNav14","txtLabelNav15",
-        "txtLabelNavShutdown", "txtLabelRoomNameNav", "txtLabelRoomNameStart",
-        "txtLabelRoutingRooms", "txtLabelRouting01", "txtLabelRouting02", "txtLabelRouting03","txtLabelRouting04", 
-        "txtLabelRouting05", "txtLabelRouting06", "txtLabelRouting07", "txtLabelRouting08", "txtLabelRouting09", "txtLabelRouting10", "txtLabelRouting11", "txtLabelRouting12", "txtLabelRoutingSources",
-        "txtLabelVidSrc01", "txtLabelVidSrc02", "txtLabelVidSrc03", "txtLabelVidSrc04","txtLabelVidSrc05", "txtLabelVidSrc06", "txtLabelVidSrc07", "txtLabelVidSrc08","txtLabelVidSrc09", "txtLabelVidSrc10", "txtLabelVidSrc11", "txtLabelVidSrc12", 
-        "txtLabelGainPGM", 
-        "txtLabelGain01", "txtLabelGain02", "txtLabelGain03", "txtLabelGain04","txtLabelGain05", "txtLabelGain06", "txtLabelGain07", "txtLabelGain08", "txtLabelGain09", "txtLabelGain10",
-        "txtLabelDisplay01", "txtLabelDisplay02", "txtLabelDisplay03", "txtLabelDisplay04", "txtLabelDisplay05", "txtLabelDisplay06", "txtLabelDisplay07", "txtLabelDisplay08", "txtLabelDisplay09", "txtLabelDisplay10", "txtLabelDisplay11", "txtLabelDisplay12", 
-    }
+    local idx = 0
     
-    for i, varLabel in ipairs(userLabelVariables) do
-        self.arrUCIUserLabels[i] = Uci.Variables[varLabel]
+    for _, config in ipairs(legendConfig) do
+        if config.prefix then
+            for i = 1, config.count do
+                idx = idx + 1
+                local name = config.prefix .. string.format("%02d", i)
+                self.arrUCILegends[idx] = Controls[name]
+                self.arrUCIUserLabels[idx] = Uci.Variables["txtLabel" .. name]
+            end
+        elseif config.single then
+            idx = idx + 1
+            self.arrUCILegends[idx] = Controls[config.single]
+            self.arrUCIUserLabels[idx] = Uci.Variables["txtLabel" .. config.single]
+        end
     end
     
+    -- Register event handlers
     for i, label in ipairs(self.arrUCIUserLabels) do
-        if label then
-            label.EventHandler = function()
-                self:updateLegends()
-            end
+        if label then 
+            label.EventHandler = function() 
+                self:updateLegends() 
+            end 
         end
     end
     
