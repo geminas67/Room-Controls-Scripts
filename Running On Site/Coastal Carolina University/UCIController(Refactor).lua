@@ -76,9 +76,11 @@ local controls = {
 
 -------------------[ Configuration ]-------------------
 local conferenceStateConfig = {
-    skipLaptop = true,
-    skipPC = true,
-    skipWireless = true
+    skip = {
+        [7] = true,   -- kLayerPC
+        [8] = true,   -- kLayerLaptop
+        [9] = true,   -- kLayerWireless
+    }
 }
 
 local acprConfig = {
@@ -96,6 +98,15 @@ local sourceAutoSwitchPriorityConfig = {
     pinLEDHDMI02Active  = 20,    -- PC HDMI
     pinLEDHDMI01Active  = 10,    -- Laptop HDMI (lowest HDMI priority)
     -- USB sources don't auto-switch (handled by conference state)
+}
+
+-- Map pin names to their control objects and target layers (for priority resolution)
+local sourcePinMap = {
+    pinLEDOffHookLaptop = {pin = nil, layer = 8}, -- kLayerLaptop (pin set after controls init)
+    pinLEDOffHookPC     = {pin = nil, layer = 7}, -- kLayerPC
+    pinLEDHDMI03Active  = {pin = nil, layer = 9}, -- kLayerWireless
+    pinLEDHDMI02Active  = {pin = nil, layer = 7}, -- kLayerPC
+    pinLEDHDMI01Active  = {pin = nil, layer = 8}, -- kLayerLaptop
 }
 
 -------------------[ Utilities ]-------------------
@@ -151,6 +162,22 @@ local function bindPairedControls(openCtrl, closeCtrl, updateHandler)
     end
     bindPair(openCtrl, closeCtrl)
     bindPair(closeCtrl, openCtrl)
+end
+
+local function stopTimer(timer)
+    if timer then 
+        timer:Stop() 
+        return nil  -- Returns nil for assignment
+    end
+end
+
+local function initializeSourcePinMap()
+    -- Initialize pin references after controls are loaded
+    sourcePinMap.pinLEDOffHookLaptop.pin = controls.pinLEDOffHookLaptop
+    sourcePinMap.pinLEDOffHookPC.pin = controls.pinLEDOffHookPC
+    sourcePinMap.pinLEDHDMI03Active.pin = controls.pinLEDHDMI03Active
+    sourcePinMap.pinLEDHDMI02Active.pin = controls.pinLEDHDMI02Active
+    sourcePinMap.pinLEDHDMI01Active.pin = controls.pinLEDHDMI01Active
 end
 
 local function validateControls()
@@ -275,6 +302,12 @@ function UCIController.new(uciPage, config)
     self.kLayerStreamMusic  = 12
     self.kLayerPasscode     = 13
     
+    -- Commonly used layer groups (reduces duplication)
+    self.layerGroups = {
+        usbConnect = {"J01-ConnectUSBLaptop", "J02-ConnectUSBPC"},
+        allConference = {"J01-ConnectUSBLaptop", "J02-ConnectUSBPC", "J05-ConferenceControls"}
+    }
+    
     -- Routing state
     self.routingLayers = {
         "R01-Routing01", "R02-Routing02", "R03-Routing03",
@@ -390,7 +423,20 @@ function UCIController:updateLayerVisibility(layers, visible, transition)
     for _, layer in ipairs(layers) do
         if layer then
             self:safeSetLayerVisibility(layer, visible, transition)
+            -- Auto-sync help buttons if this is a help layer
+            if self.helpLayerButtonMap[layer] then
+                self:syncHelpButtonStates(layer)
+            end
         end
+    end
+end
+
+function UCIController:showLayerHideOthers(showLayers, hideLayers)
+    if showLayers then 
+        self:updateLayerVisibility(showLayers, true, "fade") 
+    end
+    if hideLayers then 
+        self:updateLayerVisibility(hideLayers, false, "none") 
     end
 end
 
@@ -614,9 +660,8 @@ end
 
 function UCIController:checkHDMIConnection()
     local src = self:getActiveSource()
-    if not src then return true end
-    local hdmiPin = src.hdmiPin
-    return not hdmiPin or hdmiPin.Boolean
+    if not src or not src.hdmiPin then return true end  -- No HDMI gate if pin doesn't exist
+    return src.hdmiPin.Boolean
 end
 
 function UCIController:syncHelpButtonStates(helpLayer)
@@ -660,6 +705,41 @@ function UCIController:handlePrioritySourceSwitch(triggerPinName, targetLayer)
     end
 end
 
+function UCIController:findHighestPriorityActiveSource()
+    local highestPriority = -1
+    local highestPrioritySource = nil
+    
+    -- Scan all configured sources for active pins
+    for pinName, sourceData in pairs(sourcePinMap) do
+        local priority = sourceAutoSwitchPriorityConfig[pinName]
+        local pin = sourceData.pin
+        local isActive = pin and pin.Boolean or false
+        
+        if isActive and priority and priority > highestPriority then
+            highestPriority = priority
+            highestPrioritySource = {
+                pinName = pinName,
+                layer = sourceData.layer,
+                priority = priority
+            }
+        end
+    end
+    
+    return highestPrioritySource
+end
+
+function UCIController:handlePrioritySourceChange()
+    -- Find the highest priority active source
+    local activeSource = self:findHighestPriorityActiveSource()
+    
+    if activeSource then
+        self:debug("Priority scan: Highest active source is " .. activeSource.pinName .. " (priority: " .. activeSource.priority .. ")")
+        self:handlePrioritySourceSwitch(activeSource.pinName, activeSource.layer)
+    else
+        self:debug("Priority scan: No active sources found")
+    end
+end
+
 function UCIController:updateCallActiveState()
     local isActive = controls.pinCallActive.Boolean or false
     self.callActive = isActive  -- Update cached state
@@ -679,21 +759,15 @@ function UCIController:updateHDMIForActiveSource()
     local src = self:getActiveSource()
     if not src then return end
 
-    local isConnected = src.hdmiPin and src.hdmiPin.Boolean or false
-    if isConnected then
-        self:updateLayerVisibility({src.baseLayer}, true, "fade")
-        self:updateLayerVisibility({src.discLayer}, false, "none")
+    if self:checkHDMIConnection() then
+        self:showLayerHideOthers({src.baseLayer}, {src.discLayer})
         self:debug("HDMI " .. src.baseLayer .. ": Connected")
         self:updateACPRBypassState()
         self:updateConferenceState()
         return
     end
     -- On disconnect: show disconnect layer, hide base + conference + ACPR + help
-    self:updateLayerVisibility({src.discLayer}, true, "fade")
-    self:updateLayerVisibility({src.baseLayer, "J03-ACPRActive", src.confLayer}, false, "none")
-    if src.helpLayer then
-        self:syncHelpButtonStates(src.helpLayer)
-    end
+    self:showLayerHideOthers({src.discLayer}, {src.baseLayer, "J03-ACPRActive", src.confLayer})
     self:debug("HDMI " .. src.baseLayer .. ": Disconnected")
 end
 
@@ -703,25 +777,17 @@ function UCIController:updateSourceHelpState(srcKey)
     if not src then return end
 
     -- HDMI gate: help hidden if HDMI is not connected (only if source has HDMI)
-    if src.hdmiPin and not self:checkHDMIConnection() then
+    if not self:checkHDMIConnection() then
         self:updateLayerVisibility({src.helpLayer}, false, "none")
-        self:syncHelpButtonStates(src.helpLayer)
         self:debug(srcKey .. " Help: Hiding (HDMI not connected)")
         return
     end
 
     local isVisible = src.btnOpen.Boolean or false
     if isVisible then
-        self:updateLayerVisibility({src.helpLayer}, true, "fade")
         -- Hide conference/USB layers if they exist (Laptop/PC have these, Wireless doesn't)
-        local layersToHide = {}
-        if src.confLayer then table.insert(layersToHide, "J05-ConferenceControls") end
-        -- Hide all USB connect layers when showing help (not just this source's)
-        table.insert(layersToHide, "J01-ConnectUSBLaptop")
-        table.insert(layersToHide, "J02-ConnectUSBPC")
-        if #layersToHide > 0 then
-            self:updateLayerVisibility(layersToHide, false, "none")
-        end
+        local layersToHide = src.confLayer and self.layerGroups.allConference or self.layerGroups.usbConnect
+        self:showLayerHideOthers({src.helpLayer}, layersToHide)
     else
         self:updateLayerVisibility({src.helpLayer}, false, "none")
         -- Only update conference state if this source has conference controls
@@ -730,7 +796,6 @@ function UCIController:updateSourceHelpState(srcKey)
         end
     end
 
-    self:syncHelpButtonStates(src.helpLayer)
     self:debug(srcKey .. " Help: " .. (isVisible and "Showing" or "Hiding"))
 end
 
@@ -741,14 +806,11 @@ function UCIController:updateConferenceState()
 
     -- HDMI gate
     if not self:checkHDMIConnection() then
-        local hideLayers = {
-            "J01-ConnectUSBLaptop","J02-ConnectUSBPC","J05-ConferenceControls"
-        }
+        local hideLayers = {table.unpack(self.layerGroups.allConference)}
         if src.helpLayer then 
             table.insert(hideLayers, src.helpLayer)
-            self:updateLayerVisibility(hideLayers, false, "none")
-            self:syncHelpButtonStates(src.helpLayer)
         end
+        self:updateLayerVisibility(hideLayers, false, "none")
         self:debug("Conference blocked: HDMI not connected for " .. src.baseLayer)
         return
     end
@@ -763,20 +825,13 @@ function UCIController:updateConferenceState()
     end
 
     -- Config skip
-    if src.layerConst == self.kLayerLaptop and conferenceStateConfig.skipLaptop then return end
-    if src.layerConst == self.kLayerPC and conferenceStateConfig.skipPC then return end
-    if src.layerConst == self.kLayerWireless and conferenceStateConfig.skipWireless then return end
+    if conferenceStateConfig.skip[src.layerConst] then return end
 
     local usbConnected = src.usbPin and src.usbPin.Boolean or false
     if usbConnected then
-        self:updateLayerVisibility({src.confLayer}, true, "fade")
-        self:updateLayerVisibility({
-            "J01-ConnectUSBLaptop","J02-ConnectUSBPC"
-        }, false, "none")
+        self:showLayerHideOthers({src.confLayer}, self.layerGroups.usbConnect)
     else
-        self:updateLayerVisibility({src.usbConnect}, true, "fade")
-        self:updateLayerVisibility({src.confLayer, src.helpLayer}, false, "none")
-        if src.helpLayer then self:syncHelpButtonStates(src.helpLayer) end
+        self:showLayerHideOthers({src.usbConnect}, {src.confLayer, src.helpLayer})
     end
     self:debug("Conference: " .. src.confLayer .. " " .. (usbConnected and "Connected" or "Disconnected"))
 end
@@ -804,8 +859,7 @@ function UCIController:updateACPRBypassState()
 
     -- J03-ACPRActive requires call to be active
     if not isBypassActive and isCallActive then
-        self:updateLayerVisibility({"J03-ACPRActive"}, true, "fade")
-        self:updateLayerVisibility({src.confLayer}, false, "none")
+        self:showLayerHideOthers({"J03-ACPRActive"}, {src.confLayer})
     else
         self:updateLayerVisibility({src.confLayer}, isBypassActive and true or false, isBypassActive and "fade" or "none")
         self:updateLayerVisibility({"J03-ACPRActive"}, false, "none")
@@ -816,14 +870,12 @@ end
 function UCIController:updateRoutingHelpState()
     local isVisible = controls.btnOpenHelp.Routing.Boolean or false
     self:updateLayerVisibility({"I05-HelpRouting"}, isVisible, "none")
-    self:syncHelpButtonStates("I05-HelpRouting")
     self:debug("Routing Help: " .. (isVisible and "Showing" or "Hiding"))
 end
 
 function UCIController:updateStreamMusicHelpState()
     local isVisible = controls.btnOpenHelp.StreamMusic.Boolean or false
     self:updateLayerVisibility({"I07-HelpStreamMusic"}, isVisible, "none")
-    self:syncHelpButtonStates("I07-HelpStreamMusic")
     self:debug("Stream Music Help: " .. (isVisible and "Showing" or "Hiding"))
 end
 
@@ -1013,6 +1065,11 @@ function UCIController:syncRoomControlsState() -- use ledSystemPower as authorit
 end
 
 -------------------[ Progress Methods ]-------------------
+function UCIController:updateProgressBar(progress)
+    controls.knbProgressBar.Value = progress
+    controls.txtProgressBar.String = progress .. "%"
+end
+
 function UCIController:startLoadingBar(isPoweringOn)
     if self.isAnimating then return end
     
@@ -1022,20 +1079,19 @@ function UCIController:startLoadingBar(isPoweringOn)
     local interval = duration / steps
     local currentStep = 0
     
-    if self.loadingTimer then self.loadingTimer:Stop(); self.loadingTimer = nil end
-    if self.timeoutTimer then self.timeoutTimer:Stop(); self.timeoutTimer = nil end
+    self.loadingTimer = stopTimer(self.loadingTimer)
+    self.timeoutTimer = stopTimer(self.timeoutTimer)
     
     self.loadingTimer = Timer.New()
     self.timeoutTimer = Timer.New()
     
-    controls.knbProgressBar.Value = isPoweringOn and 0 or 100
-    controls.txtProgressBar.String = (isPoweringOn and 0 or 100) .. "%"
+    self:updateProgressBar(isPoweringOn and 0 or 100)
     
     self.timeoutTimer.EventHandler = function()
         if self.isAnimating then
             self:debug("Loading bar timeout reached")
             self.isAnimating = false
-            if self.loadingTimer then self.loadingTimer:Stop(); self.loadingTimer = nil end
+            self.loadingTimer = stopTimer(self.loadingTimer)
             self:btnNavEventHandler(isPoweringOn and self.defaultActiveLayer or self.kLayerStart, "Loading Timeout")
         end
     end
@@ -1045,8 +1101,7 @@ function UCIController:startLoadingBar(isPoweringOn)
         currentStep = currentStep + 1
         
         local progress = isPoweringOn and currentStep or (100 - currentStep)
-        controls.knbProgressBar.Value = progress
-        controls.txtProgressBar.String = progress .. "%"
+        self:updateProgressBar(progress)
         
         if currentStep >= steps then
             self.loadingTimer:Stop()
@@ -1071,31 +1126,27 @@ function UCIController:onPasscodeInactivity()
 end
 
 function UCIController:resetTouchInactivityTimer()
-    if not self.uciTouchInactivityTimer then return end
-    
-    local success, err = pcall(function()
+    -- Stop the timer if it's running
+    if self.uciTouchInactivityTimer then
         self.uciTouchInactivityTimer:Stop()
-        
-        -- Check if we're on the Passcode layer
-        local isOnPasscode = (self.varActiveLayer == self.kLayerPasscode)
-        
-        if isOnPasscode then
-            local timeout = tonumber(Uci.Variables.numTouchInactivityTimer.Value) or 60
-            if timeout <= 0 then
-                timeout = 60
-                self:debug("Warning: Invalid timeout value, using default 60s")
-            end
-            
-            self.uciTouchInactivityTimer.EventHandler = function() self:onPasscodeInactivity() end
-            self.uciTouchInactivityTimer:Start(timeout)
-            self:debug("Touch inactivity timer reset (" .. timeout .. "s)")
-        else
-            self:debug("Touch inactivity timer not started (not on Passcode layer)")
-        end
-    end)
+    end
     
-    if not success then
-        self:debug("Failed to reset touch inactivity timer: " .. tostring(err))
+    -- Check if we're actually on the Passcode layer
+    -- Use actual layer visibility check instead of relying on layerStates which might not be updated yet
+    local isOnPasscode = (self.varActiveLayer == self.kLayerPasscode)
+    
+    if isOnPasscode then
+        local timeout = tonumber(Uci.Variables.numTouchInactivityTimer.Value) or 60
+        if timeout <= 0 then
+            timeout = 60
+            self:debug("Warning: Invalid timeout value, using default 60s")
+        end
+        
+        self.uciTouchInactivityTimer.EventHandler = function() self:onPasscodeInactivity() end
+        self.uciTouchInactivityTimer:Start(timeout)
+        self:debug("Touch inactivity timer reset (" .. timeout .. "s)")
+    else
+        self:debug("Touch inactivity timer not started (not on Passcode layer)")
     end
 end
 
@@ -1129,6 +1180,16 @@ function UCIController:registerEventHandlers()
     
     -- Flattened handler map - all controls in single table for efficient registration
     -- BEST PRACTICE: Route all layer changes through ensureSystemIsOn() for centralized state management
+    
+    -- Reusable handlers (triggered on ANY change - both rising and falling edge)
+    local prioritySourceHandler = function(ctl)
+        self:handlePrioritySourceChange()
+    end
+    
+    local hdmiConnectHandler = function()
+        self:updateHDMIForActiveSource()
+    end
+    
     local allHandlers = {
         -- System controls
         [controls.btnStartSystem] = function()
@@ -1158,48 +1219,24 @@ function UCIController:registerEventHandlers()
                 self:updateConferenceState()
             end
         end,
-        [controls.pinLEDOffHookLaptop] = function(ctl)
-            if ctl.Boolean then 
-                self:handlePrioritySourceSwitch("pinLEDOffHookLaptop", self.kLayerLaptop)
-            end
-        end,
-        [controls.pinLEDOffHookPC] = function(ctl)
-            if ctl.Boolean then 
-                self:handlePrioritySourceSwitch("pinLEDOffHookPC", self.kLayerPC)
-            end
-        end,
-        [controls.pinLEDHDMI01Active] = function(ctl)
-            if ctl.Boolean then 
-                self:handlePrioritySourceSwitch("pinLEDHDMI01Active", self.kLayerLaptop)
-            end
-        end,
-        [controls.pinLEDHDMI02Active] = function(ctl)
-            if ctl.Boolean then 
-                self:handlePrioritySourceSwitch("pinLEDHDMI02Active", self.kLayerPC)
-            end
-        end,
-        [controls.pinLEDHDMI03Active] = function(ctl)
-            if ctl.Boolean then 
-                self:handlePrioritySourceSwitch("pinLEDHDMI03Active", self.kLayerWireless)
-            end
-        end,
-        [controls.pinLEDPresetSaved] = function()
-            self:updatePresetSavedState()
-        end,
-        [controls.pinLEDHDMI01Connect] = function()
-            self:updateHDMIForActiveSource()
-        end,
-        [controls.pinLEDHDMI02Connect] = function()
-            self:updateHDMIForActiveSource()
-        end,
-        [controls.pinLEDHDMI03Connect] = function()
-            self:updateHDMIForActiveSource()
-        end,
+        -- Priority source handlers (all use same function reference)
+        [controls.pinLEDOffHookLaptop] = prioritySourceHandler,
+        [controls.pinLEDOffHookPC] = prioritySourceHandler,
+        [controls.pinLEDHDMI01Active] = prioritySourceHandler,
+        [controls.pinLEDHDMI02Active] = prioritySourceHandler,
+        [controls.pinLEDHDMI03Active] = prioritySourceHandler,
+        -- HDMI connection handlers (all use same function reference)
+        [controls.pinLEDHDMI01Connect] = hdmiConnectHandler,
+        [controls.pinLEDHDMI02Connect] = hdmiConnectHandler,
+        [controls.pinLEDHDMI03Connect] = hdmiConnectHandler,
         [controls.pinLEDACPRBypassActive] = function()
             self:updateACPRBypassState()
         end,
         [controls.pinCallActive] = function()
             self:updateCallActiveState()
+        end,
+        [controls.pinLEDPresetSaved] = function()
+            self:updatePresetSavedState()
         end,
         [controls.pinLEDTouchActivity] = function(ctl)
             self:resetTouchInactivityTimer()
@@ -1258,8 +1295,7 @@ function UCIController:ensureSystemIsOn(targetLayer)
     end
 end
 
-
--------------------[ Navigation Methods ]-------------------
+-------------------[ Core Navigation Logic ]---------------
 function UCIController:btnNavEventHandler(argIndex, source)
     source = source or "Navigation"
     local previousLayer = self.varActiveLayer
@@ -1488,8 +1524,8 @@ function UCIController:cleanup()
     end
     
     -- Stop progress timers
-    if self.loadingTimer then self.loadingTimer:Stop(); self.loadingTimer = nil end
-    if self.timeoutTimer then self.timeoutTimer:Stop(); self.timeoutTimer = nil end
+    self.loadingTimer = stopTimer(self.loadingTimer)
+    self.timeoutTimer = stopTimer(self.timeoutTimer)
     self.isAnimating = false
     
     -- Clean up passcode handler
@@ -1565,6 +1601,7 @@ local function createUCIController(targetPageName, config)
 end
 
 if not validateControls() then return end
+initializeSourcePinMap()  -- Initialize pin references for priority resolution
 local pageName = Uci.Variables.txtUCIPageName.String or "UCI"
 local config = getDefaultConfig()
 myUCI = createUCIController(pageName, config)
