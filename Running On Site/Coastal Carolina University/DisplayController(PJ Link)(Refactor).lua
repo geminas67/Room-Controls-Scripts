@@ -33,7 +33,8 @@ local controls = {
     btnDisplayPowerOn = Controls.btnDisplayPowerOn,
     btnDisplayPowerOff = Controls.btnDisplayPowerOff,
     btnDisplayPowerToggle = Controls.btnDisplayPowerToggle,
-    btnDisplayInputAll = Controls.btnDisplayInputAll
+    btnDisplayInputAll = Controls.btnDisplayInputAll,
+    btnAVMute = Controls.btnAVMute
 }
 
 -------------------[ Utilities ]-------------------
@@ -123,6 +124,7 @@ function PJLinkDisplayController:safeAccess(component, control, action, value)
         if action == "trigger" then component[control]:Trigger(); return true end
         if action == "get" then return component[control].Boolean end
         if action == "set" then component[control].Boolean = value; return true end
+        if action == "getString" then return component[control].String end
     end)
     return success and result or false
 end
@@ -190,11 +192,11 @@ function PJLinkDisplayController:updatePowerFeedback()
     for i, display in pairs(self.components.displays) do
         if display then
             count = count + 1
-            local powerStatus = self:safeAccess(display, displayControls.displayPowerStatus, "get")
+            local powerStatus = self:safeAccess(display, displayControls.displayPowerStatus, "getString")
             if controls.btnDisplayPowerToggle and controls.btnDisplayPowerToggle[i] then
-                setProp(controls.btnDisplayPowerToggle[i], "Boolean", powerStatus)
+                setProp(controls.btnDisplayPowerToggle[i], "Boolean", powerStatus == "On")
             end
-            if not powerStatus then allOn = false end
+            if powerStatus ~= "On" then allOn = false end
         end
     end
     if count > 0 then

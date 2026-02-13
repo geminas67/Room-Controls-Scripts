@@ -91,23 +91,26 @@ local acprConfig = {
 -- Higher number = higher priority
 -- Priority >= 100: Always switch (even during active calls) - typically call sources
 -- Priority < 100: Only switch when NOT in an active call - typically HDMI sources
-local sourceAutoSwitchPriorityConfig = {
-    pinLEDOffHookLaptop = 200,   -- Highest priority - call on Laptop
-    pinLEDOffHookPC     = 200,   -- Highest priority - call on PC
-    pinLEDHDMI03Active  = 30,    -- Wireless HDMI (highest HDMI priority)
-    pinLEDHDMI02Active  = 20,    -- PC HDMI
-    pinLEDHDMI01Active  = 10,    -- Laptop HDMI (lowest HDMI priority)
+local sourceConfig = {
+    pinLEDOffHookLaptop = {priority = 200, layer = 8, pin = nil}, -- Highest: call on Laptop
+    pinLEDOffHookPC     = {priority = 200, layer = 7, pin = nil}, -- Highest: call on PC
+    pinLEDHDMI03Active  = {priority = 30,  layer = 9, pin = nil}, -- Wireless HDMI
+    pinLEDHDMI02Active  = {priority = 20,  layer = 7, pin = nil}, -- PC HDMI
+    pinLEDHDMI01Active  = {priority = 10,  layer = 8, pin = nil}, -- Laptop HDMI
     -- USB sources don't auto-switch (handled by conference state)
 }
 
--- Map pin names to their control objects and target layers (for priority resolution)
-local sourcePinMap = {
-    pinLEDOffHookLaptop = {pin = nil, layer = 8}, -- kLayerLaptop (pin set after controls init)
-    pinLEDOffHookPC     = {pin = nil, layer = 7}, -- kLayerPC
-    pinLEDHDMI03Active  = {pin = nil, layer = 9}, -- kLayerWireless
-    pinLEDHDMI02Active  = {pin = nil, layer = 7}, -- kLayerPC
-    pinLEDHDMI01Active  = {pin = nil, layer = 8}, -- kLayerLaptop
-}
+-- Pre-sorted list of sources by priority (built once at initialization)
+local sortedSourcesByPriority = (function()
+    local sorted = {}
+    for pinName, config in pairs(sourceConfig) do
+        table.insert(sorted, pinName)
+    end
+    table.sort(sorted, function(a, b) 
+        return sourceConfig[a].priority > sourceConfig[b].priority
+    end)
+    return sorted
+end)()
 
 -------------------[ Utilities ]-------------------
 local function isArr(t)
@@ -173,11 +176,11 @@ end
 
 local function initializeSourcePinMap()
     -- Initialize pin references after controls are loaded
-    sourcePinMap.pinLEDOffHookLaptop.pin = controls.pinLEDOffHookLaptop
-    sourcePinMap.pinLEDOffHookPC.pin = controls.pinLEDOffHookPC
-    sourcePinMap.pinLEDHDMI03Active.pin = controls.pinLEDHDMI03Active
-    sourcePinMap.pinLEDHDMI02Active.pin = controls.pinLEDHDMI02Active
-    sourcePinMap.pinLEDHDMI01Active.pin = controls.pinLEDHDMI01Active
+    sourceConfig.pinLEDOffHookLaptop.pin = controls.pinLEDOffHookLaptop
+    sourceConfig.pinLEDOffHookPC.pin = controls.pinLEDOffHookPC
+    sourceConfig.pinLEDHDMI03Active.pin = controls.pinLEDHDMI03Active
+    sourceConfig.pinLEDHDMI02Active.pin = controls.pinLEDHDMI02Active
+    sourceConfig.pinLEDHDMI01Active.pin = controls.pinLEDHDMI01Active
 end
 
 local function validateControls()
@@ -677,66 +680,42 @@ function UCIController:isInCall()
     return self.callActive
 end
 
-function UCIController:shouldAutoSwitchSource(triggerPinName)
-    local priority = sourceAutoSwitchPriorityConfig[triggerPinName]
-    if not priority then 
-        self:debug("Source switch not allowed: No priority config for " .. triggerPinName .. " (please add to sourceAutoSwitchPriorityConfig)")
-        return false
-    end
-    
-    -- Priority >= 100 always switches (call sources - highest priority)
-    if priority >= 100 then 
-        self:debug("Source switch allowed: High priority (" .. priority .. ") for " .. triggerPinName)
-        return true 
-    end
-    -- Lower priority sources blocked during active calls
-    if self:isInCall() then
-        self:debug("Source switch BLOCKED: Call in progress, priority " .. priority .. " insufficient for " .. triggerPinName)
-        return false
-    end
-    
-    self:debug("Source switch allowed: Priority " .. priority .. " for " .. triggerPinName .. " (no call active)")
-    return true
-end
-
-function UCIController:handlePrioritySourceSwitch(triggerPinName, targetLayer)
-    if self:shouldAutoSwitchSource(triggerPinName) then
-        self:ensureSystemIsOn(targetLayer)
-    end
-end
-
 function UCIController:findHighestPriorityActiveSource()
-    local highestPriority = -1
-    local highestPrioritySource = nil
-    
-    -- Scan all configured sources for active pins
-    for pinName, sourceData in pairs(sourcePinMap) do
-        local priority = sourceAutoSwitchPriorityConfig[pinName]
-        local pin = sourceData.pin
-        local isActive = pin and pin.Boolean or false
-        
-        if isActive and priority and priority > highestPriority then
-            highestPriority = priority
-            highestPrioritySource = {
+    -- Check sources in priority order - first active source wins
+    for _, pinName in ipairs(sortedSourcesByPriority) do
+        local config = sourceConfig[pinName]
+        if config.pin and config.pin.Boolean then
+            return {
                 pinName = pinName,
-                layer = sourceData.layer,
-                priority = priority
+                layer = config.layer,
+                priority = config.priority
             }
         end
     end
-    
-    return highestPrioritySource
+    return nil
 end
 
 function UCIController:handlePrioritySourceChange()
     -- Find the highest priority active source
     local activeSource = self:findHighestPriorityActiveSource()
     
-    if activeSource then
-        self:debug("Priority scan: Highest active source is " .. activeSource.pinName .. " (priority: " .. activeSource.priority .. ")")
-        self:handlePrioritySourceSwitch(activeSource.pinName, activeSource.layer)
-    else
+    if not activeSource then
         self:debug("Priority scan: No active sources found")
+        return
+    end
+    
+    self:debug("Priority scan: Highest active source is " .. activeSource.pinName .. " (priority: " .. activeSource.priority .. ")")
+    
+    -- Already highest priority - only check: does call state block it?
+    -- Priority >= 100 (call sources) always override, lower priority blocked during calls
+    if activeSource.priority >= 100 then
+        self:debug("Source switch allowed: Call source (priority " .. activeSource.priority .. ") overrides all")
+        self:ensureSystemIsOn(activeSource.layer)
+    elseif not self:isInCall() then
+        self:debug("Source switch allowed: Priority " .. activeSource.priority .. ", no call active")
+        self:ensureSystemIsOn(activeSource.layer)
+    else
+        self:debug("Source switch BLOCKED: Call in progress, priority " .. activeSource.priority .. " insufficient")
     end
 end
 
@@ -1220,15 +1199,15 @@ function UCIController:registerEventHandlers()
             end
         end,
         -- Priority source handlers (all use same function reference)
-        [controls.pinLEDOffHookLaptop] = prioritySourceHandler,
-        [controls.pinLEDOffHookPC] = prioritySourceHandler,
-        [controls.pinLEDHDMI01Active] = prioritySourceHandler,
-        [controls.pinLEDHDMI02Active] = prioritySourceHandler,
-        [controls.pinLEDHDMI03Active] = prioritySourceHandler,
+        [controls.pinLEDOffHookLaptop]  = prioritySourceHandler,
+        [controls.pinLEDOffHookPC]      = prioritySourceHandler,
+        [controls.pinLEDHDMI01Active]   = prioritySourceHandler,
+        [controls.pinLEDHDMI02Active]   = prioritySourceHandler,
+        [controls.pinLEDHDMI03Active]   = prioritySourceHandler,
         -- HDMI connection handlers (all use same function reference)
-        [controls.pinLEDHDMI01Connect] = hdmiConnectHandler,
-        [controls.pinLEDHDMI02Connect] = hdmiConnectHandler,
-        [controls.pinLEDHDMI03Connect] = hdmiConnectHandler,
+        [controls.pinLEDHDMI01Connect]  = hdmiConnectHandler,
+        [controls.pinLEDHDMI02Connect]  = hdmiConnectHandler,
+        [controls.pinLEDHDMI03Connect]  = hdmiConnectHandler,
         [controls.pinLEDACPRBypassActive] = function()
             self:updateACPRBypassState()
         end,

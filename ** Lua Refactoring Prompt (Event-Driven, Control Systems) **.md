@@ -467,15 +467,26 @@ end
 **Why This Matters:**
 - When troubleshooting in production, you need instant comprehension
 - Single-letter variables create cognitive load ("what was `r` again?")
+- Other single-letter names that aren't common in Lua (e.g. `r`, `p`, `c`, `t`, `o`, `s`) are confusing—avoid them; use descriptive names instead
 - 3-letter control prefixes are Q-SYS conventions (acceptable)
 - The few extra characters are worth months of clarity
 - Future you (and your teammates) will thank you
 
 **Exception:**
-Loop iterators (`i`, `k`, `v`) are universally taught and acceptable because:
+Loop iterators (`i`, `k`, `v`) are the only acceptable single-letter variables in Lua; they are universally taught and acceptable because:
 - They have a single, well-defined scope (the loop)
 - They're used immediately and discarded
 - They're a standard convention across all programming languages
+
+### 2.7 Prefer Event-Driven Feedback Over Timer Polling
+
+**When integrating with external controls or components** (e.g. PJLink displays, device plugins, status controls):
+
+- **Prefer event-driven integration:** Attach an `EventHandler` to the component control that reports status (e.g. PowerStatus, connection state). When that control's value changes, run your feedback/update logic (e.g. `updatePowerFeedback()`).
+- **Avoid timer-based polling when the control can notify:** Do not use a Timer that repeatedly reads the same control(s) on a fixed interval just to refresh UI. Use a timer only when the system cannot notify you on change (e.g. true hardware polling with no status control).
+- **Why:** Event-driven uses fewer resources (no timer, no redundant reads), and the UI stays in sync as soon as the component reports a change. Timer-based polling runs on a schedule whether or not anything changed.
+
+**Example:** For display power feedback, set `display[displayControls.displayPowerStatus].EventHandler = function() self:updatePowerFeedback() end` when the display component is set; then call `updatePowerFeedback()` once at init and after power commands. Do not add a Timer that calls `updatePowerFeedback()` every N seconds.
 
 ---
 
@@ -764,8 +775,9 @@ When refactoring or creating a script:
 - [ ] Control arrays normalized once at init
 - [ ] Required controls validated
 - [ ] Component handlers cleaned up before reassignment
-- [ ] No single-letter variables (except loop iterators: i, k, v)
+- [ ] No single-letter variables (except i, k, v—other single-letter names are confusing)
 - [ ] 3-letter control prefixes used consistently (btn, txt, ctl, etc.)
+- [ ] Event-driven feedback used for external/component status (EventHandler on status controls) instead of timer-based polling when the control can notify on change
 
 **Metrics:**
 - [ ] Code reduced 50-70% from original (if refactoring)

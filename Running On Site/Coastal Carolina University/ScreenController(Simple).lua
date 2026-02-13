@@ -3,11 +3,12 @@
 local function setDisabled(boolean)
   Controls.btnScreenUp.IsDisabled = boolean
   Controls.btnScreenDn.IsDisabled = boolean
+  Controls.btnScreenStop.IsDisabled = boolean
 end
 
-local function setFeedback(text)
-  print(text)
-  Controls.txtFeedback.String = text
+local function setFeedback(msg)
+  print(msg)
+  Controls.txtFeedback.String = msg
 end
 
 local function reset()
@@ -23,7 +24,7 @@ end
 local function trigger(relayUp, relayDn, message)
   Controls.pinRelayUp.Boolean = relayUp
   Controls.pinRelayDn.Boolean = relayDn
-  Timer.CallAfter(reset, Controls.knbHoldTime.Value)
+  Timer.CallAfter(reset, Controls.knbPulseLatch.Value)
   setFeedback(message)
   setDisabled(true)
 end

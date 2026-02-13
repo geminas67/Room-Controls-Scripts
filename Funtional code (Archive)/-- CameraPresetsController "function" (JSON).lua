@@ -45,16 +45,16 @@ end--func
 function funcUpdatePresetMatchLEDs()
   if Controls.seldevCams.String ~= "" and tbldevCams[Controls.seldevCams.String] then
     local currentPreset = tbldevCams[Controls.seldevCams.String]["ptz.preset"].String
-    for i, v in ipairs(Controls.ledPresetMatch) do
+    for i, control in ipairs(Controls.ledPresetMatch) do
       if tblCamPresets[Controls.seldevCams.String] and tblCamPresets[Controls.seldevCams.String][i] == currentPreset then
-        v.Boolean = true
+        control.Boolean = true
       else
-        v.Boolean = false
+        control.Boolean = false
       end--if
     end--for
   else
-    for i, v in ipairs(Controls.ledPresetMatch) do
-      v.Boolean = false
+    for i, control in ipairs(Controls.ledPresetMatch) do
+      control.Boolean = false
     end--for
   end--if
 end--func
@@ -126,7 +126,7 @@ end--EH
 
 Controls.txtJSONStorage.IsDisabled = true
 
-for i, v in ipairs(Controls.btnCamPreset) do
+for i, control in ipairs(Controls.btnCamPreset) do
   tblbtnLongPressed[i] = false
   tblCountdownTimers[i] = Timer.New()
   tblLEDTimers[i] = Timer.New()
@@ -148,7 +148,7 @@ for i, v in ipairs(Controls.btnCamPreset) do
   end--EH
 
   -- Button press/release handler
-  v.EventHandler = function(ctl)
+  control.EventHandler = function(ctl)
     if ctl.Boolean then
       tblbtnLongPressed[i] = false
       tblCountdownTimers[i]:Start(Controls.knbHoldTime.Value)
