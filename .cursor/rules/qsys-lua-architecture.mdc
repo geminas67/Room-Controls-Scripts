@@ -1,0 +1,62 @@
+---
+description: Q-SYS Lua script architecture standards — flat module pattern, no OOP class ceremony
+globs: **/*.lua
+alwaysApply: false
+---
+
+# Q-SYS Lua Script Architecture
+
+## No OOP / Class Pattern
+
+Every Q-SYS control script is a **singleton by nature**. Each script runs in its own context, binds to its own named controls via `Controls.*`, and discovers its own components via `Component.GetComponents()`. There is never more than one instance of a given controller per script context.
+
+**Do not use class-based OOP** (`setmetatable`, `__index`, `.new()`, `self:`, `self.`). It adds ceremony with no benefit.
+
+```lua
+-- ❌ AVOID - unnecessary class machinery
+MyController = {}
+MyController.__index = MyController
+function MyController.new() ... return setmetatable({}, MyController) end
+function MyController:setRoute(input, output) ... end
+myController = MyController.new()
+
+-- ✅ CORRECT - flat module with local state
+local components = { extronRouter = nil, invalid = {} }
+local state = { power = false }
+
+local function setRoute(input, output, source) ... end
+
+init()
+```
+
+## Component Discovery
+
+Each script calls `Component.GetComponents()` for itself. Scripts do not share instances or pass component references between each other via OOP inheritance — they call into a **public API table** exposed as a global.
+
+```lua
+-- Public surface for external scripts to call into
+MatrixController = {
+    setSource  = setSource,
+    setRoute   = setRoute,
+    cleanup    = cleanup,
+}
+```
+
+## Standard Structure (all .lua scripts)
+
+```
+[ Controls ]      -- Controls.* snapshot
+[ Utilities ]     -- isArr, setProp, bind, bindArray, cleanupComponentHandlers
+[ Config ]        -- debugging, clearString, roomName, componentTypes, input/output maps
+[ State ]         -- components {}, state {}, uci {}, norm {}
+[ Debug ]         -- debugPrint()
+[ Functions ]     -- local function, forward-declared with local where needed
+[ Events ]        -- registerEvents()
+[ Init ]          -- init() with === phase markers
+[ Public API ]    -- GlobalName = { exposed functions }
+[ Start ]         -- pcall(init)
+```
+
+## When OOP Would Be Appropriate
+
+Only if a script genuinely needs **multiple independent instances within the same file** (e.g., a reusable display driver managing 8 distinct displays with fully isolated state). This has not been needed in any current project script.

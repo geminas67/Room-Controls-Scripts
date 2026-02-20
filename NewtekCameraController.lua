@@ -54,21 +54,6 @@ local presetRecallLedCount = getArrayCount(controls.ledPresetRecall)
 local presetSaveLedCount = getArrayCount(controls.ledPresetSave)
 presetSlots = math.max(presetBtnCount, presetRecallLedCount, presetSaveLedCount)
 
--- Fallback for designs using numbered control names instead of array pins.
-if presetSlots == 0 then
-    local i = 1
-    while true do
-        local hasAnyControl = Controls["btnCamPreset " .. i]
-            or Controls["ledPresetRecall " .. i]
-            or Controls["ledPresetSave " .. i]
-        if not hasAnyControl then
-            break
-        end
-        i = i + 1
-    end
-    presetSlots = i - 1
-end
-
 for i = 1, presetSlots do
     controls.btnCamPreset[i] = getPresetControl(controls.btnCamPreset, "btnCamPreset", i)
     controls.ledPresetRecall[i] = getPresetControl(controls.ledPresetRecall, "ledPresetRecall", i)
