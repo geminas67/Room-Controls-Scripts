@@ -171,11 +171,13 @@ local function bindArray(ctrls, handler)
 end
 
 -------------------[ Config ]-------------------------------
-local pageUCI       = Uci.Variables.txtUCIPageName    and Uci.Variables.txtUCIPageName.String    or "UCI"
-local stateDebug      = true
-local defaultRouting = tonumber(Uci.Variables.numDefaultRoutingLayer and Uci.Variables.numDefaultRoutingLayer.Value) or 1
-local defaultLayer   = tonumber(Uci.Variables.numDefaultActiveLayer  and Uci.Variables.numDefaultActiveLayer.Value)  or kLayerRouting
-local navHidden      = {}
+local config = {
+    pageUCI         = Uci.Variables.txtUCIPageName and Uci.Variables.txtUCIPageName.String or "UCI",
+    debug           = true,
+    defaultRouting  = tonumber(Uci.Variables.numDefaultRoutingLayer and Uci.Variables.numDefaultRoutingLayer.Value) or 1,
+    defaultLayer    = tonumber(Uci.Variables.numDefaultActiveLayer  and Uci.Variables.numDefaultActiveLayer.Value)  or kLayerRouting,
+    navHidden       = {},
+}
 
 -------------------[ State ]--------------------------------
 -- Forward declaration: btnNavEventHandler is defined after its dependencies but referenced in
@@ -185,7 +187,7 @@ local btnNavEventHandler
 local state = {
     activeLayer        = kLayerStart,
     layerStates        = {},
-    activeRoutingLayer = defaultRouting,
+    activeRoutingLayer = config.defaultRouting,
     isInitialized      = false,
 }
 
@@ -213,7 +215,7 @@ local arrUserLabels  = {}
 
 -------------------[ Debug ]--------------------------------
 local function debugPrint(str)
-    if stateDebug then print("[" .. pageUCI .. "] " .. str) end
+    if config.debug then print("[" .. config.pageUCI .. "] " .. str) end
 end
 
 -------------------[ Functions ]----------------------------
@@ -222,7 +224,7 @@ end
 local function setLayerVisible(layer, visible, transition)
     local currentState = state.layerStates[layer]
     if state.isInitialized and currentState == visible then return end
-    local ok, err = pcall(Uci.SetLayerVisibility, pageUCI, layer, visible, transition or "none")
+    local ok, err = pcall(Uci.SetLayerVisibility, config.pageUCI, layer, visible, transition or "none")
     if ok then
         state.layerStates[layer] = visible
     else
@@ -424,9 +426,9 @@ local function isPasscodeCorrect()
 end
 
 local function initPasscode()
-    local room = pageUCI:match("Salon%s*([A-H])")
+    local room = config.pageUCI:match("Salon%s*([A-H])")
     if not room then
-        debugPrint("Passcode: could not extract room from '" .. pageUCI .. "' (feature disabled)")
+        debugPrint("Passcode: could not extract room from '" .. config.pageUCI .. "' (feature disabled)")
         return false
     end
     components.passcodeRoom = "Salon" .. room
@@ -507,32 +509,58 @@ local function showLayer()
     showLayers(layersBase, true, "none")
 
     local layerConfig = {
-        [kLayerAlarm]         = { show={"A01-Alarm"},                                    hideBase=true },
-        [kLayerIncomingCall]  = { show={"B01-IncomingCall"} },
-        [kLayerStart]         = { show={"C05-Start"},                                    hideBase=true },
-        [kLayerWarming]       = { show={"E05-SystemProgress","E01-SystemProgressWarming"}, hideBase=true },
-        [kLayerCooling]       = { show={"E05-SystemProgress","E02-SystemProgressCooling"}, hideBase=true },
-        [kLayerRoomControls]  = { show={"H05-RoomControls"}, hide={"X01-ProgramVolume"},
+        [kLayerAlarm]         = { 
+            show={"A01-Alarm"},
+            hideBase=true,
+            fn = function() updateCallActiveState() end
+        },
+        [kLayerIncomingCall]  = { 
+            show={"B01-IncomingCall"},
+            fn = function() updateCallActiveState() end
+        },
+        [kLayerStart]         = { 
+            show={"C05-Start"},
+            hideBase=true,
+            fn = function() updateCallActiveState() end
+        },
+        [kLayerWarming]       = { 
+            show={"E05-SystemProgress","E01-SystemProgressWarming"},
+            hideBase=true,
+            fn = function() updateCallActiveState() end
+        },
+        [kLayerCooling]       = { 
+            show={"E05-SystemProgress","E02-SystemProgressCooling"},
+            hideBase=true,
+            fn = function() updateCallActiveState() end
+        },
+        [kLayerRoomControls]  = { 
+            show={"H05-RoomControls"}, 
+            hide={"X01-ProgramVolume"},
+            fn = function() updateCallActiveState() end
+        },
             fn = function() updateCallActiveState() end },
-        [kLayerLaptop]        = { show={"L05-Laptop"},
-            fn = function()
-                updateHDMI01State(); updateConferenceState()
-                updatePresetSavedState(); updateACPRBypassState(); updateCallActiveState()
-            end },
-        [kLayerPC]            = { show={"P05-PC"},
-            fn = function()
-                updateHDMI02State(); updateConferenceState()
-                updatePresetSavedState(); updateACPRBypassState(); updateCallActiveState()
-            end },
-        [kLayerWireless]      = { show={"W05-Wireless"},
-            fn = function() updateCallActiveState() end },
-        [kLayerRouting]       = { show={"R10-Routing"},
-            fn = function() showRoutingLayer(); updateCallActiveState() end },
-        [kLayerDialer]        = { show={"V05-Dialer"},
-            fn = function() updateCallActiveState() end },
-        [kLayerStreamMusic]   = { show={"S10-StreamMusic"},
-            fn = function() updateCallActiveState() end },
-        [kLayerRoomCombining] = { show={}, hideBase=true,
+        [kLayerLaptop]        = { 
+            show={"L05-Laptop"},
+            fn = function() updateHDMI01State(); updateConferenceState(); updatePresetSavedState(); updateACPRBypassState(); updateCallActiveState() end
+        },
+        [kLayerPC]            = { 
+            show={"P05-PC"},
+            fn = function() updateHDMI02State(); updateConferenceState(); updatePresetSavedState(); updateACPRBypassState(); updateCallActiveState() end
+        },
+        [kLayerWireless]      = { 
+            show={"W05-Wireless"},
+            fn = function() updateCallActiveState() end
+        },
+        [kLayerRouting]       = { 
+            show={"R10-Routing"},
+            fn = function() showRoutingLayer(); updateCallActiveState() end
+        },
+        [kLayerDialer]        = { 
+            show={"V05-Dialer"},
+            fn = function() updateCallActiveState() end
+        },
+        [kLayerRoomCombining] = { 
+            show={}, hideBase=true,
             fn = function()
                 resetTouchInactivityTimer()
                 if isPasscodeCorrect() then
@@ -543,7 +571,12 @@ local function showLayer()
                 end
                 updateCallActiveState()
             end },
-    }
+        [kLayerPasscode]      = { 
+            show={"H01-PasscodeEntry"},
+            hideBase=true,
+            fn = function() resetTouchInactivityTimer(); updateCallActiveState() end
+        }
+    
 
     local config = layerConfig[state.activeLayer]
     if not config then return end
@@ -638,7 +671,7 @@ local function startLoadingBar(isPoweringOn)
 
     timers.timeout.EventHandler = function()
         if timers.progress then timers.progress:Stop(); timers.progress = nil end
-        btnNavEventHandler(isPoweringOn and defaultLayer or kLayerStart)
+        btnNavEventHandler(isPoweringOn and configDefaultLayer or kLayerStart)
         debugPrint("Loading bar: timeout (300s)")
     end
     timers.timeout:Start(300)
@@ -650,7 +683,7 @@ local function startLoadingBar(isPoweringOn)
         if controls.txtProgressBar  then controls.txtProgressBar.String = progress .. "%" end
         if currentStep >= steps then
             if timers.timeout then timers.timeout:Stop(); timers.timeout = nil end
-            btnNavEventHandler(isPoweringOn and defaultLayer or kLayerStart)
+            btnNavEventHandler(isPoweringOn and configDefaultLayer or kLayerStart)
         else
             timers.progress:Start(interval)
         end
@@ -666,7 +699,7 @@ local function initRoomAutomation()
         componentName = Uci.Variables.compRoomControls.String
     end
     if not componentName then
-        local pageName = pageUCI:match("uci%s+([^(]+)")
+        local pageName = config.pageUCI:match("uci%s+([^(]+)")
         if pageName then componentName = "compRoomControls" .. pageName:gsub("%s+", "") end
     end
     if not componentName then
@@ -712,6 +745,13 @@ btnNavEventHandler = function(layerIndex)
     if state.isInitialized and layerIndex == state.activeLayer then return end
     local prev = state.activeLayer
     state.activeLayer = layerIndex
+    -- Cancel any running progress animation when navigating away from progress layers.
+    -- Without this, the cooling timer fires its final step and unconditionally navigates
+    -- back to kLayerStart, overriding any manual navigation that happened in the interim.
+    if layerIndex ~= kLayerWarming and layerIndex ~= kLayerCooling then
+        if timers.progress then timers.progress:Stop(); timers.progress = nil end
+        if timers.timeout  then timers.timeout:Stop();  timers.timeout  = nil end
+    end
     local inputNumber = components.videoMapping[layerIndex]
     if components.videoSwitcher and inputNumber then
         switchToInput(inputNumber)
@@ -844,8 +884,8 @@ end
 -------------------[ Init ]---------------------------------
 local function init()
     debugPrint("=== Initialization Started ===")
-    debugPrint("Configuration: pageUCI=" .. pageUCI .. ", stateDebug=" .. tostring(stateDebug) ..
-               ", defaultRouting=" .. defaultRouting .. ", defaultLayer=" .. defaultLayer)
+    debugPrint("Configuration: configPageUCI=" .. config.pageUCI .. ", configDebug=" .. tostring(config.debug) ..
+               ", configDefaultRouting=" .. config.defaultRouting .. ", configDefaultLayer=" .. config.defaultLayer)
 
     state.layerStates  = {}
     state.activeLayer  = kLayerStart
@@ -858,7 +898,7 @@ local function init()
     initPasscode()
 
     -- Hide specified navigation buttons
-    for _, index in ipairs(navHidden) do
+    for _, index in ipairs(config.navHidden) do
         local btn = controls["btnNav" .. string.format("%02d", index)]
         if btn then
             btn.IsInvisible = true
@@ -907,13 +947,13 @@ myUCI = {
 
 -------------------[ Start ]--------------------------------
 local ok, err = pcall(function()
-    print("Initializing UCIController for " .. pageUCI .. "...")
+    print("Initializing UCIController for " .. config.pageUCI .. "...")
     if not validateControls() then error("Control validation failed") end
     init()
 end)
 
 if ok then
-    print("✓ UCIController initialized for " .. pageUCI)
+    print("✓ UCIController initialized for " .. config.pageUCI)
 else
     print("✗ ERROR: UCIController initialization failed: " .. tostring(err))
 end
