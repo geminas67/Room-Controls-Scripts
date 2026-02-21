@@ -1,62 +1,409 @@
 ---
-description: Q-SYS Lua script architecture standards — flat module pattern, no OOP class ceremony
+description: Q-SYS Lua script architecture standards — flat module pattern, no OOP, lean code, rich debug output. Supersedes the standalone "Lua Refactoring Prompt" document.
 globs: **/*.lua
 alwaysApply: false
 ---
 
 # Q-SYS Lua Script Architecture
 
-## No OOP / Class Pattern
+## 0. Core Philosophy
 
-Every Q-SYS control script is a **singleton by nature**. Each script runs in its own context, binds to its own named controls via `Controls.*`, and discovers its own components via `Component.GetComponents()`. There is never more than one instance of a given controller per script context.
+> **"Lean code + rich debug output."**  
+> Every significant action, state change, and interaction must be logged.  
+> An empty debug window is a useless one.
 
-**Do not use class-based OOP** (`setmetatable`, `__index`, `.new()`, `self:`, `self.`). It adds ceremony with no benefit.
+**Target metrics when refactoring:**
+- 50–70% line reduction from verbose implementations ( this is a target but reducation can be more if possible)
+- Script stays under ~1000 lines for most controllers
+- Every user interaction visible in the debug console
+
+---
+
+## 1. No OOP / Class Pattern
+
+Every Q-SYS control script is a **singleton by nature** — one script context, one set of `Controls.*`, one set of `Component.GetComponents()` results. There is never more than one instance per file.
+
+**Do not use** `setmetatable`, `__index`, `.new()`, `self:`, or `self.`. It adds ceremony with no benefit.
 
 ```lua
--- ❌ AVOID - unnecessary class machinery
+-- ❌ AVOID
 MyController = {}
 MyController.__index = MyController
-function MyController.new() ... return setmetatable({}, MyController) end
+function MyController.new() return setmetatable({}, MyController) end
 function MyController:setRoute(input, output) ... end
-myController = MyController.new()
 
--- ✅ CORRECT - flat module with local state
-local components = { extronRouter = nil, invalid = {} }
+-- ✅ CORRECT — flat module, local state
+local components = { router = nil, invalid = {} }
 local state = { power = false }
 
 local function setRoute(input, output, source) ... end
-
-init()
 ```
 
-## Component Discovery
+**Exception:** Only use OOP if a script genuinely needs multiple fully independent instances within the same file (e.g., a reusable driver for 8 distinct, isolated displays). This has not yet been needed in any project script.
 
-Each script calls `Component.GetComponents()` for itself. Scripts do not share instances or pass component references between each other via OOP inheritance — they call into a **public API table** exposed as a global.
+---
+
+## 2. Standard File Structure
+
+Follow this section order in every script:
+
+```
+[ Header comment ]    -- name, author, version, brief description
+[ Configuration ]     -- data tables: room maps, preset lists, device lists
+[ Controls ]          -- local controls = { name = Controls.name, ... }
+[ Utilities ]         -- isArr, setProp, bind, bindArray, tableContains, etc.
+[ Config ]            -- ROOM_NAME, DEBUGGING, CLEAR_STR constants
+[ State ]             -- components {}, state {}, and any per-script flags
+[ Debug ]             -- local function debugPrint(str)
+[ Functions ]         -- all local functions in dependency order (callees before callers)
+[ Events ]            -- local function registerEvents()
+[ Init ]              -- local function init()  (with === phase markers)
+[ Public API ]        -- GlobalName = { exposed functions } for cross-script calls
+[ Start ]             -- pcall wrapper that calls init()
+```
+
+---
+
+## 3. Utility Functions (use everywhere)
+
+Include these verbatim at the top of every script:
 
 ```lua
--- Public surface for external scripts to call into
-MatrixController = {
-    setSource  = setSource,
-    setRoute   = setRoute,
-    cleanup    = cleanup,
+local function isArr(t)
+    return type(t) == "table" and t[1] ~= nil
+end
+
+-- Guards against redundant writes, feedback loops, and race conditions
+local function setProp(ctrl, prop, val)
+    if not ctrl or ctrl[prop] == val then return end
+    ctrl[prop] = val
+end
+
+local function bind(ctrl, handler)
+    if not ctrl or not handler then return false end
+    local ok = pcall(function() ctrl.EventHandler = handler end)
+    return ok
+end
+
+local function bindArray(ctrls, handler)
+    if not ctrls or not handler then return 0 end
+    local array = isArr(ctrls) and ctrls or { ctrls }
+    local count = 0
+    for i, ctrl in ipairs(array) do
+        if bind(ctrl, function(ctl)
+            local ok, err = pcall(handler, i, ctl)
+            if not ok then print("Handler error [index " .. i .. "]: " .. tostring(err)) end
+        end) then
+            count = count + 1
+        end
+    end
+    return count
+end
+```
+
+**Why `setProp()` matters:** Prevents redundant Q-SYS control updates (expensive), guards against feedback loops, and acts as insurance against race conditions.
+
+---
+
+## 4. Debug Output
+
+### 4.1 debugPrint pattern
+
+```lua
+local ROOM_NAME = "Room 101"
+local DEBUGGING = true
+
+local function debugPrint(str)
+    if DEBUGGING then print("[" .. ROOM_NAME .. "] " .. str) end
+end
+```
+
+### 4.2 What to log
+
+| ✅ Always log | ❌ Never log |
+|---|---|
+| Initialization phases (`=== Started ===`) | Redundant "already at state" on every poll |
+| Component discovery (what found, counts) | Internal utilities called thousands of times |
+| Event handler registration (type + count) | Timer tick operations where nothing changed |
+| Every routing/switching operation | |
+| State changes (before → after) | |
+| Safety blocks / errors | |
+| Source attribution on all operations | |
+
+### 4.3 Required patterns
+
+```lua
+-- Phase markers in init()
+debugPrint("=== Initialization Started ===")
+debugPrint("Configuration: ROOM_NAME=" .. ROOM_NAME .. ", debugging=" .. tostring(DEBUGGING))
+-- ... setup ...
+debugPrint("=== Initialization Complete ===")
+debugPrint("Ready for operation")
+
+-- Source attribution on all state changes
+debugPrint("Wall 3 (SalonB/SalonC) → CLOSED (Source: Wall Button)")
+debugPrint("Room SalonD → ON (Source: Combination Selector)")
+debugPrint("Audio routing: SalonD → Input 3 (Source: Room Combiner)")
+
+-- Count things at registration time
+debugPrint("Registered " .. wallCount .. " wall button handlers")
+debugPrint("Registered " .. rcCount  .. " room control handlers")
+
+-- Before/after for significant state transitions
+debugPrint("Room component 3 (SalonA): 'compRoomA_old' → 'compRoomA_new'")
+```
+
+---
+
+## 5. Code Quality Rules
+
+### 5.1 Flat control flow — early returns
+
+```lua
+-- ❌ Nested
+local function doSomething(input, output)
+    if input then
+        if output then
+            if enabled then
+                -- 3 levels deep
+            end
+        end
+    end
+end
+
+-- ✅ Flat with early returns
+local function doSomething(input, output)
+    if not input   then return false end
+    if not output  then return false end
+    if not enabled then return false end
+    -- logic at top level
+    return true
+end
+```
+
+### 5.2 Variable naming
+
+**Acceptable abbreviations** — Q-SYS 3-letter control prefixes are standard:
+```
+btn  txt  ctl  msg  str  cam  mxr  lvl  dev  led
+```
+
+**Loop iterators** — `i`, `k`, `v` are the only acceptable single-letter variables:
+```lua
+for i, item in ipairs(list) do ... end  -- ✅
+for k, v in pairs(table)   do ... end  -- ✅
+```
+
+**All other variables must be descriptive:**
+```lua
+-- ❌ Cryptic
+for r = 1, #roomList do
+    local p = presets[r]; local c = cameras[r]
+end
+
+-- ✅ Self-documenting
+for roomIdx = 1, #roomList do
+    local preset = presets[roomIdx]; local camera = cameras[roomIdx]
+end
+
+-- ❌ Cryptic parameters
+local function setRoute(i, o, s) ... end
+
+-- ✅ Self-documenting
+local function setRoute(input, output, source) ... end
+```
+
+### 5.3 Function definition order
+
+Define functions in dependency order — callees before callers. This avoids the need for forward declarations:
+
+```lua
+-- Define utility/leaf functions first
+local function isRoomPoweredOn(roomName) ... end
+
+-- Then functions that call them
+local function updateWallStates() ... isRoomPoweredOn(...) ... end
+
+-- Then higher-level orchestration
+local function handleWallButtonPress(...) ... updateWallStates() ... end
+
+-- registerEvents and init always last
+local function registerEvents() ... end
+local function init() ... end
+```
+
+---
+
+## 6. Component Management
+
+### 6.1 Standard setComponent pattern
+
+```lua
+local function setComponent(ctrl, componentType)
+    if not ctrl then
+        components.invalid[componentType] = true
+        checkStatus(); return nil
+    end
+    local name = ctrl.String
+    if not name or name == "" or name == CLEAR_STR then
+        if name == CLEAR_STR then ctrl.String = "" end
+        ctrl.Color = "white"
+        components.invalid[componentType] = false
+        checkStatus()
+        debugPrint("No " .. componentType .. " component selected")
+        return nil
+    end
+    local comp     = Component.New(name)
+    local ctrlList = comp and Component.GetControls(comp)
+    if not ctrlList or #ctrlList < 1 then
+        ctrl.String = "[Invalid Component Selected]"; ctrl.Color = "pink"
+        components.invalid[componentType] = true
+        checkStatus()
+        debugPrint("ERROR: Invalid component '" .. name .. "' for " .. componentType)
+        return nil
+    end
+    ctrl.Color = "white"
+    components.invalid[componentType] = false
+    checkStatus()
+    debugPrint("Connected " .. componentType .. ": " .. name)
+    return comp
+end
+```
+
+### 6.2 Component discovery with logging
+
+```lua
+local function discoverComponents()
+    debugPrint("Discovering components...")
+    local deviceNames = {}
+    for _, comp in ipairs(Component.GetComponents()) do
+        if comp.Type == "target_type" then
+            table.insert(deviceNames, comp.Name)
+            debugPrint("  Found device: " .. comp.Name)
+        end
+    end
+    table.sort(deviceNames); table.insert(deviceNames, CLEAR_STR)
+    if controls.devDevice then controls.devDevice.Choices = deviceNames end
+    debugPrint("Discovery complete - " .. (#deviceNames - 1) .. " devices found")
+end
+```
+
+### 6.3 Public API surface (cross-script access)
+
+```lua
+-- At the bottom, after init() is defined
+DivisibleSpaceController = {
+    applyAudioRouting = applyAudioRouting,
+    setRoomStates     = setRoomStates,
+    debugRouterStates = debugRouterStates,
 }
 ```
 
-## Standard Structure (all .lua scripts)
+---
 
+## 7. Event-Driven Feedback (not timer polling)
+
+Prefer attaching `EventHandler` to component status controls over timer-based polling:
+
+```lua
+-- ✅ Event-driven — fires only when state actually changes
+if comp["ledSystemPower"] then
+    comp["ledSystemPower"].EventHandler = function(ctl)
+        debugPrint("System power → " .. (ctl.Boolean and "ON" or "OFF") .. " (Source: Room Controls)")
+        updatePowerFeedback()
+    end
+    debugPrint("Registered: system power handler")
+end
+
+-- ❌ Timer polling — runs on a schedule regardless of change
+local timer = Timer.New()
+timer.EventHandler = function() updatePowerFeedback() end
+timer:Start(1.0)
 ```
-[ Controls ]      -- Controls.* snapshot
-[ Utilities ]     -- isArr, setProp, bind, bindArray, cleanupComponentHandlers
-[ Config ]        -- debugging, clearString, roomName, componentTypes, input/output maps
-[ State ]         -- components {}, state {}, uci {}, norm {}
-[ Debug ]         -- debugPrint()
-[ Functions ]     -- local function, forward-declared with local where needed
-[ Events ]        -- registerEvents()
-[ Init ]          -- init() with === phase markers
-[ Public API ]    -- GlobalName = { exposed functions }
-[ Start ]         -- pcall(init)
+
+Use a timer **only** when hardware cannot notify on change (true polling requirement with no available status control).
+
+---
+
+## 8. Start / Factory Pattern
+
+```lua
+local ok, err = pcall(function()
+    print("Initializing controller for " .. ROOM_NAME .. "...")
+    if not validateControls() then error("Control validation failed") end
+    normalizeControlArrays()
+    init()
+end)
+
+if ok then
+    print("✓ Controller initialized for " .. ROOM_NAME)
+else
+    print("✗ ERROR: Initialization failed: " .. tostring(err))
+    if controls and controls.txtStatus then
+        controls.txtStatus.String = "INIT FAILED"
+        controls.txtStatus.Value  = 2
+    end
+end
 ```
 
-## When OOP Would Be Appropriate
+---
 
-Only if a script genuinely needs **multiple independent instances within the same file** (e.g., a reusable display driver managing 8 distinct displays with fully isolated state). This has not been needed in any current project script.
+## 8.5 UCI showLayer — Avoid Base Layer Toggle
+
+**Anti-pattern (causes EventHandler feedback loops):**
+```lua
+-- ❌ WRONG — Hiding base layers then immediately showing them toggles Y01-Navbar,
+-- which contains nav buttons. That can trigger control EventHandlers and cause
+-- btnNavEventHandler to fire repeatedly → infinite loop.
+for _, layer in ipairs(ALL_LAYERS) do
+    setLayerVisible(layer, false, "none")  -- includes X01, Y01, Z01
+end
+showLayers({"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}, true, "none")
+```
+
+**Correct pattern:**
+```lua
+local BASE_LAYERS = {"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}
+
+-- Hide only non-base layers; never hide-then-show base (navbar contains nav buttons)
+for _, layer in ipairs(ALL_LAYERS) do
+    if layer ~= "X01-ProgramVolume" and layer ~= "Y01-Navbar" and layer ~= "Z01-Base" then
+        setLayerVisible(layer, false, "none")
+    end
+end
+showLayers(BASE_LAYERS, true, "none")
+-- Layers with hideBase=true still call hideBaseLayers() explicitly
+```
+
+---
+
+## 9. Refactoring Checklist
+
+**Structure:**
+- [ ] Flat module — no `setmetatable`, `__index`, `.new()`, `self:`
+- [ ] Standard section order (Config, Controls, Utilities, State, Debug, Functions, Events, Init, Public API, Start)
+- [ ] All functions defined in dependency order (callees before callers)
+
+**Debug Logging:**
+- [ ] `debugPrint()` implemented with room name prefix
+- [ ] Init uses `=== Started ===` / `=== Complete ===` phase markers
+- [ ] Discovery logs each component found + final count
+- [ ] Registration logs each handler type + count
+- [ ] All state changes include source attribution `(Source: ...)`
+- [ ] Before → after shown for component assignment changes
+
+**Code Quality:**
+- [ ] Early returns for all guard conditions
+- [ ] `setProp()` used for all control property assignments
+- [ ] `bind()` / `bindArray()` used for all event handlers
+- [ ] Control arrays normalized once with `normalizeControlArrays()`
+- [ ] Required controls validated in `validateControls()`
+- [ ] No single-letter variables except `i`, `k`, `v`
+- [ ] 3-letter Q-SYS control prefixes used consistently
+- [ ] Event-driven feedback (not timer polling) for component status controls
+- [ ] UCI showLayer: base layers (X01, Y01, Z01) excluded from initial hide-all pass
+
+**Metrics:**
+- [ ] 50–70% line reduction if refactoring an existing script
+- [ ] Script under ~1000 lines
+- [ ] Every user interaction visible in debug output
