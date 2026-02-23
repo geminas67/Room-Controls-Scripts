@@ -1,20 +1,15 @@
 --[[
-    Audio Router Controller (Refactored)
+    Audio Router Controller (Salon)
     Author: Nikolas Smith, Q-SYS
-    Version: 2.0 | Date: 2025-09-10
+    Version: 3.0 | Date: 2026-02-21
     Firmware Req: 10.0.0
     Notes:
-    - Refactored per Lua Refactoring Prompt (event-driven, OOP modular)
-    - Enhanced validation: Comprehensive control validation with descriptive error messages
-    - Array normalization: Automatic conversion of single controls to array format
-    - Optimized event registration: Batch event registration using handler maps
-    - Factory functions: Comprehensive error handling with graceful degradation
-    - Property access optimization: Cached references and redundancy prevention
-    - State management utilities: resetComponentsArray for dynamic component collections
-    - Note: Controls, Component globals are part of Q-SYS framework (expected lint warnings)
+    - Flat module pattern, event-driven, no OOP
+    - DivisibleSpaceController owns all combination routing; this script
+      handles direct source selection and fire-alarm mute only
 ]]--
 
--------------------[ Control References ]-------------------
+-------------------[ Controls ]-------------------
 local controls = {
     compAudioRouter  = Controls.compAudioRouter,
     btnAudioSource   = Controls.btnAudioSource,
@@ -22,428 +17,238 @@ local controls = {
     compRoomControls = Controls.compRoomControls,
 }
 
-local function validateControls()
-    local required = {
-        compAudioRouter = controls.compAudioRouter,
-        btnAudioSource = controls.btnAudioSource,
-        txtStatus = controls.txtStatus,
-        compRoomControls = controls.compRoomControls
-    }
-    
-    local missing = {}
-    for name, control in pairs(required) do
-        if not control then 
-            table.insert(missing, name) 
+-------------------[ Utilities ]-------------------
+local function isArr(t)
+    return type(t) == "table" and t[1] ~= nil
+end
+
+local function setProp(ctrl, prop, val)
+    if not ctrl or ctrl[prop] == val then return end
+    ctrl[prop] = val
+end
+
+local function bind(ctrl, handler)
+    if not ctrl or not handler then return false end
+    local ok = pcall(function() ctrl.EventHandler = handler end)
+    return ok
+end
+
+local function bindArray(ctrls, handler)
+    if not ctrls or not handler then return 0 end
+    local array = isArr(ctrls) and ctrls or { ctrls }
+    local count = 0
+    for i, ctrl in ipairs(array) do
+        if bind(ctrl, function(ctl)
+            local ok, err = pcall(handler, i, ctl)
+            if not ok then print("Handler error [index " .. i .. "]: " .. tostring(err)) end
+        end) then
+            count = count + 1
         end
     end
-    
+    return count
+end
+
+-------------------[ Config ]-------------------
+local config = {
+    roomName = "Salon Audio Router",
+    debugging = true,
+    clearString = "[Clear]",
+    inputs = {
+        SalonD = 1, SalonE = 2, SalonA = 3,
+        SalonB = 4, SalonC = 5, SalonF = 6,
+        SalonG = 7, SalonH = 8, none = 9,
+    },
+    outputs = { output01 = 1 },
+    componentTypes = {
+        audioRouter  = "router_with_output",
+        roomControls = "device_controller_script",
+    },
+}
+
+-------------------[ State ]-------------------
+local components = { audioRouter = nil, roomControls = nil, invalid = {} }
+
+-------------------[ Debug ]-------------------
+local function debugPrint(str)
+    if config.debugging then print("[" .. config.roomName .. "] " .. str) end
+end
+
+-------------------[ Functions ]-------------------
+local function validateControls()
+    local required = { "compAudioRouter", "btnAudioSource", "txtStatus", "compRoomControls" }
+    local missing  = {}
+    for _, name in ipairs(required) do
+        if not controls[name] then table.insert(missing, name) end
+    end
     if #missing > 0 then
-        print("ERROR: AudioRouterController missing required controls:")
-        for _, name in ipairs(missing) do
-            print("  - " .. name)
-        end
-        print("Controller initialization aborted.")
+        print("ERROR: Missing required controls: " .. table.concat(missing, ", "))
         return false
     end
-    
     return true
 end
 
 local function normalizeControlArrays()
-    -- Normalize btnAudioSource to array if single control
-    if controls.btnAudioSource and not controls.btnAudioSource[1] then
-        controls.btnAudioSource = {controls.btnAudioSource}
+    if controls.btnAudioSource and not isArr(controls.btnAudioSource) then
+        controls.btnAudioSource = { controls.btnAudioSource }
     end
-    
-    -- Ensure btnAudioSource is an array
-    if not controls.btnAudioSource then
-        controls.btnAudioSource = {}
-    end
+    if not controls.btnAudioSource then controls.btnAudioSource = {} end
 end
 
--------------------[ Utility Functions ]-------------------
-local function isArr(obj)
-    return type(obj) == "table" and obj[1] ~= nil
-end
-
-local function getControlArray(control)
-    if not control then return {} end
-    return isArr(control) and control or {control}
-end
-
-local function setProp(obj, prop, value)
-    if not obj or obj[prop] == value then return end
-    obj[prop] = value
-end
-
-local function bind(control, handler)
-    if control and control.EventHandler ~= handler then
-        control.EventHandler = handler
-    end
-end
-
-local function bindArray(controls, handler)
-    for i, control in ipairs(controls) do
-        if control then
-            bind(control, function() handler(i, control) end)
-        end
-    end
-end
-
-local function forEach(arr, func)
-    for i, item in ipairs(arr) do
-        func(item, i)
-    end
-end
-
--------------------[ Component State Management ]-------------------
-local function resetComponentsArray(componentsTable)
-    -- Clear existing component references safely
-    if type(componentsTable) == "table" then
-        for key, _ in pairs(componentsTable) do
-            componentsTable[key] = nil
-        end
-    end
-    
-    -- Return empty table ready for population
-    return {}
-end
-
--- AudioRouterController class
-AudioRouterController = {}
-AudioRouterController.__index = AudioRouterController
-
------------------[ Class Constructor ]-------------------
-function AudioRouterController.new(config)
-    -- Validate controls before proceeding
-    if not validateControls() then
-        return nil
-    end
-    
-    -- Normalize control arrays
-    normalizeControlArrays()
-    
-    local self = setmetatable({}, AudioRouterController)
-    
-    self.debugging = config and config.debugging or true
-    self.clearString = "[Clear]"
-    self.invalidComponents = {}
-    self.lastInput = {} -- Store the last input for each output
-    
-    self.inputs = {
-        SalonD = 1,
-        SalonE = 2,
-        SalonA = 3,
-        SalonB = 4,
-        SalonC = 5,
-        SalonF = 6,
-        SalonG = 7,
-        SalonH = 8,
-        none  = 9,
-    }
-    self.outputs = {
-        output01 = 1
-    }
-    self.componentTypes = {
-        audioRouter  = "router_with_output",
-        roomControls = "device_controller_script"
-    }
-    self.audioRouter  = nil
-    self.roomControls = nil
-    self.controls = controls
-    self:initialize()
-    
-    return self
-end
-
------------------------------[ Debug Helper ]-----------------------------
-function AudioRouterController:debugPrint(str)
-    if self.debugging then
-        print("[Audio Router Debug] " .. str)
-    end
-end
-
------------------------------[ Component Management ]-----------------------------
-function AudioRouterController:setComponent(ctrl, componentType)
-    self:debugPrint("Setting Component: " .. componentType)
-    local componentName = ctrl.String
-    
-    -- Guard clause: empty component name
-    if componentName == "" then
-        self:debugPrint("No " .. componentType .. " Component Selected")
-        setProp(ctrl, "Color", "white")
-        self:setComponentValid(componentType)
-        return nil
-    end
-    
-    -- Guard clause: clear string selected
-    if componentName == self.clearString then
-        self:debugPrint(componentType .. ": Component Cleared")
-        setProp(ctrl, "String", "")
-        setProp(ctrl, "Color", "white")
-        self:setComponentValid(componentType)
-        return nil
-    end
-    
-    -- Guard clause: invalid component
-    if #Component.GetControls(Component.New(componentName)) < 1 then
-        self:debugPrint(componentType .. " Component " .. componentName .. " is Invalid")
-        setProp(ctrl, "String", "[Invalid Component Selected]")
-        setProp(ctrl, "Color", "pink")
-        self:setComponentInvalid(componentType)
-        return nil
-    end
-    
-    -- Main path: valid component
-    self:debugPrint("Setting " .. componentType .. " Component: {" .. ctrl.String .. "}")
-    setProp(ctrl, "Color", "white")
-    self:setComponentValid(componentType)
-    return Component.New(componentName)
-end
-
-function AudioRouterController:setComponentInvalid(componentType)
-    self.invalidComponents[componentType] = true
-    self:updateStatus()
-end
-
-function AudioRouterController:setComponentValid(componentType)
-    self.invalidComponents[componentType] = false
-    self:updateStatus()
-end
-
-function AudioRouterController:updateStatus()
-    -- Check for any invalid components
-    for _, isInvalid in pairs(self.invalidComponents) do
+local function checkStatus()
+    for _, isInvalid in pairs(components.invalid) do
         if isInvalid then
-            setProp(self.controls.txtStatus, "String", "Invalid Components")
-            setProp(self.controls.txtStatus, "Value", 1)
+            setProp(controls.txtStatus, "String", "Invalid Components")
+            setProp(controls.txtStatus, "Value",  1)
             return
         end
     end
-    -- All components valid
-    setProp(self.controls.txtStatus, "String", "OK")
-    setProp(self.controls.txtStatus, "Value", 0)
+    setProp(controls.txtStatus, "String", "OK")
+    setProp(controls.txtStatus, "Value",  0)
 end
 
------------------------------[ Component Name Discovery ]-----------------------------
-function AudioRouterController:discoverComponents()
-    -- Reset component arrays for clean state
-    local audioRouterNames = resetComponentsArray({})
-    local roomControlsNames = resetComponentsArray({})
-
-    for i, v in pairs(Component.GetComponents()) do
-        if v.Type == self.componentTypes.audioRouter then
-            table.insert(audioRouterNames, v.Name)
-        elseif v.Type == self.componentTypes.roomControls and string.match(v.Name, "^compRoomControls") then
-            table.insert(roomControlsNames, v.Name)
-        end
+local function setComponent(ctrl, componentType)
+    if not ctrl then
+        components.invalid[componentType] = true
+        checkStatus(); return nil
     end
-    
-    table.sort(audioRouterNames)
-    table.insert(audioRouterNames, self.clearString)
-    setProp(self.controls.compAudioRouter, "Choices", audioRouterNames)
-    
-    table.sort(roomControlsNames)
-    table.insert(roomControlsNames, self.clearString)
-    setProp(self.controls.compRoomControls, "Choices", roomControlsNames)
-    
-    self:debugPrint("Component discovery completed - Audio Router: " .. #audioRouterNames - 1 .. ", Room Controls: " .. #roomControlsNames - 1)
-end
-
-
------------------------------[ Component Setup ]-----------------------------
-function AudioRouterController:setAudioRouterComponent()
-    -- Clean up old event handlers if switching devices
-    if self.audioRouter and self.audioRouter["select.1"] then
-        bind(self.audioRouter["select.1"], nil)
-        self:debugPrint("Cleanup completed due to switching devices")
-    end
-
-    self.audioRouter = self:setComponent(self.controls.compAudioRouter, "Audio Router")
-    if not self.audioRouter then
-        return
-    end
-    
-    bind(self.audioRouter["select.1"], function(ctl)
-        local inputValue = ctl.Value
-        
-        -- Direct UI update for responsiveness using utility function
-        forEach(self.controls.btnAudioSource, function(btn, i)
-            setProp(btn, "Boolean", (i == inputValue))
-        end)
-        
-        self:debugPrint("Audio Router set Output 1 to Input " .. inputValue)
-    end)
-end
-
-function AudioRouterController:setRoomControlsComponent()
-    self.roomControls = self:setComponent(self.controls.compRoomControls, "Room Controls")
-    if not self.roomControls then
-        return
-    end
-    
-    -- Room controls handler map for batch registration
-    -- NOTE: ledSystemPower routing DISABLED - DivisibleSpaceController handles all audio routing
-    -- based on room combinations and priority rules
-    local roomControlHandlers = {
-        --[[
-        ledSystemPower = function(ctl)
-            local route = ctl.Boolean and self.inputs.trs01 or self.inputs.none
-            self:setRoute(route, self.outputs.output01)
-        end,
-        ]]--
-        
-        ledFireAlarm = function(ctl)
-            if ctl.Boolean then
-                -- Fire alarm active: route to none
-                self:setRoute(self.inputs.none, self.outputs.output01)
-            else
-                -- Fire alarm cleared: revert to last input or default
-                --[[if Controls.ledSystemPower.Boolean then
-                    local defaultRoute = self.lastInput[self.outputs.output01] or self.inputs.trs01
-                    self:setRoute(defaultRoute, self.outputs.output01)
-                end]]--
-            end
-        end
-    }
-    
-    -- Register handlers using batch pattern
-    for controlName, handler in pairs(roomControlHandlers) do
-        if self.roomControls[controlName] then
-            bind(self.roomControls[controlName], handler)
-        end
-    end
-end
-
------------------------------[ Audio Routing Functions ]-----------------------------
-function AudioRouterController:setRoute(input, output)
-    if self.audioRouter then
-        self.audioRouter["select."..tostring(output)].Value = input
-        self:debugPrint("Set Output "..tostring(output).." to Input "..tostring(input))
-        self.lastInput[output] = input
-    end
-end
-
------------------------------[ Event Handlers ]-----------------------------
-function AudioRouterController:registerEventHandlers()
-    -- Component selection handler map
-    local componentHandlers = {
-        compAudioRouter = function() self:setAudioRouterComponent() end,
-        compRoomControls = function() self:setRoomControlsComponent() end
-    }
-    
-    -- Register component handlers
-    for controlName, handler in pairs(componentHandlers) do
-        bind(self.controls[controlName], handler)
-    end
-    
-    -- Audio source button handlers using batch registration
-    bindArray(self.controls.btnAudioSource, function(index, control)
-        self:setRoute(index, self.outputs.output01)
-    end)
-end
-
------------------------------[ Initialization ]-----------------------------
-function AudioRouterController:initialize()
-    -- Batch initialization for better performance
-    self:registerEventHandlers()
-    self:discoverComponents()
-    self:setAudioRouterComponent()
-    self:setRoomControlsComponent()
-    self:debugPrint("Audio Router Controller Initialized")
-end
-
------------------------------[ Cleanup ]-----------------------------
-function AudioRouterController:cleanup()
-    -- Clean up audio router event handlers
-    if self.audioRouter and self.audioRouter["select.1"] then
-        bind(self.audioRouter["select.1"], nil)
-    end
-    
-    -- Clean up room controls event handlers
-    if self.roomControls then
-        local roomControls = {"ledSystemPower", "ledFireAlarm"}
-        forEach(roomControls, function(controlName)
-            if self.roomControls[controlName] then
-                bind(self.roomControls[controlName], nil)
-            end
-        end)
-    end
-    
-    -- Clean up component handlers
-    bind(self.controls.compAudioRouter, nil)
-    bind(self.controls.compRoomControls, nil)
-    
-    -- Clean up audio source button handlers
-    forEach(self.controls.btnAudioSource, function(btn)
-        bind(btn, nil)
-    end)
-    
-    self:debugPrint("Cleanup completed")
-end
-
------------------------------[ Factory Function ]-----------------------------
-local function createAudioRouterController(config)
-    local defaultConfig = {
-        debugging = true
-    }
-    
-    local controllerConfig = config or defaultConfig
-    
-    local success, controller = pcall(function()
-        return AudioRouterController.new(controllerConfig)
-    end)
-    
-    if success then
-        if controller then
-            print("Successfully created Audio Router Controller")
-            return controller
-        else
-            print("Failed to create controller: validation failed")
-            return nil
-        end
-    else
-        print("Failed to create controller: " .. tostring(controller))
+    local name = ctrl.String
+    if not name or name == "" or name == config.clearString then
+        if name == config.clearString then ctrl.String = "" end
+        ctrl.Color = "white"
+        components.invalid[componentType] = false
+        checkStatus()
+        debugPrint("No " .. componentType .. " component selected")
         return nil
     end
+    local comp     = Component.New(name)
+    local ctrlList = comp and Component.GetControls(comp)
+    if not ctrlList or #ctrlList < 1 then
+        ctrl.String = "[Invalid Component Selected]"; ctrl.Color = "pink"
+        components.invalid[componentType] = true
+        checkStatus()
+        debugPrint("ERROR: Invalid component '" .. name .. "' for " .. componentType)
+        return nil
+    end
+    ctrl.Color = "white"
+    components.invalid[componentType] = false
+    checkStatus()
+    debugPrint("Connected " .. componentType .. ": " .. name)
+    return comp
 end
 
------------------------------[ Global Exports ]-----------------------------
--- Export class and factory for external access and multiple instances
-_G.AudioRouterController = AudioRouterController
-_G.createAudioRouterController = createAudioRouterController
-
------------------------------[ Instance Creation ]-----------------------------
--- Create the main audio router controller instance
-myAudioRouterController = createAudioRouterController()
-
--- Export instance globally for external access
-_G.myAudioRouterController = myAudioRouterController
-
------------------------------[ Usage Examples ]-----------------------------
---[[
--- Example usage of the audio router controller:
-
--- Create additional instances with custom config
-local customController = createAudioRouterController({debugging = false})
-
--- Set a route manually
-if myAudioRouterController then
-    myAudioRouterController:setRoute(1, 1)  -- Set Output 1 to Input 1
+local function setRoute(input, output, source)
+    if not components.audioRouter then return end
+    components.audioRouter["select." .. tostring(output)].Value = input
+    debugPrint("Output " .. tostring(output) .. " → Input " .. tostring(input) .. " (Source: " .. (source or "unknown") .. ")")
 end
 
--- Get current route (if audio router is available)
-if myAudioRouterController and myAudioRouterController.audioRouter then
-    local currentInput = myAudioRouterController.audioRouter["select.1"].Value
-    
-    -- Update source buttons to reflect current state using utility functions
-    forEach(Controls.btnAudioSource, function(btn, i)
-        setProp(btn, "Boolean", (i == currentInput))
+local function discoverComponents()
+    debugPrint("Discovering components...")
+    local routerNames, roomCtrlNames = {}, {}
+
+    for _, comp in ipairs(Component.GetComponents()) do
+        if comp.Type == config.componentTypes.audioRouter then
+            table.insert(routerNames, comp.Name)
+            debugPrint("  Found audio router: " .. comp.Name)
+        elseif comp.Type == config.componentTypes.roomControls and string.match(comp.Name, "^compRoomControls") then
+            table.insert(roomCtrlNames, comp.Name)
+            debugPrint("  Found room controls: " .. comp.Name)
+        end
+    end
+
+    table.sort(routerNames);   table.insert(routerNames,   config.clearString)
+    table.sort(roomCtrlNames); table.insert(roomCtrlNames, config.clearString)
+
+    controls.compAudioRouter.Choices  = routerNames
+    controls.compRoomControls.Choices = roomCtrlNames
+
+    debugPrint("Discovery complete - routers: " .. (#routerNames - 1) ..
+               ", room controls: " .. (#roomCtrlNames - 1))
+end
+
+local function setAudioRouterComponent()
+    if components.audioRouter and components.audioRouter["select.1"] then
+        components.audioRouter["select.1"].EventHandler = nil
+        debugPrint("Cleaned up previous audio router handlers")
+    end
+
+    local prev = controls.compAudioRouter.String
+    components.audioRouter = setComponent(controls.compAudioRouter, "audioRouter")
+    debugPrint("Audio router component: '" .. prev .. "' → '" .. controls.compAudioRouter.String .. "'")
+    if not components.audioRouter then return end
+
+    components.audioRouter["select.1"].EventHandler = function(ctl)
+        local inputValue = ctl.Value
+        for i, btn in ipairs(controls.btnAudioSource) do
+            setProp(btn, "Boolean", i == inputValue)
+        end
+        debugPrint("Router feedback: Output 1 → Input " .. tostring(inputValue))
+    end
+    debugPrint("Registered: audio router select feedback handler")
+end
+
+local function setRoomControlsComponent()
+    components.roomControls = setComponent(controls.compRoomControls, "roomControls")
+    if not components.roomControls then return end
+
+    if components.roomControls["ledFireAlarm"] then
+        components.roomControls["ledFireAlarm"].EventHandler = function(ctl)
+            if ctl.Boolean then
+                debugPrint("Fire alarm ACTIVE → routing to none (Source: Room Controls)")
+                setRoute(config.inputs.none, config.outputs.output01, "Fire Alarm")
+            else
+                debugPrint("Fire alarm CLEARED (Source: Room Controls)")
+            end
+        end
+        debugPrint("Registered: fire alarm handler")
+    end
+end
+
+-------------------[ Events ]-------------------
+local function registerEvents()
+    controls.compAudioRouter.EventHandler  = function() setAudioRouterComponent() end
+    controls.compRoomControls.EventHandler = function() setRoomControlsComponent() end
+    debugPrint("Registered: component selector handlers (2)")
+
+    local srcCount = bindArray(controls.btnAudioSource, function(index)
+        setRoute(index, config.outputs.output01, "Source Button")
     end)
+    debugPrint("Registered: " .. srcCount .. " audio source button handlers")
 end
 
--- Clean up when done
--- if myAudioRouterController then
---     myAudioRouterController:cleanup()
--- end
-]]-- 
+-------------------[ Init ]-------------------
+local function init()
+    debugPrint("=== Initialization Started ===")
+    debugPrint("Configuration: Room Name=" .. config.roomName .. ", Debugging=" .. tostring(config.debugging))
+
+    discoverComponents()
+    registerEvents()
+    setAudioRouterComponent()
+    setRoomControlsComponent()
+
+    debugPrint("=== Initialization Complete ===")
+    debugPrint("Ready for operation")
+end
+
+-------------------[ Public API ]-------------------
+AudioRouterController = {
+    setRoute = setRoute,
+}
+
+-------------------[ Start ]-------------------
+local ok, err = pcall(function()
+    print("Initializing Audio Router Controller for " .. config.roomName .. "...")
+    if not validateControls() then error("Control validation failed") end
+    normalizeControlArrays()
+    init()
+end)
+
+if ok then
+    print("✓ Audio Router Controller initialized for " .. config.roomName)
+else
+    print("✗ ERROR: Initialization failed: " .. tostring(err))
+    if controls and controls.txtStatus then
+        controls.txtStatus.String = "INIT FAILED"
+        controls.txtStatus.Value  = 2
+    end
+end

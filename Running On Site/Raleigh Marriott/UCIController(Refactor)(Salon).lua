@@ -538,7 +538,6 @@ local function showLayer()
             hide={"X01-ProgramVolume"},
             fn = function() updateCallActiveState() end
         },
-            fn = function() updateCallActiveState() end },
         [kLayerLaptop]        = { 
             show={"L05-Laptop"},
             fn = function() updateHDMI01State(); updateConferenceState(); updatePresetSavedState(); updateACPRBypassState(); updateCallActiveState() end
@@ -559,6 +558,10 @@ local function showLayer()
             show={"V05-Dialer"},
             fn = function() updateCallActiveState() end
         },
+        [kLayerStreamMusic]   = { 
+            show={"S10-StreamMusic"},
+            fn = function() updateCallActiveState() end
+        },
         [kLayerRoomCombining] = { 
             show={}, hideBase=true,
             fn = function()
@@ -570,12 +573,9 @@ local function showLayer()
                     setLayerVisible("H01-PasscodeEntry", true, "fade")
                 end
                 updateCallActiveState()
-            end },
-        [kLayerPasscode]      = { 
-            show={"H01-PasscodeEntry"},
-            hideBase=true,
-            fn = function() resetTouchInactivityTimer(); updateCallActiveState() end
-        }
+            end
+        },
+    }
     
 
     local config = layerConfig[state.activeLayer]
@@ -671,7 +671,7 @@ local function startLoadingBar(isPoweringOn)
 
     timers.timeout.EventHandler = function()
         if timers.progress then timers.progress:Stop(); timers.progress = nil end
-        btnNavEventHandler(isPoweringOn and configDefaultLayer or kLayerStart)
+        btnNavEventHandler(isPoweringOn and config.defaultLayer or kLayerStart)
         debugPrint("Loading bar: timeout (300s)")
     end
     timers.timeout:Start(300)
@@ -683,7 +683,7 @@ local function startLoadingBar(isPoweringOn)
         if controls.txtProgressBar  then controls.txtProgressBar.String = progress .. "%" end
         if currentStep >= steps then
             if timers.timeout then timers.timeout:Stop(); timers.timeout = nil end
-            btnNavEventHandler(isPoweringOn and configDefaultLayer or kLayerStart)
+            btnNavEventHandler(isPoweringOn and config.defaultLayer or kLayerStart)
         else
             timers.progress:Start(interval)
         end

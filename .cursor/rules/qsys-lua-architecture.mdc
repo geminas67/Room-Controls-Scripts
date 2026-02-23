@@ -52,7 +52,7 @@ Follow this section order in every script:
 [ Configuration ]     -- data tables: room maps, preset lists, device lists
 [ Controls ]          -- local controls = { name = Controls.name, ... }
 [ Utilities ]         -- isArr, setProp, bind, bindArray, tableContains, etc.
-[ Config ]            -- ROOM_NAME, DEBUGGING, CLEAR_STR constants
+[ Config ]            -- roomName, debug, clearString constants
 [ State ]             -- components {}, state {}, and any per-script flags
 [ Debug ]             -- local function debugPrint(str)
 [ Functions ]         -- all local functions in dependency order (callees before callers)
@@ -135,7 +135,7 @@ end
 ```lua
 -- Phase markers in init()
 debugPrint("=== Initialization Started ===")
-debugPrint("Configuration: ROOM_NAME=" .. ROOM_NAME .. ", debugging=" .. tostring(DEBUGGING))
+debugPrint("Configuration: ROOM_NAME=" .. roomName .. ", debugging=" .. tostring(debug))
 -- ... setup ...
 debugPrint("=== Initialization Complete ===")
 debugPrint("Ready for operation")
@@ -245,8 +245,8 @@ local function setComponent(ctrl, componentType)
         checkStatus(); return nil
     end
     local name = ctrl.String
-    if not name or name == "" or name == CLEAR_STR then
-        if name == CLEAR_STR then ctrl.String = "" end
+    if not name or name == "" or name == clearString then
+        if name == clearString then ctrl.String = "" end
         ctrl.Color = "white"
         components.invalid[componentType] = false
         checkStatus()
@@ -282,7 +282,7 @@ local function discoverComponents()
             debugPrint("  Found device: " .. comp.Name)
         end
     end
-    table.sort(deviceNames); table.insert(deviceNames, CLEAR_STR)
+    table.sort(deviceNames); table.insert(deviceNames, clearString)
     if controls.devDevice then controls.devDevice.Choices = deviceNames end
     debugPrint("Discovery complete - " .. (#deviceNames - 1) .. " devices found")
 end
@@ -329,14 +329,14 @@ Use a timer **only** when hardware cannot notify on change (true polling require
 
 ```lua
 local ok, err = pcall(function()
-    print("Initializing controller for " .. ROOM_NAME .. "...")
+    print("Initializing controller for " .. roomName .. "...")
     if not validateControls() then error("Control validation failed") end
     normalizeControlArrays()
     init()
 end)
 
 if ok then
-    print("✓ Controller initialized for " .. ROOM_NAME)
+    print("✓ Controller initialized for " .. roomName)
 else
     print("✗ ERROR: Initialization failed: " .. tostring(err))
     if controls and controls.txtStatus then
@@ -355,7 +355,7 @@ end
 -- ❌ WRONG — Hiding base layers then immediately showing them toggles Y01-Navbar,
 -- which contains nav buttons. That can trigger control EventHandlers and cause
 -- btnNavEventHandler to fire repeatedly → infinite loop.
-for _, layer in ipairs(ALL_LAYERS) do
+for _, layer in ipairs(layersAll) do
     setLayerVisible(layer, false, "none")  -- includes X01, Y01, Z01
 end
 showLayers({"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}, true, "none")
@@ -363,15 +363,15 @@ showLayers({"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}, true, "none")
 
 **Correct pattern:**
 ```lua
-local BASE_LAYERS = {"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}
+local layersBase = {"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}
 
 -- Hide only non-base layers; never hide-then-show base (navbar contains nav buttons)
-for _, layer in ipairs(ALL_LAYERS) do
+for _, layer in ipairs(layersAll) do
     if layer ~= "X01-ProgramVolume" and layer ~= "Y01-Navbar" and layer ~= "Z01-Base" then
         setLayerVisible(layer, false, "none")
     end
 end
-showLayers(BASE_LAYERS, true, "none")
+showLayers(layersBase, true, "none")
 -- Layers with hideBase=true still call hideBaseLayers() explicitly
 ```
 
