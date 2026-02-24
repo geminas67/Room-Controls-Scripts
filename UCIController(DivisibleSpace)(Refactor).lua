@@ -359,18 +359,14 @@ local function validateControls()
     return true
 end
 
-local function setLayerVisible(layer, visible, transition)
-    if state.layerStates[layer] == visible then return true end
-    local ok, err = pcall(Uci.SetLayerVisibility, config.pageUCI, layer, visible, transition or "none")
-    if ok then state.layerStates[layer] = visible
-    else debugPrint("Layer '"..layer.."' error: "..tostring(err)) end
-    return ok
-end
-
 local function updateLayerVisibility(layers, visible, transition)
     if not layers or visible == nil then return end
     for _, layer in ipairs(layers) do
-        if layer then setLayerVisible(layer, visible, transition) end
+        if layer and state.layerStates[layer] ~= visible then
+            local ok, err = pcall(Uci.SetLayerVisibility, config.pageUCI, layer, visible, transition or "none")
+            if ok then state.layerStates[layer] = visible
+            else debugPrint("Layer '"..layer.."' error: "..tostring(err)) end
+        end
     end
 end
 

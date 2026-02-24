@@ -21,7 +21,7 @@ alwaysApply: false
 
 ## 1. No OOP / Class Pattern
 
-Every Q-SYS control script is a **singleton by nature** — one script context, one set of `Controls.*`, one set of `Component.GetComponents()` results. There is never more than one instance per file.
+**OOP must never be used.** Every Q-SYS control script is a **singleton by nature** — one script context, one set of `Controls.*`, one set of `Component.GetComponents()` results. There is never more than one instance per file.
 
 **Do not use** `setmetatable`, `__index`, `.new()`, `self:`, or `self.`. It adds ceremony with no benefit.
 
@@ -38,8 +38,6 @@ local state = { power = false }
 
 local function setRoute(input, output, source) ... end
 ```
-
-**Exception:** Only use OOP if a script genuinely needs multiple fully independent instances within the same file (e.g., a reusable driver for 8 distinct, isolated displays). This has not yet been needed in any project script.
 
 ---
 
