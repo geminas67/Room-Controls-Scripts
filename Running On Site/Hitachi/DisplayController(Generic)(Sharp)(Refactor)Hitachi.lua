@@ -4,18 +4,30 @@
   Integrates with SystemAutomationController
 ]]--
 
+-------------------[ Configuration ]-------------------
 local displayControls = {
     powerOn = "PowerOnTrigger",
-    powerOff = "PowerOffTrigger", 
+    powerOff = "PowerOffTrigger",
     powerStatus = "PowerStatus",
     inputSelectComboBox = "InputSelectComboBox",
     inputStatusLED = "InputStatus",
     inputSelectButtons = "Input",
-    inputNames = "InputNames ",
-    currentInput = "CurrentInput ",
+    inputNames = "InputNames",
+    currentInput = "CurrentInput",
     displayVolume0 = "Custom1Trigger",
 }
 
+local inputButtonMap = {
+    HDMI1 = 1, HDMI2 = 2, DisplayPort = 3, USB_C = 4,
+    DVI = 5, VGA = 6, Component = 7, Composite = 8, S_Video = 9, RF = 10
+}
+
+local componentTypes = {
+    displays = "%PLUGIN%_78a74df3-40bf-447b-a714-f564ebae238a_%FP%_bec481a6666b76b5249bbd12046c3920",
+    roomControls = "device_controller_script",
+}
+
+-------------------[ Controls ]-------------------
 local controls = {
     txtStatus = Controls.txtStatus,
     devDisplays = Controls.devDisplays,
@@ -29,7 +41,7 @@ local controls = {
     btnDisplayPowerOn = Controls.btnDisplayPowerOn,
     btnDisplayPowerOff = Controls.btnDisplayPowerOff,
     btnDisplayPowerToggle = Controls.btnDisplayPowerToggle,
-    btnDisplayInputAll = Controls.btnDisplayInputAll
+    btnDisplayInputAll = Controls.btnDisplayInputAll,
 }
 
 -------------------[ Utilities ]-------------------
@@ -43,21 +55,30 @@ local function setProp(ctrl, prop, val)
 end
 
 local function bind(ctrl, handler)
-    if ctrl then ctrl.EventHandler = handler end
+    if not ctrl or not handler then return false end
+    local ok = pcall(function() ctrl.EventHandler = handler end)
+    return ok
 end
 
 local function bindArray(ctrls, handler)
-    if not ctrls then return end
+    if not ctrls or not handler then return 0 end
     local array = isArr(ctrls) and ctrls or { ctrls }
-    for i, ctrl in ipairs(array) do 
-        bind(ctrl, function(ctl) handler(i, ctl) end) 
+    local count = 0
+    for i, ctrl in ipairs(array) do
+        if bind(ctrl, function(ctl)
+            local ok, err = pcall(handler, i, ctl)
+            if not ok then print("Handler error [index " .. i .. "]: " .. tostring(err)) end
+        end) then
+            count = count + 1
+        end
     end
+    return count
 end
 
 local function normalizeControlArrays()
-    for _, name in ipairs({'devDisplays', 'btnDisplayPowerOn', 'btnDisplayPowerOff', 'btnDisplayPowerToggle'}) do
+    for _, name in ipairs({"devDisplays", "btnDisplayPowerOn", "btnDisplayPowerOff", "btnDisplayPowerToggle"}) do
         local ctrl = controls[name]
-        if ctrl and not isArr(ctrl) then controls[name] = {ctrl} end
+        if ctrl and not isArr(ctrl) then controls[name] = { ctrl } end
     end
 end
 
@@ -71,61 +92,52 @@ local function validateControls()
     return true
 end
 
--------------------[ Controller ]-------------------
-GenericDisplayController = {}
-GenericDisplayController.__index = GenericDisplayController
+-------------------[ Config ]-------------------
+local const = {
+    clearString = "[Clear]",
+    maxDisplays = 9,
+    defaultInput = "HDMI1",
+    warmupTime = 7,
+    cooldownTime = 5,
+    debug = true,
+}
 
-function GenericDisplayController.new(roomName, config)
-    if not validateControls() then return nil end
-    normalizeControlArrays()
-    
-    local self = setmetatable({}, GenericDisplayController)
-    self.roomName = roomName or "Default Room"
-    self.debugging = (config and config.debugging) or true
-    self.clearString = "[Clear]"
-    self.componentTypes = {
-        displays = "%PLUGIN%_78a74df3-40bf-447b-a714-f564ebae238a_%FP%_bec481a6666b76b5249bbd12046c3920",
-        roomControls = "device_controller_script"
-    }
-    self.components = { displays = {}, compRoomControls = nil, invalid = {} }
-    self.state = { lastInput = "HDMI1", powerState = false, isWarming = false, isCooling = false }
-    self.config = { maxDisplays = config and config.maxDisplays or 9, defaultInput = "HDMI1" }
-    self.inputButtonMap = {
-        HDMI1 = 1, HDMI2 = 2, DisplayPort = 3, USB_C = 4,
-        DVI = 5, VGA = 6, Component = 7, Composite = 8, S_Video = 9, RF = 10
-    }
-    self.timers = { warmup = Timer.New(), cooldown = Timer.New(), volumeMute = {} }
-    for i = 1, self.config.maxDisplays do
-        self.timers.volumeMute[i] = Timer.New()
+-------------------[ State ]-------------------
+local components = { displays = {}, compRoomControls = nil, invalid = {} }
+local state = { lastInput = "HDMI1", powerState = false, isWarming = false, isCooling = false }
+local timerConfig = { warmupTime = const.warmupTime, cooldownTime = const.cooldownTime }
+local timers = { warmup = Timer.New(), cooldown = Timer.New(), volumeMute = {} }
+for idx = 1, const.maxDisplays do
+    timers.volumeMute[idx] = Timer.New()
+end
+
+-------------------[ Debug ]-------------------
+local function getRoomName()
+    if controls.compRoomControls and controls.compRoomControls.String ~= "" and controls.compRoomControls.String ~= const.clearString then
+        local comp = Component.New(controls.compRoomControls.String)
+        if comp and comp["roomName"] and comp["roomName"].String ~= "" then
+            return "[" .. comp["roomName"].String .. "]"
+        end
     end
-    self.timerConfig = { warmupTime = 7, cooldownTime = 5 }
-    
-    return self
-end
-
-function GenericDisplayController:debugPrint(msg)
-    if self.debugging then print("["..self.roomName.."] "..msg) end
-end
-
-function GenericDisplayController:updateTimerConfig()
-    if not self.components.compRoomControls then 
-        self:debugPrint("No room controls component found - Using default timing values")
-        return 
+    if controls.roomName and controls.roomName.String ~= "" then
+        return "[" .. controls.roomName.String .. "]"
     end
-    local comp = self.components.compRoomControls
-    local warmup = comp.warmupTime and comp.warmupTime.Value
-    local cooldown = comp.cooldownTime and comp.cooldownTime.Value
-    if warmup and warmup > 0 then self.timerConfig.warmupTime = warmup end
-    if cooldown and cooldown > 0 then self.timerConfig.cooldownTime = cooldown end
-    self:debugPrint("Timer config - Warmup: " .. self.timerConfig.warmupTime .. "s, Cooldown: " .. self.timerConfig.cooldownTime .. "s")
+    return "[Generic Display]"
 end
 
-function GenericDisplayController:getInputButtonNumber(input)
+local roomName = getRoomName()
+
+local function debugPrint(str)
+    if const.debug then print("[" .. roomName .. "] " .. str) end
+end
+
+-------------------[ Functions ]-------------------
+local function getInputButtonNumber(input)
     local normalizedInput = input:gsub("USB%-C", "USB_C")
-    return self.inputButtonMap[normalizedInput]
+    return inputButtonMap[normalizedInput]
 end
 
-function GenericDisplayController:safeAccess(component, control, action, value)
+local function safeAccess(component, control, action, value)
     local success, result = pcall(function()
         if not component or not component[control] then return false end
         if action == "trigger" then component[control]:Trigger(); return true end
@@ -137,76 +149,133 @@ function GenericDisplayController:safeAccess(component, control, action, value)
     return success and result or false
 end
 
--------------------[ Display Methods ]-------------------
-function GenericDisplayController:powerAll(state)
-    self:debugPrint("Powering all displays: " .. tostring(state))
-    local control = state and displayControls.powerOn or displayControls.powerOff
-    for i, display in pairs(self.components.displays) do
-        if display then self:safeAccess(display, control, "trigger") end
+local function getDisplayCount()
+    local count = 0
+    for _ in pairs(components.displays) do count = count + 1 end
+    return count
+end
+
+local function checkStatus()
+    for _, invalid in pairs(components.invalid) do
+        if invalid then
+            debugPrint("Invalid components found")
+            setProp(controls.txtStatus, "String", "Invalid Components")
+            setProp(controls.txtStatus, "Value", 1)
+            return
+        end
     end
-    self.state.powerState = state
-    setProp(controls.ledDisplayPower, "Boolean", state)
+    debugPrint("Components are valid")
+    setProp(controls.txtStatus, "String", "OK")
+    setProp(controls.txtStatus, "Value", 0)
 end
 
-function GenericDisplayController:powerSingle(index, state)
-    self:debugPrint("Powering display " .. index .. " to: " .. tostring(state))
-    local display = self.components.displays[index]
-    local control = state and displayControls.powerOn or displayControls.powerOff
-    if display then self:safeAccess(display, control, "trigger") end
+local function setComponent(ctrl, componentType)
+    if not ctrl then
+        components.invalid[componentType] = true
+        checkStatus()
+        return nil
+    end
+    local name = ctrl.String
+    if not name or name == "" or name == const.clearString then
+        if name == const.clearString then ctrl.String = "" end
+        ctrl.Color = "white"
+        components.invalid[componentType] = false
+        checkStatus()
+        debugPrint("No " .. componentType .. " component selected")
+        return nil
+    end
+    local comp = Component.New(name)
+    local ctrlList = comp and Component.GetControls(comp)
+    if not ctrlList or #ctrlList < 1 then
+        ctrl.String = "[Invalid Component Selected]"
+        ctrl.Color = "pink"
+        components.invalid[componentType] = true
+        checkStatus()
+        debugPrint("ERROR: Invalid component '" .. name .. "' for " .. componentType)
+        return nil
+    end
+    ctrl.Color = "white"
+    components.invalid[componentType] = false
+    checkStatus()
+    debugPrint("Connected " .. componentType .. ": " .. name)
+    return comp
 end
 
-function GenericDisplayController:setInputAll(input)
-    self:debugPrint("Setting all displays to input: " .. input)
-    for i, display in pairs(self.components.displays) do
+local function updateTimerConfig()
+    if not components.compRoomControls then
+        debugPrint("No room controls component found - Using default timing values")
+        return
+    end
+    local comp = components.compRoomControls
+    local warmup = comp.warmupTime and comp.warmupTime.Value
+    local cooldown = comp.cooldownTime and comp.cooldownTime.Value
+    if warmup and warmup > 0 then timerConfig.warmupTime = warmup end
+    if cooldown and cooldown > 0 then timerConfig.cooldownTime = cooldown end
+    debugPrint("Timer config - Warmup: " .. timerConfig.warmupTime .. "s, Cooldown: " .. timerConfig.cooldownTime .. "s")
+end
+
+local function powerAll(powerState)
+    debugPrint("Powering all displays: " .. tostring(powerState) .. " (Source: Power All)")
+    local ctrl = powerState and displayControls.powerOn or displayControls.powerOff
+    for idx, display in pairs(components.displays) do
+        if display then safeAccess(display, ctrl, "trigger") end
+    end
+    state.powerState = powerState
+    setProp(controls.ledDisplayPower, "Boolean", powerState)
+end
+
+local function powerSingle(index, powerState)
+    debugPrint("Powering display " .. index .. " to: " .. tostring(powerState) .. " (Source: Single Display)")
+    local display = components.displays[index]
+    local ctrl = powerState and displayControls.powerOn or displayControls.powerOff
+    if display then safeAccess(display, ctrl, "trigger") end
+end
+
+local function setInputAll(input)
+    debugPrint("Setting all displays to input: " .. input .. " (Source: Input All)")
+    for idx, display in pairs(components.displays) do
         if display then
             if display[displayControls.inputSelectComboBox] then
-                self:safeAccess(display, displayControls.inputSelectComboBox, "setString", input)
+                safeAccess(display, displayControls.inputSelectComboBox, "setString", input)
             else
-                local buttonNumber = self:getInputButtonNumber(input)
+                local buttonNumber = getInputButtonNumber(input)
                 if buttonNumber then
                     local buttonName = displayControls.inputSelectButtons .. buttonNumber .. "Trigger"
-                    self:safeAccess(display, buttonName, "trigger")
+                    safeAccess(display, buttonName, "trigger")
                 end
             end
         end
     end
-    self.state.lastInput = input
+    state.lastInput = input
     setProp(controls.ledDisplayInput, "String", input)
 end
 
-function GenericDisplayController:getDisplayCount()
-    local count = 0
-    for _ in pairs(self.components.displays) do count = count + 1 end
-    return count
-end
-
--------------------[ Power Methods ]-------------------
-function GenericDisplayController:enablePowerControls(state)
+local function enablePowerControls(enabled)
     for _, name in ipairs({"btnDisplayPowerOn", "btnDisplayPowerOff", "btnDisplayPowerToggle", "btnDisplayPowerAll", "btnDisplayInputAll"}) do
         local ctrl = controls[name]
         if isArr(ctrl) then
-            for _, btn in ipairs(ctrl) do setProp(btn, "IsDisabled", not state) end
+            for _, btn in ipairs(ctrl) do setProp(btn, "IsDisabled", not enabled) end
         else
-            setProp(ctrl, "IsDisabled", not state)
+            setProp(ctrl, "IsDisabled", not enabled)
         end
     end
 end
 
-function GenericDisplayController:enablePowerControlIndex(index, state)
+local function enablePowerControlIndex(index, enabled)
     for _, name in ipairs({"btnDisplayPowerOn", "btnDisplayPowerOff", "btnDisplayPowerToggle"}) do
         local ctrl = controls[name]
-        if ctrl and ctrl[index] then setProp(ctrl[index], "IsDisabled", not state) end
+        if ctrl and ctrl[index] then setProp(ctrl[index], "IsDisabled", not enabled) end
     end
 end
 
-function GenericDisplayController:updatePowerFeedback()
+local function updatePowerFeedback()
     local allOn, count = true, 0
-    for i, display in pairs(self.components.displays) do
+    for idx, display in pairs(components.displays) do
         if display then
             count = count + 1
-            local powerStatus = self:safeAccess(display, displayControls.powerStatus, "get")
-            if controls.btnDisplayPowerToggle and controls.btnDisplayPowerToggle[i] then
-                setProp(controls.btnDisplayPowerToggle[i], "Boolean", powerStatus)
+            local powerStatus = safeAccess(display, displayControls.powerStatus, "get")
+            if controls.btnDisplayPowerToggle and controls.btnDisplayPowerToggle[idx] then
+                setProp(controls.btnDisplayPowerToggle[idx], "Boolean", powerStatus)
             end
             if not powerStatus then allOn = false end
         end
@@ -214,261 +283,244 @@ function GenericDisplayController:updatePowerFeedback()
     if count > 0 then
         setProp(controls.ledDisplayPower, "Boolean", allOn)
         setProp(controls.btnDisplayPowerAll, "Boolean", allOn)
-        self.state.powerState = allOn
-        self:debugPrint("Power feedback updated - Powered: " .. count .. "/" .. self:getDisplayCount())
+        state.powerState = allOn
+        debugPrint("Power feedback updated - Powered: " .. count .. "/" .. getDisplayCount())
     end
 end
 
-function GenericDisplayController:powerOnDisplay(index)
-    self:debugPrint("Powering on display " .. index)
-    self:powerSingle(index, true)
-    self:enablePowerControlIndex(index, false)
-    self:setOppositePowerButtonLegend(index, true)
-    self.state.isWarming = true
+local function setOppositePowerButtonLegend(index, poweringOn)
+    local targetControl = poweringOn and controls.btnDisplayPowerOff or controls.btnDisplayPowerOn
+    if targetControl and targetControl[index] then
+        setProp(targetControl[index], "Legend", "Please\nwait")
+    end
+end
+
+local function resetButtonLegends(index)
+    debugPrint("Resetting button legends for [ Display " .. index .. "]")
+    if controls.btnDisplayPowerOn and controls.btnDisplayPowerOn[index] then
+        setProp(controls.btnDisplayPowerOn[index], "Legend", "On")
+    end
+    if controls.btnDisplayPowerOff and controls.btnDisplayPowerOff[index] then
+        setProp(controls.btnDisplayPowerOff[index], "Legend", "Off")
+    end
+end
+
+local function powerOnDisplay(index)
+    debugPrint("Powering on display " .. index .. " (Source: Power On Button)")
+    powerSingle(index, true)
+    enablePowerControlIndex(index, false)
+    setOppositePowerButtonLegend(index, true)
+    state.isWarming = true
     setProp(controls.ledDisplayWarming, "Boolean", true)
-    self.timers.warmup:Start(self.timerConfig.warmupTime)
-    if self.timers.volumeMute and self.timers.volumeMute[index] then
-        self.timers.volumeMute[index]:Start(5)
+    timers.warmup:Start(timerConfig.warmupTime)
+    if timers.volumeMute and timers.volumeMute[index] then
+        timers.volumeMute[index]:Start(5)
     end
 end
 
-function GenericDisplayController:powerOffDisplay(index)
-    self:debugPrint("Powering off display " .. index)
-    self:powerSingle(index, false)
-    self:enablePowerControlIndex(index, false)
-    self:setOppositePowerButtonLegend(index, false)
-    self.state.isCooling = true
+local function powerOffDisplay(index)
+    debugPrint("Powering off display " .. index .. " (Source: Power Off Button)")
+    powerSingle(index, false)
+    enablePowerControlIndex(index, false)
+    setOppositePowerButtonLegend(index, false)
+    state.isCooling = true
     setProp(controls.ledDisplayCooling, "Boolean", true)
-    self.timers.cooldown:Start(self.timerConfig.cooldownTime)
+    timers.cooldown:Start(timerConfig.cooldownTime)
 end
 
-function GenericDisplayController:powerOnAll()
-    self:debugPrint("Powering on all displays")
-    self:powerAll(true)
-    self:enablePowerControls(false)
-    self.state.isWarming = true
+local function powerOnAll()
+    debugPrint("Powering on all displays (Source: Power All Button)")
+    powerAll(true)
+    enablePowerControls(false)
+    state.isWarming = true
     setProp(controls.ledDisplayWarming, "Boolean", true)
     setProp(controls.ledDisplayPower, "Boolean", true)
     setProp(controls.btnDisplayPowerAll, "Boolean", true)
-    self.timers.warmup:Start(self.timerConfig.warmupTime)
+    timers.warmup:Start(timerConfig.warmupTime)
 end
 
-function GenericDisplayController:powerOffAll()
-    self:debugPrint("Powering off all displays")
-    self:powerAll(false)
-    self:enablePowerControls(false)
-    self.state.isCooling = true
+local function powerOffAll()
+    debugPrint("Powering off all displays (Source: Power All Button)")
+    powerAll(false)
+    enablePowerControls(false)
+    state.isCooling = true
     setProp(controls.ledDisplayCooling, "Boolean", true)
     setProp(controls.ledDisplayPower, "Boolean", false)
     setProp(controls.btnDisplayPowerAll, "Boolean", false)
-    self.timers.cooldown:Start(self.timerConfig.cooldownTime)
+    timers.cooldown:Start(timerConfig.cooldownTime)
 end
 
-function GenericDisplayController:setOppositePowerButtonLegend(index, poweringOn)
-    local targetControl = poweringOn and controls.btnDisplayPowerOff or controls.btnDisplayPowerOn
-    if targetControl and targetControl[index] then targetControl[index].Legend = "Please\nwait" end
-end
-
-function GenericDisplayController:resetButtonLegends(index)
-    self:debugPrint("Resetting button legends for [ Display "..index.."]")
-    if controls.btnDisplayPowerOn and controls.btnDisplayPowerOn[index] then
-        controls.btnDisplayPowerOn[index].Legend = "On"
-    end
-    if controls.btnDisplayPowerOff and controls.btnDisplayPowerOff[index] then
-        controls.btnDisplayPowerOff[index].Legend = "Off"
-    end
-end
-
--------------------[ Component Management ]-------------------
-function GenericDisplayController:setComponent(ctrl, componentType)
-    local name = ctrl and ctrl.String
-    if not name or name == "" or name == self.clearString then
-        self:debugPrint("Invalid component selected: " .. tostring(name))
-        if ctrl then ctrl.Color = "white" end
-        self.components.invalid[componentType] = false
-        self:checkStatus()
-        return nil
-    end
-    local comp = Component.New(name)
-    if #Component.GetControls(comp) < 1 then
-        self:debugPrint("Invalid component found: " .. tostring(name))
-        if ctrl then ctrl.String = "[Invalid]"; ctrl.Color = "pink" end
-        self.components.invalid[componentType] = true
-        self:checkStatus()
-        return nil
-    end
-    self:debugPrint("Component set: " .. tostring(name))
-    if ctrl then ctrl.Color = "white" end
-    self.components.invalid[componentType] = false
-    self:checkStatus()
-    return comp
-end
-
-function GenericDisplayController:checkStatus()
-    for _, v in pairs(self.components.invalid) do
-        if v then
-            self:debugPrint("Invalid components found")
-            setProp(controls.txtStatus, "String", "Invalid Components")
-            setProp(controls.txtStatus, "Value", 1)
-            return
-        end
-    end
-    self:debugPrint("Components are valid")
-    setProp(controls.txtStatus, "String", "OK")
-    setProp(controls.txtStatus, "Value", 0)
-end
-
-function GenericDisplayController:setRoomControlsComponent()
-    self:debugPrint("Setting room controls component")
-    self.components.compRoomControls = self:setComponent(Controls.compRoomControls, "Room Controls")
-    if self.components.compRoomControls then self:updateTimerConfig() end
-end
-
-function GenericDisplayController:setDisplayComponent(index)
-    if not Controls.devDisplays or not Controls.devDisplays[index] then return end
-    self.components.displays[index] = self:setComponent(Controls.devDisplays[index], "Display ["..index.."]")
-    if self.components.displays[index] then
-        self:debugPrint("Successfully set up display component " .. index)
-        self:setupDisplayEvents(index)
-        self:updatePowerFeedback()
-    else
-        self:debugPrint("Failed to set up display component " .. index)
-    end
-end
-
-function GenericDisplayController:setupDisplayEvents(index)
-    local display = self.components.displays[index]
+local function setupDisplayEvents(index)
+    local display = components.displays[index]
     if not display then return end
     if display[displayControls.powerStatus] then
         display[displayControls.powerStatus].EventHandler = function()
-            self:updatePowerFeedback()
+            updatePowerFeedback()
         end
+        debugPrint("Registered: power status handler for display " .. index)
     end
 end
 
-function GenericDisplayController:getComponentNames()
+local function setDisplayComponent(index)
+    if not controls.devDisplays or not controls.devDisplays[index] then return end
+    components.displays[index] = setComponent(controls.devDisplays[index], "Display [" .. index .. "]")
+    if components.displays[index] then
+        debugPrint("Successfully set up display component " .. index)
+        setupDisplayEvents(index)
+        updatePowerFeedback()
+    else
+        debugPrint("Failed to set up display component " .. index)
+    end
+end
+
+local function setRoomControlsComponent()
+    debugPrint("Setting room controls component")
+    components.compRoomControls = setComponent(controls.compRoomControls, "Room Controls")
+    if components.compRoomControls then updateTimerConfig() end
+end
+
+local function getComponentNames()
+    debugPrint("Discovering components...")
     local names = { DisplayNames = {}, RoomControlsNames = {} }
     for _, comp in pairs(Component.GetComponents()) do
-        if comp.Type == self.componentTypes.displays then
+        if comp.Type == componentTypes.displays then
             table.insert(names.DisplayNames, comp.Name)
-        elseif comp.Type == self.componentTypes.roomControls and comp.Name:match("^compRoomControls") then
+            debugPrint("  Found display: " .. comp.Name)
+        elseif comp.Type == componentTypes.roomControls and comp.Name:match("^compRoomControls") then
             table.insert(names.RoomControlsNames, comp.Name)
         end
     end
     for _, list in pairs(names) do
         table.sort(list)
-        table.insert(list, self.clearString)
+        table.insert(list, const.clearString)
     end
-    if Controls.devDisplays then
-        for i = 1, #Controls.devDisplays do
-            Controls.devDisplays[i].Choices = names.DisplayNames
+    if controls.devDisplays then
+        for idx = 1, #controls.devDisplays do
+            controls.devDisplays[idx].Choices = names.DisplayNames
         end
-        self:debugPrint("Set choices for " .. #Controls.devDisplays .. " display controls")
-        self:debugPrint("Found " .. #names.DisplayNames .. " display components")
+        debugPrint("Set choices for " .. #controls.devDisplays .. " display controls")
+        debugPrint("Discovery complete - " .. #names.DisplayNames .. " display components found")
     end
-    if Controls.compRoomControls then
-        Controls.compRoomControls.Choices = names.RoomControlsNames
+    if controls.compRoomControls then
+        controls.compRoomControls.Choices = names.RoomControlsNames
     end
 end
 
-function GenericDisplayController:updateRoomName()
-    if not self.components.compRoomControls then return end
-    local roomNameCtrl = self.components.compRoomControls["roomName"]
+local function updateRoomName()
+    if not components.compRoomControls then return end
+    local roomNameCtrl = components.compRoomControls["roomName"]
     if roomNameCtrl and roomNameCtrl.String ~= "" then
-        self.roomName = "["..roomNameCtrl.String.."]"
-        self:debugPrint("Room name updated to: " .. self.roomName)
+        roomName = "[" .. roomNameCtrl.String .. "]"
+        debugPrint("Room name updated to: " .. roomName)
     end
-    self:updateTimerConfig()
+    updateTimerConfig()
 end
 
--------------------[ Event Registration ]-------------------
-function GenericDisplayController:registerTimers()
-    self.timers.warmup.EventHandler = function()
-        self:debugPrint("Warmup Period Has Ended")
-        self:enablePowerControls(true)
-        for i = 1, #Controls.devDisplays do
-            self:enablePowerControlIndex(i, true)
-            self:resetButtonLegends(i)
+-------------------[ Events ]-------------------
+local function registerTimers()
+    timers.warmup.EventHandler = function()
+        debugPrint("Warmup period ended (Source: Timer)")
+        enablePowerControls(true)
+        if controls.devDisplays then
+            for idx = 1, #controls.devDisplays do
+                enablePowerControlIndex(idx, true)
+                resetButtonLegends(idx)
+            end
         end
-        self.state.isWarming = false
+        state.isWarming = false
         setProp(controls.ledDisplayWarming, "Boolean", false)
-        self.timers.warmup:Stop()
+        timers.warmup:Stop()
     end
-    
-    self.timers.cooldown.EventHandler = function()
-        self:debugPrint("Cooldown Period Has Ended")
-        self:enablePowerControls(true)
-        for i = 1, #Controls.devDisplays do
-            self:enablePowerControlIndex(i, true)
-            self:resetButtonLegends(i)
+
+    timers.cooldown.EventHandler = function()
+        debugPrint("Cooldown period ended (Source: Timer)")
+        enablePowerControls(true)
+        if controls.devDisplays then
+            for idx = 1, #controls.devDisplays do
+                enablePowerControlIndex(idx, true)
+                resetButtonLegends(idx)
+            end
         end
-        self.state.isCooling = false
+        state.isCooling = false
         setProp(controls.ledDisplayCooling, "Boolean", false)
-        self.timers.cooldown:Stop()
+        timers.cooldown:Stop()
     end
-    
-    for i = 1, self.config.maxDisplays do
-        if self.timers.volumeMute[i] then
-            self.timers.volumeMute[i].EventHandler = function()
-                local display = self.components.displays[i]
+
+    for idx = 1, const.maxDisplays do
+        if timers.volumeMute[idx] then
+            timers.volumeMute[idx].EventHandler = function()
+                local display = components.displays[idx]
                 if display then
-                    self:debugPrint("Muting volume for display " .. i)
-                    self:safeAccess(display, displayControls.displayVolume0, "trigger")
+                    debugPrint("Muting volume for display " .. idx .. " (Source: Timer)")
+                    safeAccess(display, displayControls.displayVolume0, "trigger")
                 end
-                self.timers.volumeMute[i]:Stop()
+                timers.volumeMute[idx]:Stop()
             end
         end
     end
 end
 
-function GenericDisplayController:registerEvents()
-    bind(controls.compRoomControls, function() self:setRoomControlsComponent() end)
-    bind(controls.btnDisplayPowerAll, function(c) if c.Boolean then self:powerOnAll() else self:powerOffAll() end end)
-    bind(controls.btnDisplayInputAll, function() self:setInputAll(self.config.defaultInput) end)
-    
-    bindArray(controls.btnDisplayPowerOn, function(i) self:powerOnDisplay(i) end)
-    bindArray(controls.btnDisplayPowerOff, function(i) self:powerOffDisplay(i) end)
-    bindArray(controls.btnDisplayPowerToggle, function(i, c) if c.Boolean then self:powerOnDisplay(i) else self:powerOffDisplay(i) end end)
-    bindArray(controls.devDisplays, function(i) self:setDisplayComponent(i) end)
+local function registerEvents()
+    local rcCount = bind(controls.compRoomControls, function() setRoomControlsComponent() end) and 1 or 0
+    local powerAllCount = bind(controls.btnDisplayPowerAll, function(ctl)
+        if ctl.Boolean then powerOnAll() else powerOffAll() end
+    end) and 1 or 0
+    local inputAllCount = bind(controls.btnDisplayInputAll, function() setInputAll(const.defaultInput) end) and 1 or 0
+    local powerOnCount = bindArray(controls.btnDisplayPowerOn, powerOnDisplay)
+    local powerOffCount = bindArray(controls.btnDisplayPowerOff, powerOffDisplay)
+    local toggleCount = bindArray(controls.btnDisplayPowerToggle, function(idx, ctl)
+        if ctl.Boolean then powerOnDisplay(idx) else powerOffDisplay(idx) end
+    end)
+    local displayCount = bindArray(controls.devDisplays, setDisplayComponent)
+
+    debugPrint("Registered room controls handler")
+    debugPrint("Registered " .. powerOnCount .. " power-on, " .. powerOffCount .. " power-off, " .. toggleCount .. " toggle handlers")
+    debugPrint("Registered " .. displayCount .. " display component handlers")
 end
 
-function GenericDisplayController:init()
-    self:getComponentNames()
-    self:setRoomControlsComponent()
-    if Controls.devDisplays then
-        for i = 1, #Controls.devDisplays do self:setDisplayComponent(i) end
-    end
-    self:registerEvents()
-    self:registerTimers()
-    self:updateRoomName()
-    self:updatePowerFeedback()
-end
+-------------------[ Init ]-------------------
+local function init()
+    debugPrint("=== Initialization Started ===")
+    debugPrint("Configuration: roomName=" .. roomName .. ", debugging=" .. tostring(const.debug))
 
--------------------[ Factory & Initialization ]-------------------
-local function getRoomName()
-    if Controls.compRoomControls and Controls.compRoomControls.String ~= "" and Controls.compRoomControls.String ~= "[Clear]" then
-        local comp = Component.New(Controls.compRoomControls.String)
-        if comp and comp["roomName"] and comp["roomName"].String ~= "" then
-            return "["..comp["roomName"].String.."]"
+    getComponentNames()
+    setRoomControlsComponent()
+    if controls.devDisplays then
+        for idx = 1, #controls.devDisplays do
+            setDisplayComponent(idx)
         end
     end
-    if Controls.roomName and Controls.roomName.String ~= "" then
-        return "["..Controls.roomName.String.."]"
-    end
-    return "[Generic Display]"
+    registerEvents()
+    registerTimers()
+    updateRoomName()
+    updatePowerFeedback()
+
+    debugPrint("=== Initialization Complete ===")
+    debugPrint("Ready for operation - " .. getDisplayCount() .. " displays")
 end
 
-local success, controller = pcall(function()
-    local instance = GenericDisplayController.new(getRoomName(), { debugging = true, maxDisplays = 9 })
-    if not instance then error("Validation failed") end
-    instance:init()
-    return instance
+-------------------[ Public API ]-------------------
+DisplayController = {
+    powerOnAll = powerOnAll,
+    powerOffAll = powerOffAll,
+    setInputAll = setInputAll,
+    getDisplayCount = getDisplayCount,
+}
+
+-------------------[ Start ]-------------------
+local ok, err = pcall(function()
+    print("Initializing DisplayController for " .. roomName .. "...")
+    if not validateControls() then error("Control validation failed") end
+    normalizeControlArrays()
+    init()
 end)
 
-if success then
-    myGenericDisplayController = controller
-    GenericDisplayControllerInstance = controller
-    print("Generic DisplayController initialized - " .. controller:getDisplayCount() .. " displays")
+if ok then
+    print("✓ DisplayController initialized for " .. roomName .. " - " .. getDisplayCount() .. " displays")
 else
-    print("ERROR: Failed to create Generic DisplayController: " .. tostring(controller))
+    print("✗ ERROR: DisplayController initialization failed: " .. tostring(err))
+    if controls and controls.txtStatus then
+        controls.txtStatus.String = "INIT FAILED"
+        controls.txtStatus.Value = 2
+    end
 end
