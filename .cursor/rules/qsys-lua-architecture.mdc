@@ -108,11 +108,13 @@ end
 ### 4.1 debugPrint pattern
 
 ```lua
-local ROOM_NAME = "Room 101"
-local DEBUGGING = true
+local const = { 
+    roomName = "Room 101"
+    debug = true
+}
 
 local function debugPrint(str)
-    if DEBUGGING then print("[" .. ROOM_NAME .. "] " .. str) end
+    if const.debug then print("[" .. const.roomName .. "] " .. str) end
 end
 ```
 
@@ -133,7 +135,7 @@ end
 ```lua
 -- Phase markers in init()
 debugPrint("=== Initialization Started ===")
-debugPrint("Configuration: ROOM_NAME=" .. roomName .. ", debugging=" .. tostring(debug))
+debugPrint("Configuration: const.roomName=" .. const.roomName .. ", debugging=" .. tostring(const.debug))
 -- ... setup ...
 debugPrint("=== Initialization Complete ===")
 debugPrint("Ready for operation")
