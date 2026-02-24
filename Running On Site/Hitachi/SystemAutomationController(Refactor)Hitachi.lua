@@ -4,22 +4,23 @@
 ]]
 
 -------------------[ Configuration ]-------------------
-local COMPONENT_TYPES = {
+local const = {
+    componentTypes = {
     callSync = "call_sync",
     videoBridge = "onvif_camera_operative",
     displays = "%PLUGIN%_80a40a84-e685-4b13-a5c4-fbdc12bd85e6_%FP%_cac5837f40ef3a83d7365386eb4b8d16",
     gains = "gain",
     systemMute = "system_mute",
     camACPR = "%PLUGIN%_648260e3-c166-4b00-98ba-ba16ksnza4a63b0_%FP%_a4d2263b4380c424e16eebb67084f355"
-}
+    },
 
-local GAIN_TYPE_ASSIGNMENTS = {
+    gainTypeAssignments = {
     ["Conference Room"] = { "Program", "Mic", "Mic", "Mic", "Mic", "Mic", "Mic", "Mic", "Gain", "Gain", "Gain", "Gain" },
     ["Huddle Room"] = { "Program", "Gain", "Gain", "Gain", "Mic", "Mic", "Mic" },
     ["Custom Room"] = { "Program", "Mic", "Mic", "Mic", "Gain", "Gain", "Gain", "Gain", "Gain" },
     ["Default"] = { "Program", "Gain", "Gain", "Gain", "Mic", "Mic", "Mic", "Mic" }
+    }
 }
-
 -------------------[ Controls ]-------------------
 local controls = {
     roomName = Controls.roomName,
@@ -461,12 +462,12 @@ end
 local function getComponentNames()
     local names = { callSync = {}, videoBridge = {}, camACPR = {}, displays = {}, gains = {}, systemMute = {} }
     for _, comp in pairs(Component.GetComponents()) do
-        if comp.Type == COMPONENT_TYPES.callSync then table.insert(names.callSync, comp.Name)
-        elseif comp.Type == COMPONENT_TYPES.videoBridge then table.insert(names.videoBridge, comp.Name)
-        elseif comp.Type == COMPONENT_TYPES.displays then table.insert(names.displays, comp.Name)
-        elseif comp.Type == COMPONENT_TYPES.gains then table.insert(names.gains, comp.Name)
-        elseif comp.Type == COMPONENT_TYPES.systemMute then table.insert(names.systemMute, comp.Name)
-        elseif comp.Type == COMPONENT_TYPES.camACPR then table.insert(names.camACPR, comp.Name) end
+        if comp.Type == const.componentTypes.callSync then table.insert(names.callSync, comp.Name)
+        elseif comp.Type == const.componentTypes.videoBridge then table.insert(names.videoBridge, comp.Name)
+        elseif comp.Type == const.componentTypes.displays then table.insert(names.displays, comp.Name)
+        elseif comp.Type == const.componentTypes.gains then table.insert(names.gains, comp.Name)
+        elseif comp.Type == const.componentTypes.systemMute then table.insert(names.systemMute, comp.Name)
+        elseif comp.Type == const.componentTypes.camACPR then table.insert(names.camACPR, comp.Name) end
     end
     for _, list in pairs(names) do table.sort(list); table.insert(list, clearString) end
     if controls.compCallSync then controls.compCallSync.Choices = names.callSync end
@@ -535,7 +536,7 @@ end
 
 local function setGainTypeAssignments(roomType)
     roomType = roomType or (controls.selDefaultConfigs and controls.selDefaultConfigs.String) or "Default"
-    local assign = GAIN_TYPE_ASSIGNMENTS[roomType] or GAIN_TYPE_ASSIGNMENTS["Default"]
+    local assign = const.gainTypeAssignments[roomType] or const.gainTypeAssignments["Default"]
     for idx, gainType in ipairs(assign) do
         if controls.typeGain and controls.typeGain[idx] then
             controls.typeGain[idx].String = idx == 1 and "Program" or gainType

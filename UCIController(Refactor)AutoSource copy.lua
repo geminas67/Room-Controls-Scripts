@@ -1,8 +1,8 @@
 --[[
   UCI Controller - Q-SYS Control Script
   Author: Nikolas Smith, Q-SYS
-  Version: 3.1 | Date: 2025-02-21
-  Firmware Req: 10.0.0
+  Version: 3.1 | Date: 2026-02-24
+  Firmware Req: 10.1.1
 
   Flat module per qsys-lua-architecture. Event-driven power sync via ledSystemPower.
   Video switcher auto-detect (NV32, Extron DXP, AVProEdge). Passcode + inactivity timeout.
