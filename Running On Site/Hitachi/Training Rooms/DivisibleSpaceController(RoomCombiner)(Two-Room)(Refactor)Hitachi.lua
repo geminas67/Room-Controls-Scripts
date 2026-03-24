@@ -13,30 +13,33 @@
 -----------------------------[ Configuration ]-----------------------------
 local config = {
   rooms = {"RoomA", "RoomB"},
+
   components = {
-    gains = {"lvlPGMCollabA", "lvlPGMCollabB"},
-    acpr = {"compACPRCollabA", "compACPRCollabB", combined = "compACPRCollabCombined"},
+    gains = {"lvlPGMTrainingA", "lvlPGMTrainingB"},
+    acpr = {"compACPRTrainingA", "compACPRTrainingB", combined = "compACPRTrainingCombined"},
     acprOutputs = {"01", "02"},
-    callSync = {"callSyncCollabA", "callSyncCollabB"},
-    roomControls = {"compRoomControlsCollabA", "compRoomControlsCollabB"},
-    uciNames = {"uciCollabB", "uciCollabA"},
+    callSync = {"callSyncTrainingA", "callSyncTrainingB"},
+    roomControls = {"compRoomControlsTrainingA", "compRoomControlsTrainingB"},
+    uciNames = {"uciTrainingB", "uciTrainingA"},
     matrixMixerMutes = {
       "input.2.output.6.mute", "input.3.output.5.mute",
       "input.4.output.2.mute", "input.4.output.4.mute",
       "input.5.output.1.mute", "input.5.output.3.mute"
     }
   },
-  features = { disableACPRRouting = false },
+
+  features = { disableACPRRouting = true },
   patterns = {
     roomCombiner = "^compRoomCombiner",
-    matrixMixer = "^compMixerAudioCollab",
+    matrixMixer = "^compMixerAudioTraining",
     roomControls = "^compRoomControls",
-    mxaControls = "^compMXAControlsCollab",
-    uciStatus = "^statusControlUCICollab",
-    uciController = "^uciControllerCollabA$",
-    acprComponents = "^compACPRCollab",
+    mxaControls = "^compMXAControlsTraining",
+    uciStatus = "^statusControlUCITraining",
+    uciController = "^uciControllerTrainingA$",
+    acprComponents = "^compACPRTraining",
     camRouter = "^compCamRouter"
   },
+
   uciButtons = {
     {name = "btnNav07", room = "RoomA", desc = "RoomA-PC"},
     {name = "btnNav09", room = "RoomA", desc = "RoomA-Laptop"},
@@ -44,6 +47,7 @@ local config = {
     {name = "btnNav10", room = "RoomB", desc = "RoomB-Laptop"}
   }
 }
+
 config.routingRules = {
   simple = {
     gain = {
@@ -217,39 +221,22 @@ local function canChangeWallState()
   return true
 end
 
-local function applySimpleRouting(rule, ruleName)
+local function applyRouting(rule, ruleName)
   local enabled = type(rule.enabled) == "function" and rule.enabled() or rule.enabled
   if not enabled then debugPrint(ruleName .. " disabled"); return end
   local priorityRoom = getPriorityRoom()
   local priorityIdx = priorityRoom and ((priorityRoom == "RoomA") and 1 or 2)
+  local controls = rule.targetControl and
+    {{ name = rule.targetControl, separated = rule.separated, combined = rule.combined }} or
+    rule.controls
   local success, errors = 0, {}
+  local total = #config.rooms * #controls
   for i, room in ipairs(config.rooms) do
     local comp = components[rule.componentKey][i]
-    if comp and comp[rule.targetControl] then
-      local value = isRoomsSeparated() and rule.separated(i) or rule.combined(priorityIdx)
-      if value and value ~= "" then
-        setProp(comp[rule.targetControl], "String", value)
-        success = success + 1
-        debugPrint(room .. " -> " .. rule.targetControl .. ": " .. value .. " (Source: Room Combiner)")
-      else table.insert(errors, room .. ": Invalid value") end
-    else table.insert(errors, room .. ": " .. rule.targetControl .. " not found") end
-  end
-  printOperationResult(rule.getName, success, #config.rooms, errors)
-end
-
-local function applyMultiControlRouting(rule, ruleName)
-  local enabled = type(rule.enabled) == "function" and rule.enabled() or rule.enabled
-  if not enabled then debugPrint(ruleName .. " disabled"); return end
-  local priorityRoom = getPriorityRoom()
-  local priorityIdx = priorityRoom and ((priorityRoom == "RoomA") and 1 or 2)
-  local success, errors = 0, {}
-  local total = #config.rooms * #rule.controls
-  for i, room in ipairs(config.rooms) do
-    local comp = components[rule.componentKey][i]
-    for _, ctrl in ipairs(rule.controls) do
+    for _, ctrl in ipairs(controls) do
       if comp and comp[ctrl.name] then
         local value = isRoomsSeparated() and ctrl.separated(i) or ctrl.combined(priorityIdx)
-        if value then
+        if value and value ~= "" then
           setProp(comp[ctrl.name], "String", value)
           success = success + 1
           debugPrint(room .. " -> " .. ctrl.name .. ": " .. value .. " (Source: Room Combiner)")
@@ -342,7 +329,7 @@ local function applyGainRouting()
       end
     end
   end
-  applySimpleRouting(config.routingRules.simple.gain, "Gain routing")
+  applyRouting(config.routingRules.simple.gain, "Gain routing")
 end
 
 local function applyMatrixMixerMutes()
@@ -361,11 +348,11 @@ local function applyMatrixMixerMutes()
 end
 
 local function applyACPRAssignment()
-  applySimpleRouting(config.routingRules.simple.acpr, "ACPR assignment")
+  applyRouting(config.routingRules.simple.acpr, "ACPR assignment")
 end
 
 local function applyMXAControlsRouting()
-  applyMultiControlRouting(config.routingRules.multiControl.mxaControls, "MXA controls routing")
+  applyRouting(config.routingRules.multiControl.mxaControls, "MXA controls routing")
 end
 
 local function applyUCIStatusRouting()

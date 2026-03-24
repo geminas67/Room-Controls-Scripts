@@ -279,8 +279,8 @@ local function shouldShowLayer(layerIndex)
     local avail = { TrainingA = { [kLayer.PCA]=true, [kLayer.LaptopA]=true }, TrainingB = { [kLayer.PCB]=true, [kLayer.LaptopB]=true } }
     if roomState == "combinedA" or roomState == "combinedB" then return true end
     if roomState == "separated" and avail[roomId] then
-        local v = avail[roomId][layerIndex]
-        if v ~= nil then return v end
+        local val = avail[roomId][layerIndex]
+        if val ~= nil then return val end
     end
     return true
 end
@@ -302,7 +302,7 @@ local function updateNavigationVisibility()
 end
 
 local function updateStartSystemLegend()
-    local legend = (getRoomState() == "separated") and "Start Room" or "Start Rooms"
+    local legend = (getRoomState() == "separated") and "Start Room \nSeparated" or "Start Rooms \nCombined"
     setProp(controls.btnStartSystem, "Legend", legend)
     debugPrint("Start legend → "..legend)
 end
@@ -663,8 +663,6 @@ local function initDivisibleSpace()
             if btn then
                 bind(btn, function(ctl)
                     if not ctl.Boolean then return end
-                    -- Always refresh nav + Start legend on room-state change. The Start button
-                    -- lives on C05-Start (base hidden), so Y01-Navbar layer state must not gate this.
                     updateNavigationVisibility()
                     updateStartSystemLegend()
                     updateConferenceControlsLayer()

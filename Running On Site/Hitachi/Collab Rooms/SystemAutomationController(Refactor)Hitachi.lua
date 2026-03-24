@@ -11,7 +11,7 @@ local const = {
     displays = "%PLUGIN%_80a40a84-e685-4b13-a5c4-fbdc12bd85e6_%FP%_cac5837f40ef3a83d7365386eb4b8d16",
     gains = "gain",
     systemMute = "system_mute",
-    camACPR = "%PLUGIN%_648260e3-c166-4b00-98ba-ba16ksnza4a63b0_%FP%_a4d2263b4380c424e16eebb67084f355"
+    camACPR = "%PLUGIN%_648260e3-c166-4b00-98ba-ba16ksnza4a63b0_%FP%_a4d2263b4380c424e16eebb67084f355" --OLD
     },
 
     gainTypeAssignments = {
@@ -136,15 +136,16 @@ end
 local function safeAccess(component, control, action, value)
     if not component or not component[control] then return false end
     local success, result = pcall(function()
-        if action == "set" then component[control].Boolean = value; return true
-        elseif action == "setPosition" then component[control].Position = value; return true
-        elseif action == "setString" then component[control].String = value; return true
-        elseif action == "trigger" then component[control]:Trigger(); return true
-        elseif action == "get" then return component[control].Boolean
-        elseif action == "getPosition" then return component[control].Position
-        elseif action == "getString" then return component[control].String end
+        if      action == "set"         then component[control].Boolean = value; return true
+        elseif  action == "setPosition" then component[control].Position = value; return true
+        elseif  action == "setString"   then component[control].String = value; return true
+        elseif  action == "trigger"     then component[control]:Trigger(); return true
+        elseif  action == "get"         then return component[control].Boolean
+        elseif  action == "getPosition" then return component[control].Position
+        elseif  action == "getString"   then return component[control].String end
         return false
     end)
+    if not success then debugPrint("Component access error: "..tostring(result)); return false end
     return success and result or false
 end
 
@@ -418,8 +419,9 @@ local function powerOn()
     publishNotification()
 end
 
-local function powerOff()
-    debugPrint("[Power] Powering Off (Source: User)")
+local function powerOff(sourceTag)
+    sourceTag = sourceTag or "User"
+    debugPrint("[Power] Powering Off (Source: " .. sourceTag .. ")")
     if controls.btnSystemOffTrig then controls.btnSystemOffTrig:Trigger() end
     enablePowerControls(false)
     state.isCooling = true
@@ -669,7 +671,7 @@ local function init()
     timers.motion.EventHandler = function()
         state.motionTimeoutActive = false
         setProp(controls.ledMotionTimeoutActive, "Boolean", false)
-        powerOff()
+        powerOff("Motion timeout")
     end
     timers.grace.EventHandler = function()
         state.motionGraceActive = false
@@ -687,6 +689,8 @@ local function init()
         enablePowerControls(true)
         publishNotification()
     end
+
+    powerOff("Initialization")
 
     debugPrint("Ready - " .. getGainCount() .. " gain controls detected")
     debugPrint("=== Initialization Complete ===")

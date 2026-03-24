@@ -12,23 +12,6 @@
 local conferenceStateConfig = { skip = { [7]=true, [8]=true, [9]=true } }
 local acprConfig = { disableACPRShow = true }
 
-local sourceConfig = {
-    pinLEDOffHookLaptop = {priority=200, layer=8}, pinLEDOffHookPC = {priority=200, layer=7},
-    pinLEDHDMI03Active  = {priority=30,  layer=9}, 
-    pinLEDHDMI02Active = {priority=20, layer=7},
-    pinLEDHDMI01Active  = {priority=10,  layer=8},
-}
-local sortedSourcesByPriority = (function()
-    local sorted = {}
-    for pinName in pairs(sourceConfig) do
-        table.insert(sorted, pinName)
-    end
-    table.sort(sorted, function(a, b)
-        return sourceConfig[a].priority > sourceConfig[b].priority
-    end)
-    return sorted
-end)()
-
 local layersBase = {"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}
 local layersToHide = {
     "A01-Alarm","B01-IncomingCall","C05-Start","D01-ShutdownConfirm",
@@ -46,13 +29,13 @@ local SwitcherTypes = {
         componentType   = "streamer_hdmi_switcher", 
         switcherNames   = {"devNV32","compNV32"},
         routingMethod   = "hdmi.out.1.select.index", 
-        defaultMapping  = {[7]=7,[8]=8,[9]=9} 
+        defaultMapping  = {[7] = 7,[8] = 8,[9] = 9} 
     },
     ExtronDXP = { 
         componentType   = "%PLUGIN%_qsysc.extron.matrix.0.0.0.0-master_%FP%_bf09cd55c73845eb6fc31e4b896516ff",
         switcherNames   = {"devExtronDXP","compExtronDXP"}, 
         routingMethod   = "output.1",
-        defaultMapping  = {[7]=2,[8]=4,[9]=1} 
+        defaultMapping  = {[7] = 2,[8] = 4,[9] = 1} 
     },
     AVProEdge = { 
         componentType   = "%PLUGIN%_0a62fae1-c3d6-308a-8b7f-3586d7abdf9d_%FP%_1d35ac9dec572bc00d3405021155333f",
@@ -76,6 +59,44 @@ local kLayer = {
     Dialer          = 11,
     StreamMusic     = 12,
     Passcode        = 13
+}
+
+local configSource = {
+    PC = { 
+        layer=kLayer.PC, 
+        hdmiKey="pinLEDHDMI01Connect", 
+        usbKey="pinLEDUSBPC",
+        base="P05-PC", 
+        disc="P01-HDMIDisconnected", 
+        usb="J02-ConnectUSBPC", 
+        conf="J05-ConferenceControls", 
+        help="I03-HelpPC" 
+    },
+    Laptop = { 
+        layer=kLayer.Laptop, 
+        hdmiKey="pinLEDHDMI02Connect", 
+        usbKey="pinLEDUSBLaptop",
+        base="L05-Laptop", 
+        disc="L01-HDMIDisconnected", 
+        usb="J01-ConnectUSBLaptop", 
+        conf="J05-ConferenceControls", 
+        help="I02-HelpLaptop" 
+    },
+    Wireless = { 
+        layer=kLayer.Wireless, 
+        hdmiKey="pinLEDHDMI03Connect", 
+        usbKey=nil,
+        base="W05-Wireless", 
+        disc="W01-HDMIDisconnected", 
+        usb=nil, conf=nil, 
+        help="I04-HelpWireless" 
+    },
+}
+
+local configHelpPairKeys = {"Laptop","PC","Wireless","Routing","StreamMusic"}
+local layerHelpToKey = {
+    ["I02-HelpLaptop"]="Laptop", ["I03-HelpPC"]="PC", ["I04-HelpWireless"]="Wireless",
+    ["I05-HelpRouting"]="Routing", ["I07-HelpStreamMusic"]="StreamMusic",
 }
 -------------------[ Controls ]-------------------
 local controls = {
@@ -162,6 +183,14 @@ local function bindPairedControls(openCtrl, closeCtrl, updateHandler)
     end
 end
 
+local function collectLayers(...)
+    local out = {}
+    for _, arr in ipairs({...}) do
+        for _, layer in ipairs(arr or {}) do table.insert(out, layer) end
+    end
+    return out
+end
+
 -------------------[ Config ]-------------------
 local config = {
     pageUCI = Uci.Variables.txtUCIPageName and Uci.Variables.txtUCIPageName.String or "UCI",
@@ -174,7 +203,7 @@ local config = {
 -------------------[ State ]-------------------
 local btnNavEventHandler
 local state = {
-    activeLayer = kLayerStart, 
+    activeLayer = kLayer.Start, 
     layerStates = {}, 
     activeRoutingLayer = config.defaultRouting,
     callActive = false, 
@@ -191,50 +220,24 @@ local arrUCILegends, arrUCIUserLabels = {}, {}
 local sources, helpLayerButtonMap
 
 local function buildSources()
-    sources = {
-        PC = { 
-            layerConst  = 7, 
-            hdmiPin     = controls.pinLEDHDMI01Connect, 
-            baseLayer   = "P05-PC", 
-            discLayer   = "P01-HDMIDisconnected",
-            usbPin      = controls.pinLEDUSBPC, 
-            usbConnect  = "J02-ConnectUSBPC", 
-            confLayer   = "J05-ConferenceControls",
-            helpLayer   = "I03-HelpPC", 
-            btnOpen     = controls.btnOpenHelp.PC, 
-            btnClose    = controls.btnCloseHelp.PC 
-        },
-        Laptop = { 
-            layerConst  = 8, 
-            hdmiPin     = controls.pinLEDHDMI02Connect, 
-            baseLayer   = "L05-Laptop", 
-            discLayer   = "L01-HDMIDisconnected",
-            usbPin      = controls.pinLEDUSBLaptop, 
-            usbConnect  = "J01-ConnectUSBLaptop", 
-            confLayer   = "J05-ConferenceControls",
-            helpLayer   = "I02-HelpLaptop", 
-            btnOpen     = controls.btnOpenHelp.Laptop, 
-            btnClose    = controls.btnCloseHelp.Laptop 
-        },
-        Wireless = { 
-            layerConst  = 9, 
-            hdmiPin     = controls.pinLEDHDMI03Connect, 
-            baseLayer   = "W05-Wireless", 
-            discLayer   = "W01-HDMIDisconnected",
-            usbPin      = nil, 
-            usbConnect  = nil, 
-            confLayer   = nil, helpLayer="I04-HelpWireless",
-            btnOpen     = controls.btnOpenHelp.Wireless, 
-            btnClose    = controls.btnCloseHelp.Wireless 
+    sources = {}
+    for name, def in pairs(configSource) do
+        sources[name] = {
+            layerConst=def.layer, hdmiPin=controls[def.hdmiKey],
+            baseLayer=def.base, discLayer=def.disc, usbPin=def.usbKey and controls[def.usbKey],
+            usbConnect=def.usb, confLayer=def.conf, helpLayer=def.help,
+            btnOpen=controls.btnOpenHelp[name], btnClose=controls.btnCloseHelp[name]
         }
-    }
-    helpLayerButtonMap = {
-        ["I02-HelpLaptop"]      = {open=controls.btnOpenHelp.Laptop,close=controls.btnCloseHelp.Laptop},
-        ["I03-HelpPC"]          = {open=controls.btnOpenHelp.PC,close=controls.btnCloseHelp.PC},
-        ["I04-HelpWireless"]    = {open=controls.btnOpenHelp.Wireless,close=controls.btnCloseHelp.Wireless},
-        ["I05-HelpRouting"]     = {open=controls.btnOpenHelp.Routing,close=controls.btnCloseHelp.Routing},
-        ["I07-HelpStreamMusic"] = {open=controls.btnOpenHelp.StreamMusic,close=controls.btnCloseHelp.StreamMusic},
-    }
+    end
+    local layerToSource = {}
+    for name, src in pairs(sources) do layerToSource[src.layerConst] = name end
+    sources._layerToSource = layerToSource
+    helpLayerButtonMap = {}
+    for helpLayer, key in pairs(layerHelpToKey) do
+        if controls.btnOpenHelp[key] then
+            helpLayerButtonMap[helpLayer] = {open=controls.btnOpenHelp[key], close=controls.btnCloseHelp[key]}
+        end
+    end
 end
 
 -------------------[ Debug ]-------------------
@@ -286,10 +289,8 @@ local function showLayerHideOthers(showLayers, hideLayers)
 end
 
 local function getActiveSource()
-    for _, src in pairs(sources) do
-        if src.layerConst == state.activeLayer then return src end
-    end
-    return nil
+    local key = sources and sources._layerToSource and sources._layerToSource[state.activeLayer]
+    return key and sources[key] or nil
 end
 
 local function checkHDMIConnection()
@@ -303,17 +304,6 @@ local function syncHelpButtonStates(helpLayer)
     if not map or state.layerStates[helpLayer] == nil then return end
     setProp(map.open, "Boolean", state.layerStates[helpLayer])
     setProp(map.close, "Boolean", false)
-end
-
-local function findHighestPriorityActiveSource()
-    for _, pinName in ipairs(sortedSourcesByPriority) do
-        local cfg = sourceConfig[pinName]
-        local pin = controls[pinName]
-        if cfg and pin and pin.Boolean then
-            return { pinName=pinName, layer=cfg.layer, priority=cfg.priority }
-        end
-    end
-    return nil
 end
 
 local function updateCallActiveState()
@@ -353,9 +343,8 @@ local function updateSourceHelpState(srcKey)
     local isVisible = src.btnOpen and src.btnOpen.Boolean or false
     updateLayerVisibility({src.helpLayer}, isVisible, isVisible and "fade" or "none")
     if isVisible then
-        local hide = {}
+        local hide = collectLayers({"J01-ConnectUSBLaptop","J02-ConnectUSBPC"})
         if src.confLayer then table.insert(hide, "J05-ConferenceControls") end
-        table.insert(hide, "J01-ConnectUSBLaptop"); table.insert(hide, "J02-ConnectUSBPC")
         updateLayerVisibility(hide, false, "none")
     elseif src.confLayer then
         updateConferenceState()
@@ -368,8 +357,10 @@ local function updateConferenceState()
     local src = getActiveSource()
     if not src then return end
     if not checkHDMIConnection() then
-        local hide = {"J01-ConnectUSBLaptop","J02-ConnectUSBPC","J05-ConferenceControls"}
-        if src.helpLayer then table.insert(hide, src.helpLayer); updateLayerVisibility(hide, false, "none"); syncHelpButtonStates(src.helpLayer) end
+        local hide = collectLayers({"J01-ConnectUSBLaptop","J02-ConnectUSBPC"}, {"J05-ConferenceControls"})
+        if src.helpLayer then table.insert(hide, src.helpLayer) end
+        updateLayerVisibility(hide, false, "none")
+        if src.helpLayer then syncHelpButtonStates(src.helpLayer) end
         return
     end
     if conferenceStateConfig.skip[src.layerConst] then return end
@@ -418,102 +409,32 @@ local function updateStreamMusicHelpState()
     syncHelpButtonStates("I07-HelpStreamMusic")
 end
 
-local function handlePrioritySourceChange()
-    local active = findHighestPriorityActiveSource()
-    if not active then return end
-    debugPrint("Priority: "..active.pinName.." (Source: Pin Event)")
-    if active.priority >= 100 or not state.callActive then
-        ensureSystemIsOn(active.layer)
-    else
-        debugPrint("Source switch BLOCKED: call in progress (priority "..active.priority..")")
+local layerConfigs
+local function makeSourceLayerFn(srcKey)
+    return function()
+        updateHDMIForActiveSource(); updateConferenceState(); updatePresetSavedState()
+        updateACPRBypassState(); updateSourceHelpState(srcKey); updateCallActiveState()
     end
 end
 
-local layerConfigs
 local function buildLayerConfigs()
     layerConfigs = {
-        [kLayer.Alarm] = { 
-            show={"A01-Alarm"}, 
-            hideBase=true 
-        },
-        [kLayer.IncomingCall] = { 
-            show={"B01-IncomingCall"} 
-        },
-        [kLayerStart] = { 
-            show={"C05-Start"}, 
-            hideBase=true 
-        },
-        [kLayer.Warming] = { 
-            show={"E05-SystemProgress","E01-SystemProgressWarming"}, 
-            hideBase=true 
-        },
-        [kLayer.Cooling] = { 
-            show={"E05-SystemProgress","E02-SystemProgressCooling"}, 
-            hideBase=true 
-        },
-        [kLayerRoomControls] = { 
-            show={"H05-RoomControls"}, 
-            hide={"X01-ProgramVolume"}, 
-            fn=function() updateCallActiveState() end 
-        },
-        [kLayer.Laptop] = { 
-            show={"L05-Laptop"}, 
-            fn=function()
-                updateHDMIForActiveSource(); 
-                updateConferenceState(); 
-                updatePresetSavedState();
-                updateACPRBypassState(); 
-                updateSourceHelpState("Laptop"); 
-                updateCallActiveState()
-            end 
-        },
-        [kLayer.PC] = { 
-            show={"P05-PC"}, 
-            fn=function()
-                updateHDMIForActiveSource(); 
-                updateConferenceState(); 
-                updatePresetSavedState();
-                updateACPRBypassState(); 
-                updateSourceHelpState("PC"); 
-                updateCallActiveState()
-            end 
-        },
+        [kLayer.Alarm] = { show = {"A01-Alarm"}, hideBase=true },
+        [kLayer.IncomingCall] = { show = {"B01-IncomingCall"} },
+        [kLayer.Start] = { show = {"C05-Start"}, hideBase=true },
+        [kLayer.Warming] = { show = {"E05-SystemProgress","E01-SystemProgressWarming"}, hideBase=true },
+        [kLayer.Cooling] = { show = {"E05-SystemProgress","E02-SystemProgressCooling"}, hideBase=true },
+        [kLayer.RoomControls] = { show = {"H05-RoomControls"}, hide={"X01-ProgramVolume"}, fn=function() updateCallActiveState() end },
+        [kLayer.Laptop] = { show = {"L05-Laptop"}, fn=makeSourceLayerFn("Laptop") },
+        [kLayer.PC] = { show = {"P05-PC"}, fn=makeSourceLayerFn("PC") },
         [kLayer.Wireless] = { 
-            show={"W05-Wireless"}, 
-            fn=function() 
-                updateSourceHelpState("Wireless"); 
-                updateCallActiveState()
-            end 
+            show = {"W05-Wireless"}, 
+            fn=function() updateSourceHelpState("Wireless"); updateCallActiveState() end 
         },
-        [kLayer.Routing] = { 
-            show={"R10-Routing"}, 
-            fn=function()
-                updateRoutingHelpState(); 
-                showRoutingLayer(); 
-                updateCallActiveState()
-            end 
-        },
-        [kLayer.Dialer] = { 
-            show={"V05-Dialer"}, 
-            fn=function() 
-            updateCallActiveState()
-            end 
-        },
-        [kLayer.StreamMusic] = { 
-            show={"S05-StreamMusic"}, 
-            fn=function() 
-            updateStreamMusicHelpState(); 
-            updateCallActiveState(); 
-            end 
-        },
-        [kLayer.Passcode] = { 
-            show={"H01-PasscodeEntry"}, 
-            hideBase=true, 
-            fn=function()
-            resetTouchInactivityTimer(); 
-            updateCallActiveState(); 
-            end 
-        },
+        [kLayer.Routing] = { show = {"R10-Routing"}, fn=function() updateRoutingHelpState(); showRoutingLayer(); updateCallActiveState() end },
+        [kLayer.Dialer] = { show = {"V05-Dialer"}, fn=function() updateCallActiveState() end },
+        [kLayer.StreamMusic] = { show = {"S05-StreamMusic"}, fn=function() updateStreamMusicHelpState(); updateCallActiveState() end },
+        [kLayer.Passcode] = { show = {"H01-PasscodeEntry"}, hideBase=true, fn=function() resetTouchInactivityTimer(); updateCallActiveState() end },
     }
 end
 
@@ -699,7 +620,7 @@ local function startLoadingBar(isPoweringOn)
     timers.timeout.EventHandler = function()
         state.isAnimating = false
         timers.loading = stopTimer(timers.loading)
-        btnNavEventHandler(isPoweringOn and config.defaultLayer or kLayerStart, "Loading Timeout")
+        btnNavEventHandler(isPoweringOn and config.defaultLayer or kLayer.Start, "Loading Timeout")
     end
     timers.timeout:Start(300)
     timers.loading.EventHandler = function()
@@ -711,7 +632,7 @@ local function startLoadingBar(isPoweringOn)
             timers.loading = stopTimer(timers.loading)
             timers.timeout = stopTimer(timers.timeout)
             state.isAnimating = false
-            btnNavEventHandler(isPoweringOn and config.defaultLayer or kLayerStart, isPoweringOn and "Warmup Complete" or "Cooldown Complete")
+            btnNavEventHandler(isPoweringOn and config.defaultLayer or kLayer.Start, isPoweringOn and "Warmup Complete" or "Cooldown Complete")
         else timers.loading:Start(interval) end
     end
     timers.loading:Start(interval)
@@ -720,18 +641,18 @@ end
 
 local function reflectPowerState(isOn, source)
     startLoadingBar(isOn)
-    btnNavEventHandler(isOn and kLayerWarming or kLayerCooling, source)
+    btnNavEventHandler(isOn and kLayer.Warming or kLayer.Cooling, source)
 end
 
 local function resetTouchInactivityTimer()
     if not timers.inactivity then return end
     timers.inactivity:Stop()
-    if state.activeLayer ~= kLayerPasscode then return end
+    if state.activeLayer ~= kLayer.Passcode then return end
     local timeout = tonumber(Uci.Variables.numTouchInactivityTimer and Uci.Variables.numTouchInactivityTimer.Value) or 60
     if timeout <= 0 then timeout = 60 end
     timers.inactivity.EventHandler = function()
         debugPrint("Touch inactivity → Start (Source: Inactivity Timer)")
-        btnNavEventHandler(kLayerStart, "Inactivity Timeout")
+        btnNavEventHandler(kLayer.Start, "Inactivity Timeout")
     end
     timers.inactivity:Start(timeout)
     debugPrint("Touch inactivity timer reset ("..timeout.."s)")
@@ -750,14 +671,14 @@ local function startSystem(eventSource)
     eventSource = eventSource or "System Start"
     powerOn()
     startLoadingBar(true)
-    btnNavEventHandler(kLayerWarming, eventSource)
+    btnNavEventHandler(kLayer.Warming, eventSource)
 end
 
 local function shutdownSystem()
     updateLayerVisibility({"D01-ShutdownConfirm"}, false, "fade")
     powerOff()
     startLoadingBar(false)
-    btnNavEventHandler(kLayerCooling, "System Shutdown")
+    btnNavEventHandler(kLayer.Cooling, "System Shutdown")
 end
 
 local function ensureSystemIsOn(targetLayer)
@@ -769,7 +690,7 @@ local function ensureSystemIsOn(targetLayer)
     end
     if components.passcodeEnabled and not isPasscodeCorrect() then
         debugPrint("Passcode required")
-        btnNavEventHandler(kLayerPasscode, "Passcode Required")
+        btnNavEventHandler(kLayer.Passcode, "Passcode Required")
         return
     end
     startSystem()
@@ -805,12 +726,12 @@ end
 
 local function initLegendArrays()
     local legendConfig = {
-        {suffix="Nav", count=13}, 
-        {suffix="Routing", count=5}, 
-        {suffix="VidSrc", count=12},
-        {suffix="GainPGM"},
-        {suffix="Gain", count=10}, 
-        {suffix="Display", count=4},
+        {suffix = "Nav",        count = 13}, 
+        {suffix = "Routing",    count = 5}, 
+        {suffix = "VidSrc",     count = 12},
+        {suffix = "GainPGM"},
+        {suffix = "Gain",       count = 10}, 
+        {suffix = "Display",    count = 4},
         {single={"NavShutdown","RoomNameNav","RoomNameStart","RoutingRooms","RoutingSources"}},
     }
     local idx = 0
@@ -842,15 +763,14 @@ local function registerEvents()
     local routingCount = bindArray(controls.btnRouting, function(i) routingButtonHandler(i) end)
     debugPrint("Registered "..navCount.." nav, "..routingCount.." routing handlers")
 
-    local helpPairs = {
-        {controls.btnOpenHelp.Laptop, controls.btnCloseHelp.Laptop, function() updateSourceHelpState("Laptop") end},
-        {controls.btnOpenHelp.PC, controls.btnCloseHelp.PC, function() updateSourceHelpState("PC") end},
-        {controls.btnOpenHelp.Wireless, controls.btnCloseHelp.Wireless, function() updateSourceHelpState("Wireless") end},
-        {controls.btnOpenHelp.Routing, controls.btnCloseHelp.Routing, function() updateRoutingHelpState() end},
-        {controls.btnOpenHelp.StreamMusic, controls.btnCloseHelp.StreamMusic, function() updateStreamMusicHelpState() end},
+    local helpUpdateFns = {
+        Laptop=function() updateSourceHelpState("Laptop") end, PC=function() updateSourceHelpState("PC") end,
+        Wireless=function() updateSourceHelpState("Wireless") end,
+        Routing=updateRoutingHelpState, StreamMusic=updateStreamMusicHelpState,
     }
-    for _, pair in ipairs(helpPairs) do
-        bindPairedControls(pair[1], pair[2], pair[3])
+    for _, key in ipairs(configHelpPairKeys) do
+        local openCtrl, closeCtrl = controls.btnOpenHelp[key], controls.btnCloseHelp[key]
+        if openCtrl or closeCtrl then bindPairedControls(openCtrl, closeCtrl, helpUpdateFns[key]) end
     end
 
     bind(controls.btnStartSystem, function() ensureSystemIsOn(config.defaultLayer) end)
@@ -858,22 +778,17 @@ local function registerEvents()
     bind(controls.btnShutdownCancel, function() updateLayerVisibility({"D01-ShutdownConfirm"}, false, "fade") end)
     bind(controls.btnShutdownConfirm, function() shutdownSystem() end)
 
-    local priorityHandler = function() handlePrioritySourceChange() end
-    local hdmiHandler = function() updateHDMIForActiveSource() end
-    bind(controls.pinLEDOffHookLaptop, priorityHandler)
-    bind(controls.pinLEDOffHookPC, priorityHandler)
-    bind(controls.pinLEDHDMI01Active, priorityHandler)
-    bind(controls.pinLEDHDMI02Active, priorityHandler)
-    bind(controls.pinLEDHDMI03Active, priorityHandler)
-    bind(controls.pinLEDHDMI01Connect, hdmiHandler)
-    bind(controls.pinLEDHDMI02Connect, hdmiHandler)
-    bind(controls.pinLEDHDMI03Connect, hdmiHandler)
-    bind(controls.pinLEDUSBLaptop, function(ctl)
-        if ctl.Boolean then ensureSystemIsOn(kLayerLaptop) else updateConferenceState() end
-    end)
-    bind(controls.pinLEDUSBPC, function(ctl)
-        if ctl.Boolean then ensureSystemIsOn(kLayerPC) else updateConferenceState() end
-    end)
+    local function onUSBChange(ctl, layer)
+        if ctl.Boolean then ensureSystemIsOn(layer) else updateConferenceState() end
+    end
+    for name, def in pairs(configSource) do
+        local hdmiCtrl = controls[def.hdmiKey]
+        if hdmiCtrl then bind(hdmiCtrl, function() updateHDMIForActiveSource() end) end
+        if def.usbKey then
+            local usbCtrl = controls[def.usbKey]
+            if usbCtrl then bind(usbCtrl, function(ctl) onUSBChange(ctl, def.layer) end) end
+        end
+    end
     bind(controls.pinLEDACPRBypassActive, function() updateACPRBypassState() end)
     bind(controls.pinLEDPresetSaved, function() updatePresetSavedState() end)
     bind(controls.pinCallActive, function() updateCallActiveState() end)
@@ -883,36 +798,36 @@ local function registerEvents()
     debugPrint("Registered pin handlers")
 end
 
+local function initSyncFromSystemController()
+    if not mySystemController or not mySystemController.state or not components.roomControls then return end
+    local led = components.roomControls["ledSystemPower"]
+    if not led or not led.Boolean then return end
+    if mySystemController.state.isWarming then
+        state.activeLayer = kLayer.Warming
+        startLoadingBar(true)
+        debugPrint("Synced: WARMING")
+    else
+        state.activeLayer = config.defaultLayer
+        debugPrint("Synced: READY")
+    end
+end
+
 -------------------[ Init ]-------------------
 local function init()
     debugPrint("=== Initialization Started ===")
     debugPrint("Configuration: pageUCI="..config.pageUCI..", debug="..tostring(config.debug))
 
     state.layerStates = {}
-    state.activeLayer = kLayerStart
+    state.activeLayer = kLayer.Start
     buildSources()
     buildLayerConfigs()
-
     normalizeControlArrays()
     initLegendArrays()
     initRoomControls()
     initVideoSwitcher()
     initPasscode()
     registerEvents()
-
-    if mySystemController and mySystemController.state and components.roomControls then
-        local led = components.roomControls["ledSystemPower"]
-        if led and led.Boolean then
-            if mySystemController.state.isWarming then
-                state.activeLayer = kLayerWarming
-                startLoadingBar(true)
-                debugPrint("Synced: WARMING")
-            else
-                state.activeLayer = config.defaultLayer
-                debugPrint("Synced: READY")
-            end
-        end
-    end
+    initSyncFromSystemController()
 
     for _, idx in ipairs(config.navHidden) do
         local btn = controls.btnNav[idx]

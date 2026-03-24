@@ -5,11 +5,11 @@
   Firmware Req: 10.0.0
 
   Flat module per qsys-lua-architecture. Event-driven power sync via ledSystemPower.
-  Divisible spaces: TrainingA/TrainingB, PCA/PCB, LaptopA/LaptopB. Room combining, ACPR separated/combined.
+  Divisible spaces: CollabA/CollabB, PCA/PCB, LaptopA/LaptopB. Room combining, ACPR separated/combined.
 ]]
 
 -------------------[ Configuration ]-------------------
-local conferenceStateConfig = { skip = { [9]=false, [10]=false } }
+local conferenceStateConfig = { skip = { [9]=true, [10]=true } }
 local acprConfig = { disableACPRShow = false }
 
 local kLayer = {
@@ -53,8 +53,8 @@ local SwitcherTypes = {
         componentType = "%PLUGIN%_qsysc.extron.matrix.0.0.0.0-master_%FP%_bf09cd55c73845eb6fc31e4b896516ff",
         switcherNames = {"devExtronDXP","compExtronDXP"},
         outputMappings = {
-            TrainingA = {[7]="Input 3",[8]="Input 4",[9]="Input 1",[10]="Input 2"},
-            TrainingB = {[7]="Input 7",[8]="Input 8",[9]="Input 5",[10]="Input 6"}
+            CollabA = {[7]="Input 3",[8]="Input 4",[9]="Input 1",[10]="Input 2"},
+            CollabB = {[7]="Input 7",[8]="Input 8",[9]="Input 5",[10]="Input 6"}
         }
     }
 }
@@ -261,9 +261,9 @@ end
 
 local function getDefaultLayerAfterWarming()
     local roomState = getRoomState()
-    local roomId = components.roomIdentity or "TrainingA"
+    local roomId = components.roomIdentity or "CollabA"
     if roomState == "separated" then
-        return (roomId == "TrainingB") and kLayer.PCB or kLayer.PCA
+        return (roomId == "CollabB") and kLayer.PCB or kLayer.PCA
     elseif roomState == "combinedA" then return kLayer.PCA
     elseif roomState == "combinedB" then return kLayer.PCB end
     return kLayer.Routing
@@ -276,11 +276,11 @@ end
 local function shouldShowLayer(layerIndex)
     local roomState = getRoomState()
     local roomId = components.roomIdentity
-    local avail = { TrainingA = { [kLayer.PCA]=true, [kLayer.LaptopA]=true }, TrainingB = { [kLayer.PCB]=true, [kLayer.LaptopB]=true } }
+    local avail = { CollabA = { [kLayer.PCA]=true, [kLayer.LaptopA]=true }, CollabB = { [kLayer.PCB]=true, [kLayer.LaptopB]=true } }
     if roomState == "combinedA" or roomState == "combinedB" then return true end
     if roomState == "separated" and avail[roomId] then
-        local v = avail[roomId][layerIndex]
-        if v ~= nil then return v end
+        local val = avail[roomId][layerIndex]
+        if val ~= nil then return val end
     end
     return true
 end
@@ -289,7 +289,7 @@ local function updateNavigationVisibility()
     local roomState = getRoomState()
     local roomId = components.roomIdentity
     local isSep = (roomState == "separated")
-    local navConfig = { TrainingA = {{num="08",lbl="PCB"},{num="10",lbl="LaptopB"}}, TrainingB = {{num="07",lbl="PCA"},{num="09",lbl="LaptopA"}} }
+    local navConfig = { CollabA = {{num="08",lbl="PCB"},{num="10",lbl="LaptopB"}}, CollabB = {{num="07",lbl="PCA"},{num="09",lbl="LaptopA"}} }
     local toUpdate = navConfig[roomId]
     if not toUpdate then return end
     for _, cfg in ipairs(toUpdate) do
@@ -302,7 +302,7 @@ local function updateNavigationVisibility()
 end
 
 local function updateStartSystemLegend()
-    local legend = (getRoomState() == "separated") and "Start Room" or "Start Rooms"
+    local legend = (getRoomState() == "separated") and "Start Room \nSeparated" or "Start Rooms \nCombined"
     setProp(controls.btnStartSystem, "Legend", legend)
     debugPrint("Start legend → "..legend)
 end
@@ -650,8 +650,8 @@ end
 
 local function initDivisibleSpace()
     local roomName = Uci.Variables.compRoomControls and Uci.Variables.compRoomControls.String or ""
-    if roomName:find("TrainingA") then components.roomIdentity = "TrainingA"; debugPrint("Room identity: Collab A")
-    elseif roomName:find("TrainingB") then components.roomIdentity = "TrainingB"; debugPrint("Room identity: Collab B")
+    if roomName:find("CollabA") then components.roomIdentity = "CollabA"; debugPrint("Room identity: Collab A")
+    elseif roomName:find("CollabB") then components.roomIdentity = "CollabB"; debugPrint("Room identity: Collab B")
     else debugPrint("Room identity: could not determine from "..roomName) end
     local ok, comp = pcall(function() return Component.New("compDivisibleSpaceControls") end)
     if ok and comp then
@@ -663,8 +663,6 @@ local function initDivisibleSpace()
             if btn then
                 bind(btn, function(ctl)
                     if not ctl.Boolean then return end
-                    -- Always refresh nav + Start legend on room-state change. The Start button
-                    -- lives on C05-Start (base hidden), so Y01-Navbar layer state must not gate this.
                     updateNavigationVisibility()
                     updateStartSystemLegend()
                     updateConferenceControlsLayer()

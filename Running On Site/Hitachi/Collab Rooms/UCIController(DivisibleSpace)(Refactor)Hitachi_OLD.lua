@@ -5,11 +5,11 @@
   Firmware Req: 10.0.0
 
   Flat module per qsys-lua-architecture. Event-driven power sync via ledSystemPower.
-  Divisible spaces: TrainingA/TrainingB, PCA/PCB, LaptopA/LaptopB. Room combining, ACPR separated/combined.
+  Divisible spaces: CollabA/CollabB, PCA/PCB, LaptopA/LaptopB. Room combining, ACPR separated/combined.
 ]]
 
 -------------------[ Configuration ]-------------------
-local conferenceStateConfig = { skip = { [9]=false, [10]=false } }
+local conferenceStateConfig = { skip = { [9]=true, [10]=true } }
 local acprConfig = { disableACPRShow = false }
 
 local kLayer = {
@@ -49,32 +49,15 @@ local layersToHide = {
 }
 
 local SwitcherTypes = {
-    ExtronDXP = {
-        componentType = "%PLUGIN%_qsysc.extron.matrix.0.0.0.0-master_%FP%_bf09cd55c73845eb6fc31e4b896516ff",
-        switcherNames = {"devExtronDXP","compExtronDXP"},
+    AVProEdge = {
+        componentType = "%PLUGIN%_0a62fae1-c3d6-308a-8b7f-3586d7abdf9d_%FP%_1d35ac9dec572bc00d3405021155333f",
+        switcherNames = {"devAVProEdge","compAVProEdge"},
         outputMappings = {
-            TrainingA = {[7]="Input 3",[8]="Input 4",[9]="Input 1",[10]="Input 2"},
-            TrainingB = {[7]="Input 7",[8]="Input 8",[9]="Input 5",[10]="Input 6"}
+            CollabA = {[7]="Input 3",[8]="Input 4",[9]="Input 1",[10]="Input 2"},
+            CollabB = {[7]="Input 7",[8]="Input 8",[9]="Input 5",[10]="Input 6"}
         }
     }
 }
-
-local configSource = {
-    LaptopA = { layer=kLayer.LaptopA, base="L01-LaptopA", disc="L01-HDMIDisconnected",
-        usb="J01-ConnectUSBLaptopA", conf="J21-ConferenceControlsLaptopA", camera="J11-CameraSelectionLaptopA",
-        help="I02-HelpLaptopA", vidPrivSep=nil, vidPrivComb=nil },
-    LaptopB = { layer=kLayer.LaptopB, base="L02-LaptopB", disc="L02-HDMIDisconnected",
-        usb="J02-ConnectUSBLaptopB", conf="J22-ConferenceControlsLaptopB", camera="J12-CameraSelectionLaptopB",
-        help="I03-HelpLaptopB", vidPrivSep=nil, vidPrivComb=nil },
-    PCA = { layer=kLayer.PCA, base="P01-PCA", disc="P01-HDMIDisconnected",
-        usb="J03-ConnectUSBPCA", conf="J23-ConferenceControlsPCA", camera="J13-CameraSelectionPCA",
-        help="I04-HelpPCA", vidPrivSep="J17-VideoPrivacySeparatedA", vidPrivComb="J19-VideoPrivacyCombinedA" },
-    PCB = { layer=kLayer.PCB, base="P02-PCB", disc="P02-HDMIDisconnected",
-        usb="J04-ConnectUSBPCB", conf="J24-ConferenceControlsPCB", camera="J14-CameraSelectionPCB",
-        help="I05-HelpPCB", vidPrivSep="J18-VideoPrivacySeparatedB", vidPrivComb="J20-VideoPrivacyCombinedB" },
-}
-
-local configHelpPairKeys = {"LaptopA","LaptopB","PCA","PCB","WirelessA","WirelessB","Routing","StreamMusic"}
 
 -------------------[ Controls ]-------------------
 local controls = {
@@ -169,14 +152,6 @@ local function bindPairedControls(openCtrl, closeCtrl, updateHandler)
     end
 end
 
-local function collectLayers(...)
-    local out = {}
-    for _, arr in ipairs({...}) do
-        for _, layer in ipairs(arr or {}) do table.insert(out, layer) end
-    end
-    return out
-end
-
 -------------------[ Config ]-------------------
 local config = {
     pageUCI = Uci.Variables.txtUCIPageName and Uci.Variables.txtUCIPageName.String or "UCI",
@@ -209,31 +184,82 @@ local sources, helpLayerButtonMap, allUSBConnect, allConference, allCamera, allV
 local acprLayers = { combined="J06-ACPRActiveCombined", separated="J07-ACPRActiveSeparated" }
 local acprBtnLayers = { combined="J09-ACPRBtnCombined", separated="J10-ACPRBtnSeparated" }
 
-local layerHelpToKey = {
-    ["I02-HelpLaptopA"]="LaptopA", ["I03-HelpLaptopB"]="LaptopB", ["I04-HelpPCA"]="PCA", ["I05-HelpPCB"]="PCB",
-    ["I06-HelpWirelessA"]="WirelessA", ["I07-HelpWirelessB"]="WirelessB", ["I08-HelpRouting"]="Routing", ["I10-HelpStreamMusic"]="StreamMusic",
-}
-
 local function buildSources()
-    sources = {}
-    for name, def in pairs(configSource) do
-        sources[name] = {
-            layerConst=def.layer, hdmiPin=controls["pinLEDHDMIConnected"..name],
-            baseLayer=def.base, discLayer=def.disc, usbPin=controls["pinLEDUSB"..name],
-            usbConnect=def.usb, confLayer=def.conf, cameraLayer=def.camera,
-            videoPrivacySeparate=def.vidPrivSep, videoPrivacyCombine=def.vidPrivComb,
-            helpLayer=def.help, btnOpen=controls.btnOpenHelp[name], btnClose=controls.btnCloseHelp[name]
-        }
-    end
+    sources = {
+        LaptopA = { 
+            layerConst  = kLayer.LaptopA, 
+            hdmiPin     = controls.pinLEDHDMIConnectedLaptopA, 
+            baseLayer   = "L01-LaptopA", 
+            discLayer   = "L01-HDMIDisconnected",
+            usbPin      = controls.pinLEDUSBLaptopA, 
+            usbConnect  = "J01-ConnectUSBLaptopA", 
+            confLayer   = "J21-ConferenceControlsLaptopA",
+            cameraLayer = "J11-CameraSelectionLaptopA", 
+            videoPrivacySeparate = nil, 
+            videoPrivacyCombine = nil,
+            helpLayer   = "I02-HelpLaptopA", 
+            btnOpen     = controls.btnOpenHelp.LaptopA, 
+            btnClose    = controls.btnCloseHelp.LaptopA 
+        },
+        LaptopB = { 
+            layerConst  = kLayer.LaptopB, 
+            hdmiPin     = controls.pinLEDHDMIConnectedLaptopB, 
+            baseLayer   = "L02-LaptopB", 
+            discLayer   = "L02-HDMIDisconnected",
+            usbPin      = controls.pinLEDUSBLaptopB, 
+            usbConnect  = "J02-ConnectUSBLaptopB",
+            confLayer   = "J22-ConferenceControlsLaptopB",
+            cameraLayer = "J12-CameraSelectionLaptopB", 
+            videoPrivacySeparate = nil, 
+            videoPrivacyCombine = nil,
+            helpLayer   = "I03-HelpLaptopB", 
+            btnOpen     = controls.btnOpenHelp.LaptopB, 
+            btnClose    = controls.btnCloseHelp.LaptopB 
+        },
+        PCA = { 
+            layerConst  = kLayer.PCA, 
+            hdmiPin     = controls.pinLEDHDMIConnectedPCA, 
+            baseLayer   = "P01-PCA", 
+            discLayer   = "P01-HDMIDisconnected",
+            usbPin      = controls.pinLEDUSBPCA, 
+            usbConnect  = "J03-ConnectUSBPCA", 
+            confLayer   = "J23-ConferenceControlsPCA",
+            cameraLayer = "J13-CameraSelectionPCA", 
+            videoPrivacySeparate = "J17-VideoPrivacySeparatedA", 
+            videoPrivacyCombine = "J19-VideoPrivacyCombinedA",
+            helpLayer   = "I04-HelpPCA", 
+            btnOpen     = controls.btnOpenHelp.PCA, 
+            btnClose    = controls.btnCloseHelp.PCA 
+        },
+        PCB = { 
+            layerConst  = kLayer.PCB, 
+            hdmiPin     = controls.pinLEDHDMIConnectedPCB, 
+            baseLayer   = "P02-PCB", 
+            discLayer   = "P02-HDMIDisconnected",
+            usbPin      = controls.pinLEDUSBPCB, 
+            usbConnect  = "J04-ConnectUSBPCB", 
+            confLayer   = "J24-ConferenceControlsPCB",
+            cameraLayer = "J14-CameraSelectionPCB", 
+            videoPrivacySeparate = "J18-VideoPrivacySeparatedB", 
+            videoPrivacyCombine = "J20-VideoPrivacyCombinedB",
+            helpLayer   = "I05-HelpPCB",
+            btnOpen     = controls.btnOpenHelp.PCB, 
+            btnClose    = controls.btnCloseHelp.PCB 
+        },
+    }
     local layerToSource = {}
     for name, src in pairs(sources) do layerToSource[src.layerConst] = name end
     sources._layerToSource = layerToSource
-    helpLayerButtonMap = {}
-    for helpLayer, key in pairs(layerHelpToKey) do
-        if controls.btnOpenHelp[key] then
-            helpLayerButtonMap[helpLayer] = {open=controls.btnOpenHelp[key], close=controls.btnCloseHelp[key]}
-        end
-    end
+    helpLayerButtonMap = {
+        ["I02-HelpLaptopA"]     = {open=controls.btnOpenHelp.LaptopA,close=controls.btnCloseHelp.LaptopA},
+        ["I03-HelpLaptopB"]     = {open=controls.btnOpenHelp.LaptopB,close=controls.btnCloseHelp.LaptopB},
+        ["I04-HelpPCA"]         = {open=controls.btnOpenHelp.PCA,close=controls.btnCloseHelp.PCA},
+        ["I05-HelpPCB"]         = {open=controls.btnOpenHelp.PCB,close=controls.btnCloseHelp.PCB},
+        ["I06-HelpWirelessA"]   = {open=controls.btnOpenHelp.WirelessA,close=controls.btnCloseHelp.WirelessA},
+        ["I07-HelpWirelessB"]   = {open=controls.btnOpenHelp.WirelessB,close=controls.btnCloseHelp.WirelessB},
+        ["I08-HelpRouting"]     = {open=controls.btnOpenHelp.Routing,close=controls.btnCloseHelp.Routing},
+        ["I10-HelpStreamMusic"] = {open=controls.btnOpenHelp.StreamMusic,close=controls.btnCloseHelp.StreamMusic},
+    }
     allUSBConnect, allConference, allCamera, allVideoPrivacy = {}, {}, {}, {}
     for _, src in pairs(sources) do
         if src.usbConnect then table.insert(allUSBConnect, src.usbConnect) end
@@ -261,9 +287,9 @@ end
 
 local function getDefaultLayerAfterWarming()
     local roomState = getRoomState()
-    local roomId = components.roomIdentity or "TrainingA"
+    local roomId = components.roomIdentity or "CollabA"
     if roomState == "separated" then
-        return (roomId == "TrainingB") and kLayer.PCB or kLayer.PCA
+        return (roomId == "CollabB") and kLayer.PCB or kLayer.PCA
     elseif roomState == "combinedA" then return kLayer.PCA
     elseif roomState == "combinedB" then return kLayer.PCB end
     return kLayer.Routing
@@ -276,7 +302,7 @@ end
 local function shouldShowLayer(layerIndex)
     local roomState = getRoomState()
     local roomId = components.roomIdentity
-    local avail = { TrainingA = { [kLayer.PCA]=true, [kLayer.LaptopA]=true }, TrainingB = { [kLayer.PCB]=true, [kLayer.LaptopB]=true } }
+    local avail = { CollabA = { [kLayer.PCA]=true, [kLayer.LaptopA]=true }, CollabB = { [kLayer.PCB]=true, [kLayer.LaptopB]=true } }
     if roomState == "combinedA" or roomState == "combinedB" then return true end
     if roomState == "separated" and avail[roomId] then
         local v = avail[roomId][layerIndex]
@@ -289,7 +315,7 @@ local function updateNavigationVisibility()
     local roomState = getRoomState()
     local roomId = components.roomIdentity
     local isSep = (roomState == "separated")
-    local navConfig = { TrainingA = {{num="08",lbl="PCB"},{num="10",lbl="LaptopB"}}, TrainingB = {{num="07",lbl="PCA"},{num="09",lbl="LaptopA"}} }
+    local navConfig = { CollabA = {{num="08",lbl="PCB"},{num="10",lbl="LaptopB"}}, CollabB = {{num="07",lbl="PCA"},{num="09",lbl="LaptopA"}} }
     local toUpdate = navConfig[roomId]
     if not toUpdate then return end
     for _, cfg in ipairs(toUpdate) do
@@ -333,14 +359,18 @@ local function validateControls()
     return true
 end
 
+local function setLayerVisible(layer, visible, transition)
+    if state.layerStates[layer] == visible then return true end
+    local ok, err = pcall(Uci.SetLayerVisibility, config.pageUCI, layer, visible, transition or "none")
+    if ok then state.layerStates[layer] = visible
+    else debugPrint("Layer '"..layer.."' error: "..tostring(err)) end
+    return ok
+end
+
 local function updateLayerVisibility(layers, visible, transition)
     if not layers or visible == nil then return end
     for _, layer in ipairs(layers) do
-        if layer and state.layerStates[layer] ~= visible then
-            local ok, err = pcall(Uci.SetLayerVisibility, config.pageUCI, layer, visible, transition or "none")
-            if ok then state.layerStates[layer] = visible
-            else debugPrint("Layer '"..layer.."' error: "..tostring(err)) end
-        end
+        if layer then setLayerVisible(layer, visible, transition) end
     end
 end
 
@@ -399,7 +429,10 @@ local function updateSourceHelpState(srcKey)
     local isVisible = src.btnOpen and src.btnOpen.Boolean or false
     updateLayerVisibility({src.helpLayer}, isVisible, isVisible and "fade" or "none")
     if isVisible then
-        updateLayerVisibility(collectLayers(allConference, allUSBConnect), false, "none")
+        local hide = {}
+        for _, l in ipairs(allConference or {}) do table.insert(hide, l) end
+        for _, l in ipairs(allUSBConnect or {}) do table.insert(hide, l) end
+        updateLayerVisibility(hide, false, "none")
     else
         updateLayerVisibility({src.helpLayer}, false, "none")
         updateConferenceState()
@@ -412,10 +445,10 @@ updateConferenceState = function()
     local src = getActiveSource()
     if not src then return end
     if not checkHDMIConnection() then
-        local hide = collectLayers(allUSBConnect, allConference)
-        if src.helpLayer then table.insert(hide, src.helpLayer) end
-        updateLayerVisibility(hide, false, "none")
-        if src.helpLayer then syncHelpButtonStates(src.helpLayer) end
+        local hide = {}
+        for _, l in ipairs(allUSBConnect or {}) do table.insert(hide, l) end
+        for _, l in ipairs(allConference or {}) do table.insert(hide, l) end
+        if src.helpLayer then table.insert(hide, src.helpLayer); updateLayerVisibility(hide, false, "none"); syncHelpButtonStates(src.helpLayer) end
         return
     end
     if conferenceStateConfig.skip[src.layerConst] then return end
@@ -450,7 +483,10 @@ end
 
 local function updateConferenceControlsLayer()
     if not checkHDMIConnection() then
-        local hide = collectLayers(allCamera, allConference, allVideoPrivacy)
+        local hide = {}
+        for _, l in ipairs(allCamera or {}) do table.insert(hide, l) end
+        for _, l in ipairs(allConference or {}) do table.insert(hide, l) end
+        for _, l in ipairs(allVideoPrivacy or {}) do table.insert(hide, l) end
         table.insert(hide, acprBtnLayers.combined); table.insert(hide, acprBtnLayers.separated)
         updateLayerVisibility(hide, false, "none")
         return
@@ -469,8 +505,8 @@ local function updateConferenceControlsLayer()
         if isCombined then table.insert(showLayers, acprBtnLayers.combined); table.insert(hideLayers, acprBtnLayers.separated)
         else table.insert(showLayers, acprBtnLayers.separated); table.insert(hideLayers, acprBtnLayers.combined) end
     else table.insert(hideLayers, acprBtnLayers.combined); table.insert(hideLayers, acprBtnLayers.separated) end
-    for _, layer in ipairs(showLayers) do updateLayerVisibility({layer}, true, "fade") end
-    for _, layer in ipairs(hideLayers) do updateLayerVisibility({layer}, false, "none") end
+    for _, l in ipairs(showLayers) do updateLayerVisibility({l}, true, "fade") end
+    for _, l in ipairs(hideLayers) do updateLayerVisibility({l}, false, "none") end
     debugPrint("Conference controls: "..#showLayers.." shown, "..#hideLayers.." hidden")
 end
 
@@ -523,13 +559,6 @@ local function updateStreamMusicHelpState()
 end
 
 local layerConfigs
-local function makeSourceLayerFn(srcKey)
-    return function()
-        updateHDMIForActiveSource(); updateConferenceState(); updateConferenceControlsLayer(); updatePresetSavedState()
-        updateACPRBypassState(); updateSourceHelpState(srcKey); updateCallActiveState()
-    end
-end
-
 local function buildLayerConfigs()
     layerConfigs = {
         [kLayer.Alarm] = { show={"A01-Alarm"}, hideBase=true },
@@ -538,15 +567,28 @@ local function buildLayerConfigs()
         [kLayer.Warming] = { show={"E05-SystemProgress","E01-SystemProgressWarming"}, hideBase=true },
         [kLayer.Cooling] = { show={"E05-SystemProgress","E02-SystemProgressCooling"}, hideBase=true },
         [kLayer.RoomControls] = { conditional=true, showRoomControls=true, hide={"X01-ProgramVolume"}, fn=function() updateCallActiveState() end },
+        [kLayer.PCA] = { conditional=true, show={"P01-PCA"}, fn=function()
+            updateHDMIForActiveSource(); updateConferenceState(); updateConferenceControlsLayer(); updatePresetSavedState();
+            updateACPRBypassState(); updateSourceHelpState("PCA"); updateCallActiveState()
+        end },
+        [kLayer.PCB] = { conditional=true, show={"P02-PCB"}, fn=function()
+            updateHDMIForActiveSource(); updateConferenceState(); updateConferenceControlsLayer(); updatePresetSavedState();
+            updateACPRBypassState(); updateSourceHelpState("PCB"); updateCallActiveState()
+        end },
+        [kLayer.LaptopA] = { conditional=true, show={"L01-LaptopA"}, fn=function()
+            updateHDMIForActiveSource(); updateConferenceState(); updateConferenceControlsLayer(); updatePresetSavedState();
+            updateACPRBypassState(); updateSourceHelpState("LaptopA"); updateCallActiveState()
+        end },
+        [kLayer.LaptopB] = { conditional=true, show={"L02-LaptopB"}, fn=function()
+            updateHDMIForActiveSource(); updateConferenceState(); updateConferenceControlsLayer(); updatePresetSavedState();
+            updateACPRBypassState(); updateSourceHelpState("LaptopB"); updateCallActiveState()
+        end },
         [kLayer.Wireless] = { show={"W05-Wireless"}, fn=function() updateWirelessHelpState(); updateCallActiveState() end },
         [kLayer.Routing] = { show={"R10-Routing"}, fn=function() updateCallActiveState() end },
         [kLayer.Dialer] = { show={"V05-Dialer"}, fn=function() updateDialerHelpState(); updateCallActiveState() end },
         [kLayer.StreamMusic] = { show={"S10-StreamMusic"}, fn=function() updateStreamMusicHelpState(); updateCallActiveState() end },
         [kLayer.RoomCombining] = { show={"H04-RoomCombining"}, hideBase=true, fn=function() resetTouchInactivityTimer(); updateCallActiveState() end },
     }
-    for name, def in pairs(configSource) do
-        layerConfigs[def.layer] = { conditional=true, show={def.base}, fn=makeSourceLayerFn(name) }
-    end
 end
 
 local function showLayer()
@@ -650,8 +692,8 @@ end
 
 local function initDivisibleSpace()
     local roomName = Uci.Variables.compRoomControls and Uci.Variables.compRoomControls.String or ""
-    if roomName:find("TrainingA") then components.roomIdentity = "TrainingA"; debugPrint("Room identity: Collab A")
-    elseif roomName:find("TrainingB") then components.roomIdentity = "TrainingB"; debugPrint("Room identity: Collab B")
+    if roomName:find("CollabA") then components.roomIdentity = "CollabA"; debugPrint("Room identity: Collab A")
+    elseif roomName:find("CollabB") then components.roomIdentity = "CollabB"; debugPrint("Room identity: Collab B")
     else debugPrint("Room identity: could not determine from "..roomName) end
     local ok, comp = pcall(function() return Component.New("compDivisibleSpaceControls") end)
     if ok and comp then
@@ -663,10 +705,10 @@ local function initDivisibleSpace()
             if btn then
                 bind(btn, function(ctl)
                     if not ctl.Boolean then return end
-                    -- Always refresh nav + Start legend on room-state change. The Start button
-                    -- lives on C05-Start (base hidden), so Y01-Navbar layer state must not gate this.
-                    updateNavigationVisibility()
-                    updateStartSystemLegend()
+                    if state.layerStates["Y01-Navbar"] then
+                        updateNavigationVisibility()
+                        updateStartSystemLegend()
+                    end
                     updateConferenceControlsLayer()
                 end)
             end
@@ -844,16 +886,17 @@ local function registerEvents()
     local navCount = bindArray(controls.btnNav, function(i) btnNavEventHandler(i, "User Button") end)
     debugPrint("Registered "..navCount.." nav handlers")
 
-    local helpUpdateFns = {
-        LaptopA=function() updateSourceHelpState("LaptopA") end, LaptopB=function() updateSourceHelpState("LaptopB") end,
-        PCA=function() updateSourceHelpState("PCA") end, PCB=function() updateSourceHelpState("PCB") end,
-        WirelessA=updateWirelessHelpState, WirelessB=updateWirelessHelpState,
-        Routing=updateRoutingHelpState, StreamMusic=updateStreamMusicHelpState,
+    local helpPairs = {
+        {controls.btnOpenHelp.LaptopA, controls.btnCloseHelp.LaptopA, function() updateSourceHelpState("LaptopA") end},
+        {controls.btnOpenHelp.LaptopB, controls.btnCloseHelp.LaptopB, function() updateSourceHelpState("LaptopB") end},
+        {controls.btnOpenHelp.PCA, controls.btnCloseHelp.PCA, function() updateSourceHelpState("PCA") end},
+        {controls.btnOpenHelp.PCB, controls.btnCloseHelp.PCB, function() updateSourceHelpState("PCB") end},
+        {controls.btnOpenHelp.WirelessA, controls.btnCloseHelp.WirelessA, function() updateWirelessHelpState() end},
+        {controls.btnOpenHelp.WirelessB, controls.btnCloseHelp.WirelessB, function() updateWirelessHelpState() end},
+        {controls.btnOpenHelp.Routing, controls.btnCloseHelp.Routing, function() updateRoutingHelpState() end},
+        {controls.btnOpenHelp.StreamMusic, controls.btnCloseHelp.StreamMusic, function() updateStreamMusicHelpState() end},
     }
-    for _, key in ipairs(configHelpPairKeys) do
-        local openCtrl, closeCtrl = controls.btnOpenHelp[key], controls.btnCloseHelp[key]
-        if openCtrl or closeCtrl then bindPairedControls(openCtrl, closeCtrl, helpUpdateFns[key]) end
-    end
+    for _, pair in ipairs(helpPairs) do bindPairedControls(pair[1], pair[2], pair[3]) end
 
     bind(controls.btnStartSystem, function() ensureSystemIsOn(config.defaultLayer) end)
     bind(controls.btnNavShutdown, function() updateLayerVisibility({"D01-ShutdownConfirm"}, true, "fade") end)
@@ -863,15 +906,15 @@ local function registerEvents()
     local function onHDMIActive(ctl, layer)
         if ctl.Boolean then ensureSystemIsOn(layer); btnNavEventHandler(layer, "HDMI Active") end
     end
-    local function onUSBChange(ctl, layer)
-        if ctl.Boolean then ensureSystemIsOn(layer) else updateConferenceState() end
-    end
-    for name in pairs(configSource) do
-        local hdmiCtrl = controls["pinLEDHDMIActive"..name]
-        if hdmiCtrl then bind(hdmiCtrl, function(ctl) onHDMIActive(ctl, kLayer[name]) end) end
-        local usbCtrl = controls["pinLEDUSB"..name]
-        if usbCtrl then bind(usbCtrl, function(ctl) onUSBChange(ctl, kLayer[name]) end) end
-    end
+    bind(controls.pinLEDHDMIActiveLaptopA, function(ctl) onHDMIActive(ctl, kLayer.LaptopA) end)
+    bind(controls.pinLEDHDMIActiveLaptopB, function(ctl) onHDMIActive(ctl, kLayer.LaptopB) end)
+    bind(controls.pinLEDHDMIActivePCA, function(ctl) onHDMIActive(ctl, kLayer.PCA) end)
+    bind(controls.pinLEDHDMIActivePCB, function(ctl) onHDMIActive(ctl, kLayer.PCB) end)
+
+    bind(controls.pinLEDUSBLaptopA, function(ctl) if ctl.Boolean then ensureSystemIsOn(kLayer.LaptopA) else updateConferenceState() end end)
+    bind(controls.pinLEDUSBLaptopB, function(ctl) if ctl.Boolean then ensureSystemIsOn(kLayer.LaptopB) else updateConferenceState() end end)
+    bind(controls.pinLEDUSBPCA, function(ctl) if ctl.Boolean then ensureSystemIsOn(kLayer.PCA) else updateConferenceState() end end)
+    bind(controls.pinLEDUSBPCB, function(ctl) if ctl.Boolean then ensureSystemIsOn(kLayer.PCB) else updateConferenceState() end end)
 
     bind(controls.pinLEDACPRBypassSeparated, function() updateACPRBypassState() end)
     bind(controls.pinLEDACPRBypassCombined, function() updateACPRBypassState() end)
@@ -886,26 +929,12 @@ local function registerEvents()
             updateHDMIForActiveSource()
         end
     end
-    for name in pairs(configSource) do
-        local ctrl = controls["pinLEDHDMIConnected"..name]
-        if ctrl then bind(ctrl, onHDMIConnected) end
-    end
+    if controls.pinLEDHDMIConnectedPCA then bind(controls.pinLEDHDMIConnectedPCA, onHDMIConnected) end
+    if controls.pinLEDHDMIConnectedPCB then bind(controls.pinLEDHDMIConnectedPCB, onHDMIConnected) end
+    if controls.pinLEDHDMIConnectedLaptopA then bind(controls.pinLEDHDMIConnectedLaptopA, onHDMIConnected) end
+    if controls.pinLEDHDMIConnectedLaptopB then bind(controls.pinLEDHDMIConnectedLaptopB, onHDMIConnected) end
 
     debugPrint("Registered pin handlers")
-end
-
-local function initSyncFromSystemController()
-    if not mySystemController or not mySystemController.state or not components.roomControls then return end
-    local led = components.roomControls["ledSystemPower"]
-    if not led or not led.Boolean then return end
-    if mySystemController.state.isWarming then
-        state.activeLayer = kLayer.Warming
-        startLoadingBar(true)
-        debugPrint("Synced: WARMING")
-    else
-        state.activeLayer = getDefaultLayerAfterWarming()
-        debugPrint("Synced: READY")
-    end
 end
 
 -------------------[ Init ]-------------------
@@ -922,7 +951,20 @@ local function init()
     initVideoSwitcher()
     initDivisibleSpace()
     registerEvents()
-    initSyncFromSystemController()
+
+    if mySystemController and mySystemController.state and components.roomControls then
+        local led = components.roomControls["ledSystemPower"]
+        if led and led.Boolean then
+            if mySystemController.state.isWarming then
+                state.activeLayer = kLayer.Warming
+                startLoadingBar(true)
+                debugPrint("Synced: WARMING")
+            else
+                state.activeLayer = getDefaultLayerAfterWarming()
+                debugPrint("Synced: READY")
+            end
+        end
+    end
 
     for _, idx in ipairs(config.navHidden) do
         local btn = controls.btnNav and controls.btnNav[idx]

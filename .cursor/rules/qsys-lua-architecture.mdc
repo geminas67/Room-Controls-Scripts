@@ -49,7 +49,7 @@ Follow this section order in every script:
 [ Header comment ]    -- name, author, version, brief description
 [ Configuration ]     -- data tables: room maps, preset lists, device lists
 [ Controls ]          -- local controls = { name = Controls.name, ... }
-[ Utilities ]         -- isArr, setProp, bind, bindArray, tableContains, etc.
+[ Utilities ]         -- isArr, setProp, bind, bindArray, cleanupComponentHandlers, tableContains, etc.
 [ Config ]            -- roomName, debug, clearString constants
 [ State ]             -- components {}, state {}, and any per-script flags
 [ Debug ]             -- local function debugPrint(str)
@@ -238,16 +238,18 @@ local function init() ... end
 
 ### 6.1 Standard setComponent pattern
 
+**Always use `setProp()` for control assignments** — never direct assignment. This prevents feedback loops and redundant Q-SYS updates.
+
 ```lua
-local function setComponent(ctrl, componentType)
+local function setComponent(ctrl, componentType, expectedType)
     if not ctrl then
         components.invalid[componentType] = true
         checkStatus(); return nil
     end
     local name = ctrl.String
     if not name or name == "" or name == clearString then
-        if name == clearString then ctrl.String = "" end
-        ctrl.Color = "white"
+        if name == clearString then setProp(ctrl, "String", "") end
+        setProp(ctrl, "Color", "white")
         components.invalid[componentType] = false
         checkStatus()
         debugPrint("No " .. componentType .. " component selected")
@@ -256,13 +258,22 @@ local function setComponent(ctrl, componentType)
     local comp     = Component.New(name)
     local ctrlList = comp and Component.GetControls(comp)
     if not ctrlList or #ctrlList < 1 then
-        ctrl.String = "[Invalid Component Selected]"; ctrl.Color = "pink"
+        setProp(ctrl, "String", "[Invalid Component Selected]")
+        setProp(ctrl, "Color", "pink")
         components.invalid[componentType] = true
         checkStatus()
         debugPrint("ERROR: Invalid component '" .. name .. "' for " .. componentType)
         return nil
     end
-    ctrl.Color = "white"
+    if expectedType and comp.Type ~= expectedType then
+        setProp(ctrl, "String", "[Wrong Component Type]")
+        setProp(ctrl, "Color", "pink")
+        components.invalid[componentType] = true
+        checkStatus()
+        debugPrint("ERROR: " .. componentType .. " wrong type. Expected " .. tostring(expectedType) .. ", got " .. tostring(comp.Type))
+        return nil
+    end
+    setProp(ctrl, "Color", "white")
     components.invalid[componentType] = false
     checkStatus()
     debugPrint("Connected " .. componentType .. ": " .. name)
@@ -270,13 +281,15 @@ local function setComponent(ctrl, componentType)
 end
 ```
 
+**Optional `expectedType`:** Pass the component type string to reject wrong types (e.g. when user selects from a dropdown). Omit when discovery already filters by type.
+
 ### 6.2 Component discovery with logging
 
 ```lua
 local function discoverComponents()
     debugPrint("Discovering components...")
     local deviceNames = {}
-    for _, comp in ipairs(Component.GetComponents()) do
+    for _, comp in pairs(Component.GetComponents()) do
         if comp.Type == "target_type" then
             table.insert(deviceNames, comp.Name)
             debugPrint("  Found device: " .. comp.Name)
@@ -285,10 +298,63 @@ local function discoverComponents()
     table.sort(deviceNames); table.insert(deviceNames, clearString)
     if controls.devDevice then controls.devDevice.Choices = deviceNames end
     debugPrint("Discovery complete - " .. (#deviceNames - 1) .. " devices found")
+    return deviceNames
 end
 ```
 
-### 6.3 Public API surface (cross-script access)
+**Auto-select when exactly one component:** If discovery finds a single component and the control is empty, auto-select it for better UX:
+
+```lua
+local function setupComponentSelector(ctrl, names, componentType)
+    if not ctrl then return end
+    ctrl.Choices = names
+    if #names == 2 and (not ctrl.String or ctrl.String == "") then
+        setProp(ctrl, "String", names[1])
+        debugPrint("Auto-selected " .. componentType .. ": " .. names[1])
+    end
+end
+```
+
+*(`#names == 2` means one real component + `[Clear]`)*
+
+### 6.3 Handler cleanup when reassigning components
+
+When a component selector control is changed, **clean up EventHandlers on the old component** before assigning the new one. Otherwise handlers accumulate and can fire for stale references.
+
+```lua
+local function cleanupComponentHandlers(oldComp, controlNames, debugCb)
+    if not oldComp or not controlNames then return 0 end
+    local cleaned = 0
+    for _, name in ipairs(controlNames) do
+        if oldComp[name] and oldComp[name].EventHandler then
+            oldComp[name].EventHandler = nil
+            cleaned = cleaned + 1
+        end
+    end
+    if debugCb and cleaned > 0 then debugCb("Cleaned up " .. cleaned .. " handler(s) from old component") end
+    return cleaned
+end
+```
+
+**Usage:** Call before `setComponent` when the component has event handlers:
+
+```lua
+local function setCallSyncComponent()
+    local oldComp = components.callSync
+    if oldComp then
+        cleanupComponentHandlers(oldComp, {"off.hook", "mute"}, function(msg) debugPrint("[Call Sync] " .. msg) end)
+    end
+    components.callSync = setComponent(controls.compCallSync, "Call Sync")
+    local comp = components.callSync
+    if not comp then return end
+    if comp["off.hook"] then comp["off.hook"].EventHandler = callSyncCheckConnection end
+    if comp["mute"] then comp["mute"].EventHandler = callSyncCheckMute end
+end
+```
+
+For components with many handlers, consider a `setComponentByType(ctrl, componentType, storageKey, eventMap)` helper that wraps cleanup + setComponent + handler registration.
+
+### 6.4 Public API surface (cross-script access)
 
 ```lua
 -- At the bottom, after init() is defined
@@ -340,8 +406,8 @@ if ok then
 else
     print("✗ ERROR: Initialization failed: " .. tostring(err))
     if controls and controls.txtStatus then
-        controls.txtStatus.String = "INIT FAILED"
-        controls.txtStatus.Value  = 2
+        setProp(controls.txtStatus, "String", "INIT FAILED")
+        setProp(controls.txtStatus, "Value", 2)
     end
 end
 ```
@@ -394,7 +460,7 @@ showLayers(layersBase, true, "none")
 
 **Code Quality:**
 - [ ] Early returns for all guard conditions
-- [ ] `setProp()` used for all control property assignments
+- [ ] `setProp()` used for all control property assignments (including setComponent and Start error handler)
 - [ ] `bind()` / `bindArray()` used for all event handlers
 - [ ] Control arrays normalized once with `normalizeControlArrays()`
 - [ ] Required controls validated in `validateControls()`
@@ -402,6 +468,7 @@ showLayers(layersBase, true, "none")
 - [ ] 3-letter Q-SYS control prefixes used consistently
 - [ ] Event-driven feedback (not timer polling) for component status controls
 - [ ] UCI showLayer: base layers (X01, Y01, Z01) excluded from initial hide-all pass
+- [ ] Component handlers cleaned up before reassignment (`cleanupComponentHandlers` when component has EventHandlers)
 
 **Metrics:**
 - [ ] 50–70% line reduction if refactoring an existing script
