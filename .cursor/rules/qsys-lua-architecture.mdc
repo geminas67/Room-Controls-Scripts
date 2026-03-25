@@ -213,7 +213,20 @@ local function setRoute(i, o, s) ... end
 local function setRoute(input, output, source) ... end
 ```
 
-### 5.3 Function definition order
+### 5.3 Line length (characters, not words)
+
+Judge readability by **character count**, not word count—words vary in length, so “N words per line” is inconsistent.
+
+- **Do not** join statements or squeeze long calls onto one line **only** to shrink the file; clarity beats vertical compactness.
+- When a line **combines** several operations (e.g. one call with multiple arguments, or ternary-style `condition and a or b` alongside other expressions), treat **~100 characters** (including leading indentation) as a practical **ceiling**—about the length of:
+
+```lua
+    updateLayerVisibility({"I01-CallActive"}, state.callActive, state.callActive and "fade" or "none")
+```
+
+(Reference: `UCIController(Refactor).lua` in `updateCallActiveState`.) Beyond that, prefer an extra local, line breaks between arguments, or separate statements.
+
+### 5.4 Function definition order
 
 Define functions in dependency order — callees before callers. This avoids the need for forward declarations:
 
@@ -231,6 +244,10 @@ local function handleWallButtonPress(...) ... updateWallStates() ... end
 local function registerEvents() ... end
 local function init() ... end
 ```
+
+### 5.5 Minimize repetition (DRY)
+
+Prefer **table-driven** configuration and **small local helpers** over duplicated blocks: one shared `setComponent`, `setProp` for routing changes, `normalizeControlArrays` once at init, and single loops over room or device lists instead of many near-identical copies. The goal is the **shortest** script that stays clear and fully logged—not cleverness for its own sake.
 
 ---
 
@@ -459,6 +476,7 @@ showLayers(layersBase, true, "none")
 - [ ] Before → after shown for component assignment changes
 
 **Code Quality:**
+- [ ] Combined operations respect character budget (see §5.3); do not shorten line count at the expense of readability
 - [ ] Early returns for all guard conditions
 - [ ] `setProp()` used for all control property assignments (including setComponent and Start error handler)
 - [ ] `bind()` / `bindArray()` used for all event handlers
@@ -469,8 +487,13 @@ showLayers(layersBase, true, "none")
 - [ ] Event-driven feedback (not timer polling) for component status controls
 - [ ] UCI showLayer: base layers (X01, Y01, Z01) excluded from initial hide-all pass
 - [ ] Component handlers cleaned up before reassignment (`cleanupComponentHandlers` when component has EventHandlers)
+- [ ] Minimal repetition — helpers and data tables replace duplicated logic (see §5.5)
 
 **Metrics:**
 - [ ] 50–70% line reduction if refactoring an existing script
 - [ ] Script under ~1000 lines
 - [ ] Every user interaction visible in debug output
+
+**Metrics (when the script is oversized or verbose):**
+- [ ] **Leaner result** — refactors of long or copy-pasted scripts often land **~50–70% smaller** in line count (more is acceptable)
+- [ ] **~1000 lines** — use as a practical ceiling when a controller has grown past it; not a universal requirement for every file

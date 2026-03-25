@@ -1,22 +1,20 @@
 --[[
   Divisible Space Controller with Room Priority System
   Author: Nikolas Smith, Q-SYS
-  Version: 4.0 | Date: 2026-02-20
+  Version: 4.1 | Date: 2026-03-24
   Firmware Req: 10.0.1+
-
-  Flat-module pattern — no OOP, local state tables, local functions.
 
   Room Priority Hierarchy:
     SalonD → SalonE           (D has priority over E)
     SalonA → SalonB → SalonC  (A highest priority in group)
     SalonF → SalonG → SalonH  (F highest priority in group)
-  Special Rules:
-    SalonD has priority when combined with A/B/C, D/E/F/G/H, or all rooms
-    SalonE has priority when combined with F/G/H
 ]]
 
 -----------------------------[ Configuration Tables ]-----------------------------
 local roomNames = {"SalonD", "SalonE", "SalonA", "SalonB", "SalonC", "SalonF", "SalonG", "SalonH"}
+
+local roomIndexByName = {}
+for i, name in ipairs(roomNames) do roomIndexByName[name] = i end
 
 local roomNumberMap = {
   SalonD=1, SalonE=2, SalonA=3, SalonB=4, SalonC=5, SalonF=6, SalonG=7, SalonH=8
@@ -121,6 +119,19 @@ local function bindArray(ctrls, handler)
   return count
 end
 
+local function cleanupComponentHandlers(oldComp, controlNames, debugCb)
+  if not oldComp or not controlNames then return 0 end
+  local cleaned = 0
+  for _, name in ipairs(controlNames) do
+    if oldComp[name] and oldComp[name].EventHandler then
+      oldComp[name].EventHandler = nil
+      cleaned = cleaned + 1
+    end
+  end
+  if debugCb and cleaned > 0 then debugCb("Cleaned up " .. cleaned .. " handler(s) from old component") end
+  return cleaned
+end
+
 local function tableContains(t, val)
   for _, v in ipairs(t) do if v == val then return true end end
   return false
@@ -150,9 +161,11 @@ local function normalizeControlArrays()
 end
 
 -----------------------------[ Config ]-----------------------------
-local configRoomName = "Raleigh Marriott Salon"
-local configDebug = true
-local configClearString = "[Clear]"
+local const = {
+  roomName = "Raleigh Marriott Salon",
+  debug = true,
+  clearString = "[Clear]",
+}
 
 -----------------------------[ State ]-----------------------------
 local components = {
@@ -170,7 +183,7 @@ local powerSyncInProgress = false
 
 -----------------------------[ Debug ]-----------------------------
 local function debugPrint(str)
-  if configDebug then print("[" .. configRoomName .. "] " .. str) end
+  if const.debug then print("[" .. const.roomName .. "] " .. str) end
 end
 
 -----------------------------[ Functions ]-----------------------------
@@ -204,8 +217,8 @@ local function checkStatus()
     if isInvalid then table.insert(invalidList, compType) end
   end
   if #invalidList > 0 then
-    controls.txtStatus.String = "Invalid: " .. table.concat(invalidList, ", ")
-    controls.txtStatus.Value  = 1
+    setProp(controls.txtStatus, "String", "Invalid: " .. table.concat(invalidList, ", "))
+    setProp(controls.txtStatus, "Value", 1)
     return
   end
   local connRooms, connRouters, connSelectors = 0, 0, 0
@@ -218,16 +231,20 @@ local function checkStatus()
   if connRooms     < #roomNames then status = status .. " (Rooms:"     .. connRooms     .. "/" .. #roomNames .. ")" end
   if connRouters   < #roomNames then status = status .. " (Routers:"   .. connRouters   .. "/" .. #roomNames .. ")" end
   if connSelectors < #roomNames then status = status .. " (Selectors:" .. connSelectors .. "/" .. #roomNames .. ")" end
-  controls.txtStatus.String = status
-  controls.txtStatus.Value  = 0
+  setProp(controls.txtStatus, "String", status)
+  setProp(controls.txtStatus, "Value", 0)
 end
 
 local function isRoomPoweredOn(roomName)
-  for i, name in ipairs(roomNames) do
-    if name == roomName then
-      local comp = components.roomControls[i]
-      return comp and comp["ledSystemPower"] and comp["ledSystemPower"].Boolean or false
-    end
+  local idx = roomIndexByName[roomName]
+  if not idx then return false end
+  local comp = components.roomControls[idx]
+  return comp and comp["ledSystemPower"] and comp["ledSystemPower"].Boolean or false
+end
+
+local function anyRoomInPairPoweredOn(roomPair)
+  for _, roomName in ipairs(roomPair) do
+    if isRoomPoweredOn(roomName) then return true end
   end
   return false
 end
@@ -283,24 +300,26 @@ local function configMatchesCombination(roomGroups, combination)
   return true
 end
 
-local function getCurrentCombination()
-  if not components.roomCombiner then return roomCombinations[13] end
+local function getCombinationContext()
+  if not components.roomCombiner then
+    return {}, roomCombinations[13], nil
+  end
   local configControl = components.roomCombiner["room.combiner.output.configuration"]
-  if not configControl then return roomCombinations[13] end
+  if not configControl then
+    return {}, roomCombinations[13], nil
+  end
   local roomGroups = parseConfiguration(configControl.String or "")
   for _, combo in ipairs(roomCombinations) do
-    if configMatchesCombination(roomGroups, combo) then return combo end
+    if configMatchesCombination(roomGroups, combo) then
+      return roomGroups, combo, combo.priority
+    end
   end
-  return roomCombinations[13]
+  return roomGroups, roomCombinations[13], nil
 end
 
 local function applyAudioRouting()
   if not components.roomCombiner then debugPrint("ERROR: No room combiner for audio routing"); return end
-  local configControl = components.roomCombiner["room.combiner.output.configuration"]
-  if not configControl then return end
-  local roomGroups          = parseConfiguration(configControl.String)
-  local currentCombo        = getCurrentCombination()
-  local combinationPriority = currentCombo and currentCombo.priority
+  local roomGroups, _, combinationPriority = getCombinationContext()
   debugPrint("Applying audio routing (" .. #roomGroups .. " groups, priority: " .. (combinationPriority or "none") .. ")...")
   local routed, skipped = 0, 0
   for i, roomName in ipairs(roomNames) do
@@ -319,11 +338,7 @@ end
 
 local function applyGainRouting()
   if not components.roomCombiner then return end
-  local configControl = components.roomCombiner["room.combiner.output.configuration"]
-  if not configControl then return end
-  local roomGroups          = parseConfiguration(configControl.String)
-  local currentCombo        = getCurrentCombination()
-  local combinationPriority = currentCombo and currentCombo.priority
+  local roomGroups, _, combinationPriority = getCombinationContext()
   debugPrint("Applying gain routing (" .. #roomGroups .. " groups, priority: " .. (combinationPriority or "none") .. ")...")
   local routed, skipped = 0, 0
   for i, roomName in ipairs(roomNames) do
@@ -349,9 +364,9 @@ local function setComponent(ctrl, componentType)
     return nil
   end
   local name = ctrl.String
-  if not name or name == "" or name == configClearString then
-    if name == configClearString then ctrl.String = "" end
-    ctrl.Color = "white"
+  if not name or name == "" or name == const.clearString then
+    if name == const.clearString then setProp(ctrl, "String", "") end
+    setProp(ctrl, "Color", "white")
     components.invalid[componentType] = false
     checkStatus()
     debugPrint("No " .. componentType .. " component selected")
@@ -360,51 +375,46 @@ local function setComponent(ctrl, componentType)
   local comp     = Component.New(name)
   local ctrlList = comp and Component.GetControls(comp)
   if not ctrlList or #ctrlList < 1 then
-    ctrl.String = "[Invalid Component Selected]"
-    ctrl.Color  = "pink"
+    setProp(ctrl, "String", "[Invalid Component Selected]")
+    setProp(ctrl, "Color", "pink")
     components.invalid[componentType] = true
     checkStatus()
     debugPrint("ERROR: Invalid component '" .. name .. "' for " .. componentType)
     return nil
   end
-  ctrl.Color = "white"
+  setProp(ctrl, "Color", "white")
   components.invalid[componentType] = false
   checkStatus()
   debugPrint("Connected " .. componentType .. ": " .. name)
   return comp
 end
 
-local function updateRoomComponent(name, roomIndex)
+local function updateNamedSlot(name, roomIndex, nameTable, compTable, logPrefix)
   if roomIndex < 1 or roomIndex > #roomNames then return end
-  local old = roomComponentNames[roomIndex] or ""
-  roomComponentNames[roomIndex]      = name
-  components.roomControls[roomIndex] = (name and name ~= "") and Component.New(name) or nil
+  local old = nameTable[roomIndex] or ""
+  nameTable[roomIndex] = name
+  compTable[roomIndex] = (name and name ~= "") and Component.New(name) or nil
   if old ~= (name or "") then
-    debugPrint("Room component " .. roomIndex .. " (" .. roomNames[roomIndex] .. "): '" .. old .. "' → '" .. (name or "") .. "'")
+    debugPrint(logPrefix .. " " .. roomIndex .. " (" .. roomNames[roomIndex] .. "): '" .. old .. "' → '" .. (name or "") .. "'")
     checkStatus()
   end
+end
+
+local function updateRoomComponent(name, roomIndex)
+  if roomIndex < 1 or roomIndex > #roomNames then return end
+  local oldComp = components.roomControls[roomIndex]
+  if oldComp and oldComp["btnSystemOnOff"] then
+    cleanupComponentHandlers(oldComp, {"btnSystemOnOff"}, function(msg) debugPrint("[Room Controls] " .. msg) end)
+  end
+  updateNamedSlot(name, roomIndex, roomComponentNames, components.roomControls, "Room component")
 end
 
 local function updateAudioRouter(name, roomIndex)
-  if roomIndex < 1 or roomIndex > #roomNames then return end
-  local old = audioRouterNames[roomIndex] or ""
-  audioRouterNames[roomIndex]       = name
-  components.audioRouter[roomIndex] = (name and name ~= "") and Component.New(name) or nil
-  if old ~= (name or "") then
-    debugPrint("Audio router " .. roomIndex .. " (" .. roomNames[roomIndex] .. "): '" .. old .. "' → '" .. (name or "") .. "'")
-    checkStatus()
-  end
+  updateNamedSlot(name, roomIndex, audioRouterNames, components.audioRouter, "Audio router")
 end
 
 local function updateButtonRoomSelector(name, roomIndex)
-  if roomIndex < 1 or roomIndex > #roomNames then return end
-  local old = uciButtonNames[roomIndex] or ""
-  uciButtonNames[roomIndex]        = name
-  components.uciButtons[roomIndex] = (name and name ~= "") and Component.New(name) or nil
-  if old ~= (name or "") then
-    debugPrint("RoomSelector " .. roomIndex .. " (" .. roomNames[roomIndex] .. "): '" .. old .. "' → '" .. (name or "") .. "'")
-    checkStatus()
-  end
+  updateNamedSlot(name, roomIndex, uciButtonNames, components.uciButtons, "RoomSelector")
 end
 
 -- Component Discovery ---------------------------------------------------------------
@@ -422,7 +432,7 @@ local function discoverComponents()
     end
   end
   local function sortedWithClear(t)
-    table.sort(t); table.insert(t, configClearString); return t
+    table.sort(t); table.insert(t, const.clearString); return t
   end
   local rcNames   = sortedWithClear(roomControlNames)
   local arNames   = sortedWithClear(audioRouterDiscNames)
@@ -436,16 +446,22 @@ local function discoverComponents()
     " audio routers, " .. #roomCombinerNames .. " combiners, " .. #uciCtrlNames .. " UCI controllers found")
 end
 
+local function setWallOpenState(wallIndex, isOpen)
+  local wallButton = controls.wallOpenButtons[wallIndex]
+  if wallButton then setProp(wallButton, "Boolean", isOpen) end
+  if components.roomCombiner then
+    local wallControl = components.roomCombiner["wall." .. wallIndex .. ".open"]
+    if wallControl then setProp(wallControl, "Boolean", isOpen) end
+  end
+end
+
 -- Wall Management --------------------------------------------------------------------
 
 local function updateWallStates()
   for wallIndex, roomPair in pairs(wallRoomPairs) do
     local wallButton = controls.wallOpenButtons[wallIndex]
     if not wallButton then goto continue end
-    local shouldDisable = false
-    for _, roomName in ipairs(roomPair) do
-      if isRoomPoweredOn(roomName) then shouldDisable = true; break end
-    end
+    local shouldDisable = anyRoomInPairPoweredOn(roomPair)
     setProp(wallButton, "IsDisabled", shouldDisable)
     if shouldDisable then debugPrint("Wall " .. wallIndex .. " DISABLED (room powered on)") end
     ::continue::
@@ -493,17 +509,8 @@ end
 local function applyWallInterlock(currentWallIndex)
   for wallIndex, otherWallPair in pairs(wallRoomPairs) do
     if wallIndex == currentWallIndex or wallIndex >= 13 then goto continue end
-    local otherRoomOn = false
-    for _, roomName in ipairs(otherWallPair) do
-      if isRoomPoweredOn(roomName) then otherRoomOn = true; break end
-    end
-    if not otherRoomOn then
-      local otherButton = controls.wallOpenButtons[wallIndex]
-      if otherButton then setProp(otherButton, "Boolean", false) end
-      if components.roomCombiner then
-        local otherWallControl = components.roomCombiner["wall." .. wallIndex .. ".open"]
-        if otherWallControl then setProp(otherWallControl, "Boolean", false) end
-      end
+    if not anyRoomInPairPoweredOn(otherWallPair) then
+      setWallOpenState(wallIndex, false)
       debugPrint("  INTERLOCK: Wall " .. wallIndex .. " (" .. table.concat(otherWallPair, "/") .. ") → CLOSED")
     end
     ::continue::
@@ -514,8 +521,7 @@ end
 
 local function updateRoomButtonVisibility()
   if not controls.uciButtons or #controls.uciButtons == 0 then return end
-  local configControl = components.roomCombiner and components.roomCombiner["room.combiner.output.configuration"]
-  local roomGroups    = parseConfiguration(configControl and configControl.String or "")
+  local roomGroups = select(1, getCombinationContext())
   debugPrint("Updating RoomSelector visibility (" .. #roomGroups .. " active groups)...")
   for i, roomName in ipairs(roomNames) do
     local uciButton = components.uciButtons[i]
@@ -531,11 +537,12 @@ local function updateRoomButtonVisibility()
     end
     for toggleIndex = 1, 8 do
       local toggleName = "pinLEDIsVisibleBtn" .. string.format("%02d", toggleIndex)
-      if uciButton[toggleName] then
+      local pin = uciButton[toggleName]
+      if pin then
         local isVisible = sourceGroup
           and tableContains(sourceGroup, roomNumberMap[roomNames[toggleIndex]])
           or  (not sourceGroup and toggleIndex == i)
-        uciButton[toggleName].Boolean = isVisible
+        setProp(pin, "Boolean", isVisible)
       end
     end
     debugPrint("  " .. roomName .. " RoomSelector updated" ..
@@ -544,25 +551,25 @@ local function updateRoomButtonVisibility()
   end
 end
 
+local function refreshRoutingAndVisibility()
+  applyAudioRouting()
+  applyGainRouting()
+  updateRoomButtonVisibility()
+end
+
 -- Power Synchronization ---------------------------------------------------------------
 
 local function syncPowerToRooms(roomsToSync, powerState)
   powerSyncInProgress = true
   for _, roomName in ipairs(roomsToSync) do
-    for i, name in ipairs(roomNames) do
-      if name == roomName then
-        local comp = components.roomControls[i]
-        if comp and comp["btnSystemOnOff"] then
-          if comp["btnSystemOnOff"].Boolean ~= powerState then
-            setProp(comp["btnSystemOnOff"], "Boolean", powerState)
-            debugPrint("  SYNCED: " .. roomName .. " → " .. (powerState and "ON" or "OFF"))
-          else
-            debugPrint("  SKIP: " .. roomName .. " already " .. (powerState and "ON" or "OFF"))
-          end
-        end
-        break
-      end
+    local idx = roomIndexByName[roomName]
+    if not idx then goto continue end
+    local comp = components.roomControls[idx]
+    if comp and comp["btnSystemOnOff"] and comp["btnSystemOnOff"].Boolean ~= powerState then
+      setProp(comp["btnSystemOnOff"], "Boolean", powerState)
+      debugPrint("  SYNCED: " .. roomName .. " → " .. (powerState and "ON" or "OFF"))
     end
+    ::continue::
   end
   powerSyncInProgress = false
 end
@@ -594,19 +601,15 @@ local function separateGroup(group)
   end
   debugPrint("Group separation complete: " .. wallsClosed .. " walls closed")
   syncWallButtonStates()
-  applyAudioRouting()
-  applyGainRouting()
-  updateRoomButtonVisibility()
+  refreshRoutingAndVisibility()
 end
 
 local function onRoomPowerChanged(roomName, roomIndex)
   if powerSyncInProgress then return end
   debugPrint("Power state changed: " .. roomName)
   if not components.roomCombiner then updateWallStates(); return end
-  local configControl = components.roomCombiner["room.combiner.output.configuration"]
-  if not configControl then updateWallStates(); return end
 
-  local roomGroups     = parseConfiguration(configControl.String)
+  local roomGroups = select(1, getCombinationContext())
   local changedRoomNum = roomNumberMap[roomName]
   local group          = nil
   for _, g in ipairs(roomGroups) do
@@ -686,12 +689,7 @@ local function separateIndividualRoom(targetRoom)
       if roomName ~= targetRoom and isRoomPoweredOn(roomName) then hasOtherRoomOn = true; break end
     end
     if not hasOtherRoomOn then
-      local wallButton = controls.wallOpenButtons[wallIndex]
-      if wallButton then setProp(wallButton, "Boolean", false) end
-      if components.roomCombiner then
-        local wallControl = components.roomCombiner["wall." .. wallIndex .. ".open"]
-        if wallControl then setProp(wallControl, "Boolean", false) end
-      end
+      setWallOpenState(wallIndex, false)
       wallsClosed = wallsClosed + 1
       debugPrint("  Closed wall " .. wallIndex .. " (" .. table.concat(otherWallPair, "/") .. ")")
     else
@@ -700,9 +698,7 @@ local function separateIndividualRoom(targetRoom)
     ::continue::
   end
   debugPrint("Individual separation complete: " .. wallsClosed .. " walls closed for " .. targetRoom)
-  applyAudioRouting()
-  applyGainRouting()
-  updateRoomButtonVisibility()
+  refreshRoutingAndVisibility()
 end
 
 local function handleIndividualRoomSeparation(wallIndex, wallButton, wallPair, uiState)
@@ -720,11 +716,7 @@ local function handleIndividualRoomSeparation(wallIndex, wallButton, wallPair, u
 end
 
 local function handleMultiRoomWall(wallIndex, wallButton, wallPair, uiState)
-  local anyRoomOn = false
-  for _, roomName in ipairs(wallPair) do
-    if isRoomPoweredOn(roomName) then anyRoomOn = true; break end
-  end
-  if anyRoomOn then
+  if anyRoomInPairPoweredOn(wallPair) then
     setProp(wallButton, "Boolean", not uiState)
     debugPrint("SAFETY BLOCK: Wall " .. wallIndex .. " (" .. table.concat(wallPair, "/") .. ") - room powered ON")
     return
@@ -762,6 +754,15 @@ end
 
 -- Room Combiner Setup ------------------------------------------------------------------
 
+local function cleanupRoomCombinerHandlers(oldComp)
+  if not oldComp then return end
+  local names = {"room.combiner.output.configuration"}
+  for wallIdx = 1, 12 do
+    names[#names + 1] = "wall." .. wallIdx .. ".open"
+  end
+  cleanupComponentHandlers(oldComp, names, function(msg) debugPrint("[Room Combiner] " .. msg) end)
+end
+
 local function setupRoomCombinerHandlers(roomCombinerComp)
   if not roomCombinerComp then return end
   local configControl = roomCombinerComp["room.combiner.output.configuration"]
@@ -771,9 +772,7 @@ local function setupRoomCombinerHandlers(roomCombinerComp)
   end
   bind(configControl, function()
     debugPrint("Room combiner configuration changed - updating routing and visibility (Source: Room Combiner)")
-    applyAudioRouting()
-    applyGainRouting()
-    updateRoomButtonVisibility()
+    refreshRoutingAndVisibility()
   end)
   debugPrint("Registered: room combiner configuration handler")
   local wallHandlers = 0
@@ -814,6 +813,14 @@ local function getComboIndex(comboName)
   return nil
 end
 
+local function activeRoomNamesList(combo)
+  local list = {}
+  for roomName, isActive in pairs(combo.activeRooms) do
+    if isActive then table.insert(list, roomName) end
+  end
+  return list
+end
+
 local function setRoomStates(comboIdx, source)
   local combo = roomCombinations[comboIdx]
   if not combo then debugPrint("ERROR: Invalid combination index " .. tostring(comboIdx)); return false end
@@ -831,10 +838,7 @@ local function setRoomStates(comboIdx, source)
       ::continueWall::
     end
     syncWallButtonStates()
-    local combinedRooms = {}
-    for roomName, isActive in pairs(combo.activeRooms) do
-      if isActive then table.insert(combinedRooms, roomName) end
-    end
+    local combinedRooms = activeRoomNamesList(combo)
     if #combinedRooms > 0 then disableIndividualSeparationButtons(combinedRooms) end
   else
     debugPrint("SKIP: Wall states - no room combiner component")
@@ -851,12 +855,21 @@ local function setRoomStates(comboIdx, source)
     end
   end
 
-  applyAudioRouting()
-  applyGainRouting()
-  updateRoomButtonVisibility()
+  refreshRoutingAndVisibility()
   checkStatus()
   updateWallStates()
   return true
+end
+
+local function loadSlotArray(controlKey, componentType, updateFn)
+  local arr = controls[controlKey]
+  if not arr then return end
+  for i, ctrl in ipairs(arr) do
+    if ctrl and ctrl.String and ctrl.String ~= "" and ctrl.String ~= const.clearString then
+      local comp = setComponent(ctrl, componentType)
+      if comp then updateFn(ctrl.String, i) end
+    end
+  end
 end
 
 -----------------------------[ Events ]-----------------------------
@@ -865,13 +878,12 @@ local function registerEvents()
 
   bind(controls.compRoomCombiner, function(ctl)
     debugPrint("Room combiner selection changed: " .. tostring(ctl.String))
+    cleanupRoomCombinerHandlers(components.roomCombiner)
     local comp = setComponent(ctl, "roomCombiner")
     components.roomCombiner = comp
     if not comp then return end
     setupRoomCombinerHandlers(comp)
-    applyAudioRouting()
-    applyGainRouting()
-    updateRoomButtonVisibility()
+    refreshRoutingAndVisibility()
     syncWallButtonStates()
   end)
   debugPrint("Registered: compRoomCombiner handler")
@@ -916,36 +928,18 @@ end
 local function loadInitialComponents()
   debugPrint("Loading initial component assignments...")
 
-  for i, ctrl in ipairs(controls.compRoomControls) do
-    if ctrl and ctrl.String and ctrl.String ~= "" and ctrl.String ~= configClearString then
-      local comp = setComponent(ctrl, "roomControls")
-      if comp then updateRoomComponent(ctrl.String, i) end
-    end
-  end
-
-  for i, ctrl in ipairs(controls.compAudioRouter) do
-    if ctrl and ctrl.String and ctrl.String ~= "" and ctrl.String ~= configClearString then
-      local comp = setComponent(ctrl, "audioRouter")
-      if comp then updateAudioRouter(ctrl.String, i) end
-    end
-  end
-
-  for i, ctrl in ipairs(controls.uciButtons) do
-    if ctrl and ctrl.String and ctrl.String ~= "" and ctrl.String ~= configClearString then
-      local comp = setComponent(ctrl, "uciButtons")
-      if comp then updateButtonRoomSelector(ctrl.String, i) end
-    end
-  end
+  loadSlotArray("compRoomControls", "roomControls", updateRoomComponent)
+  loadSlotArray("compAudioRouter", "audioRouter", updateAudioRouter)
+  loadSlotArray("uciButtons", "uciButtons", updateButtonRoomSelector)
 
   local combinerCtrl = controls.compRoomCombiner
-  if combinerCtrl and combinerCtrl.String and combinerCtrl.String ~= "" and combinerCtrl.String ~= configClearString then
+  if combinerCtrl and combinerCtrl.String and combinerCtrl.String ~= "" and combinerCtrl.String ~= const.clearString then
+    cleanupRoomCombinerHandlers(components.roomCombiner)
     local comp = setComponent(combinerCtrl, "roomCombiner")
     if comp then
       components.roomCombiner = comp
       setupRoomCombinerHandlers(comp)
-      applyAudioRouting()
-      applyGainRouting()
-      updateRoomButtonVisibility()
+      refreshRoutingAndVisibility()
       syncWallButtonStates()
     end
   end
@@ -956,7 +950,7 @@ end
 
 local function init()
   debugPrint("=== Initialization Started ===")
-  debugPrint("Configuration: configRoomName=" .. configRoomName .. ", debugging=" .. tostring(configDebug) ..
+  debugPrint("Configuration: roomName=" .. const.roomName .. ", debugging=" .. tostring(const.debug) ..
     ", rooms=" .. #roomNames .. ", wall buttons=20")
 
   setupCombinationSelector()
@@ -1006,14 +1000,14 @@ DivisibleSpaceController = {
 
 -----------------------------[ Start ]-----------------------------
 local ok, err = pcall(function()
-  print("Initializing DivisibleSpaceController for " .. configRoomName .. "...")
+  print("Initializing DivisibleSpaceController for " .. const.roomName .. "...")
   if not validateControls()    then error("Control validation failed - check required UI controls") end
   normalizeControlArrays()
   init()
 end)
 
 if ok then
-  print("✓ DivisibleSpaceController initialized for " .. configRoomName)
+  print("✓ DivisibleSpaceController initialized for " .. const.roomName)
 else
   local errMsg = tostring(err)
   print("✗ ERROR: Initialization failed: " .. errMsg)
@@ -1021,7 +1015,7 @@ else
     print("  Suggestion: Verify all required UI controls are named and connected")
   end
   if controls and controls.txtStatus then
-    controls.txtStatus.String = "INIT FAILED"
-    controls.txtStatus.Value  = 2
+    setProp(controls.txtStatus, "String", "INIT FAILED")
+    setProp(controls.txtStatus, "Value", 2)
   end
 end

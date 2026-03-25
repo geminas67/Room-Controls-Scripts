@@ -1,10 +1,9 @@
 --[[
     UCIController (Refactored)
     Author: Nikolas Smith, Q-SYS
-    Version: 3.0 | Date: 2026-02-21
+    Version: 3.1 | Date: 2026-03-24
     Firmware Req: 10.0.0
     Notes:
-    - Flat module architecture per qsys-lua-architecture spec (no OOP).
     - Event-driven Room Controls synchronization via ledSystemPower.EventHandler (no timer polling).
     - Passcode protection for Room Combining layer with graceful degradation.
     - Touch inactivity timer for H04-RoomCombining layer.
@@ -12,7 +11,8 @@
 ]]
 
 -------------------[ Configuration ]------------------------
-local layersAll = {
+-- All non-base layers cleared at start of showLayer (excludes X01/Y01/Z01; see qsys-lua-architecture §8.5)
+local layersToHide = {
     "A01-Alarm", "B01-IncomingCall", "C05-Start", "D01-ShutdownConfirm",
     "E01-SystemProgressWarming", "E02-SystemProgressCooling", "E05-SystemProgress",
     "H01-PasscodeEntry", "H04-RoomCombining", "H05-RoomControls",
@@ -26,7 +26,6 @@ local layersAll = {
     "R04-Routing-SalonB", "R05-Routing-SalonC", "R06-Routing-SalonF",
     "R07-Routing-SalonG", "R08-Routing-SalonH", "R10-Routing",
     "S10-StreamMusic", "V05-Dialer",
-    "X01-ProgramVolume", "Y01-Navbar", "Z01-Base"
 }
 
 local layersBase = {"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}
@@ -37,34 +36,16 @@ local layersRouting = {
     "R07-Routing-SalonG", "R08-Routing-SalonH"
 }
 
-local legendControls = {
-    "txtNav01","txtNav02","txtNav03","txtNav04","txtNav05","txtNav06","txtNav07","txtNav08",
-    "txtNav09","txtNav10","txtNav11","txtNav12","txtNav13",
-    "txtNavShutdown","txtRoomNameNav","txtRoomNameStart",
-    "txtRoutingRooms","txtRouting01","txtRouting02","txtRouting03","txtRouting04",
-    "txtRouting05","txtRouting06","txtRouting07","txtRouting08","txtRoutingSources",
-    "txtAudSrc01","txtAudSrc02","txtAudSrc03","txtAudSrc04",
-    "txtAudSrc05","txtAudSrc06","txtAudSrc07","txtAudSrc08","txtGainPGM",
-    "txtGain01","txtGain02","txtGain03","txtGain04","txtGain05","txtGain06","txtGain07","txtGain08","txtGain09","txtGain10",
-    "txtGain11","txtGain12","txtGain13","txtGain14","txtGain15","txtGain16","txtGain17","txtGain18","txtGain19","txtGain20",
-    "txtGain21","txtGain22","txtGain23","txtGain24","txtGain25","txtGain26","txtGain27","txtGain28","txtGain29","txtGain30",
-    "txtGain31","txtGain32","txtGain33","txtGain34","txtGain35","txtGain36","txtGain37","txtGain38","txtGain39","txtGain40",
-    "txtDisplay01","txtDisplay02","txtDisplay03","txtDisplay04"
-}
-
-local legendVariables = {
-    "txtLabelNav01","txtLabelNav02","txtLabelNav03","txtLabelNav04","txtLabelNav05","txtLabelNav06","txtLabelNav07","txtLabelNav08",
-    "txtLabelNav09","txtLabelNav10","txtLabelNav11","txtLabelNav12","txtLabelNav13",
-    "txtLabelNavShutdown","txtLabelRoomNameNav","txtLabelRoomNameStart",
-    "txtLabelRoutingRooms","txtLabelRouting01","txtLabelRouting02","txtLabelRouting03","txtLabelRouting04",
-    "txtLabelRouting05","txtLabelRouting06","txtLabelRouting07","txtLabelRouting08","txtLabelRoutingSources",
-    "txtLabelAudSrc01","txtLabelAudSrc02","txtLabelAudSrc03","txtLabelAudSrc04",
-    "txtLabelAudSrc05","txtLabelAudSrc06","txtLabelAudSrc07","txtLabelAudSrc08","txtLabelGainPGM",
-    "txtLabelGain01","txtLabelGain02","txtLabelGain03","txtLabelGain04","txtLabelGain05","txtLabelGain06","txtLabelGain07","txtLabelGain08","txtLabelGain09","txtLabelGain10",
-    "txtLabelGain11","txtLabelGain12","txtLabelGain13","txtLabelGain14","txtLabelGain15","txtLabelGain16","txtLabelGain17","txtLabelGain18","txtLabelGain19","txtLabelGain20",
-    "txtLabelGain21","txtLabelGain22","txtLabelGain23","txtLabelGain24","txtLabelGain25","txtLabelGain26","txtLabelGain27","txtLabelGain28","txtLabelGain29","txtLabelGain30",
-    "txtLabelGain31","txtLabelGain32","txtLabelGain33","txtLabelGain34","txtLabelGain35","txtLabelGain36","txtLabelGain37","txtLabelGain38","txtLabelGain39","txtLabelGain40",
-    "txtLabelDisplay01","txtLabelDisplay02","txtLabelDisplay03","txtLabelDisplay04"
+-- Drives initLegendArrays: control txt* ↔ Uci variable txtLabel*
+local legendConfig = {
+    { suffix = "Nav", count = 13 },
+    { single = { "NavShutdown", "RoomNameNav", "RoomNameStart", "RoutingRooms" } },
+    { suffix = "Routing", count = 8 },
+    { single = { "RoutingSources" } },
+    { suffix = "AudSrc", count = 8 },
+    { single = { "GainPGM" } },
+    { suffix = "Gain", count = 40 },
+    { suffix = "Display", count = 4 },
 }
 
 local configSwitcher = {
@@ -85,44 +66,56 @@ local configSwitcher = {
 }
 
 -- Layer index constants
-local kLayerAlarm        = 1;  local kLayerIncomingCall = 2;  local kLayerStart        = 3
-local kLayerWarming      = 4;  local kLayerCooling      = 5;  local kLayerRoomControls = 6
-local kLayerPC           = 7;  local kLayerLaptop       = 8;  local kLayerWireless     = 9
-local kLayerRouting      = 10; local kLayerDialer       = 11; local kLayerStreamMusic  = 12
-local kLayerRoomCombining = 13
+local kLayer = {
+    Alarm           = 1,
+    IncomingCall    = 2,
+    Start           = 3,
+    Warming         = 4,
+    Cooling         = 5,
+    RoomControls    = 6,
+    PC              = 7,
+    Laptop          = 8,
+    Wireless        = 9,
+    Routing         = 10,
+    Dialer          = 11,
+    StreamMusic     = 12,
+    RoomCombining   = 13
+}
 
 -------------------[ Controls ]-----------------------------
 local controls = {
-    -- Navigation
-    btnNav01 = Controls.btnNav01, btnNav02 = Controls.btnNav02, btnNav03 = Controls.btnNav03,
-    btnNav04 = Controls.btnNav04, btnNav05 = Controls.btnNav05, btnNav06 = Controls.btnNav06,
-    btnNav07 = Controls.btnNav07, btnNav08 = Controls.btnNav08, btnNav09 = Controls.btnNav09,
-    btnNav10 = Controls.btnNav10, btnNav11 = Controls.btnNav11, btnNav12 = Controls.btnNav12,
-    btnNav13 = Controls.btnNav13,
-    -- System
+    btnNav = {
+        Controls.btnNav01, Controls.btnNav02, Controls.btnNav03, Controls.btnNav04, Controls.btnNav05, Controls.btnNav06,
+        Controls.btnNav07, Controls.btnNav08, Controls.btnNav09, Controls.btnNav10, Controls.btnNav11, Controls.btnNav12, Controls.btnNav13,
+    },
+    btnRouting = {
+        Controls.btnRouting01, Controls.btnRouting02, Controls.btnRouting03, Controls.btnRouting04,
+        Controls.btnRouting05, Controls.btnRouting06, Controls.btnRouting07, Controls.btnRouting08,
+    },
+    btnOpenHelp = {
+        Laptop      = Controls.btnOpenHelpLaptop,
+        PC          = Controls.btnOpenHelpPC,
+        Wireless    = Controls.btnOpenHelpWireless,
+        Routing     = Controls.btnOpenHelpRouting,
+        StreamMusic = Controls.btnOpenHelpStreamMusic,
+    },
+    btnCloseHelp = {
+        Laptop      = Controls.btnCloseHelpLaptop,
+        PC          = Controls.btnCloseHelpPC,
+        Wireless    = Controls.btnCloseHelpWireless,
+        Routing     = Controls.btnCloseHelpRouting,
+        StreamMusic = Controls.btnCloseHelpStreamMusic,
+    },
     btnStartSystem     = Controls.btnStartSystem,
     btnNavShutdown     = Controls.btnNavShutdown,
     btnShutdownCancel  = Controls.btnShutdownCancel,
     btnShutdownConfirm = Controls.btnShutdownConfirm,
-    -- Help open/close pairs
-    btnOpenHelpLaptop       = Controls.btnOpenHelpLaptop,      btnCloseHelpLaptop      = Controls.btnCloseHelpLaptop,
-    btnOpenHelpPC           = Controls.btnOpenHelpPC,          btnCloseHelpPC          = Controls.btnCloseHelpPC,
-    btnOpenHelpWireless     = Controls.btnOpenHelpWireless,    btnCloseHelpWireless    = Controls.btnCloseHelpWireless,
-    btnOpenHelpRouting      = Controls.btnOpenHelpRouting,     btnCloseHelpRouting     = Controls.btnCloseHelpRouting,
-    btnOpenHelpStreamMusic  = Controls.btnOpenHelpStreamMusic, btnCloseHelpStreamMusic = Controls.btnCloseHelpStreamMusic,
-    -- Routing buttons / labels
-    btnRouting01 = Controls.btnRouting01, btnRouting02 = Controls.btnRouting02,
-    btnRouting03 = Controls.btnRouting03, btnRouting04 = Controls.btnRouting04,
-    btnRouting05 = Controls.btnRouting05, btnRouting06 = Controls.btnRouting06,
-    btnRouting07 = Controls.btnRouting07, btnRouting08 = Controls.btnRouting08,
     txtRouting01 = Controls.txtRouting01, txtRouting02 = Controls.txtRouting02,
     txtRouting03 = Controls.txtRouting03, txtRouting04 = Controls.txtRouting04,
     txtRouting05 = Controls.txtRouting05, txtRouting06 = Controls.txtRouting06,
     txtRouting07 = Controls.txtRouting07, txtRouting08 = Controls.txtRouting08,
-    -- Progress
     knbProgressBar = Controls.knbProgressBar,
     txtProgressBar = Controls.txtProgressBar,
-    -- Pin inputs
     pinCallActive          = Controls.pinCallActive,
     pinLEDUSBLaptop        = Controls.pinLEDUSBLaptop,
     pinLEDUSBPC            = Controls.pinLEDUSBPC,
@@ -170,12 +163,17 @@ local function bindArray(ctrls, handler)
     return count
 end
 
+local function stopTimer(timer)
+    if timer then pcall(function() timer:Stop() end); return nil end
+    return timer
+end
+
 -------------------[ Config ]-------------------------------
 local config = {
     pageUCI         = Uci.Variables.txtUCIPageName and Uci.Variables.txtUCIPageName.String or "UCI",
     debug           = true,
     defaultRouting  = tonumber(Uci.Variables.numDefaultRoutingLayer and Uci.Variables.numDefaultRoutingLayer.Value) or 1,
-    defaultLayer    = tonumber(Uci.Variables.numDefaultActiveLayer  and Uci.Variables.numDefaultActiveLayer.Value)  or kLayerRouting,
+    defaultLayer    = tonumber(Uci.Variables.numDefaultActiveLayer  and Uci.Variables.numDefaultActiveLayer.Value)  or kLayer.Routing,
     navHidden       = {},
 }
 
@@ -185,7 +183,7 @@ local config = {
 local btnNavEventHandler
 
 local state = {
-    activeLayer        = kLayerStart,
+    activeLayer        = kLayer.Start,
     layerStates        = {},
     activeRoutingLayer = config.defaultRouting,
     isInitialized      = false,
@@ -212,6 +210,7 @@ local navButtons     = {}
 local routingButtons = {}
 local arrLegends     = {}
 local arrUserLabels  = {}
+local layerConfigs
 
 -------------------[ Debug ]--------------------------------
 local function debugPrint(str)
@@ -222,6 +221,7 @@ end
 
 -- Layer visibility
 local function setLayerVisible(layer, visible, transition)
+    if not layer or layer == "" then return end
     local currentState = state.layerStates[layer]
     if state.isInitialized and currentState == visible then return end
     local ok, err = pcall(Uci.SetLayerVisibility, config.pageUCI, layer, visible, transition or "none")
@@ -232,26 +232,32 @@ local function setLayerVisible(layer, visible, transition)
     end
 end
 
-local function showLayers(layers, visible, transition)
+local function updateLayerVisibility(layers, visible, transition)
+    if not layers or visible == nil then return end
     for _, layer in ipairs(layers) do
-        setLayerVisible(layer, visible, transition or "none")
+        setLayerVisible(layer, visible, transition)
     end
 end
 
+local function showLayers(layers, visible, transition)
+    updateLayerVisibility(layers, visible, transition)
+end
+
 local function hideBaseLayers()
-    showLayers({"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}, false, "none")
+    updateLayerVisibility(layersBase, false, "none")
 end
 
 -- Validation
 local function validateControls()
-    local required = {
-        "btnNav01","btnNav02","btnNav03","btnNav04","btnNav05","btnNav06",
-        "btnNav07","btnNav08","btnNav09","btnNav10","btnNav11","btnNav12","btnNav13",
-        "btnStartSystem","btnNavShutdown","btnShutdownCancel","btnShutdownConfirm"
-    }
-    local missing = {}
-    for _, name in ipairs(required) do
-        if not controls[name] then table.insert(missing, name) end
+    local missing, optional = {}, { pinLEDTouchActivity = true }
+    for name, ctrl in pairs(controls) do
+        if type(ctrl) == "table" then
+            for key, sub in pairs(ctrl) do
+                if not sub then table.insert(missing, name .. "[" .. tostring(key) .. "]") end
+            end
+        elseif not ctrl then
+            if not optional[name] then table.insert(missing, name) end
+        end
     end
     if #missing > 0 then
         print("ERROR: UCIController - Missing required controls:")
@@ -263,8 +269,12 @@ local function validateControls()
 end
 
 local function normalizeControlArrays()
-    for i = 1, 13 do navButtons[i]     = controls["btnNav"     .. string.format("%02d", i)] end
-    for i = 1, 8  do routingButtons[i] = controls["btnRouting" .. string.format("%02d", i)] end
+    for _, key in ipairs({ "btnNav", "btnRouting" }) do
+        local c = controls[key]
+        if c and not isArr(c) then controls[key] = { c } end
+    end
+    navButtons = controls.btnNav
+    routingButtons = controls.btnRouting
     debugPrint("Normalized " .. #navButtons .. " nav buttons, " .. #routingButtons .. " routing buttons")
 end
 
@@ -279,15 +289,26 @@ end
 
 local function initLegendArrays()
     arrLegends, arrUserLabels = {}, {}
-    for i, name in ipairs(legendControls) do
-        arrLegends[i] = Controls[name]
-        if not Controls[name] then debugPrint("Warning: Legend control not found: " .. name) end
-    end
-    for i, varName in ipairs(legendVariables) do
-        arrUserLabels[i] = Uci.Variables[varName]
-        if arrUserLabels[i] then
-            arrUserLabels[i].EventHandler = function() updateLegends() end
+    local idx = 0
+    for _, cfg in ipairs(legendConfig) do
+        if cfg.suffix and cfg.count then
+            for i = 1, cfg.count do
+                idx = idx + 1
+                local name = cfg.suffix .. string.format("%02d", i)
+                arrLegends[idx] = Controls["txt" .. name]
+                arrUserLabels[idx] = Uci.Variables["txtLabel" .. name]
+                if not Controls["txt" .. name] then debugPrint("Warning: Legend control not found: txt" .. name) end
+            end
+        elseif cfg.single then
+            for _, name in ipairs(cfg.single) do
+                idx = idx + 1
+                arrLegends[idx] = Controls["txt" .. name]
+                arrUserLabels[idx] = Uci.Variables["txtLabel" .. name]
+            end
         end
+    end
+    for i, label in ipairs(arrUserLabels) do
+        if label then label.EventHandler = function() updateLegends() end end
     end
     debugPrint("Legends: " .. #arrLegends .. " controls, " .. #arrUserLabels .. " variables")
 end
@@ -295,10 +316,10 @@ end
 -- Routing control visibility
 local function updateRoutingControlVisibility(buttonIndex, isVisible)
     local indexStr = string.format("%02d", buttonIndex)
-    for _, prefix in ipairs({"btnRouting", "txtRouting"}) do
-        local ctrl = controls[prefix .. indexStr]
-        if ctrl then setProp(ctrl, "IsInvisible", not isVisible) end
-    end
+    local btn = controls.btnRouting and controls.btnRouting[buttonIndex]
+    local txt = controls["txtRouting" .. indexStr]
+    if btn then setProp(btn, "IsInvisible", not isVisible) end
+    if txt then setProp(txt, "IsInvisible", not isVisible) end
     debugPrint("Routing controls " .. indexStr .. ": " .. (isVisible and "shown" or "hidden"))
 end
 
@@ -325,10 +346,10 @@ end
 
 local function updateConferenceState()
     local usbConnected, disconnectedLayer
-    if state.activeLayer == kLayerLaptop then
+    if state.activeLayer == kLayer.Laptop then
         usbConnected     = controls.pinLEDUSBLaptop and controls.pinLEDUSBLaptop.Boolean or false
         disconnectedLayer = "J01-ConnectUSBLaptop"
-    elseif state.activeLayer == kLayerPC then
+    elseif state.activeLayer == kLayer.PC then
         usbConnected     = controls.pinLEDUSBPC and controls.pinLEDUSBPC.Boolean or false
         disconnectedLayer = "J02-ConnectUSBPC"
     else
@@ -345,7 +366,7 @@ local function updateConferenceState()
 end
 
 local function updateHDMI01State()
-    if state.activeLayer ~= kLayerLaptop then return end
+    if state.activeLayer ~= kLayer.Laptop then return end
     if not controls.pinLEDHDMI01Connect then return end
     local isConnected = controls.pinLEDHDMI01Connect.Boolean or false
     if isConnected then
@@ -359,7 +380,7 @@ local function updateHDMI01State()
 end
 
 local function updateHDMI02State()
-    if state.activeLayer ~= kLayerPC then return end
+    if state.activeLayer ~= kLayer.PC then return end
     local isConnected = controls.pinLEDHDMI02Connect and controls.pinLEDHDMI02Connect.Boolean or false
     if isConnected then
         setLayerVisible("P05-PC", true, "fade")
@@ -372,7 +393,7 @@ local function updateHDMI02State()
 end
 
 local function updateACPRBypassState()
-    if state.activeLayer ~= kLayerLaptop and state.activeLayer ~= kLayerPC then return end
+    if state.activeLayer ~= kLayer.Laptop and state.activeLayer ~= kLayer.PC then return end
     local isBypass = controls.pinLEDACPRBypassActive and controls.pinLEDACPRBypassActive.Boolean or false
     if not isBypass then
         setLayerVisible("J03-ACPRActive", true, "fade")
@@ -456,13 +477,13 @@ end
 local function resetTouchInactivityTimer()
     timers.inactivity:Stop()
     -- Do not set EventHandler = nil; Q-SYS addEventHandler requires a function.
-    if state.activeLayer ~= kLayerRoomCombining then return end
+    if state.activeLayer ~= kLayer.RoomCombining then return end
     local timeout = tonumber(Uci.Variables.numTouchInactivityTimer and Uci.Variables.numTouchInactivityTimer.Value) or 60
     if timeout <= 0 then timeout = 60 end
     timers.inactivity.EventHandler = function()
-        if state.activeLayer ~= kLayerRoomCombining then return end
+        if state.activeLayer ~= kLayer.RoomCombining then return end
         debugPrint("Touch inactivity timeout → C05-Start (Source: inactivity timer)")
-        btnNavEventHandler(kLayerStart)
+        btnNavEventHandler(kLayer.Start)
     end
     timers.inactivity:Start(timeout)
     debugPrint("Touch inactivity timer reset (" .. timeout .. "s)")
@@ -471,99 +492,107 @@ end
 -- Navigation interlock
 local function interlock()
     local layerToBtn = {
-        [kLayerAlarm]           =1,        
-        [kLayerIncomingCall]    =2,  
-        [kLayerStart]           =3,
-        [kLayerWarming]         =4,      
-        [kLayerCooling]         =5,        
-        [kLayerRoomControls]    =6,
-        [kLayerPC]              =7,           
-        [kLayerLaptop]          =8,         
-        [kLayerWireless]        =9,
-        [kLayerRouting]         =10,     
-        [kLayerDialer]          =11,        
-        [kLayerStreamMusic]     =12,
-        [kLayerRoomCombining]   =13
+        [kLayer.Alarm]           =1,        
+        [kLayer.IncomingCall]    =2,  
+        [kLayer.Start]           =3,
+        [kLayer.Warming]         =4,      
+        [kLayer.Cooling]         =5,        
+        [kLayer.RoomControls]    =6,
+        [kLayer.PC]              =7,           
+        [kLayer.Laptop]          =8,         
+        [kLayer.Wireless]        =9,
+        [kLayer.Routing]         =10,     
+        [kLayer.Dialer]          =11,        
+        [kLayer.StreamMusic]     =12,
+        [kLayer.RoomCombining]   =13
     }
     local activeBtn = layerToBtn[state.activeLayer]
     for i, btn in ipairs(navButtons) do
         if btn then setProp(btn, "Boolean", i == activeBtn) end
     end
-    if state.activeLayer ~= kLayerRouting then resetRoutingButtons() end
+    if state.activeLayer ~= kLayer.Routing then resetRoutingButtons() end
     -- Routing nav button (btnNav10) hidden when on Room Controls or Routing layer
-    local hideRoutingBtn = (state.activeLayer == kLayerRoomControls) or (state.activeLayer == kLayerRouting)
-    if controls.btnNav10 then
-        setProp(controls.btnNav10, "IsDisabled",  hideRoutingBtn)
-        setProp(controls.btnNav10, "IsInvisible", hideRoutingBtn)
+    local hideRoutingBtn = (state.activeLayer == kLayer.RoomControls) or (state.activeLayer == kLayer.Routing)
+    local btnNav10 = controls.btnNav and controls.btnNav[10]
+    if btnNav10 then
+        setProp(btnNav10, "IsDisabled",  hideRoutingBtn)
+        setProp(btnNav10, "IsInvisible", hideRoutingBtn)
     end
 end
 
--- Layer display (hides all, shows base, then shows layer-specific content)
--- Skip hiding base layers to avoid hide-then-show toggle that can trigger control EventHandlers
-local function showLayer()
-    for _, layer in ipairs(layersAll) do
-        if layer ~= "X01-ProgramVolume" and layer ~= "Y01-Navbar" and layer ~= "Z01-Base" then
-            setLayerVisible(layer, false, "none")
-        end
-    end
-    showLayers(layersBase, true, "none")
-
-    local layerConfig = {
-        [kLayerAlarm]         = { 
-            show={"A01-Alarm"},
-            hideBase=true,
-            fn = function() updateCallActiveState() end
+local function buildLayerConfigs()
+    layerConfigs = {
+        [kLayer.Alarm] = {
+            show = { "A01-Alarm" },
+            hideBase = true,
+            fn = function() updateCallActiveState() end,
         },
-        [kLayerIncomingCall]  = { 
-            show={"B01-IncomingCall"},
-            fn = function() updateCallActiveState() end
+        [kLayer.IncomingCall] = {
+            show = { "B01-IncomingCall" },
+            fn = function() updateCallActiveState() end,
         },
-        [kLayerStart]         = { 
-            show={"C05-Start"},
-            hideBase=true,
-            fn = function() updateCallActiveState() end
+        [kLayer.Start] = {
+            show = { "C05-Start" },
+            hideBase = true,
+            fn = function() updateCallActiveState() end,
         },
-        [kLayerWarming]       = { 
-            show={"E05-SystemProgress","E01-SystemProgressWarming"},
-            hideBase=true,
-            fn = function() updateCallActiveState() end
+        [kLayer.Warming] = {
+            show = { "E05-SystemProgress", "E01-SystemProgressWarming" },
+            hideBase = true,
+            fn = function() updateCallActiveState() end,
         },
-        [kLayerCooling]       = { 
-            show={"E05-SystemProgress","E02-SystemProgressCooling"},
-            hideBase=true,
-            fn = function() updateCallActiveState() end
+        [kLayer.Cooling] = {
+            show = { "E05-SystemProgress", "E02-SystemProgressCooling" },
+            hideBase = true,
+            fn = function() updateCallActiveState() end,
         },
-        [kLayerRoomControls]  = { 
-            show={"H05-RoomControls"}, 
-            hide={"X01-ProgramVolume"},
-            fn = function() updateCallActiveState() end
+        [kLayer.RoomControls] = {
+            show = { "H05-RoomControls" },
+            hide = { "X01-ProgramVolume" },
+            fn = function() updateCallActiveState() end,
         },
-        [kLayerLaptop]        = { 
-            show={"L05-Laptop"},
-            fn = function() updateHDMI01State(); updateConferenceState(); updatePresetSavedState(); updateACPRBypassState(); updateCallActiveState() end
+        [kLayer.Laptop] = {
+            show = { "L05-Laptop" },
+            fn = function()
+                updateHDMI01State()
+                updateConferenceState()
+                updatePresetSavedState()
+                updateACPRBypassState()
+                updateCallActiveState()
+            end,
         },
-        [kLayerPC]            = { 
-            show={"P05-PC"},
-            fn = function() updateHDMI02State(); updateConferenceState(); updatePresetSavedState(); updateACPRBypassState(); updateCallActiveState() end
+        [kLayer.PC] = {
+            show = { "P05-PC" },
+            fn = function()
+                updateHDMI02State()
+                updateConferenceState()
+                updatePresetSavedState()
+                updateACPRBypassState()
+                updateCallActiveState()
+            end,
         },
-        [kLayerWireless]      = { 
-            show={"W05-Wireless"},
-            fn = function() updateCallActiveState() end
+        [kLayer.Wireless] = {
+            show = { "W05-Wireless" },
+            fn = function() updateCallActiveState() end,
         },
-        [kLayerRouting]       = { 
-            show={"R10-Routing"},
-            fn = function() showRoutingLayer(); updateCallActiveState() end
+        [kLayer.Routing] = {
+            show = { "R10-Routing" },
+            fn = function()
+                showRoutingLayer()
+                updateCallActiveState()
+            end,
         },
-        [kLayerDialer]        = { 
-            show={"V05-Dialer"},
-            fn = function() updateCallActiveState() end
+        [kLayer.Dialer] = {
+            show = { "V05-Dialer" },
+            fn = function() updateCallActiveState() end,
         },
-        [kLayerStreamMusic]   = { 
-            show={"S10-StreamMusic"},
-            fn = function() updateCallActiveState() end
+        [kLayer.StreamMusic] = {
+            show = { "S10-StreamMusic" },
+            fn = function() updateCallActiveState() end,
         },
-        [kLayerRoomCombining] = { 
-            show={}, hideBase=true,
+        [kLayer.RoomCombining] = {
+            show = {},
+            hideBase = true,
             fn = function()
                 resetTouchInactivityTimer()
                 if isPasscodeCorrect() then
@@ -573,43 +602,48 @@ local function showLayer()
                     setLayerVisible("H01-PasscodeEntry", true, "fade")
                 end
                 updateCallActiveState()
-            end
+            end,
         },
     }
-    
+end
 
-    local config = layerConfig[state.activeLayer]
-    if not config then return end
-    if config.hideBase then hideBaseLayers() end
-    for _, layer in ipairs(config.show or {}) do setLayerVisible(layer, true, "fade") end
-    for _, layer in ipairs(config.hide or {}) do setLayerVisible(layer, false, "none") end
-    if config.fn then config.fn() end
+-- Layer display: clear non-base layers, show base, then layer-specific content (§8.5 base-layer pattern)
+local function showLayer()
+    if not layerConfigs then buildLayerConfigs() end
+    updateLayerVisibility(layersToHide, false, "none")
+    updateLayerVisibility(layersBase, true, "none")
+    local cfg = layerConfigs[state.activeLayer]
+    if not cfg then return end
+    if cfg.hideBase then hideBaseLayers() end
+    for _, layer in ipairs(cfg.show or {}) do setLayerVisible(layer, true, "fade") end
+    for _, layer in ipairs(cfg.hide or {}) do setLayerVisible(layer, false, "none") end
+    if cfg.fn then cfg.fn() end
 end
 
 -- Video switcher
 local function initVideoSwitcher()
-    for switcherType, config in pairs(configSwitcher) do
-        for _, varName in ipairs(config.switcherNames) do
+    for switcherType, swCfg in pairs(configSwitcher) do
+        for _, varName in ipairs(swCfg.switcherNames) do
             if Controls[varName] and Controls[varName].String ~= "" then
                 local ok, comp = pcall(function() return Component.New(Controls[varName].String) end)
                 if ok and comp then
                     components.videoSwitcher     = comp
                     components.videoSwitcherType = switcherType
-                    components.videoMapping      = config.defaultMapping
+                    components.videoMapping      = swCfg.defaultMapping
                     debugPrint("Video switcher: " .. switcherType .. " → " .. Controls[varName].String .. " (Source: UCI variable)")
                     return true
                 end
             end
         end
     end
-    for switcherType, config in pairs(configSwitcher) do
+    for switcherType, swCfg in pairs(configSwitcher) do
         for _, comp in pairs(Component.GetComponents()) do
-            if comp.Type == config.componentType then
+            if comp.Type == swCfg.componentType then
                 local ok, compRef = pcall(function() return Component.New(comp.Name) end)
                 if ok and compRef then
                     components.videoSwitcher     = compRef
                     components.videoSwitcherType = switcherType
-                    components.videoMapping      = config.defaultMapping
+                    components.videoMapping      = swCfg.defaultMapping
                     debugPrint("Video switcher: " .. switcherType .. " → " .. comp.Name .. " (Source: auto-detect)")
                     return true
                 end
@@ -623,17 +657,17 @@ end
 local function switchToInput(inputNumber)
     if not components.videoSwitcher or not components.videoSwitcherType then return false end
     if not inputNumber then return false end
-    local config = configSwitcher[components.videoSwitcherType]
-    if not config then return false end
+    local swCfg = configSwitcher[components.videoSwitcherType]
+    if not swCfg then return false end
     local ok, err = pcall(function()
-        if config.setPropMode == "Value" then
-            components.videoSwitcher[config.routingControl].Value = inputNumber
+        if swCfg.setPropMode == "Value" then
+            components.videoSwitcher[swCfg.routingControl].Value = inputNumber
         else
-            components.videoSwitcher[config.routingControl].String = tostring(inputNumber)
+            components.videoSwitcher[swCfg.routingControl].String = tostring(inputNumber)
         end
     end)
     if ok then
-        debugPrint("Video → input " .. inputNumber .. " (" .. components.videoSwitcherType .. ")")
+        debugPrint("Video → input " .. inputNumber .. " (" .. tostring(components.videoSwitcherType) .. ")")
     else
         debugPrint("Video switch error: " .. tostring(err))
     end
@@ -642,8 +676,8 @@ end
 
 -- Progress bar
 local function startLoadingBar(isPoweringOn)
-    if timers.progress then timers.progress:Stop(); timers.progress = nil end
-    if timers.timeout  then timers.timeout:Stop();  timers.timeout  = nil end
+    timers.progress = stopTimer(timers.progress)
+    timers.timeout  = stopTimer(timers.timeout)
 
     local duration = 10
     if components.roomControls then
@@ -670,8 +704,8 @@ local function startLoadingBar(isPoweringOn)
     timers.timeout  = Timer.New()
 
     timers.timeout.EventHandler = function()
-        if timers.progress then timers.progress:Stop(); timers.progress = nil end
-        btnNavEventHandler(isPoweringOn and config.defaultLayer or kLayerStart)
+        timers.progress = stopTimer(timers.progress)
+        btnNavEventHandler(isPoweringOn and config.defaultLayer or kLayer.Start)
         debugPrint("Loading bar: timeout (300s)")
     end
     timers.timeout:Start(300)
@@ -682,8 +716,8 @@ local function startLoadingBar(isPoweringOn)
         if controls.knbProgressBar then controls.knbProgressBar.Value  = progress end
         if controls.txtProgressBar  then controls.txtProgressBar.String = progress .. "%" end
         if currentStep >= steps then
-            if timers.timeout then timers.timeout:Stop(); timers.timeout = nil end
-            btnNavEventHandler(isPoweringOn and config.defaultLayer or kLayerStart)
+            timers.timeout = stopTimer(timers.timeout)
+            btnNavEventHandler(isPoweringOn and config.defaultLayer or kLayer.Start)
         else
             timers.progress:Start(interval)
         end
@@ -748,9 +782,9 @@ btnNavEventHandler = function(layerIndex)
     -- Cancel any running progress animation when navigating away from progress layers.
     -- Without this, the cooling timer fires its final step and unconditionally navigates
     -- back to kLayerStart, overriding any manual navigation that happened in the interim.
-    if layerIndex ~= kLayerWarming and layerIndex ~= kLayerCooling then
-        if timers.progress then timers.progress:Stop(); timers.progress = nil end
-        if timers.timeout  then timers.timeout:Stop();  timers.timeout  = nil end
+    if layerIndex ~= kLayer.Warming and layerIndex ~= kLayer.Cooling then
+        timers.progress = stopTimer(timers.progress)
+        timers.timeout  = stopTimer(timers.timeout)
     end
     local inputNumber = components.videoMapping[layerIndex]
     if components.videoSwitcher and inputNumber then
@@ -764,14 +798,14 @@ end
 local function startSystem()
     powerOn()
     startLoadingBar(true)
-    btnNavEventHandler(kLayerWarming)
+    btnNavEventHandler(kLayer.Warming)
 end
 
 local function shutdownSystem()
     setLayerVisible("D01-ShutdownConfirm", false, "fade")
     powerOff()
     startLoadingBar(false)
-    state.activeLayer = kLayerCooling
+    state.activeLayer = kLayer.Cooling
     showLayer()
     interlock()
 end
@@ -802,31 +836,31 @@ local function registerEvents()
     debugPrint("Registered 4 system control handlers")
 
     -- Help open/close pairs (Laptop and PC: also manage camera sublayers)
-    bind(controls.btnOpenHelpLaptop,  function()
+    bind(controls.btnOpenHelp.Laptop, function()
         setLayerVisible("I02-HelpLaptop", true, "fade")
-        showLayers({"J05-CameraControls","J01-ConnectUSBLaptop","J02-ConnectUSBPC"}, false, "none")
+        showLayers({ "J05-CameraControls", "J01-ConnectUSBLaptop", "J02-ConnectUSBPC" }, false, "none")
         debugPrint("Laptop Help → open (Source: btnOpenHelpLaptop)")
     end)
-    bind(controls.btnCloseHelpLaptop, function()
+    bind(controls.btnCloseHelp.Laptop, function()
         setLayerVisible("I02-HelpLaptop", false, "none")
         updateConferenceState()
         debugPrint("Laptop Help → closed (Source: btnCloseHelpLaptop)")
     end)
-    bind(controls.btnOpenHelpPC,      function()
+    bind(controls.btnOpenHelp.PC, function()
         setLayerVisible("I03-HelpPC", true, "fade")
-        showLayers({"J05-CameraControls","J01-ConnectUSBLaptop","J02-ConnectUSBPC"}, false, "none")
+        showLayers({ "J05-CameraControls", "J01-ConnectUSBLaptop", "J02-ConnectUSBPC" }, false, "none")
         debugPrint("PC Help → open (Source: btnOpenHelpPC)")
     end)
-    bind(controls.btnCloseHelpPC,     function()
+    bind(controls.btnCloseHelp.PC, function()
         setLayerVisible("I03-HelpPC", false, "none")
         updateConferenceState()
         debugPrint("PC Help → closed (Source: btnCloseHelpPC)")
     end)
 
     local simpleHelp = {
-        { open=controls.btnOpenHelpWireless,    close=controls.btnCloseHelpWireless,    layer="I04-HelpWireless",    label="Wireless" },
-        { open=controls.btnOpenHelpRouting,     close=controls.btnCloseHelpRouting,     layer="I05-HelpRouting",     label="Routing"  },
-        { open=controls.btnOpenHelpStreamMusic, close=controls.btnCloseHelpStreamMusic, layer="I07-HelpStreamMusic", label="StreamMusic" },
+        { open = controls.btnOpenHelp.Wireless,    close = controls.btnCloseHelp.Wireless,    layer = "I04-HelpWireless",    label = "Wireless" },
+        { open = controls.btnOpenHelp.Routing,     close = controls.btnCloseHelp.Routing,     layer = "I05-HelpRouting",     label = "Routing" },
+        { open = controls.btnOpenHelp.StreamMusic, close = controls.btnCloseHelp.StreamMusic, layer = "I07-HelpStreamMusic", label = "StreamMusic" },
     }
     for _, pair in ipairs(simpleHelp) do
         local lyr, lbl = pair.layer, pair.label
@@ -841,12 +875,12 @@ local function registerEvents()
     bind(controls.pinLEDHDMI01Connect,    function()    updateHDMI01State() end)
     bind(controls.pinLEDHDMI02Connect,    function()    updateHDMI02State() end)
     bind(controls.pinLEDACPRBypassActive, function()    updateACPRBypassState() end)
-    bind(controls.pinLEDUSBLaptop,        function(ctl) if ctl.Boolean then ensureSystemIsOn(); btnNavEventHandler(kLayerLaptop) else updateConferenceState() end end)
-    bind(controls.pinLEDUSBPC,            function(ctl) if ctl.Boolean then ensureSystemIsOn(); btnNavEventHandler(kLayerPC)     else updateConferenceState() end end)
-    bind(controls.pinLEDOffHookLaptop,    function(ctl) if ctl.Boolean then ensureSystemIsOn(); btnNavEventHandler(kLayerLaptop) end end)
-    bind(controls.pinLEDOffHookPC,        function(ctl) if ctl.Boolean then ensureSystemIsOn(); btnNavEventHandler(kLayerPC)     end end)
-    bind(controls.pinLEDHDMI01Active,     function(ctl) if ctl.Boolean then ensureSystemIsOn(); btnNavEventHandler(kLayerLaptop) end end)
-    bind(controls.pinLEDHDMI02Active,     function(ctl) if ctl.Boolean then ensureSystemIsOn(); btnNavEventHandler(kLayerPC)     end end)
+    bind(controls.pinLEDUSBLaptop,        function(ctl) if ctl.Boolean then ensureSystemIsOn(); btnNavEventHandler(kLayer.Laptop) else updateConferenceState() end end)
+    bind(controls.pinLEDUSBPC,            function(ctl) if ctl.Boolean then ensureSystemIsOn(); btnNavEventHandler(kLayer.PC)     else updateConferenceState() end end)
+    bind(controls.pinLEDOffHookLaptop,    function(ctl) if ctl.Boolean then ensureSystemIsOn(); btnNavEventHandler(kLayer.Laptop) end end)
+    bind(controls.pinLEDOffHookPC,        function(ctl) if ctl.Boolean then ensureSystemIsOn(); btnNavEventHandler(kLayer.PC)     end end)
+    bind(controls.pinLEDHDMI01Active,     function(ctl) if ctl.Boolean then ensureSystemIsOn(); btnNavEventHandler(kLayer.Laptop) end end)
+    bind(controls.pinLEDHDMI02Active,     function(ctl) if ctl.Boolean then ensureSystemIsOn(); btnNavEventHandler(kLayer.PC)     end end)
     bind(controls.pinLEDTouchActivity,    function()    resetTouchInactivityTimer() end)
     debugPrint("Registered 12 pin input handlers")
 
@@ -871,10 +905,10 @@ local function registerEvents()
             components.prevPowerState = currentState
             if currentState then
                 startLoadingBar(true)
-                btnNavEventHandler(kLayerWarming)
+                btnNavEventHandler(kLayer.Warming)
             else
                 startLoadingBar(false)
-                btnNavEventHandler(kLayerCooling)
+                btnNavEventHandler(kLayer.Cooling)
             end
         end
         debugPrint("Registered: event-driven power state handler (ledSystemPower)")
@@ -888,10 +922,11 @@ local function init()
                ", configDefaultRouting=" .. config.defaultRouting .. ", configDefaultLayer=" .. config.defaultLayer)
 
     state.layerStates  = {}
-    state.activeLayer  = kLayerStart
+    state.activeLayer  = kLayer.Start
     state.isInitialized = false
 
     normalizeControlArrays()
+    buildLayerConfigs()
     initLegendArrays()
     initRoomAutomation()
     initVideoSwitcher()
@@ -899,7 +934,7 @@ local function init()
 
     -- Hide specified navigation buttons
     for _, index in ipairs(config.navHidden) do
-        local btn = controls["btnNav" .. string.format("%02d", index)]
+        local btn = controls.btnNav and controls.btnNav[index]
         if btn then
             btn.IsInvisible = true
             debugPrint("Hidden nav button: btnNav" .. string.format("%02d", index))
@@ -929,8 +964,8 @@ myUCI = {
     switchToInput      = switchToInput,
     isPasscodeCorrect  = isPasscodeCorrect,
     cleanup = function()
-        if timers.progress then timers.progress:Stop() end
-        if timers.timeout  then timers.timeout:Stop()  end
+        timers.progress = stopTimer(timers.progress)
+        timers.timeout  = stopTimer(timers.timeout)
         timers.inactivity:Stop()
         for _, label in ipairs(arrUserLabels) do
             if label then label.EventHandler = nil end

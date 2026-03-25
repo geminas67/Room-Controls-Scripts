@@ -52,42 +52,49 @@ local config = {
   
 }
 
--- Data-driven routing configuration (defined after config to avoid circular reference)
+-- Data-driven routing: every rule uses `controls` (one entry = former "simple" rules)
 config.routingRules = {
-  -- Simple routing: one control per room
-  simple = {
-    gain = {
-      enabled = true,
-      targetControl = "compGains 1",
-      componentKey = "roomControls",
-      getName = "Gain routing",
-      separated = function(i) return config.components.gains[i] end,
-      combined = function(priorityIdx) return config.components.gains[priorityIdx] end
-    },
-    
-    acpr = {
-      enabled = function() return not config.features.disableACPRRouting end,
-      targetControl = "compACPR",
-      componentKey = "roomControls",
-      getName = "ACPR assignment",
-      separated = function(i) return config.components.acpr[i] end,
-      combined = function(priorityIdx) return config.components.acpr.combined end
-    },
+  gain = {
+    enabled = true,
+    componentKey = "roomControls",
+    getName = "Gain routing",
+    controls = {
+      {
+        name = "compGains 1",
+        separated = function(i) return config.components.gains[i] end,
+        combined = function(priorityIdx) return config.components.gains[priorityIdx] end
+      }
+    }
   },
-  
-  -- Multi-control routing: multiple controls per room
-  multiControl = {
-    mxaControls = {
-      enabled = true,
-      componentKey = "mxaControls",
-      getName = "MXA controls routing",
-      controls = {
-        {name = "compCallSync", 
-         separated = function(i) return config.components.callSync[i] end,
-         combined = function(pIdx) return config.components.callSync[pIdx] end},
-        {name = "compRoomControls", 
-         separated = function(i) return config.components.roomControls[i] end,
-         combined = function(pIdx) return config.components.roomControls[pIdx] end}
+  acpr = {
+    enabled = function() return not config.features.disableACPRRouting end,
+    componentKey = "roomControls",
+    getName = "ACPR assignment",
+    controls = {
+      {
+        name = "compACPR",
+        allowEmptyString = true, -- optional per room (no ACPR); mirrors MXA optional ceiling mics
+        separated = function(i) return config.components.acpr[i] end,
+        combined = function(priorityIdx) return config.components.acpr.combined end
+      }
+    }
+  },
+  mxaControls = {
+    enabled = true,
+    componentKey = "mxaControls",
+    getName = "MXA controls routing",
+    controls = {
+      {
+        name = "compCallSync",
+        allowEmptyString = true,
+        separated = function(i) return config.components.callSync[i] end,
+        combined = function(pIdx) return config.components.callSync[pIdx] end
+      },
+      {
+        name = "compRoomControls",
+        allowEmptyString = true,
+        separated = function(i) return config.components.roomControls[i] end,
+        combined = function(pIdx) return config.components.roomControls[pIdx] end
       }
     }
   }
@@ -149,47 +156,14 @@ local function normalizeControlArrays()
 end
 
 -------------------[ Generic Routing Engine ]-------------------
--- Generic function to apply simple routing rules (one control per room)
-local function applySimpleRouting(self, rule, ruleName)
-  local enabled
-  if type(rule.enabled) == "function" then
-    enabled = rule.enabled()
-  else
-    enabled = rule.enabled
+local function routingValueOk(value, allowEmptyString)
+  if allowEmptyString then
+    return value ~= nil and value ~= false
   end
-  if not enabled then
-    self:debugPrint(ruleName .. " disabled")
-    return
-  end
-  
-  local isSeparated = self:isRoomsSeparated()
-  local priorityRoom = self:getPriorityRoom()
-  local priorityIdx = priorityRoom and ((priorityRoom == "RoomA") and 1 or 2)
-  local success, errors = 0, {}
-  
-  for i, room in ipairs(config.rooms) do
-    local comp = self.components[rule.componentKey][i]
-    
-    if comp and comp[rule.targetControl] then
-      local value = isSeparated and rule.separated(i) or rule.combined(priorityIdx)
-      
-      if value and value ~= "" then
-        setProp(comp[rule.targetControl], "String", value)
-        success = success + 1
-        self:debugPrint(room .. " -> " .. rule.targetControl .. ": " .. value)
-      else
-        table.insert(errors, room .. ": Invalid value")
-      end
-    else
-      table.insert(errors, room .. ": " .. rule.targetControl .. " not found")
-    end
-  end
-  
-  self:printOperationResult(rule.getName, success, #config.rooms, errors)
+  return value and value ~= ""
 end
 
--- Generic function to apply multi-control routing rules
-local function applyMultiControlRouting(self, rule, ruleName)
+local function applyRouting(self, rule, ruleName)
   local enabled
   if type(rule.enabled) == "function" then
     enabled = rule.enabled()
@@ -200,21 +174,19 @@ local function applyMultiControlRouting(self, rule, ruleName)
     self:debugPrint(ruleName .. " disabled")
     return
   end
-  
+
   local isSeparated = self:isRoomsSeparated()
   local priorityRoom = self:getPriorityRoom()
   local priorityIdx = priorityRoom and ((priorityRoom == "RoomA") and 1 or 2)
   local success, errors = 0, {}
   local total = #config.rooms * #rule.controls
-  
+
   for i, room in ipairs(config.rooms) do
     local comp = self.components[rule.componentKey][i]
-    
     for _, ctrl in ipairs(rule.controls) do
       if comp and comp[ctrl.name] then
         local value = isSeparated and ctrl.separated(i) or ctrl.combined(priorityIdx)
-        
-        if value then
+        if routingValueOk(value, ctrl.allowEmptyString) then
           setProp(comp[ctrl.name], "String", value)
           success = success + 1
           self:debugPrint(room .. " -> " .. ctrl.name .. ": " .. value)
@@ -226,7 +198,7 @@ local function applyMultiControlRouting(self, rule, ruleName)
       end
     end
   end
-  
+
   self:printOperationResult(rule.getName, success, total, errors)
 end
 
@@ -768,7 +740,7 @@ function DivisibleSpaceController:applyGainRouting()
   end
   
   -- Apply routing using generic engine
-  applySimpleRouting(self, config.routingRules.simple.gain, "Gain routing")
+  applyRouting(self, config.routingRules.gain, "Gain routing")
 end
 
 function DivisibleSpaceController:applyMatrixMixerMutes()
@@ -797,11 +769,11 @@ end
 
 -------------------[ Component Assignments ]-------------------
 function DivisibleSpaceController:applyACPRAssignment()
-  applySimpleRouting(self, config.routingRules.simple.acpr, "ACPR assignment")
+  applyRouting(self, config.routingRules.acpr, "ACPR assignment")
 end
 
 function DivisibleSpaceController:applyMXAControlsRouting()
-  applyMultiControlRouting(self, config.routingRules.multiControl.mxaControls, "MXA controls routing")
+  applyRouting(self, config.routingRules.mxaControls, "MXA controls routing")
 end
 
 function DivisibleSpaceController:applyUCIStatusRouting()

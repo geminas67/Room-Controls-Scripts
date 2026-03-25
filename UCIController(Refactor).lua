@@ -63,33 +63,33 @@ local kLayer = {
 
 local configSource = {
     PC = { 
-        layer=kLayer.PC, 
-        hdmiKey="pinLEDHDMI01Connect", 
-        usbKey="pinLEDUSBPC",
-        base="P05-PC", 
-        disc="P01-HDMIDisconnected", 
-        usb="J02-ConnectUSBPC", 
-        conf="J05-ConferenceControls", 
-        help="I03-HelpPC" 
+        layer   = kLayer.PC, 
+        hdmiKey = "pinLEDHDMI01Connect", 
+        usbKey  = "pinLEDUSBPC",
+        base    = "P05-PC", 
+        disc    = "P01-HDMIDisconnected", 
+        usb     = "J02-ConnectUSBPC", 
+        conf    = "J05-ConferenceControls", 
+        help    = "I03-HelpPC" 
     },
     Laptop = { 
-        layer=kLayer.Laptop, 
-        hdmiKey="pinLEDHDMI02Connect", 
-        usbKey="pinLEDUSBLaptop",
-        base="L05-Laptop", 
-        disc="L01-HDMIDisconnected", 
-        usb="J01-ConnectUSBLaptop", 
-        conf="J05-ConferenceControls", 
-        help="I02-HelpLaptop" 
+        layer   = kLayer.Laptop, 
+        hdmiKey = "pinLEDHDMI02Connect", 
+        usbKey  = "pinLEDUSBLaptop",
+        base    = "L05-Laptop", 
+        disc    = "L01-HDMIDisconnected", 
+        usb     = "J01-ConnectUSBLaptop", 
+        conf    = "J05-ConferenceControls", 
+        help    = "I02-HelpLaptop" 
     },
     Wireless = { 
-        layer=kLayer.Wireless, 
-        hdmiKey="pinLEDHDMI03Connect", 
-        usbKey=nil,
-        base="W05-Wireless", 
-        disc="W01-HDMIDisconnected", 
-        usb=nil, conf=nil, 
-        help="I04-HelpWireless" 
+        layer   = kLayer.Wireless, 
+        hdmiKey = "pinLEDHDMI03Connect", 
+        usbKey  = nil,
+        base    = "W05-Wireless", 
+        disc    = "W01-HDMIDisconnected", 
+        usb     = nil, conf=nil, 
+        help    = "I04-HelpWireless" 
     },
 }
 
