@@ -3,9 +3,6 @@
     Author: Nikolas Smith, Q-SYS
     Version: 3.0 | Date: 2025-03-24
     Firmware Req: 10.0.0
-    Notes:
-    - Flat module (no OOP); event-driven routing; rich debug output
-    - Controls / Component globals are Q-SYS framework (expected lint warnings)
 ]]--
 
 -------------------[ Configuration ]-------------------

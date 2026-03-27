@@ -1,9 +1,9 @@
 --[[
   LG DisplayController (Refactored) - Q-SYS Control Script for LG Displays
   Author: Nikolas Smith, Q-SYS
-  Date: 2025-10-14
-  Version: 2.2 (Power & Input Only)
-  Firmware Req: 10.0.0
+  Date: 2026-03-27
+  Version: 1.0 (Power & Input Only)
+  Firmware Req: 10.2.0
   Description: Controls LG Display components with power management and
   input switching. Integrates with SystemAutomationController.
 ]]--

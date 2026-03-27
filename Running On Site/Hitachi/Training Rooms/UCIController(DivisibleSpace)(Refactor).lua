@@ -1,7 +1,7 @@
 --[[
   UCI Controller (DivisibleSpace) - Q-SYS Control Script
   Author: Nikolas Smith, Q-SYS
-  Version: 3.0 | Date: 2025-02-22
+  Version: 3.0 | Date: 2026-03-27
   Firmware Req: 10.0.0
 
   Flat module per qsys-lua-architecture. Event-driven power sync via ledSystemPower.
@@ -9,7 +9,7 @@
 ]]
 
 -------------------[ Configuration ]-------------------
-local conferenceStateConfig = { skip = { [9]=false, [10]=false } }
+local conferenceStateConfig = { skip = { [9]=true, [10]=true } }
 local acprConfig = { disableACPRShow = false }
 
 local kLayer = {
@@ -104,6 +104,7 @@ local controls = {
         StreamMusic = Controls.btnCloseHelpStreamMusic,
     },
     btnHelpDialer               = Controls.btnHelpDialer,
+    btnCombiningDisabled        = Controls.btnCombiningDisabled,
     knbProgressBar              = Controls.knbProgressBar, 
     txtProgressBar              = Controls.txtProgressBar,
     pinCallActive               = Controls.pinCallActive,
