@@ -6,6 +6,8 @@
   Firmware Req: 10.2.0
   Description: Controls LG Display components with power management and
   input switching. Integrates with SystemAutomationController.
+  Per-row power: bind btnDisplayPowerSingle and/or btnDisplayPowerOn / btnDisplayPowerOff;
+  On/Off booleans are driven from reported PowerStatus (setPowerOnOffRowFeedback).
 ]]--
 
 -------------------[ Configuration ]-------------------
@@ -13,10 +15,12 @@ local displayControls = {
     powerOn = "PowerOn",
     powerOff = "PowerOff",
     powerStatus = "PowerStatus",
+    screenToggle = "ScreenToggle",
     inputStatusLED = "InputStatus",
     inputSelectButtons = "InputSelectButtons ",
     inputNames = "InputNames ",
-    currentInput = "CurrentInput "
+    currentInput = "InputSelectComboBox",
+    volume = "Volume"
 }
 
 local componentTypes = {
@@ -25,8 +29,8 @@ local componentTypes = {
 }
 
 local inputButtonMap = {
-    HDMI1 = 1, HDMI2 = 2, DisplayPort = 3, USB_C = 4,
-    DVI = 5, VGA = 6, Component = 7, Composite = 8, S_Video = 9, RF = 10
+    dispInput01 = 1, dispInput02 = 2, dispInput03 = 3, dispInput04 = 4, dispInput05 = 5, 
+    dispInput06 = 6, dispInput07 = 7, dispInput08 = 8, dispInput09 = 9
 }
 
 -------------------[ Controls ]-------------------
@@ -43,7 +47,8 @@ local controls = {
     btnDisplayPowerOn = Controls.btnDisplayPowerOn,
     btnDisplayPowerOff = Controls.btnDisplayPowerOff,
     btnDisplayPowerSingle = Controls.btnDisplayPowerSingle,
-    btnDisplayInputAll = Controls.btnDisplayInputAll
+    btnDisplayInputAll = Controls.btnDisplayInputAll,
+    btnAVMute = Controls.btnAVMute
 }
 
 -------------------[ Utilities ]-------------------
@@ -98,8 +103,11 @@ local const = {
     debug = true,
     clearString = "[Clear]",
     maxDisplays = 9,
-    defaultInput = "HDMI1",
-    inputChoices = {"HDMI1", "HDMI2", "DisplayPort", "USB-C"}
+    defaultInput = "dispInput04",
+    inputChoices = {"dispInput01", "dispInput02", "dispInput03", "dispInput04", 
+    "dispInput05", "dispInput06", "dispInput07", "dispInput08", "dispInput09"},
+    postPowerOnDelay = 7.0,
+    defaultDisplayVolume = 0
 }
 
 -------------------[ State ]-------------------
@@ -113,11 +121,12 @@ local state = {
     lastInput = "HDMI1",
     powerState = false,
     isWarming = false,
-    isCooling = false
+    isCooling = false,
+    lastPowerStatus = {}
 }
 
 local timerConfig = { warmupTime = 7, cooldownTime = 5 }
-local timers = { warmup = Timer.New(), cooldown = Timer.New() }
+local timers = { warmup = Timer.New(), cooldown = Timer.New(), postPowerOn = {} }
 
 -------------------[ Debug ]-------------------
 local function debugPrint(str)
@@ -140,7 +149,9 @@ local function validateControls()
 end
 
 local function normalizeControlArrays()
-    local arrayControls = { "devDisplays", "btnDisplayPowerOn", "btnDisplayPowerOff", "btnDisplayPowerSingle" }
+    local arrayControls = {
+        "devDisplays", "btnDisplayPowerOn", "btnDisplayPowerOff", "btnDisplayPowerSingle", "btnAVMute"
+    }
     for _, controlName in ipairs(arrayControls) do
         local ctrl = controls[controlName]
         if ctrl and not isArr(ctrl) then controls[controlName] = { ctrl } end
@@ -164,8 +175,10 @@ local function safeComponentAccess(component, control, action, value)
         if not component or not component[control] then return false end
         if action == "set" then component[control].Boolean = value; return true end
         if action == "setString" then component[control].String = value; return true end
+        if action == "setValue" then component[control].Value = value; return true end
         if action == "trigger" then component[control]:Trigger(); return true end
         if action == "get" then return component[control].Boolean end
+        if action == "getString" then return component[control].String end
         return false
     end)
     if not success then debugPrint("Component access error: " .. tostring(result)) end
@@ -192,6 +205,33 @@ end
 
 local function getTimerConfig(isWarmup)
     return isWarmup and timerConfig.warmupTime or timerConfig.cooldownTime
+end
+
+local function applyPostPowerOnVolume(index)
+    local display = components.displays[index]
+    if not display then return end
+    local stillOn = safeComponentAccess(display, displayControls.powerStatus, "get")
+    if not stillOn then
+        debugPrint("Post-power-on volume skipped — display " .. index .. " not powered (Source: PostPowerOn Timer)")
+        return
+    end
+    local ok = safeComponentAccess(display, displayControls.volume, "setValue", const.defaultDisplayVolume)
+    if ok then
+        debugPrint("Display " .. index .. " volume set to " .. const.defaultDisplayVolume .. " (Source: PostPowerOn Timer)")
+    end
+end
+
+local function cancelPostPowerOnTimer(index)
+    if timers.postPowerOn[index] then timers.postPowerOn[index]:Stop() end
+end
+
+local function ensurePostPowerOnTimer(index)
+    if not timers.postPowerOn[index] then
+        local t = Timer.New()
+        t.EventHandler = function() applyPostPowerOnVolume(index) end
+        timers.postPowerOn[index] = t
+    end
+    return timers.postPowerOn[index]
 end
 
 local function setComponent(ctrl, componentType)
@@ -226,6 +266,11 @@ local function setComponent(ctrl, componentType)
     return comp
 end
 
+local function setPowerOnOffRowFeedback(index, powerState)
+    setProp(controls.btnDisplayPowerOn and controls.btnDisplayPowerOn[index], "Boolean", powerState)
+    setProp(controls.btnDisplayPowerOff and controls.btnDisplayPowerOff[index], "Boolean", not powerState)
+end
+
 local function powerAll(powerState)
     debugPrint("Powering all displays: " .. tostring(powerState) .. " (Source: Power All)")
     local control = powerState and displayControls.powerOn or displayControls.powerOff
@@ -242,6 +287,14 @@ local function powerSingle(index, powerState)
     local control = powerState and displayControls.powerOn or displayControls.powerOff
     safeComponentAccess(display, control, "trigger")
     debugPrint("Display " .. index .. " power: " .. tostring(powerState) .. " (Source: Power Single)")
+end
+
+local function avMuteDisplay(index, ctl)
+    local display = components.displays[index]
+    if not display then return end
+    local screenOn = not ctl.Boolean
+    safeComponentAccess(display, displayControls.screenToggle, "set", screenOn)
+    debugPrint("Display " .. index .. " screen toggle: " .. tostring(screenOn) .. " (Source: AV Mute)")
 end
 
 local function setInputOnDisplay(display, input)
@@ -276,7 +329,7 @@ end
 local function setEnabledDisabled(enabled)
     local allPowerControls = {
         "btnDisplayPowerOn", "btnDisplayPowerOff", "btnDisplayPowerSingle",
-        "btnDisplayPowerAll", "btnDisplayInputAll"
+        "btnDisplayPowerAll", "btnDisplayInputAll", "btnAVMute"
     }
     for _, controlName in ipairs(allPowerControls) do
         local ctrl = controls[controlName]
@@ -295,6 +348,11 @@ local function setDisplayPowerFB(powerState)
     setProp(controls.btnDisplayPowerAll, "Boolean", powerState)
 end
 
+-- Aggregate LED only — never drive btnDisplayPowerAll from feedback (would fire its EventHandler).
+local function setDisplayPowerLedFromStatus(allPoweredOn)
+    setProp(controls.ledDisplayPower, "Boolean", allPoweredOn)
+end
+
 local function updatePowerFeedbackFromDisplays()
     local allPoweredOn, poweredOnCount, totalDisplays = true, 0, 0
     for displayIdx, display in pairs(components.displays) do
@@ -303,26 +361,22 @@ local function updatePowerFeedbackFromDisplays()
             local powerStatus = safeComponentAccess(display, displayControls.powerStatus, "get")
             if powerStatus then
                 poweredOnCount = poweredOnCount + 1
-                if controls.btnDisplayPowerSingle and controls.btnDisplayPowerSingle[displayIdx] then
-                    setProp(controls.btnDisplayPowerSingle[displayIdx], "Boolean", true)
-                end
+                setPowerOnOffRowFeedback(displayIdx, true)
             else
                 allPoweredOn = false
-                if controls.btnDisplayPowerSingle and controls.btnDisplayPowerSingle[displayIdx] then
-                    setProp(controls.btnDisplayPowerSingle[displayIdx], "Boolean", false)
-                end
+                setPowerOnOffRowFeedback(displayIdx, false)
             end
         end
     end
     if totalDisplays > 0 then
-        setDisplayPowerFB(allPoweredOn)
+        setDisplayPowerLedFromStatus(allPoweredOn)
         state.powerState = allPoweredOn
         debugPrint("Power feedback updated - Powered: " .. poweredOnCount .. "/" .. totalDisplays)
     end
 end
 
 local function enableDisablePowerControlIndex(index, enabled)
-    local individualPowerControls = { "btnDisplayPowerOn", "btnDisplayPowerOff", "btnDisplayPowerSingle" }
+    local individualPowerControls = { "btnDisplayPowerOn", "btnDisplayPowerOff", "btnDisplayPowerSingle", "btnAVMute" }
     for _, controlName in ipairs(individualPowerControls) do
         local ctrl = controls[controlName]
         if ctrl and ctrl[index] then setProp(ctrl[index], "IsDisabled", not enabled) end
@@ -338,30 +392,40 @@ local function setPowerButtonLegends(index, onLegend, offLegend)
     end
 end
 
-local function powerOnDisplay(index)
-    debugPrint("Powering on display " .. index .. " (Source: Power On Button)")
-    powerSingle(index, true)
-    enableDisablePowerControlIndex(index, false)
-    setPowerButtonLegends(index, "On", "Please\nwait")
-    state.isWarming = true
-    setProp(controls.ledDisplayWarming, "Boolean", true)
-    timers.warmup:Start(getTimerConfig(true))
-    if controls.btnDisplayPowerSingle and controls.btnDisplayPowerSingle[index] then
-        setProp(controls.btnDisplayPowerSingle[index], "Boolean", true)
+local function reenableDisplayPowerRows()
+    for displayIdx = 1, const.maxDisplays do
+        enableDisablePowerControlIndex(displayIdx, true)
+        setPowerButtonLegends(displayIdx, "On", "Off")
     end
 end
 
-local function powerOffDisplay(index)
-    debugPrint("Powering off display " .. index .. " (Source: Power Off Button)")
-    powerSingle(index, false)
-    enableDisablePowerControlIndex(index, false)
-    setPowerButtonLegends(index, "Please\nwait", "Off")
-    state.isCooling = true
-    setProp(controls.ledDisplayCooling, "Boolean", true)
-    timers.cooldown:Start(getTimerConfig(false))
-    if controls.btnDisplayPowerSingle and controls.btnDisplayPowerSingle[index] then
-        setProp(controls.btnDisplayPowerSingle[index], "Boolean", false)
+local function powerDisplayRow(index, powerOn)
+    if powerOn then
+        debugPrint("Powering on display " .. index .. " (Source: Power Button)")
+    else
+        debugPrint("Powering off display " .. index .. " (Source: Power Button)")
     end
+    powerSingle(index, powerOn)
+    enableDisablePowerControlIndex(index, false)
+    if powerOn then
+        setPowerButtonLegends(index, "On", "Please\nwait")
+        state.isWarming = true
+        setProp(controls.ledDisplayWarming, "Boolean", true)
+        timers.warmup:Start(getTimerConfig(true))
+    else
+        setPowerButtonLegends(index, "Please\nwait", "Off")
+        state.isCooling = true
+        setProp(controls.ledDisplayCooling, "Boolean", true)
+        timers.cooldown:Start(getTimerConfig(false))
+    end
+end
+
+local function powerOnDisplay(index)
+    powerDisplayRow(index, true)
+end
+
+local function powerOffDisplay(index)
+    powerDisplayRow(index, false)
 end
 
 local function powerOnAll()
@@ -385,7 +449,7 @@ local function powerOffAll()
 end
 
 local displayEventControlNames = {}
-for inputIdx = 1, 10 do
+for inputIdx = 1, 9 do
     table.insert(displayEventControlNames, displayControls.currentInput .. inputIdx)
 end
 table.insert(displayEventControlNames, displayControls.powerStatus)
@@ -398,9 +462,16 @@ local function setupDisplayEvents(index)
     if display[displayControls.powerStatus] then
         display[displayControls.powerStatus].EventHandler = function()
             local powerState = safeComponentAccess(display, displayControls.powerStatus, "get")
+            local prev = state.lastPowerStatus[index]
+            state.lastPowerStatus[index] = powerState
             local componentName = controls.devDisplays and controls.devDisplays[index] and controls.devDisplays[index].String or "Unknown"
             debugPrint("Display " .. componentName .. " power status: " .. tostring(powerState) .. " (Source: Component Event)")
+            if not powerState then cancelPostPowerOnTimer(index) end
             updatePowerFeedbackFromDisplays()
+            if powerState and not prev then
+                ensurePostPowerOnTimer(index):Start(const.postPowerOnDelay)
+                debugPrint("Post-power-on volume scheduled for display " .. index .. " in " .. const.postPowerOnDelay .. "s (Source: Component Event)")
+            end
         end
     end
 
@@ -413,11 +484,11 @@ local function setupDisplayEvents(index)
         end
     end
 
-    for inputIdx = 1, 10 do
+    for inputIdx = 1, 9 do
         local currentInputControl = display[displayControls.currentInput .. inputIdx]
         if currentInputControl then
             currentInputControl.EventHandler = function()
-                local inputActive = safeComponentAccess(display, displayControls.currentInput .. inputIdx, "get")
+                local inputActive = safeComponentAccess(display, displayControls.currentInput .. inputIdx, "getString")
                 local componentName = controls.devDisplays and controls.devDisplays[index] and controls.devDisplays[index].String or "Unknown"
                 debugPrint("Display " .. componentName .. " input " .. inputIdx .. " active: " .. tostring(inputActive) .. " (Source: Component Event)")
             end
@@ -427,6 +498,9 @@ end
 
 local function setDisplayComponent(index)
     if not controls.devDisplays or not controls.devDisplays[index] then return end
+
+    cancelPostPowerOnTimer(index)
+    state.lastPowerStatus[index] = nil
 
     local componentType = "Display [" .. index .. "]"
     local oldComp = components.displays[index]
@@ -501,41 +575,41 @@ end
 -------------------[ Events ]-------------------
 local function registerEvents()
     bind(controls.compRoomControls, function() setRoomControlsComponent() end)
-    bind(controls.btnDisplayPowerAll, function(ctl) if ctl.Boolean then powerOnAll() else powerOffAll() end end)
+    bind(controls.btnDisplayPowerAll, function(ctl)
+        if ctl.Boolean then powerOnAll() else powerOffAll() end
+    end)
     bind(controls.btnDisplayInputAll, function() setInputAll(const.defaultInput) end)
 
-    local powerOnCount = bindArray(controls.btnDisplayPowerOn, function(index) powerOnDisplay(index) end)
-    local powerOffCount = bindArray(controls.btnDisplayPowerOff, function(index) powerOffDisplay(index) end)
     local powerSingleCount = bindArray(controls.btnDisplayPowerSingle, function(index, ctl)
         if ctl.Boolean then powerOnDisplay(index) else powerOffDisplay(index) end
     end)
+    local powerOnCount = bindArray(controls.btnDisplayPowerOn, function(index) powerOnDisplay(index) end)
+    local powerOffCount = bindArray(controls.btnDisplayPowerOff, function(index) powerOffDisplay(index) end)
+    local avMuteCount = bindArray(controls.btnAVMute, function(index, ctl) avMuteDisplay(index, ctl) end)
     local devDisplaysCount = bindArray(controls.devDisplays, function(index) setDisplayComponent(index) end)
 
     debugPrint("Registered: compRoomControls, btnDisplayPowerAll, btnDisplayInputAll")
-    debugPrint("Registered " .. powerOnCount .. " power-on, " .. powerOffCount .. " power-off, " .. powerSingleCount .. " power-single handlers")
+    debugPrint("Registered " .. powerSingleCount .. " power-single (per-row), " .. powerOnCount .. " power-on, "
+        .. powerOffCount .. " power-off, " .. avMuteCount .. " AV-mute handlers")
     debugPrint("Registered " .. devDisplaysCount .. " display handlers")
 
     timers.warmup.EventHandler = function()
         debugPrint("Warmup period ended (Source: Timer)")
         setEnabledDisabled(true)
-        for displayIdx = 1, const.maxDisplays do
-            enableDisablePowerControlIndex(displayIdx, true)
-            setPowerButtonLegends(displayIdx, "On", "Off")
-        end
+        reenableDisplayPowerRows()
         state.isWarming = false
         setProp(controls.ledDisplayWarming, "Boolean", false)
+        updatePowerFeedbackFromDisplays()
         timers.warmup:Stop()
     end
 
     timers.cooldown.EventHandler = function()
         debugPrint("Cooldown period ended (Source: Timer)")
         setEnabledDisabled(true)
-        for displayIdx = 1, const.maxDisplays do
-            enableDisablePowerControlIndex(displayIdx, true)
-            setPowerButtonLegends(displayIdx, "On", "Off")
-        end
+        reenableDisplayPowerRows()
         state.isCooling = false
         setProp(controls.ledDisplayCooling, "Boolean", false)
+        updatePowerFeedbackFromDisplays()
         timers.cooldown:Stop()
     end
 end

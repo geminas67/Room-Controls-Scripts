@@ -1,0 +1,35 @@
+---
+description: DisplayController refactors — DRY per-row power UI feedback tied to hardware status, not optimistic button sends.
+globs: "**/DisplayController*.lua"
+alwaysApply: false
+---
+
+# DisplayController power row feedback
+
+When refactoring or adding **DisplayController** scripts (LG, Generic, PJ Link, MXNet, etc.), align with this pattern so operators see UI state when the **device reports** power, not merely when a command is sent.
+
+## DRY helper
+
+Use a single local helper (name may vary) for the per-display **On** / **Off** controls:
+
+```lua
+local function setPowerOnOffRowFeedback(index, powerState)
+    setProp(controls.btnDisplayPowerOn and controls.btnDisplayPowerOn[index], "Boolean", powerState)
+    setProp(controls.btnDisplayPowerOff and controls.btnDisplayPowerOff[index], "Boolean", not powerState)
+end
+```
+
+Use the same `setProp(controls.btnDisplayPowerSingle and controls.btnDisplayPowerSingle[index], "Boolean", ...)` style for the single toggle — avoid redundant `if ctrl and ctrl[index]` wrappers; `setProp` no-ops on nil.
+
+## Hardware-driven, not optimistic
+
+- **Do** call `setPowerOnOffRowFeedback` from the central routine that applies feedback from **reported** power (e.g. after `safeComponentAccess(..., powerStatus, "get")` in `updatePowerFeedbackFromDisplays`, or equivalent), including when that routine runs from **status `EventHandler`** hooks and init/reconnect.
+- **Do not** drive On/Off row booleans only from `powerSingle` / `powerAll` triggers — that updates the UI before the device accepts the command.
+
+## `powerAll` vs `powerSingle`
+
+If **power all** does not call **power single**, any optimistic pattern in `powerSingle` alone would not cover “all”; the hardware/event path must update **every** row that has a display. Prefer one feedback function invoked from status events so Single and All stay aligned.
+
+## Reference implementation
+
+See [DisplayController(LG)(Refactor).lua](DisplayController(LG)(Refactor).lua): `setPowerOnOffRowFeedback`, `updatePowerFeedbackFromDisplays`, and `setupDisplayEvents` (`powerStatus` handler).

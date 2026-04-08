@@ -180,11 +180,6 @@ qrwcReady.subscribe((ready: boolean) => {
 			}
 		}
 
-		// UCI-only controls (btnStartSystem, btnNavShutdown, btnShutdownCancel, btnShutdownConfirm,
-		// help buttons, and progress controls) are not in Q-Sys design to subscribe to.
-		// They are UI buttons that trigger actions in the UCI itself.
-		// Only btnStartSystem and btnShutdownConfirm trigger Q-Sys actions (see store subscriptions below).
-
 		subscriptionsInitialized = true;
 		console.log('QRWC control subscriptions initialized');
 

@@ -237,67 +237,8 @@ local function discoverComponents()
     return discovered
 end
 
--- Forward declarations needed by setters that reference each other
-local checkAutoSwitch
-
 local function setExtronDXPComponent()
     components.extronRouter = setComponent(controls.compExtronDXPMatrix, "Extron DXP Matrix")
-end
-
-local function setCallSyncComponent()
-    setComponentByType(controls.compCallSync, "CallSync", "callSync",
-        { ["off.hook"] = function() checkAutoSwitch() end })
-end
-
-local function setClickShareComponent()
-    components.clickShare = setComponent(controls.compClickShare, "ClickShare")
-end
-
-local function setRoomControlsComponent()
-    setComponentByType(controls.compRoomControls, "Room Controls", "roomControls", {
-        ["ledSystemPower"] = function(ctl)
-            state.power = ctl.Boolean
-            debugPrint("System power " .. (ctl.Boolean and "ON" or "OFF"))
-            if ctl.Boolean then checkAutoSwitch() end
-        end,
-        ["ledSystemWarming"] = function(ctl)
-            state.warming = ctl.Boolean
-            debugPrint("System warming " .. (ctl.Boolean and "ON" or "OFF"))
-            if not ctl.Boolean and state.power then checkAutoSwitch() end
-        end,
-        ["ledSystemCooling"] = function(ctl)
-            state.cooling = ctl.Boolean
-            debugPrint("System cooling " .. (ctl.Boolean and "ON" or "OFF"))
-            if not ctl.Boolean and not state.power then
-                Timer.CallAfter(function()
-                    debugPrint("Power-off settle complete, checking priority sources")
-                    checkAutoSwitch()
-                end, 2)
-            end
-        end,
-    })
-end
-
-local function setupComponentSelectors(discovered)
-    local function setup(ctrl, names, setMethod, componentType)
-        if not ctrl then return end
-        local choices = { clearString }
-        for _, name in ipairs(names) do table.insert(choices, name) end
-        ctrl.Choices = choices
-        bind(ctrl, function()
-            debugPrint(componentType .. " selection changed to: " .. ctrl.String)
-            setMethod()
-        end)
-        if #names > 0 and (ctrl.String == "" or not ctrl.String) then
-            ctrl.String = names[1]
-            debugPrint("Auto-selected " .. componentType .. ": " .. names[1])
-        end
-        debugPrint("Registered event handler for " .. componentType .. " selector")
-    end
-    setup(controls.compExtronDXPMatrix, discovered.extronDXP,   setExtronDXPComponent,  "Extron DXP Matrix")
-    setup(controls.compCallSync,         discovered.callSync,    setCallSyncComponent,   "CallSync")
-    setup(controls.compClickShare,       discovered.clickShare,  setClickShareComponent, "ClickShare")
-    setup(controls.compRoomControls,     discovered.roomControls, setRoomControlsComponent, "Room Controls")
 end
 
 -------------------[ Routing ]-------------------
@@ -395,16 +336,8 @@ updateSourceText = function()
     setProp(controls.txtSource, "String", sourceNames[getSelectedSource()] or "No Source")
 end
 
-local function setDestinationButtonProps(output, color, text, disabled)
-    local btn = norm.btnDestination and norm.btnDestination[output]
-    if not btn then return end
-    setProp(btn, "Color", color)
-    if text and text ~= "" then setProp(btn, "String", text) end
-    setProp(btn, "IsDisabled", disabled)
-end
-
 -------------------[ Auto-Switch ]-------------------
-checkAutoSwitch = function()
+local function checkAutoSwitch()
     for _, source in ipairs(sourcePriority) do
         if source.checkFunc() then
             if not state.power and components.roomControls then
@@ -416,6 +349,70 @@ checkAutoSwitch = function()
             return
         end
     end
+end
+
+local function setCallSyncComponent()
+    setComponentByType(controls.compCallSync, "CallSync", "callSync",
+        { ["off.hook"] = function() checkAutoSwitch() end })
+end
+
+local function setClickShareComponent()
+    components.clickShare = setComponent(controls.compClickShare, "ClickShare")
+end
+
+local function setRoomControlsComponent()
+    setComponentByType(controls.compRoomControls, "Room Controls", "roomControls", {
+        ["ledSystemPower"] = function(ctl)
+            state.power = ctl.Boolean
+            debugPrint("System power " .. (ctl.Boolean and "ON" or "OFF"))
+            if ctl.Boolean then checkAutoSwitch() end
+        end,
+        ["ledSystemWarming"] = function(ctl)
+            state.warming = ctl.Boolean
+            debugPrint("System warming " .. (ctl.Boolean and "ON" or "OFF"))
+            if not ctl.Boolean and state.power then checkAutoSwitch() end
+        end,
+        ["ledSystemCooling"] = function(ctl)
+            state.cooling = ctl.Boolean
+            debugPrint("System cooling " .. (ctl.Boolean and "ON" or "OFF"))
+            if not ctl.Boolean and not state.power then
+                Timer.CallAfter(function()
+                    debugPrint("Power-off settle complete, checking priority sources")
+                    checkAutoSwitch()
+                end, 2)
+            end
+        end,
+    })
+end
+
+local function setupComponentSelectors(discovered)
+    local function setup(ctrl, names, setMethod, componentType)
+        if not ctrl then return end
+        local choices = { clearString }
+        for _, name in ipairs(names) do table.insert(choices, name) end
+        ctrl.Choices = choices
+        bind(ctrl, function()
+            debugPrint(componentType .. " selection changed to: " .. ctrl.String)
+            setMethod()
+        end)
+        if #names > 0 and (ctrl.String == "" or not ctrl.String) then
+            ctrl.String = names[1]
+            debugPrint("Auto-selected " .. componentType .. ": " .. names[1])
+        end
+        debugPrint("Registered event handler for " .. componentType .. " selector")
+    end
+    setup(controls.compExtronDXPMatrix, discovered.extronDXP,       setExtronDXPComponent,  "Extron DXP Matrix")
+    setup(controls.compCallSync,        discovered.callSync,        setCallSyncComponent,   "CallSync")
+    setup(controls.compClickShare,      discovered.clickShare,      setClickShareComponent, "ClickShare")
+    setup(controls.compRoomControls,    discovered.roomControls,    setRoomControlsComponent, "Room Controls")
+end
+
+local function setDestinationButtonProps(output, color, text, disabled)
+    local btn = norm.btnDestination and norm.btnDestination[output]
+    if not btn then return end
+    setProp(btn, "Color", color)
+    if text and text ~= "" then setProp(btn, "String", text) end
+    setProp(btn, "IsDisabled", disabled)
 end
 
 -------------------[ UCI Integration ]-------------------

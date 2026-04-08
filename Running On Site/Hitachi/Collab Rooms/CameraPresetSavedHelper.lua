@@ -7,12 +7,11 @@
     - This script is used to help the Camera Preset Controller(JSON)(Refactor).lua script.
 ]]
 
-
 -------------------[ Control References ]-------------------
 local camPresets = Component.New('camPresetsControlsCollab')
 local uciCollabA = Component.New('uciControllerCollabA')
 local uciCollabB = Component.New('uciControllerCollabB')
-local divSpace = Component.New('compDivisibleSpaceControls')
+local divSpace   = Component.New('compDivisibleSpaceControls')
 
 local numPresets = 6
 

@@ -1,784 +1,534 @@
 --[[
     NV32 Router Controller (Refactored)
     Author: Nikolas Smith, Q-SYS
-    Version: 2.0 | Date: 2025-09-10
+    Version: 3.0 | Date: 2026-03-29
     Firmware Req: 10.0.0
-    Notes:
-    - UPDATED: Now complies with latest Lua Refactoring Prompt specifications
-    - Enhanced validation: Comprehensive control validation with descriptive error messages
-    - Array normalization: Automatic conversion of single controls to array format
-    - Optimized event registration: Batch event registration using handler maps
-    - Property access optimization: Cached references and redundancy prevention
-    - Factory functions: Comprehensive error handling with graceful degradation
-    - Enhanced UCI integration for automatic input switching based on UCI layer changes
-    - Metatable-based class construction supporting multiple instances
+    Flat singleton: routing, room controls (power / fire alarm), optional UCI nav button sync.
 ]]--
 
--------------------[ Control References ]-------------------
+-------------------[ Configuration ]-------------------
+local inputs = {
+    Graphic1 = 1, 
+    Graphic2 = 2, 
+    Graphic3 = 3,
+    HDMI1 = 4, 
+    HDMI2 = 5,
+    HDMI3 = 6,
+    AV1 = 7, 
+    AV2 = 8, 
+    AV3 = 9,
+}
+
+local outputs = { Output01 = 1, Output02 = 2 }
+
+-- Button row order matches uciInputs indices (Output preset buttons)
+local uciInputs = { inputs.AV1, inputs.AV2, inputs.AV3, inputs.Graphic1, inputs.Graphic2 }
+
+-- UCI nav layer index → uciInputs slot (see btnNav07/08/09)
+local uciLayerToInput = {
+    [7] = uciInputs[2],
+    [8] = uciInputs[1],
+    [9] = uciInputs[3],
+}
+
+local componentTypes = {
+    nv32Router = "streamer_hdmi_switcher",
+    roomControls = "device_controller_script",
+}
+
+-------------------[ Controls ]-------------------
 local controls = {
-    devNV32 = Controls.devNV32,        
-    btnNV32Out01 = Controls.btnNV32Out01, 
-    btnNV32Out02 = Controls.btnNV32Out02, 
-    txtStatus = Controls.txtStatus,       
+    devNV32 = Controls.devNV32,
+    btnNV32Out01 = Controls.btnNV32Out01,
+    btnNV32Out02 = Controls.btnNV32Out02,
+    txtStatus = Controls.txtStatus,
     compRoomControls = Controls.compRoomControls,
 }
 
+-------------------[ Utilities ]-------------------
+local function isArr(t)
+    return type(t) == "table" and t[1] ~= nil
+end
+
+local function setProp(ctrl, prop, val)
+    if not ctrl or ctrl[prop] == val then return end
+    ctrl[prop] = val
+end
+
+local function bind(ctrl, handler)
+    if not ctrl or not handler then return false end
+    local ok = pcall(function() ctrl.EventHandler = handler end)
+    return ok
+end
+
+local function bindArray(ctrls, handler)
+    if not ctrls or not handler then return 0 end
+    local array = isArr(ctrls) and ctrls or { ctrls }
+    local count = 0
+    for i, ctrl in ipairs(array) do
+        if bind(ctrl, function(ctl)
+            local ok, err = pcall(handler, i, ctl)
+            if not ok then print("Handler error [index " .. i .. "]: " .. tostring(err)) end
+        end) then
+            count = count + 1
+        end
+    end
+    return count
+end
+
+local function cleanupComponentHandlers(oldComp, controlNames, debugCb)
+    if not oldComp or not controlNames then return 0 end
+    local cleaned = 0
+    for _, name in ipairs(controlNames) do
+        if oldComp[name] and oldComp[name].EventHandler then
+            oldComp[name].EventHandler = nil
+            cleaned = cleaned + 1
+        end
+    end
+    if debugCb and cleaned > 0 then debugCb("Cleaned up " .. cleaned .. " handler(s) from old component") end
+    return cleaned
+end
+
+-------------------[ Config & State ]-------------------
+local const = {
+    roomName = "NV32 Router",
+    debug = true,
+    uciIntegrationEnabled = true,
+    enableOutput2 = true,
+    clearString = "[Clear]",
+}
+
+local componentsTbl = {
+    nv32Router = nil,
+    roomControls = nil,
+    invalid = {},
+}
+
+local state = {
+    lastInput = {},
+    preFireAlarmInput = {},
+    fireAlarmActive = false,
+    uciController = nil,
+    lastUCILayer = nil,
+}
+
+-------------------[ Debug ]-------------------
+local function debugPrint(str)
+    if const.debug then print("[" .. const.roomName .. "] " .. str) end
+end
+
+-------------------[ Validation ]-------------------
 local function validateControls()
     local required = {
         devNV32 = controls.devNV32,
         txtStatus = controls.txtStatus,
-        btnNV32Out01 = controls.btnNV32Out01
+        btnNV32Out01 = controls.btnNV32Out01,
     }
-    
     local optional = {
         btnNV32Out02 = controls.btnNV32Out02,
-        compRoomControls = controls.compRoomControls
+        compRoomControls = controls.compRoomControls,
     }
-    
     local missing = {}
-    local warnings = {}
-    
-    -- Check required controls
     for name, control in pairs(required) do
-        if not control then
-            table.insert(missing, name)
-        end
+        if not control then table.insert(missing, name) end
     end
-    
-    -- Check optional controls for warnings
-    for name, control in pairs(optional) do
-        if not control then
-            table.insert(warnings, name)
-        end
-    end
-    
-    -- Report missing required controls
     if #missing > 0 then
-        print("ERROR: NV32RouterController validation failed - Missing required controls:")
-        for _, name in ipairs(missing) do
-            print("  - " .. name)
-        end
-        print("Controller initialization aborted.")
+        print("ERROR: NV32RouterController validation failed — missing required controls:")
+        for _, name in ipairs(missing) do print("  - " .. name) end
         return false
     end
-    
-    -- Report warnings for missing optional controls
-    if #warnings > 0 then
-        print("WARNING: NV32RouterController missing optional controls:")
-        for _, name in ipairs(warnings) do
-            print("  - " .. name)
+    for name, control in pairs(optional) do
+        if not control then
+            print("WARNING: NV32RouterController optional control missing: " .. name)
         end
     end
-    
     return true
 end
 
 local function normalizeControlArrays()
-    -- Normalize button arrays to consistent structures
-    local arrayControls = {'btnNV32Out01', 'btnNV32Out02'}
-    
-    for _, controlName in ipairs(arrayControls) do
+    for _, controlName in ipairs({ "btnNV32Out01", "btnNV32Out02" }) do
         local control = controls[controlName]
         if control and type(control) ~= "table" then
-            controls[controlName] = {control}
-        end
-    end
-    
-    print("NV32RouterController: Control arrays normalized")
-end
-
--------------------[ Utility Functions ]-------------------
-local function isArr(obj)
-    return type(obj) == "table" and obj[1] ~= nil
-end
-
-local function setProp(obj, prop, value)
-    if not obj or obj[prop] == value then return false end
-    obj[prop] = value
-    return true
-end
-
-local function bind(control, handler)
-    if control and control.EventHandler ~= handler then
-        control.EventHandler = handler
-        return true
-    end
-    return false
-end
-
-local function bindArray(controls, handler)
-    if not isArr(controls) then return false end
-    local bound = 0
-    for _, control in ipairs(controls) do
-        if bind(control, handler) then
-            bound = bound + 1
-        end
-    end
-    return bound > 0
-end
-
-local function forEach(arr, func)
-    if not isArr(arr) or not func then return end
-    for i, item in ipairs(arr) do
-        func(item, i)
-    end
-end
-
--- NV32RouterController class (single instance)
-NV32RouterController = {}
-NV32RouterController.__index = NV32RouterController
-
------------------[ Class Constructor ]-------------------
-function NV32RouterController.new(config)
-    -- Validate controls before proceeding
-    if not validateControls() then
-        return nil
-    end
-    
-    -- Normalize control arrays
-    normalizeControlArrays()
-    
-    local self = setmetatable({}, NV32RouterController)
-    
-    -- Apply configuration with defaults
-    local defaultConfig = {
-        debugging = true,
-        uciIntegrationEnabled = false,
-        enableOutput2 = false
-    }
-    config = config or defaultConfig
-    
-    -- Instance properties
-    self.debugging = config.debugging or true
-    self.enableOutput2 = config.enableOutput2 ~= false  -- Default to true
-    self.clearString = "[Clear]"
-    self.invalidComponents = {}
-    self.lastInput = {} -- Store the last input for each output
-    self.preFireAlarmInput = {}
-    self.fireAlarmActive = false
-    
-    -- UCI Integration properties
-    self.uciController = nil
-    self.uciIntegrationEnabled = config.uciIntegrationEnabled or true
-    self.lastUCILayer = nil
-    
-    -- Input/Output mapping
-    self.inputs = {
-        Graphic1  =  1,
-        Graphic2  =  2,
-        Graphic3  =  3,
-        HDMI1     =  4,
-        HDMI2     =  5,
-        HDMI3     =  6,
-        AV1       =  7,
-        AV2       =  8,
-        AV3       =  9,
-    }
-    
-    self.outputs = {
-        Output01    = 1,
-        Output02    = 2,
-    }
-    
-    -- UCI Input mapping (matching original implementation)
-    self.uciInputs = {
-        self.inputs.AV1,
-        self.inputs.AV2,
-        self.inputs.AV3,
-        self.inputs.Graphic1,
-        self.inputs.Graphic2,
-    }
-    
-    -- UCI Layer to Input mapping
-    self.uciLayerToInput = {
-        [7] = self.uciInputs[2], -- btnNav07.Boolean = HDMI2 (Graphic2)
-        [8] = self.uciInputs[1], -- btnNav08.Boolean = HDMI1 (Graphic1) 
-        [9] = self.uciInputs[3], -- btnNav09.Boolean = HDMI3 (Graphic3)
-    }
-    
-    -- Instance-specific control references
-    self.controls = controls
-
-    -- Component type definitions
-    self.componentTypes = {
-        nv32Router = "streamer_hdmi_switcher",
-        roomControls = "device_controller_script" 
-    }
-    -- Component storage
-    self.nv32Router = nil
-    self.roomControls = nil
-    
-    -- Setup event handlers and initialize
-    self:registerEventHandlers()
-    self:funcInit()
-    
-    return self
-end
-
------------------[ Debug Helper ]-------------------
-function NV32RouterController:debugPrint(str)
-    if self.debugging then
-        print("[NV32 Router Debug] " .. str)
-    end
-end
-
------------------[ UCI Integration Methods ]-------------------
-function NV32RouterController:setUCIController(uciController)
-    if not uciController then
-        self:debugPrint("Invalid UCI Controller reference provided")
-        return false
-    end
-    
-    self.uciController = uciController
-    self:debugPrint("UCI Controller reference set")
-    
-    -- Start monitoring UCI layer changes
-    if self.uciIntegrationEnabled then
-        self:startUCIMonitoring()
-    end
-    
-    return true
-end
-
-function NV32RouterController:startUCIMonitoring()
-    if not self.uciController then
-        self:debugPrint("No UCI Controller available for monitoring")
-        return
-    end
-    
-    -- Create a timer to monitor UCI layer changes
-    self.uciMonitorTimer = Timer.New()
-    self.uciMonitorTimer.EventHandler = function()
-        self:checkUCILayerChange()
-        self.uciMonitorTimer:Start(0.1) -- Check every 100ms
-    end
-    self.uciMonitorTimer:Start(0.1)
-    
-    self:debugPrint("UCI layer monitoring started")
-end
-
-function NV32RouterController:checkUCILayerChange()
-    if not self.uciController or not self.uciIntegrationEnabled then
-        return
-    end
-    
-    local currentLayer = self.uciController.varActiveLayer
-    
-    -- Check if layer has changed
-    if self.lastUCILayer ~= currentLayer then
-        self:debugPrint("UCI Layer changed from " .. tostring(self.lastUCILayer) .. " to " .. tostring(currentLayer))
-        self.lastUCILayer = currentLayer
-        
-        -- Check if this layer should trigger input switching
-        if self.uciLayerToInput[currentLayer] then
-            local targetInput = self.uciLayerToInput[currentLayer]
-            self:debugPrint("UCI Layer " .. currentLayer .. " triggers input switch to " .. targetInput)
-            self:setRoute(targetInput, self.outputs.Output01)
+            controls[controlName] = { control }
         end
     end
 end
 
-function NV32RouterController:enableUCIIntegration()
-    self.uciIntegrationEnabled = true
-    if self.uciController then
-        self:startUCIMonitoring()
-    end
-    self:debugPrint("UCI Integration enabled")
-end
-
-function NV32RouterController:disableUCIIntegration()
-    self.uciIntegrationEnabled = false
-    if self.uciMonitorTimer then
-        self.uciMonitorTimer:Stop()
-        self.uciMonitorTimer = nil
-    end
-    self:debugPrint("UCI Integration disabled")
-end
-
--- Alternative method: Direct UCI button monitoring
-function NV32RouterController:setupDirectUCIButtonMonitoring()
-    -- Monitor UCI navigation buttons directly
-    local uciButtons = {
-        [7] = Controls.btnNav07,
-        [8] = Controls.btnNav08,
-        [9] = Controls.btnNav09
-    }
-    
-    for layer, button in pairs(uciButtons) do
-        if button then
-            button.EventHandler = function(ctl)
-                if ctl.Boolean and self.uciLayerToInput[layer] then
-                    local targetInput = self.uciLayerToInput[layer]
-                    self:debugPrint("UCI Button " .. layer .. " pressed, switching to input " .. targetInput)
-                    self:setRoute(targetInput, self.outputs.Output01)
-                end
-            end
-            self:debugPrint("Direct monitoring set up for UCI button " .. layer)
-        end
-    end
-end
-
--- UCI Layer Change Notification Method
-function NV32RouterController:onUCILayerChange(layerChangeInfo)
-    if not self.uciIntegrationEnabled then
-        return
-    end
-    
-    self:debugPrint("UCI Layer changed from " .. tostring(layerChangeInfo.previousLayer) .. 
-                   " to " .. tostring(layerChangeInfo.currentLayer) .. 
-                   " (" .. layerChangeInfo.layerName .. ")")
-    
-    -- Check if this layer should trigger input switching
-    if self.uciLayerToInput[layerChangeInfo.currentLayer] then
-        local targetInput = self.uciLayerToInput[layerChangeInfo.currentLayer]
-        self:debugPrint("UCI Layer " .. layerChangeInfo.currentLayer .. " triggers input switch to " .. targetInput)
-        self:setRoute(targetInput, self.outputs.Output01)
-    end
-end
-
------------------[ Component Management ]-------------------
-function NV32RouterController:setComponent(ctrl, componentType)
-    -- Guard clauses - early returns for invalid conditions
-    if not ctrl or not componentType then
-        self:debugPrint("Invalid parameters provided to setComponent")
-        return nil
-    end
-    
-    self:debugPrint("Setting Component: " .. componentType)
-    local componentName = ctrl.String
-    
-    -- Handle empty component name
-    if componentName == "" then
-        self:debugPrint("No " .. componentType .. " Component Selected")
-        setProp(ctrl, "Color", "white")
-        self:setComponentValid(componentType)
-        return nil
-    end
-    
-    -- Handle clear string
-    if componentName == self.clearString then
-        self:debugPrint(componentType .. ": Component Cleared")
-        setProp(ctrl, "String", "")
-        setProp(ctrl, "Color", "white")
-        self:setComponentValid(componentType)
-        return nil
-    end
-    
-    -- Handle invalid component
-    if #Component.GetControls(Component.New(componentName)) < 1 then
-        self:debugPrint(componentType .. " Component " .. componentName .. " is Invalid")
-        setProp(ctrl, "String", "[Invalid Component Selected]")
-        setProp(ctrl, "Color", "pink")
-        self:setComponentInvalid(componentType)
-        return nil
-    end
-    
-    -- Valid component - main path
-    self:debugPrint("Setting " .. componentType .. " Component: {" .. ctrl.String .. "}")
-    setProp(ctrl, "Color", "white")
-    self:setComponentValid(componentType)
-    return Component.New(componentName)
-end
-
-function NV32RouterController:setComponentInvalid(componentType)
-    self.invalidComponents[componentType] = true
-    self:checkStatus()
-end
-
-function NV32RouterController:setComponentValid(componentType)
-    self.invalidComponents[componentType] = false
-    self:checkStatus()
-end
-
-function NV32RouterController:checkStatus()
-    for i, v in pairs(self.invalidComponents) do
-        if v == true then
-            self.controls.txtStatus.String = "Invalid Components"
-            self.controls.txtStatus.Value = 1
+-------------------[ Component / status ]-------------------
+local function checkStatus()
+    local txt = controls.txtStatus
+    if not txt then return end
+    for _, invalid in pairs(componentsTbl.invalid) do
+        if invalid == true then
+            setProp(txt, "String", "Invalid Components")
+            setProp(txt, "Value", 1)
             return
         end
     end
-    self.controls.txtStatus.String = "OK"
-    self.controls.txtStatus.Value = 0
+    setProp(txt, "String", "OK")
+    setProp(txt, "Value", 0)
 end
 
------------------[ Component Name Discovery ]-------------------
-function NV32RouterController:discoverComponents()
-    local components = Component.GetComponents()
-    local discovered = {
-        nv32Names = {},
-        roomControlsNames = {}
-    }
-    
-    for _, comp in pairs(components) do
-        if comp.Type == self.componentTypes.nv32Router then
-            table.insert(discovered.nv32Names, comp.Name)
-        elseif comp.Type == self.componentTypes.roomControls and string.match(comp.Name, "^compRoomControls") then
-            table.insert(discovered.roomControlsNames, comp.Name)
-        end
+local function setComponent(ctrl, componentType, expectedType)
+    if not ctrl then
+        componentsTbl.invalid[componentType] = true
+        checkStatus()
+        return nil
     end
-    
-    return discovered
+    local name = ctrl.String
+    if not name or name == "" or name == const.clearString then
+        if name == const.clearString then setProp(ctrl, "String", "") end
+        setProp(ctrl, "Color", "white")
+        componentsTbl.invalid[componentType] = false
+        checkStatus()
+        debugPrint("No " .. componentType .. " component selected")
+        return nil
+    end
+    local comp = Component.New(name)
+    local ctrlList = comp and Component.GetControls(comp)
+    if not ctrlList or #ctrlList < 1 then
+        setProp(ctrl, "String", "[Invalid Component Selected]")
+        setProp(ctrl, "Color", "pink")
+        componentsTbl.invalid[componentType] = true
+        checkStatus()
+        debugPrint("ERROR: Invalid component '" .. name .. "' for " .. componentType)
+        return nil
+    end
+    if expectedType and comp.Type ~= expectedType then
+        setProp(ctrl, "String", "[Wrong Component Type]")
+        setProp(ctrl, "Color", "pink")
+        componentsTbl.invalid[componentType] = true
+        checkStatus()
+        debugPrint("ERROR: " .. componentType .. " wrong type. Expected " .. tostring(expectedType)
+            .. ", got " .. tostring(comp.Type))
+        return nil
+    end
+    setProp(ctrl, "Color", "white")
+    componentsTbl.invalid[componentType] = false
+    checkStatus()
+    debugPrint("Connected " .. componentType .. ": " .. name)
+    return comp
 end
 
------------------[ Component Setup ]-------------------
-function NV32RouterController:setupComponents()
-    local discovered = self:discoverComponents()
-    
-    -- Setup NV32 Router
-    if #discovered.nv32Names > 0 then
-        self.nv32Router = Component.New(discovered.nv32Names[1])
-        self:debugPrint("NV32 Router set: " .. discovered.nv32Names[1]) 
+local function discoverAndSetupInitial()
+    debugPrint("Discovering components...")
+    local nv32Names = {}
+    local roomNames = {}
+    for _, comp in pairs(Component.GetComponents()) do
+        if comp.Type == componentTypes.nv32Router then
+            table.insert(nv32Names, comp.Name)
+            debugPrint("  Found NV32-class: " .. comp.Name)
+        elseif comp.Type == componentTypes.roomControls and string.match(comp.Name, "^compRoomControls") then
+            table.insert(roomNames, comp.Name)
+            debugPrint("  Found Room Controls: " .. comp.Name)
+        end
     end
-    
-    -- Setup Room Controls
-    if #discovered.roomControlsNames > 0 then
-        self.roomControls = Component.New(discovered.roomControlsNames[1])
-        self:debugPrint("Room Controls set: " .. discovered.roomControlsNames[1])
+    debugPrint("Discovery complete — NV32: " .. #nv32Names .. ", Room Controls: " .. #roomNames)
+    if #nv32Names > 0 then
+        componentsTbl.nv32Router = Component.New(nv32Names[1])
+        debugPrint("Initial NV32 from discovery: " .. nv32Names[1])
+    end
+    if #roomNames > 0 then
+        componentsTbl.roomControls = Component.New(roomNames[1])
+        debugPrint("Initial Room Controls from discovery: " .. roomNames[1])
     end
 end
 
-function NV32RouterController:setNV32RouterComponent()
-    -- Clean up old event handlers if switching devices
-    local router = self.nv32Router
-    if router then
-        local out1Control = router["hdmi.out.1.select.index"]
-        local out2Control = router["hdmi.out.2.select.index"]
-        
-        if out1Control and out1Control.EventHandler then
-            out1Control.EventHandler = nil
-        end
-        if out2Control and out2Control.EventHandler then
-            out2Control.EventHandler = nil
-        end
-        self:debugPrint("Cleanup completed due to switching devices")
-    end
+local routerHandlerControls = { "hdmi.out.1.select.index", "hdmi.out.2.select.index" }
 
-    -- Now assign the new device
-    self.nv32Router = self:setComponent(self.controls.devNV32, "NV32-H")
-    router = self.nv32Router -- Update local reference
-    
+local function setRoute(input, outputNum, source)
+    local src = source or "Internal"
+    if outputNum == outputs.Output02 and not const.enableOutput2 then
+        debugPrint("Output02 disabled — skip (Source: " .. src .. ")")
+        return false
+    end
+    local router = componentsTbl.nv32Router
     if not router then
-        return
+        debugPrint("No NV32 router (Source: " .. src .. ")")
+        return false
     end
+    local outputControl = router["hdmi.out." .. tostring(outputNum) .. ".select.index"]
+    if not outputControl then
+        debugPrint("Missing output control " .. tostring(outputNum) .. " (Source: " .. src .. ")")
+        return false
+    end
+    if outputControl.Value == input then return false end
+    setProp(outputControl, "Value", input)
+    debugPrint("Output " .. tostring(outputNum) .. " → Input " .. tostring(input) .. " (Source: " .. src .. ")")
+    state.lastInput[outputNum] = input
+    return true
+end
 
-    -- Cache frequently accessed controls
-    local out1Control = router["hdmi.out.1.select.index"]
-    local out2Control = router["hdmi.out.2.select.index"]
-    local btnOut01 = self.controls.btnNV32Out01
-    local btnOut02 = self.controls.btnNV32Out02
-    local uciInputs = self.uciInputs
+local function setNV32RouterComponent()
+    local oldRouter = componentsTbl.nv32Router
+    if oldRouter then
+        cleanupComponentHandlers(oldRouter, routerHandlerControls, function(msg) debugPrint("[NV32] " .. msg) end)
+    end
+    componentsTbl.nv32Router = setComponent(controls.devNV32, "NV32-H", componentTypes.nv32Router)
+    local router = componentsTbl.nv32Router
+    if not router then return end
 
-    -- Add real-time feedback handler for Output 1
-    if out1Control then
-        out1Control.EventHandler = function(ctl)
+    local out1 = router["hdmi.out.1.select.index"]
+    local out2 = router["hdmi.out.2.select.index"]
+    local btnOut01 = controls.btnNV32Out01
+    local btnOut02 = controls.btnNV32Out02
+
+    if out1 then
+        out1.EventHandler = function(ctl)
             local inputValue = ctl.Value
+            if not isArr(btnOut01) then return end
             for i, btn in ipairs(btnOut01) do
                 setProp(btn, "Boolean", (uciInputs[i] == inputValue))
             end
-            self:debugPrint("NV32-H set Output 1 to Input " .. inputValue)
+            debugPrint("Output 1 feedback → Input " .. tostring(inputValue) .. " (Source: NV32 Router)")
         end
+        debugPrint("Registered: hdmi.out.1.select.index feedback handler")
     end
 
-    -- Add real-time feedback handler for Output 2 (if enabled)
-    if out2Control and self.enableOutput2 and btnOut02 then
-        out2Control.EventHandler = function(ctl)
+    if out2 and const.enableOutput2 and btnOut02 and isArr(btnOut02) then
+        out2.EventHandler = function(ctl)
             local inputValue = ctl.Value
             for i, btn in ipairs(btnOut02) do
                 setProp(btn, "Boolean", (uciInputs[i] == inputValue))
             end
-            self:debugPrint("NV32-H set Output 2 to Input " .. inputValue)
+            debugPrint("Output 2 feedback → Input " .. tostring(inputValue) .. " (Source: NV32 Router)")
         end
+        debugPrint("Registered: hdmi.out.2.select.index feedback handler")
     end
 end
 
-function NV32RouterController:setRoomControlsComponent()
-    self.roomControls = self:setComponent(self.controls.compRoomControls, "Room Controls")
-    
-    local roomControls = self.roomControls
-    if not roomControls then
-        return
-    end
+local function setRoomControlsComponent()
+    componentsTbl.roomControls = setComponent(controls.compRoomControls, "Room Controls", componentTypes.roomControls)
+    local roomControls = componentsTbl.roomControls
+    if not roomControls then return end
 
-    -- Cache frequently accessed objects
-    local uciInputs = self.uciInputs
-    local outputs = self.outputs
-    local this = self  -- Capture self for use in handlers
-
-    -- System power handler
     local powerLED = roomControls["ledSystemPower"]
     if powerLED then
         powerLED.EventHandler = function(ctl)
             local targetInput = ctl.Boolean and uciInputs[1] or uciInputs[4]
-            this:setRoute(targetInput, outputs.Output01)
-            if this.enableOutput2 then
-                this:setRoute(targetInput, outputs.Output02)
+            debugPrint("System power → " .. (ctl.Boolean and "ON" or "OFF") .. " (Source: Room Controls)")
+            setRoute(targetInput, outputs.Output01, "Room Controls: System Power")
+            if const.enableOutput2 then
+                setRoute(targetInput, outputs.Output02, "Room Controls: System Power")
             end
         end
+        debugPrint("Registered: ledSystemPower handler")
     end
 
-    -- Fire alarm handler  
     local fireAlarmLED = roomControls["ledFireAlarm"]
     if fireAlarmLED then
         fireAlarmLED.EventHandler = function(ctl)
-            if ctl.Boolean and not this.fireAlarmActive then
-                -- Fire alarm just activated: store the last input before override
-                this.preFireAlarmInput = this.preFireAlarmInput or {}
-                this.preFireAlarmInput[outputs.Output01] = this.lastInput[outputs.Output01]
-                if this.enableOutput2 then
-                    this.preFireAlarmInput[outputs.Output02] = this.lastInput[outputs.Output02]
+            if ctl.Boolean and not state.fireAlarmActive then
+                state.preFireAlarmInput[outputs.Output01] = state.lastInput[outputs.Output01]
+                if const.enableOutput2 then
+                    state.preFireAlarmInput[outputs.Output02] = state.lastInput[outputs.Output02]
                 end
-                this.fireAlarmActive = true
-                -- Route to fire alarm input (e.g., Graphic2)
-                this:setRoute(uciInputs[5], outputs.Output01)
-                if this.enableOutput2 then
-                    this:setRoute(uciInputs[5], outputs.Output02)
+                state.fireAlarmActive = true
+                debugPrint("Fire alarm → ACTIVE, routing Graphic2 to outputs (Source: Room Controls)")
+                setRoute(uciInputs[5], outputs.Output01, "Room Controls: Fire Alarm")
+                if const.enableOutput2 then
+                    setRoute(uciInputs[5], outputs.Output02, "Room Controls: Fire Alarm")
                 end
-            elseif not ctl.Boolean and this.fireAlarmActive then
-                -- Fire alarm just cleared: restore previous input
-                this.fireAlarmActive = false
+            elseif not ctl.Boolean and state.fireAlarmActive then
+                state.fireAlarmActive = false
+                debugPrint("Fire alarm → CLEAR (Source: Room Controls)")
                 if powerLED and powerLED.Boolean then
-                    this:setRoute(this.preFireAlarmInput[outputs.Output01] or uciInputs[1], outputs.Output01)
-                    if this.enableOutput2 then
-                        this:setRoute(this.preFireAlarmInput[outputs.Output02] or uciInputs[1], outputs.Output02)
+                    local restore1 = state.preFireAlarmInput[outputs.Output01] or uciInputs[1]
+                    local restore2 = state.preFireAlarmInput[outputs.Output02] or uciInputs[1]
+                    setRoute(restore1, outputs.Output01, "Room Controls: Fire Alarm Clear")
+                    if const.enableOutput2 then
+                        setRoute(restore2, outputs.Output02, "Room Controls: Fire Alarm Clear")
                     end
                 end
-                -- Clear the stored values
-                this.preFireAlarmInput[outputs.Output01] = nil
-                if this.enableOutput2 then
-                    this.preFireAlarmInput[outputs.Output02] = nil
+                state.preFireAlarmInput[outputs.Output01] = nil
+                if const.enableOutput2 then
+                    state.preFireAlarmInput[outputs.Output02] = nil
                 end
             end
         end
+        debugPrint("Registered: ledFireAlarm handler")
     end
 end
 
------------------[ Video Routing Functions ]-------------------
-function NV32RouterController:setRoute(input, output)
-    -- Skip if Output02 is disabled
-    if output == self.outputs.Output02 and not self.enableOutput2 then
-        self:debugPrint("Output02 disabled, skipping route")
-        return false
-    end
-    
-    local router = self.nv32Router
-    if not router then
-        self:debugPrint("No NV32 router available for routing")
-        return false
-    end
-
-    local outputControl = router["hdmi.out."..tostring(output)..".select.index"]
-    if not outputControl then
-        self:debugPrint("Invalid output control for output " .. tostring(output))
-        return false
-    end
-
-    -- Only set if value is different to avoid redundant updates
-    if setProp(outputControl, "Value", input) then
-        self:debugPrint("Set Output "..tostring(output).." to Input "..tostring(input))
-        -- Track the last input for this output
-        self.lastInput[output] = input
-        return true
-    end
-    
-    return false
-end
-
------------------[ Event Handler Registration ]-------------------
-function NV32RouterController:registerEventHandlers()
-    -- Component handler map
-    local componentHandlers = {
-        devNV32 = function() self:setNV32RouterComponent() end,
-        compRoomControls = function() self:setRoomControlsComponent() end
+local function setupDirectUCIButtonMonitoring()
+    local uciButtons = {
+        [7] = Controls.btnNav07,
+        [8] = Controls.btnNav08,
+        [9] = Controls.btnNav09,
     }
-    
-    -- Register component handlers
-    for controlName, handler in pairs(componentHandlers) do
-        local control = self.controls[controlName]
-        if control then
-            bind(control, handler)
-            self:debugPrint("Registered event handler for " .. controlName)
+    local count = 0
+    for layer, button in pairs(uciButtons) do
+        if button then
+            bind(button, function(ctl)
+                if not const.uciIntegrationEnabled then return end
+                if not ctl.Boolean then return end
+                local targetInput = uciLayerToInput[layer]
+                if not targetInput then return end
+                debugPrint("UCI nav layer " .. tostring(layer) .. " → Input " .. tostring(targetInput)
+                    .. " (Source: UCI Nav Button)")
+                setRoute(targetInput, outputs.Output01, "UCI Nav Button")
+            end)
+            count = count + 1
+            debugPrint("Registered UCI nav monitor: layer " .. tostring(layer))
         end
     end
-    
-    -- Output button handler map
-    local outputHandlers = {
-        btnNV32Out01 = {output = self.outputs.Output01, name = "Output 1"}
-    }
-    
-    -- Add Output02 handlers if enabled
-    if self.enableOutput2 then
-        outputHandlers.btnNV32Out02 = {output = self.outputs.Output02, name = "Output 2"}
+    debugPrint("UCI direct button handlers registered: " .. tostring(count))
+end
+
+local function setUCIController(uciController)
+    if not uciController then
+        debugPrint("setUCIController: invalid reference")
+        return false
     end
-    
-    -- Register output button handlers
-    for controlName, config in pairs(outputHandlers) do
-        local buttons = self.controls[controlName]
-        if isArr(buttons) then
-            for i, btn in ipairs(buttons) do
-                local handler = function()
-                    self:setRoute(self.uciInputs[i], config.output)
-                end
-                bind(btn, handler)
+    state.uciController = uciController
+    debugPrint("UCI Controller reference set — use onUCILayerChange() from UCI script for layer sync "
+        .. "(timer polling removed; nav buttons use direct handlers when present)")
+    return true
+end
+
+local function enableUCIIntegration()
+    const.uciIntegrationEnabled = true
+    debugPrint("UCI integration enabled")
+end
+
+local function disableUCIIntegration()
+    const.uciIntegrationEnabled = false
+    debugPrint("UCI integration disabled")
+end
+
+local function onUCILayerChange(layerChangeInfo)
+    if not const.uciIntegrationEnabled then return end
+    if not layerChangeInfo then return end
+    local currentLayer = layerChangeInfo.currentLayer
+    debugPrint("UCI layer " .. tostring(layerChangeInfo.previousLayer) .. " → "
+        .. tostring(currentLayer) .. " (" .. tostring(layerChangeInfo.layerName) .. ") (Source: UCI callback)")
+    state.lastUCILayer = currentLayer
+    if uciLayerToInput[currentLayer] then
+        local targetInput = uciLayerToInput[currentLayer]
+        setRoute(targetInput, outputs.Output01, "UCI Layer Change")
+    end
+end
+
+local function cleanup()
+    if componentsTbl.nv32Router then
+        cleanupComponentHandlers(componentsTbl.nv32Router, routerHandlerControls,
+            function(msg) debugPrint("[NV32 cleanup] " .. msg) end)
+    end
+    if componentsTbl.roomControls then
+        cleanupComponentHandlers(componentsTbl.roomControls, { "ledSystemPower", "ledFireAlarm" },
+            function(msg) debugPrint("[Room Controls cleanup] " .. msg) end)
+    end
+    state.uciController = nil
+    debugPrint("Cleanup complete")
+end
+
+-------------------[ Events ]-------------------
+local function registerEvents()
+    local componentMap = {
+        devNV32 = setNV32RouterComponent,
+        compRoomControls = setRoomControlsComponent,
+    }
+    for controlName, handler in pairs(componentMap) do
+        local control = controls[controlName]
+        if control and bind(control, handler) then
+            debugPrint("Registered component selector handler: " .. controlName)
+        end
+    end
+
+    local out1Count = 0
+    if isArr(controls.btnNV32Out01) then
+        for i, btn in ipairs(controls.btnNV32Out01) do
+            if bind(btn, function()
+                setRoute(uciInputs[i], outputs.Output01, "NV32 Output 1 Button " .. tostring(i))
+            end) then
+                out1Count = out1Count + 1
             end
-            self:debugPrint("Registered " .. #buttons .. " button handlers for " .. config.name)
         end
     end
-    
-    -- Set up direct UCI button monitoring
-    self:setupDirectUCIButtonMonitoring()
+    debugPrint("Registered " .. out1Count .. " Output 1 preset button handler(s)")
+
+    if const.enableOutput2 and controls.btnNV32Out02 and isArr(controls.btnNV32Out02) then
+        local out2Count = 0
+        for i, btn in ipairs(controls.btnNV32Out02) do
+            if bind(btn, function()
+                setRoute(uciInputs[i], outputs.Output02, "NV32 Output 2 Button " .. tostring(i))
+            end) then
+                out2Count = out2Count + 1
+            end
+        end
+        debugPrint("Registered " .. out2Count .. " Output 2 preset button handler(s)")
+    end
+
+    setupDirectUCIButtonMonitoring()
 end
 
------------------[ Initialization ]-------------------
-function NV32RouterController:funcInit()
-    self:setupComponents()
-    self:setNV32RouterComponent()
-    self:setRoomControlsComponent()
-    
-    -- Set default selection to first input (HDMI1) for both outputs
-    if self.nv32Router then
-        self:setRoute(self.uciInputs[1], self.outputs.Output01)
-        if self.enableOutput2 then
-            self:setRoute(self.uciInputs[1], self.outputs.Output02)
+-------------------[ Init ]-------------------
+local function init()
+    debugPrint("=== Initialization Started ===")
+    debugPrint("Configuration: roomName=" .. const.roomName .. ", debug=" .. tostring(const.debug)
+        .. ", enableOutput2=" .. tostring(const.enableOutput2)
+        .. ", uciIntegration=" .. tostring(const.uciIntegrationEnabled))
+
+    discoverAndSetupInitial()
+    registerEvents()
+    setNV32RouterComponent()
+    setRoomControlsComponent()
+
+    if componentsTbl.nv32Router then
+        setRoute(uciInputs[1], outputs.Output01, "Initialization default")
+        if const.enableOutput2 then
+            setRoute(uciInputs[1], outputs.Output02, "Initialization default")
         end
     end
-    
-    self:debugPrint("NV32 Router Controller Initialized" .. 
-                    (self.enableOutput2 and " (Output01 & Output02)" or " (Output01 only)"))
+
+    debugPrint("=== Initialization Complete ===")
+    debugPrint("Ready — " .. (const.enableOutput2 and "Output 1 + 2" or "Output 1 only"))
 end
 
------------------[ Cleanup ]-------------------
-function NV32RouterController:cleanup()
-    -- Stop UCI monitoring timer
-    if self.uciMonitorTimer then
-        self.uciMonitorTimer:Stop()
-        self.uciMonitorTimer = nil
-    end
-    
-    if self.nv32Router then
-        if self.nv32Router["hdmi.out.1.select.index"].EventHandler then
-            self.nv32Router["hdmi.out.1.select.index"].EventHandler = nil
-        end
-        if self.enableOutput2 and self.nv32Router["hdmi.out.2.select.index"].EventHandler then
-            self.nv32Router["hdmi.out.2.select.index"].EventHandler = nil
-        end
-    end
-    
-    if self.roomControls then
-        if self.roomControls["ledSystemPower"].EventHandler then
-            self.roomControls["ledSystemPower"].EventHandler = nil
-        end
-        if self.roomControls["ledFireAlarm"].EventHandler then
-            self.roomControls["ledFireAlarm"].EventHandler = nil
-        end
-    end
-    
-    -- Clear UCI controller reference
-    self.uciController = nil
-    
-    self:debugPrint("Cleanup completed")
+-------------------[ Config merge & factory ]-------------------
+local function mergeConfig(config)
+    if not config then return end
+    if config.debugging ~= nil then const.debug = config.debugging end
+    if config.uciIntegrationEnabled ~= nil then const.uciIntegrationEnabled = config.uciIntegrationEnabled end
+    if config.enableOutput2 ~= nil then const.enableOutput2 = config.enableOutput2 end
+    if config.roomName ~= nil then const.roomName = config.roomName end
 end
 
-
------------------[ Factory Function ]-------------------
 local function createNV32RouterController(config)
-    local defaultConfig = {
-        debugging = true,
-        uciIntegrationEnabled = true,
-        enableOutput2 = true
-    }
-    
-    -- Merge provided config with defaults
-    local controllerConfig = config or {}
-    for key, value in pairs(defaultConfig) do
-        if controllerConfig[key] == nil then
-            controllerConfig[key] = value
-        end
-    end
-    
-    local success, result = pcall(function()
-        return NV32RouterController.new(controllerConfig)
+    mergeConfig(config)
+    local ok, err = pcall(function()
+        if not validateControls() then error("Control validation failed") end
+        normalizeControlArrays()
+        init()
     end)
-    
-    if not success then
-        print("ERROR: Failed to create NV32RouterController - " .. tostring(result))
-        print("Check control configuration and try again")
-        return nil
+    if ok then
+        print("✓ NV32RouterController initialized (" .. const.roomName .. ")")
+        return NV32RouterController
     end
-    
-    if not result then
-        print("ERROR: NV32RouterController validation failed during initialization")
-        print("Required controls are missing - check design file")
-        return nil
+    print("✗ ERROR: NV32RouterController init failed: " .. tostring(err))
+    if controls.txtStatus then
+        setProp(controls.txtStatus, "String", "INIT FAILED")
+        setProp(controls.txtStatus, "Value", 2)
     end
-    
-    print("SUCCESS: NV32RouterController created and initialized")
-    return result
+    return nil
 end
 
------------------[ Global Exports ]-------------------
--- Export the class for external access and multiple instances
-_G.NV32RouterController = NV32RouterController
-_G.createNV32RouterController = createNV32RouterController
+-------------------[ Public API ]-------------------
+NV32RouterController = {
+    setUCIController = setUCIController,
+    enableUCIIntegration = enableUCIIntegration,
+    disableUCIIntegration = disableUCIIntegration,
+    onUCILayerChange = onUCILayerChange,
+    setRoute = setRoute,
+    cleanup = cleanup,
+}
 
------------------[ Instance Creation ]-------------------
--- Create the controller for this script instance
+-------------------[ Start ]-------------------
 local myNV32RouterController = createNV32RouterController()
-
--- Export instance globally for external access
 if myNV32RouterController then
     _G.myNV32RouterController = myNV32RouterController
-    print("NV32RouterController instance exported globally as 'myNV32RouterController'")
+    _G.createNV32RouterController = createNV32RouterController
+    print("Global: myNV32RouterController (API table — use .setUCIController / .setRoute / .cleanup)")
 else
-    print("WARNING: Failed to create NV32RouterController instance")
+    print("WARNING: NV32RouterController failed to initialize")
 end
-
---[[
-========== USAGE INSTRUCTIONS ==========
-
-Multiple Instance Support:
-- Each instance requires unique control names (e.g., devNV32_Room1, btnNV32Out01_Room1, etc.)
-- Use the factory function: createNV32RouterController(config)
-- Configuration options: 
-  * debugging = true/false (enables/disables debug logging)
-  * uciIntegrationEnabled = true/false (enables/disables UCI layer integration)
-  * enableOutput2 = true/false (enables/disables Output02 functionality)
-
-Global Access:
-- Class available as: _G.NV32RouterController
-- Factory function: _G.createNV32RouterController  
-- Default instance: _G.myNV32RouterController
-
-Example - Creating instance without Output02:
-  local singleOutputController = createNV32RouterController({
-      debugging = true,
-      uciIntegrationEnabled = true,
-      enableOutput2 = false  -- Disable Output02
-  })
-
-Enhanced Features:
-- Comprehensive control validation with descriptive error messages
-- Automatic control array normalization for consistent processing
-- Batch event registration using handler maps for improved performance
-- Property access optimization with cached references
-- Early return patterns and guard clauses for robust error handling
-
-UCI Integration:
-- Automatic monitoring of UCI navigation buttons (btnNav07, btnNav08, btnNav09)
-- Smart input switching based on UCI layer changes:
-  * Layer 7 (btnNav07) → HDMI2 input
-  * Layer 8 (btnNav08) → HDMI1 input  
-  * Layer 9 (btnNav09) → HDMI3 input
-- Manual UCI controller setup: myNV32RouterController:setUCIController(uciController)
-- Enable/disable: enableUCIIntegration() / disableUCIIntegration()
-
-Component Integration:
-- Dynamic component discovery and validation
-- Automatic Room Controls integration for system power and fire alarm handling
-- Graceful degradation when optional components are unavailable
-
-Error Handling:
-- Factory function returns nil on validation failure with descriptive messages
-- All methods include proper error checking and early returns
-- Optional controls generate warnings but don't prevent initialization
-]]--

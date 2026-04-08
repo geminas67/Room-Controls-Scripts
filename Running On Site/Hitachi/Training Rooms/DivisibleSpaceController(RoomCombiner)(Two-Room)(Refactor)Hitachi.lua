@@ -1,7 +1,7 @@
 --[[
   Divisible Space Controller - Two Room Version (Refactored)
   Author: Nikolas Smith, Q-SYS
-  Version: 3.2 | Date: 2025-02-24
+  Version: 3.3 | Date: 2026-04-03
   Firmware Req: 10.0.1+
 
   Features:
@@ -21,17 +21,17 @@ local config = {
     callSync = {"callSyncTrainingA", "callSyncTrainingB"},
     roomControls = {"compRoomControlsTrainingA", "compRoomControlsTrainingB"},
     uciNames = {"uciTrainingB", "uciTrainingA"},
-    matrixMixerMutes = {
-      "input.2.output.6.mute", "input.3.output.5.mute",
-      "input.4.output.2.mute", "input.4.output.4.mute",
-      "input.5.output.1.mute", "input.5.output.3.mute"
+    matrixAudioMixer = {
+      "input.2.output.4.mute", "input.3.output.3.mute",
+      "input.4.output.2.mute", "input.4.output.6.mute",
+      "input.5.output.1.mute", "input.5.output.5.mute"
     }
   },
 
-  features = { disableACPRRouting = true },
+  features = { disableACPRRouting = false },
   patterns = {
     roomCombiner = "^compRoomCombiner",
-    matrixMixer = "^compMixerAudioTraining",
+    matrixMixer = "^compMatrixAudio",
     roomControls = "^compRoomControls",
     mxaControls = "^compMXAControlsTraining",
     uciStatus = "^statusControlUCITraining",
@@ -303,9 +303,12 @@ local function updateBtnRoomStateDisabledStates()
     table.insert(states, room .. ":" .. stateStr)
     anyActive = anyActive or isOn or isCooling
   end
+  local combineBlockedLegend = "Room is On. Turn the room Off to Combine"
   for idx = 2, 3 do
     if controls.btnRoomState and controls.btnRoomState[idx] then
-      setProp(controls.btnRoomState[idx], "IsDisabled", anyActive)
+      local btn = controls.btnRoomState[idx]
+      setProp(btn, "IsDisabled", anyActive)
+      setProp(btn, "Legend", anyActive and combineBlockedLegend or "")
     end
   end
   debugPrint("btnRoomState[2,3] " .. (anyActive and "DISABLED" or "ENABLED") .. " [" .. table.concat(states, ", ") .. "]")
@@ -336,7 +339,7 @@ local function applyMatrixMixerMutes()
   if not components.matrixMixer then debugPrint("WARNING: Matrix mixer not found"); return end
   local muteState = isRoomsSeparated()
   local success, errors = 0, {}
-  for _, muteName in ipairs(config.components.matrixMixerMutes) do
+  for _, muteName in ipairs(config.components.matrixAudioMixer) do
     local mute = components.matrixMixer[muteName]
     if mute then
       setProp(mute, "Boolean", muteState)
@@ -344,7 +347,7 @@ local function applyMatrixMixerMutes()
       debugPrint(muteName .. " -> " .. (muteState and "[ Muted ]" or "[ Unmuted ]") .. " (Source: Room Combiner)")
     else table.insert(errors, muteName .. ": Not found") end
   end
-  printOperationResult("Matrix mixer mutes", success, #config.components.matrixMixerMutes, errors)
+  printOperationResult("Matrix mixer mutes", success, #config.components.matrixAudioMixer, errors)
 end
 
 local function applyACPRAssignment()
@@ -359,9 +362,9 @@ local function applyUCIStatusRouting()
   if not components.uciStatus then debugPrint("WARNING: UCI status not found"); return end
   local uciValue = isRoomsSeparated() and config.components.uciNames[1] or
     (isRoomPoweredOn("RoomB") and config.components.uciNames[2] or config.components.uciNames[1])
-  local statusControl = components.uciStatus["current.uci"]
-  if statusControl then
-    setProp(statusControl, "String", uciValue)
+  local currentUCI = components.uciStatus["current.uci"]
+  if currentUCI then
+    setProp(currentUCI, "String", uciValue)
     debugPrint("UCI status: " .. uciValue .. " (Source: Room Combiner)")
   else debugPrint("ERROR: UCI status control not found") end
 end
@@ -413,40 +416,7 @@ local function applyCamRouterRouting()
   printOperationResult("Cam router routing", success, #routes, errors)
 end
 
-applyRoomState = function()
-  debugPrint("=== Applying Room State Configuration ===")
-  local roomState = getRoomState()
-  debugPrint("Current state: " .. roomState)
-  if not canChangeWallState() then
-    debugPrint("BLOCKED: Cannot change state - rooms are powered on (Source: Room Combiner)")
-    if controls.btnRoomState and controls.btnRoomState[1] then setProp(controls.btnRoomState[1], "Boolean", true) end
-    return
-  end
-  updateWallState()
-  applyGainRouting()
-  applyMatrixMixerMutes()
-  applyACPRAssignment()
-  applyMXAControlsRouting()
-  applyUCIStatusRouting()
-  applyACPRComponentRouting()
-  applyCamRouterRouting()
-  if roomState ~= "Separated" then
-    if checkAnyRoomState(isRoomPoweredOn) then
-      debugPrint("Syncing power (ON) to all rooms (Source: Room Combiner)")
-      syncPowerToRooms(config.rooms, true, "Room Combiner")
-    else debugPrint("All rooms OFF - no power sync needed") end
-  end
-  debugPrint("=== Room State Configuration Complete ===")
-end
-
-local function applyPriorityDependentRouting()
-  debugPrint("Re-applying priority-dependent routing (Source: UCI Button)")
-  applyGainRouting()
-  applyMXAControlsRouting()
-  applyACPRComponentRouting()
-  applyCamRouterRouting()
-end
-
+--- Refresh txtStatus (OK / warnings + current btnRoomState). Must run after every state change — not only at init.
 local function checkStatus()
   local msg = "OK"
   local val = 0
@@ -461,6 +431,46 @@ local function checkStatus()
     setProp(controls.txtStatus, "String", msg)
     setProp(controls.txtStatus, "Value", val)
   end
+end
+
+applyRoomState = function()
+  debugPrint("=== Applying Room State Configuration ===")
+  local roomState = getRoomState()
+  debugPrint("Current state: " .. roomState)
+  if not canChangeWallState() then
+    debugPrint("BLOCKED: Cannot change state - rooms are powered on (Source: Room Combiner)")
+    applyBtnRoomStateInterlock(1)
+    if controls.btnRoomState and controls.btnRoomState[1] then setProp(controls.btnRoomState[1], "Boolean", true) end
+    checkStatus()
+    return
+  end
+  local ok, err = pcall(function()
+    updateWallState()
+    applyGainRouting()
+    applyMatrixMixerMutes()
+    applyACPRAssignment()
+    applyMXAControlsRouting()
+    applyUCIStatusRouting()
+    applyACPRComponentRouting()
+    applyCamRouterRouting()
+    if roomState ~= "Separated" then
+      if checkAnyRoomState(isRoomPoweredOn) then
+        debugPrint("Syncing power (ON) to all rooms (Source: Room Combiner)")
+        syncPowerToRooms(config.rooms, true, "Room Combiner")
+      else debugPrint("All rooms OFF - no power sync needed") end
+    end
+    debugPrint("=== Room State Configuration Complete ===")
+  end)
+  if not ok then debugPrint("applyRoomState failed: " .. tostring(err)) end
+  checkStatus()
+end
+
+local function applyPriorityDependentRouting()
+  debugPrint("Re-applying priority-dependent routing (Source: UCI Button)")
+  applyGainRouting()
+  applyMXAControlsRouting()
+  applyACPRComponentRouting()
+  applyCamRouterRouting()
 end
 
 local function discoverComponents()

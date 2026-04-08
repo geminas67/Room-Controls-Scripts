@@ -48,16 +48,12 @@ local layersToHide = {
     "W01-WirelessA","W02-WirelessB","W05-Wireless","R10-Routing","S10-StreamMusic","V05-Dialer"
 }
 
-local SwitcherTypes = {
-    ExtronDXP = {
-        componentType = "%PLUGIN%_qsysc.extron.matrix.0.0.0.0-master_%FP%_bf09cd55c73845eb6fc31e4b896516ff",
-        switcherNames = {"devExtronDXP","compExtronDXP"},
-        outputMappings = {
-            TrainingA = {[7]="Input 3",[8]="Input 4",[9]="Input 1",[10]="Input 2"},
-            TrainingB = {[7]="Input 7",[8]="Input 8",[9]="Input 5",[10]="Input 6"}
-        }
-    }
-}
+-- Video routing: ExtronDXP84MatrixController owns the matrix (setSource / output.N). Nav changes publish
+-- uciLayerNotifyMatrix so the matrix script receives onUCILayerChange (Lua _G is not shared with control scripts).
+
+-- Must match ExtronDXP84MatrixController(Refactor)Hitachi: uciLayerNotifyMatrix
+local uciLayerNotifyMatrix = "HitachiTraining_UCIMatrixLayer"
+local matrixUciWarnedNoGlobal = false
 
 local configSource = {
     LaptopA = { layer=kLayer.LaptopA, base="L01-LaptopA", disc="L01-HDMIDisconnected",
@@ -201,9 +197,9 @@ local state = {
 }
 local components = {
     roomControls = nil, prevPowerState = nil,
-    videoSwitcher = nil, switcherType = nil,
     divisibleSpace = nil, btnRoomState = nil, roomIdentity = nil,
 }
+
 local timers = { loading = nil, timeout = nil, inactivity = Timer.New() }
 local arrUCILegends, arrUCIUserLabels = {}, {}
 local sources, helpLayerButtonMap, allUSBConnect, allConference, allCamera, allVideoPrivacy
@@ -603,50 +599,36 @@ local function initRoomControls()
     return true
 end
 
-local function initVideoSwitcher()
-    for swType, cfg in pairs(SwitcherTypes) do
-        for _, name in ipairs(cfg.switcherNames or {}) do
-            local ctrl = Controls[name]
-            if ctrl and ctrl.String and ctrl.String ~= "" then
-                local ok, comp = pcall(function() return Component.New(ctrl.String) end)
-                if ok and comp then
-                    components.videoSwitcher = comp
-                    components.switcherType = swType
-                    debugPrint("Video switcher: "..swType)
-                    return true
-                end
-            end
+--- Notify ExtronDXP84MatrixController so it runs setSource / applyRoutesForSource (layers 7–10 map there).
+-- Publish is deferred to the next timer tick so it does not run synchronously inside the nav button
+-- EventHandler chain (avoids edge cases with Core notification delivery).
+local function notifyMatrixFromUciLayerChange(previousLayer, currentLayer)
+    local prevLayer, curLayer = previousLayer, currentLayer
+    Timer.CallAfter(function()
+        local payload = {
+            previousLayer = prevLayer,
+            currentLayer = curLayer,
+            layerName = "UCI",
+        }
+        local pubOk, pubErr = pcall(function()
+            if Notifications == nil then error("Notifications API unavailable in this script context") end
+            Notifications.Publish(uciLayerNotifyMatrix, payload)
+        end)
+        if not pubOk then
+            debugPrint("Matrix notification publish failed: " .. tostring(pubErr))
+        elseif config.debug then
+            debugPrint("Matrix layer notify published: " .. tostring(prevLayer) .. " → " .. tostring(curLayer))
         end
-    end
-    for _, comp in pairs(Component.GetComponents()) do
-        for swType, cfg in pairs(SwitcherTypes) do
-            if comp.Type == cfg.componentType then
-                local ok, c = pcall(function() return Component.New(comp.Name) end)
-                if ok and c then components.videoSwitcher = c; components.switcherType = swType
-                    debugPrint("Video switcher: "..swType.." (auto-detect)"); return true end
-            end
-        end
-    end
-    return false
-end
 
-local function switchToInput(uciButton)
-    if not components.videoSwitcher or not components.switcherType then return false end
-    local cfg = SwitcherTypes[components.switcherType]
-    if not cfg or not cfg.outputMappings then return false end
-    local roomId = components.roomIdentity
-    if not roomId then debugPrint("Video switch: Room identity not determined"); return false end
-    local mapping = cfg.outputMappings[roomId]
-    if not mapping then debugPrint("Video switch: No mapping for "..roomId); return false end
-    local inputName = mapping[uciButton]
-    if not inputName then return false end
-    local ok, err = pcall(function()
-        if components.videoSwitcher[inputName] then
-            components.videoSwitcher[inputName]:Trigger()
+        local mc = rawget(_G, "MatrixController")
+        if mc and mc.onUCILayerChange then
+            local ok, err = pcall(function() mc.onUCILayerChange(payload) end)
+            if not ok then debugPrint("MatrixController.onUCILayerChange: " .. tostring(err)) end
+        elseif not mc and not matrixUciWarnedNoGlobal then
+            matrixUciWarnedNoGlobal = true
+            debugPrint("MatrixController not on _G; routing uses Notifications only (expected for UCI vs control script)")
         end
-    end)
-    if ok then debugPrint("Video → "..inputName.." (Source: UCI Layer "..uciButton..")") else debugPrint("Video switch error: "..tostring(err)) end
-    return ok
+    end, 0)
 end
 
 local function initDivisibleSpace()
@@ -789,9 +771,7 @@ btnNavEventHandler = function(layerIndex, source)
     source = source or "Navigation"
     local prev = state.activeLayer
     state.activeLayer = layerIndex
-    if components.videoSwitcher and components.switcherType then
-        switchToInput(layerIndex)
-    end
+    notifyMatrixFromUciLayerChange(prev, layerIndex)
     showLayer()
     interlock()
     debugPrint("Layer "..prev.." → "..layerIndex.." (Source: "..source..")")
@@ -921,7 +901,6 @@ local function init()
     buildLayerConfigs()
     initLegendArrays()
     initRoomControls()
-    initVideoSwitcher()
     initDivisibleSpace()
     registerEvents()
     initSyncFromSystemController()
@@ -962,7 +941,7 @@ myUCI = {
         end
         debugPrint("Cleanup complete")
     end,
-    switchToInput = switchToInput,
+    notifyMatrixFromUciLayerChange = notifyMatrixFromUciLayerChange,
     powerOn = powerOn,
     powerOff = powerOff,
     startLoadingBar = startLoadingBar,
