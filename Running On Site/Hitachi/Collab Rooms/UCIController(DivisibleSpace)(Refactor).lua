@@ -433,11 +433,12 @@ end
 
 local function determineSourceLayerVisibility(src, isActive, usbConnected, isCombined, showLayers, hideLayers)
     local confActive = false
+    local skipConf = conferenceStateConfig.skip and conferenceStateConfig.skip[src.layerConst]
     if src.cameraLayer then
         if isActive and isCombined then table.insert(showLayers, src.cameraLayer)
         else table.insert(hideLayers, src.cameraLayer) end
     end
-    if isActive and usbConnected then table.insert(showLayers, src.confLayer); confActive = true
+    if isActive and usbConnected and not skipConf then table.insert(showLayers, src.confLayer); confActive = true
     else table.insert(hideLayers, src.confLayer) end
     if src.videoPrivacySeparate and src.videoPrivacyCombine then
         if isActive and usbConnected then
