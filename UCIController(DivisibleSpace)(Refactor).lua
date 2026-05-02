@@ -810,8 +810,11 @@ local function initLegendArrays()
     local legendConfig = {
         {prefix="txtNav", count=15},
         {single={"txtNavShutdown","txtRoomNameNav","txtRoomNameStart","txtRoutingRooms","txtRoutingSources"}},
-        {prefix="txtRouting", count=12}, {prefix="txtVidSrc", count=12},
-        {single={"txtGainPGM"}}, {prefix="txtGain", count=10}, {prefix="txtDisplay", count=12}
+        {prefix="txtRouting", count=12}, 
+        {prefix="txtVidSrc", count=12},
+        {single={"txtGainPGM"}}, 
+        {prefix="txtGain", count=10}, 
+        {prefix="txtDisplay", count=12}
     }
     local idx = 0
     local function labelVarName(ctrlName)

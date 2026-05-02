@@ -1,3 +1,6 @@
+Here’s a **single, ready-to-paste rules file** in a Cursor/Claude-friendly format, based on the consolidated spec we discussed. It preserves your headings, annotations, and explicit rules, but is trimmed to just what an agent needs to follow for generation and refactors.[1]
+
+```md
 ---
 description: Q-SYS Lua script architecture standards — flat module pattern, no OOP, lean code, rich debug output. Supersedes the standalone "Lua Refactoring Prompt" document.
 globs: **/*.lua
@@ -8,14 +11,32 @@ alwaysApply: false
 
 ## 0. Core Philosophy
 
-> **"Lean code + rich debug output."**  
-> Every significant action, state change, and interaction must be logged.  
+> **"Lean code + rich debug output."**
+> Every significant action, state change, and interaction must be logged.
 > An empty debug window is a useless one.
 
 **Target metrics when refactoring:**
-- 50–70% line reduction from verbose implementations ( this is a target but reducation can be more if possible)
+
+- 50–70% line reduction from verbose implementations (more is fine if clarity is preserved)
 - Script stays under ~1000 lines for most controllers
 - Every user interaction visible in the debug console
+
+### 0.1 Complexity tiers (micro vs full controller)
+
+**Lean code** and **rich debug** scale with script complexity. Checklist items in §4 and §9 are **not** one-size-fits-all.
+
+|                          | **Micro-controller** | **Full controller** |
+|--------------------------|----------------------|---------------------|
+| **Typical scope**        | Few fixed `Component.New(...)` references, no discovery, load-once | Component selectors, `GetComponents()` discovery, many handlers/rooms, or hot-reload / rebind |
+| **Init logging**         | One summary line (room name, debug flag) + optional single "Ready" line; phase markers optional | Phase markers + configuration line as in §4.3 |
+| **Setup / discovery**    | **Aggregate** counts and **errors only**; skip per-item "OK" lines unless diagnosing | Per-item discovery logging where operators need to see each device |
+| **Registration**         | One line with **totals** | Per-handler-type counts |
+| **Source attribution**   | Keep on significant actions; wording can be shorter | Full `(Source: ...)` on state changes |
+| **`validateControls`**   | Omit or inline `return true` when there are no script-level `Controls.*` | Required when controls are validated |
+| **`cleanup` / teardown** | Optional for load-once scripts; required if handlers are reattached at runtime | Use `cleanupComponentHandlers` when swapping components |
+| **Public API table**     | Only if another script calls into this file | As needed for cross-script access |
+
+**Principle:** The **shortest** script that stays clear and adequately logged — not the same ceremony as a 900-line matrix controller.
 
 ---
 
@@ -23,7 +44,7 @@ alwaysApply: false
 
 **OOP must never be used.** Every Q-SYS control script is a **singleton by nature** — one script context, one set of `Controls.*`, one set of `Component.GetComponents()` results. There is never more than one instance per file.
 
-**Do not use** `setmetatable`, `__index`, `.new()`, `self:`, or `self.`. It adds ceremony with no benefit.
+**Do not use** `setmetatable`, `__index`, `.new()`, `self:`, or `self.` — they add ceremony with no benefit here.
 
 ```lua
 -- ❌ AVOID
@@ -34,7 +55,7 @@ function MyController:setRoute(input, output) ... end
 
 -- ✅ CORRECT — flat module, local state
 local components = { router = nil, invalid = {} }
-local state = { power = false }
+local state      = { power = false }
 
 local function setRoute(input, output, source) ... end
 ```
@@ -45,30 +66,35 @@ local function setRoute(input, output, source) ... end
 
 Follow this section order in every script:
 
-```
+```text
 [ Header comment ]    -- name, author, version, brief description
 [ Configuration ]     -- data tables: room maps, preset lists, device lists
 [ Controls ]          -- local controls = { name = Controls.name, ... }
-[ Utilities ]         -- isArr, setProp, bind, bindArray, cleanupComponentHandlers, tableContains, etc.
+[ Utilities ]         -- only helpers actually used (see §3)
 [ Config ]            -- roomName, debug, clearString constants
 [ State ]             -- components {}, state {}, and any per-script flags
 [ Debug ]             -- local function debugPrint(str)
 [ Functions ]         -- all local functions in dependency order (callees before callers)
 [ Events ]            -- local function registerEvents()
-[ Init ]              -- local function init()  (with === phase markers)
+[ Init ]              -- local function init()
 [ Public API ]        -- GlobalName = { exposed functions } for cross-script calls
 [ Start ]             -- pcall wrapper that calls init()
 ```
 
 ---
 
-## 3. Utility Functions (use everywhere)
+## 3. Utility Functions (include what you use)
 
-Include these verbatim at the top of every script:
+The block below is the **standard toolkit**, not a mandatory paste into every file.
+
+- Include **`bind`** in scripts that assign `EventHandler`
+- Include **`setProp`**, **`isArr`**, and **`bindArray`** when needed for control properties or arrays
+- Include **`cleanupComponentHandlers`** when swapping components that have handlers
+- **Omit** helpers you do not use
 
 ```lua
 local function isArr(t)
-    return type(t) == "table" and t[1] ~= nil
+    return type(t) == "table" and t ~= nil[1]
 end
 
 -- Guards against redundant writes, feedback loops, and race conditions
@@ -97,20 +123,38 @@ local function bindArray(ctrls, handler)
     end
     return count
 end
+
+local function cleanupComponentHandlers(oldComps, controlNames, debugCb)
+    if not oldComps or not controlNames then return 0 end
+    local cleaned = 0
+    for _, name in ipairs(controlNames) do
+        if oldComps[name] and oldComps[name].EventHandler then
+            oldComps[name].EventHandler = nil
+            cleaned = cleaned + 1
+        end
+    end
+    if debugCb and cleaned > 0 then
+        debugCb("Cleaned up " .. cleaned .. " handlers from old components")
+    end
+    return cleaned
+end
 ```
 
-**Why `setProp()` matters:** Prevents redundant Q-SYS control updates (expensive), guards against feedback loops, and acts as insurance against race conditions.
+**Why `setProp()` matters:** Prevents redundant Q-SYS control updates, guards against feedback loops, and helps avoid race conditions.
 
 ---
 
 ## 4. Debug Output
 
-### 4.1 debugPrint pattern
+**Micro-controller** scripts may satisfy this section with aggregate init and registration lines. **Full controllers** should use the fuller patterns below.
+
+### 4.1 `debugPrint` pattern
 
 ```lua
-local const = { 
-    roomName = "Room 101"
-    debug = true
+local const = {
+    roomName    = "Room 101",
+    debug       = true,
+    clearString = "-- Select --"
 }
 
 local function debugPrint(str)
@@ -122,7 +166,7 @@ end
 
 | ✅ Always log | ❌ Never log |
 |---|---|
-| Initialization phases (`=== Started ===`) | Redundant "already at state" on every poll |
+| Initialization phases (`=== Started ===`, `=== Complete ===`) | Redundant "already at state" on every poll |
 | Component discovery (what found, counts) | Internal utilities called thousands of times |
 | Event handler registration (type + count) | Timer tick operations where nothing changed |
 | Every routing/switching operation | |
@@ -130,10 +174,10 @@ end
 | Safety blocks / errors | |
 | Source attribution on all operations | |
 
-### 4.3 Required patterns
+### 4.3 Required patterns (full controller)
 
 ```lua
--- Phase markers in init()
+-- In init()
 debugPrint("=== Initialization Started ===")
 debugPrint("Configuration: const.roomName=" .. const.roomName .. ", debugging=" .. tostring(const.debug))
 -- ... setup ...
@@ -147,7 +191,7 @@ debugPrint("Audio routing: SalonD → Input 3 (Source: Room Combiner)")
 
 -- Count things at registration time
 debugPrint("Registered " .. wallCount .. " wall button handlers")
-debugPrint("Registered " .. rcCount  .. " room control handlers")
+debugPrint("Registered " .. rcCount   .. " room control handlers")
 
 -- Before/after for significant state transitions
 debugPrint("Room component 3 (SalonA): 'compRoomA_old' → 'compRoomA_new'")
@@ -160,21 +204,9 @@ debugPrint("Room component 3 (SalonA): 'compRoomA_old' → 'compRoomA_new'")
 ### 5.1 Flat control flow — early returns
 
 ```lua
--- ❌ Nested
 local function doSomething(input, output)
-    if input then
-        if output then
-            if enabled then
-                -- 3 levels deep
-            end
-        end
-    end
-end
-
--- ✅ Flat with early returns
-local function doSomething(input, output)
-    if not input   then return false end
-    if not output  then return false end
+    if not input  then return false end
+    if not output then return false end
     if not enabled then return false end
     -- logic at top level
     return true
@@ -184,316 +216,219 @@ end
 ### 5.2 Variable naming
 
 **Acceptable abbreviations** — Q-SYS 3-letter control prefixes are standard:
-```
+
+```text
 btn  txt  ctl  msg  str  cam  mxr  lvl  dev  led
 ```
 
 **Loop iterators** — `i`, `k`, `v` are the only acceptable single-letter variables:
+
 ```lua
-for i, item in ipairs(list) do ... end  -- ✅
-for k, v in pairs(table)   do ... end  -- ✅
+for i, item in ipairs(list)  do ... end
+for k, v    in pairs(tbl)    do ... end
 ```
 
-**All other variables must be descriptive:**
-```lua
--- ❌ Cryptic
-for r = 1, #roomList do
-    local p = presets[r]; local c = cameras[r]
-end
-
--- ✅ Self-documenting
-for roomIdx = 1, #roomList do
-    local preset = presets[roomIdx]; local camera = cameras[roomIdx]
-end
-
--- ❌ Cryptic parameters
-local function setRoute(i, o, s) ... end
-
--- ✅ Self-documenting
-local function setRoute(input, output, source) ... end
-```
+**All other variables must be descriptive.**
 
 ### 5.3 Line length (characters, not words)
 
-Judge readability by **character count**, not word count—words vary in length, so “N words per line” is inconsistent.
-
-- **Do not** join statements or squeeze long calls onto one line **only** to shrink the file; clarity beats vertical compactness.
-- When a line **combines** several operations (e.g. one call with multiple arguments, or ternary-style `condition and a or b` alongside other expressions), treat **~100 characters** (including leading indentation) as a practical **ceiling**—about the length of:
-
-```lua
-    updateLayerVisibility({"I01-CallActive"}, state.callActive, state.callActive and "fade" or "none")
-```
-
-(Reference: `UCIController(Refactor).lua` in `updateCallActiveState`.) Beyond that, prefer an extra local, line breaks between arguments, or separate statements.
+- Judge readability by **character count**, not word count
+- Do **not** join statements or squeeze long calls onto one line only to shrink the file; clarity beats vertical compactness
+- For lines combining several operations (multiple arguments, `condition and a or b`), treat **~100 characters** (including indentation) as a practical ceiling
 
 ### 5.4 Function definition order
 
-Define functions in dependency order — callees before callers. This avoids the need for forward declarations:
+Define functions in dependency order — callees before callers. `registerEvents()` and `init()` go last.
 
 ```lua
--- Define utility/leaf functions first
+-- Leaf utilities first
 local function isRoomPoweredOn(roomName) ... end
 
 -- Then functions that call them
-local function updateWallStates() ... isRoomPoweredOn(...) ... end
+local function updateWallStates() ... end
 
--- Then higher-level orchestration
-local function handleWallButtonPress(...) ... updateWallStates() ... end
+-- Then orchestrators
+local function handleWallButtonPress() ... end
 
--- registerEvents and init always last
+-- Finally registration/init
 local function registerEvents() ... end
-local function init() ... end
+local function init()          ... end
 ```
 
 ### 5.5 Minimize repetition (DRY)
 
-Prefer **table-driven** configuration and **small local helpers** over duplicated blocks: one shared `setComponent`, `setProp` for routing changes, `normalizeControlArrays` once at init, and single loops over room or device lists instead of many near-identical copies. The goal is the **shortest** script that stays clear and fully logged—not cleverness for its own sake.
+Prefer **table-driven** configuration and **small local helpers** over duplicated blocks. Use shared helpers like `setComponent`, `setProp`, `normalizeControlArrays`, and single loops over room/device lists. The goal is the **shortest** script that stays clear and fully logged — not cleverness for its own sake.
 
 ---
 
 ## 6. Component Management
 
-### 6.1 Standard setComponent pattern
+### 6.1 Standard `setComponent` pattern
 
-**Always use `setProp()` for control assignments** — never direct assignment. This prevents feedback loops and redundant Q-SYS updates.
+**Always use `setProp()` for control assignments** — never direct assignment.
 
 ```lua
+local components = { invalid = {} }
+
+local function checkStatus()
+    -- implement overall status aggregation here (invalid flags, etc.)
+end
+
 local function setComponent(ctrl, componentType, expectedType)
     if not ctrl then
         components.invalid[componentType] = true
-        checkStatus(); return nil
+        checkStatus()
+        return nil
     end
+
     local name = ctrl.String
-    if not name or name == "" or name == clearString then
-        if name == clearString then setProp(ctrl, "String", "") end
+    if not name or name == "" or name == const.clearString then
+        if name == const.clearString then setProp(ctrl, "String", "") end
         setProp(ctrl, "Color", "white")
         components.invalid[componentType] = false
         checkStatus()
         debugPrint("No " .. componentType .. " component selected")
         return nil
     end
-    local comp     = Component.New(name)
-    local ctrlList = comp and Component.GetControls(comp)
-    if not ctrlList or #ctrlList < 1 then
-        setProp(ctrl, "String", "[Invalid Component Selected]")
+
+    local comp = Component.New(name)
+    if not comp then
+        setProp(ctrl, "String", "Component Not Found")
         setProp(ctrl, "Color", "pink")
         components.invalid[componentType] = true
         checkStatus()
-        debugPrint("ERROR: Invalid component '" .. name .. "' for " .. componentType)
+        debugPrint("ERROR: Component '" .. tostring(name) .. "' not found for " .. componentType)
         return nil
     end
+
     if expectedType and comp.Type ~= expectedType then
-        setProp(ctrl, "String", "[Wrong Component Type]")
+        setProp(ctrl, "String", "Wrong Component Type")
         setProp(ctrl, "Color", "pink")
         components.invalid[componentType] = true
         checkStatus()
-        debugPrint("ERROR: " .. componentType .. " wrong type. Expected " .. tostring(expectedType) .. ", got " .. tostring(comp.Type))
+        debugPrint("ERROR: Wrong type '" .. tostring(comp.Type) .. "' for " .. componentType .. " (expected '" .. expectedType .. "')")
         return nil
     end
-    setProp(ctrl, "Color", "white")
+
+    components[componentType] = comp
     components.invalid[componentType] = false
     checkStatus()
-    debugPrint("Connected " .. componentType .. ": " .. name)
+    debugPrint(componentType .. " component set: " .. name)
     return comp
 end
 ```
 
-**Optional `expectedType`:** Pass the component type string to reject wrong types (e.g. when user selects from a dropdown). Omit when discovery already filters by type.
-
 ### 6.2 Component discovery with logging
 
 ```lua
-local function discoverComponents()
+local function discoverComponents(targetType)
     debugPrint("Discovering components...")
     local deviceNames = {}
-    for _, comp in pairs(Component.GetComponents()) do
-        if comp.Type == "target_type" then
-            table.insert(deviceNames, comp.Name)
-            debugPrint("  Found device: " .. comp.Name)
+    for _, comps in pairs(Component.GetComponents()) do
+        if comps.Type == targetType then
+            deviceNames[#deviceNames + 1] = comps.Name
+            debugPrint("Found " .. targetType .. ": " .. comps.Name)
         end
     end
-    table.sort(deviceNames); table.insert(deviceNames, clearString)
-    if controls.devDevice then controls.devDevice.Choices = deviceNames end
-    debugPrint("Discovery complete - " .. (#deviceNames - 1) .. " devices found")
+    debugPrint("Discovered " .. #deviceNames .. " " .. targetType .. " devices")
     return deviceNames
 end
 ```
 
-**Auto-select when exactly one component:** If discovery finds a single component and the control is empty, auto-select it for better UX:
+### 6.3 Handler cleanup when reassigning components
+
+When a component selector control changes, **clean up `EventHandler`s on the old component before assigning the new one**.
+
+```lua
+local function setCallSyncComponents()
+    local oldComps = components.callSync
+    if oldComps then
+        cleanupComponentHandlers(oldComps, { "off_hook", "mute", "hook_flash" }, debugPrint)
+    end
+    components.callSync = setComponent(controls.compCallSync, "Call Sync", "call_sync")
+end
+```
+
+### 6.4 Auto-select when exactly one component
+
+If discovery finds a single component and the control is empty, auto-select it.
 
 ```lua
 local function setupComponentSelector(ctrl, names, componentType)
     if not ctrl then return end
     ctrl.Choices = names
     if #names == 2 and (not ctrl.String or ctrl.String == "") then
-        setProp(ctrl, "String", names[1])
-        debugPrint("Auto-selected " .. componentType .. ": " .. names[1])
+        setProp(ctrl, "String", names)[1]
+        debugPrint("Auto-selected " .. componentType .. ": " .. names)[1]
     end
 end
 ```
 
-*(`#names == 2` means one real component + `[Clear]`)*
+---
 
-### 6.3 Handler cleanup when reassigning components
+## 7. Start / Init Pattern
 
-When a component selector control is changed, **clean up EventHandlers on the old component** before assigning the new one. Otherwise handlers accumulate and can fire for stale references.
+Wrap startup in `pcall()` so init failures are visible and safe.
 
 ```lua
-local function cleanupComponentHandlers(oldComp, controlNames, debugCb)
-    if not oldComp or not controlNames then return 0 end
-    local cleaned = 0
-    for _, name in ipairs(controlNames) do
-        if oldComp[name] and oldComp[name].EventHandler then
-            oldComp[name].EventHandler = nil
-            cleaned = cleaned + 1
+local function start()
+    local ok, err = pcall(function()
+        debugPrint("Initializing controller for " .. const.roomName)
+        init()
+    end)
+
+    if ok then
+        print("[START] Controller initialized for " .. const.roomName)
+    else
+        print("[" .. const.roomName .. "] INIT FAILED: " .. tostring(err))
+        if controls and controls.txtStatus then
+            setProp(controls.txtStatus, "String", "INIT FAILED")
+            setProp(controls.txtStatus, "Value", 2)
         end
     end
-    if debugCb and cleaned > 0 then debugCb("Cleaned up " .. cleaned .. " handler(s) from old component") end
-    return cleaned
 end
-```
 
-**Usage:** Call before `setComponent` when the component has event handlers:
-
-```lua
-local function setCallSyncComponent()
-    local oldComp = components.callSync
-    if oldComp then
-        cleanupComponentHandlers(oldComp, {"off.hook", "mute"}, function(msg) debugPrint("[Call Sync] " .. msg) end)
-    end
-    components.callSync = setComponent(controls.compCallSync, "Call Sync")
-    local comp = components.callSync
-    if not comp then return end
-    if comp["off.hook"] then comp["off.hook"].EventHandler = callSyncCheckConnection end
-    if comp["mute"] then comp["mute"].EventHandler = callSyncCheckMute end
-end
-```
-
-For components with many handlers, consider a `setComponentByType(ctrl, componentType, storageKey, eventMap)` helper that wraps cleanup + setComponent + handler registration.
-
-### 6.4 Public API surface (cross-script access)
-
-```lua
--- At the bottom, after init() is defined
-DivisibleSpaceController = {
-    applyAudioRouting = applyAudioRouting,
-    setRoomStates     = setRoomStates,
-    debugRouterStates = debugRouterStates,
-}
+start()
 ```
 
 ---
 
-## 7. Event-Driven Feedback (not timer polling)
+## 8. Refactoring Checklist (for agents)
 
-Prefer attaching `EventHandler` to component status controls over timer-based polling:
+**Structure**
 
-```lua
--- ✅ Event-driven — fires only when state actually changes
-if comp["ledSystemPower"] then
-    comp["ledSystemPower"].EventHandler = function(ctl)
-        debugPrint("System power → " .. (ctl.Boolean and "ON" or "OFF") .. " (Source: Room Controls)")
-        updatePowerFeedback()
-    end
-    debugPrint("Registered: system power handler")
-end
+- Flat module; no `setmetatable`, `__index`, `.new()`, `self`
+- Standard section order: Config, Controls, Utilities, State, Debug, Functions, Events, Init, Public API, Start
+- Functions defined in dependency order (callees before callers)
 
--- ❌ Timer polling — runs on a schedule regardless of change
-local timer = Timer.New()
-timer.EventHandler = function() updatePowerFeedback() end
-timer:Start(1.0)
+**Debug Logging**
+
+- `debugPrint()` implemented with room-name prefix
+- Init uses clear start/complete markers
+- Discovery logs each component found + final count (or aggregate for micro-controllers)
+- Registration logs handler type counts
+- State changes include source attribution
+- Errors and safety blocks logged
+
+**Code Quality**
+
+- Early returns for guard conditions
+- `setProp()` used for all control property assignments
+- `bind()` / `bindArray()` used for all event handler assignments
+- Required controls validated in `validateControls()` when present
+- No single-letter variables except `i`, `k`, `v`
+- Q-SYS 3-letter control prefixes used consistently
+
+**Component Management**
+
+- Invalid selections handled explicitly with user-facing feedback
+- Component handlers cleaned up before reassignment when applicable
+- Optional `expectedType` used when selectors can pick wrong types
+- Auto-select used when exactly one valid component exists
+
+**Metrics**
+
+- 50–70% line reduction when refactoring verbose scripts
+- Script under ~1000 lines for most controllers (practical ceiling, not a hard cap)
+- Every user interaction visible in debug output
 ```
-
-Use a timer **only** when hardware cannot notify on change (true polling requirement with no available status control).
-
----
-
-## 8. Start / Factory Pattern
-
-```lua
-local ok, err = pcall(function()
-    print("Initializing controller for " .. roomName .. "...")
-    if not validateControls() then error("Control validation failed") end
-    normalizeControlArrays()
-    init()
-end)
-
-if ok then
-    print("✓ Controller initialized for " .. roomName)
-else
-    print("✗ ERROR: Initialization failed: " .. tostring(err))
-    if controls and controls.txtStatus then
-        setProp(controls.txtStatus, "String", "INIT FAILED")
-        setProp(controls.txtStatus, "Value", 2)
-    end
-end
-```
-
----
-
-## 8.5 UCI showLayer — Avoid Base Layer Toggle
-
-**Anti-pattern (causes EventHandler feedback loops):**
-```lua
--- ❌ WRONG — Hiding base layers then immediately showing them toggles Y01-Navbar,
--- which contains nav buttons. That can trigger control EventHandlers and cause
--- btnNavEventHandler to fire repeatedly → infinite loop.
-for _, layer in ipairs(layersAll) do
-    setLayerVisible(layer, false, "none")  -- includes X01, Y01, Z01
-end
-showLayers({"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}, true, "none")
-```
-
-**Correct pattern:**
-```lua
-local layersBase = {"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}
-
--- Hide only non-base layers; never hide-then-show base (navbar contains nav buttons)
-for _, layer in ipairs(layersAll) do
-    if layer ~= "X01-ProgramVolume" and layer ~= "Y01-Navbar" and layer ~= "Z01-Base" then
-        setLayerVisible(layer, false, "none")
-    end
-end
-showLayers(layersBase, true, "none")
--- Layers with hideBase=true still call hideBaseLayers() explicitly
-```
-
----
-
-## 9. Refactoring Checklist
-
-**Structure:**
-- [ ] Flat module — no `setmetatable`, `__index`, `.new()`, `self:`
-- [ ] Standard section order (Config, Controls, Utilities, State, Debug, Functions, Events, Init, Public API, Start)
-- [ ] All functions defined in dependency order (callees before callers)
-
-**Debug Logging:**
-- [ ] `debugPrint()` implemented with room name prefix
-- [ ] Init uses `=== Started ===` / `=== Complete ===` phase markers
-- [ ] Discovery logs each component found + final count
-- [ ] Registration logs each handler type + count
-- [ ] All state changes include source attribution `(Source: ...)`
-- [ ] Before → after shown for component assignment changes
-
-**Code Quality:**
-- [ ] Combined operations respect character budget (see §5.3); do not shorten line count at the expense of readability
-- [ ] Early returns for all guard conditions
-- [ ] `setProp()` used for all control property assignments (including setComponent and Start error handler)
-- [ ] `bind()` / `bindArray()` used for all event handlers
-- [ ] Control arrays normalized once with `normalizeControlArrays()`
-- [ ] Required controls validated in `validateControls()`
-- [ ] No single-letter variables except `i`, `k`, `v`
-- [ ] 3-letter Q-SYS control prefixes used consistently
-- [ ] Event-driven feedback (not timer polling) for component status controls
-- [ ] UCI showLayer: base layers (X01, Y01, Z01) excluded from initial hide-all pass
-- [ ] Component handlers cleaned up before reassignment (`cleanupComponentHandlers` when component has EventHandlers)
-- [ ] Minimal repetition — helpers and data tables replace duplicated logic (see §5.5)
-
-**Metrics:**
-- [ ] 50–70% line reduction if refactoring an existing script
-- [ ] Script under ~1000 lines
-- [ ] Every user interaction visible in debug output
-
-**Metrics (when the script is oversized or verbose):**
-- [ ] **Leaner result** — refactors of long or copy-pasted scripts often land **~50–70% smaller** in line count (more is acceptable)
-- [ ] **~1000 lines** — use as a practical ceiling when a controller has grown past it; not a universal requirement for every file

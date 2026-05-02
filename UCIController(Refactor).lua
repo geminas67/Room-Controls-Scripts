@@ -16,9 +16,9 @@ local layersBase = {"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}
 local layersToHide = {
     "A01-Alarm","B01-IncomingCall","C05-Start","D01-ShutdownConfirm",
     "E01-SystemProgressWarming","E02-SystemProgressCooling","E05-SystemProgress",
-    "H01-PasscodeEntry","H05-RoomControls",
+    "H01-PasscodeEntry","H10-RoomControls",
     "I01-CallActive","I02-HelpLaptop","I03-HelpPC","I04-HelpWireless","I05-HelpRouting","I07-HelpStreamMusic",
-    "J01-ConnectUSBLaptop","J02-ConnectUSBPC","J03-ACPRActive","J04-CamPresetSaved","J05-ConferenceControls",
+    "J01-ConnectUSBLaptop","J02-ConnectUSBPC","J03-ACPRActive","J04-CamPresetSaved","J09-ConferenceControlsLaptop","J10-ConferenceControlsPC",
     "L01-HDMIDisconnected","L05-Laptop","P01-HDMIDisconnected","P05-PC","W01-HDMIDisconnected","W05-Wireless",
     "R01-Routing01","R02-Routing02","R03-Routing03","R04-Routing04","R05-Routing05","R10-Routing",
     "S05-StreamMusic","V05-Dialer"
@@ -69,7 +69,7 @@ local configSource = {
         base    = "P05-PC", 
         disc    = "P01-HDMIDisconnected", 
         usb     = "J02-ConnectUSBPC", 
-        conf    = "J05-ConferenceControls", 
+        conf    = "J10-ConferenceControlsPC", 
         help    = "I03-HelpPC" 
     },
     Laptop = { 
@@ -78,8 +78,8 @@ local configSource = {
         usbKey  = "pinLEDUSBLaptop",
         base    = "L05-Laptop", 
         disc    = "L01-HDMIDisconnected", 
-        usb     = "J01-ConnectUSBLaptop", 
-        conf    = "J05-ConferenceControls", 
+        usb     = "J01-ConnectUSBLaptop",
+        conf    = "J09-ConferenceControlsLaptop",
         help    = "I02-HelpLaptop" 
     },
     Wireless = { 
@@ -88,7 +88,8 @@ local configSource = {
         usbKey  = nil,
         base    = "W05-Wireless", 
         disc    = "W01-HDMIDisconnected", 
-        usb     = nil, conf=nil, 
+        usb     = nil, 
+        conf    = nil, 
         help    = "I04-HelpWireless" 
     },
 }
@@ -344,7 +345,7 @@ local function updateSourceHelpState(srcKey)
     updateLayerVisibility({src.helpLayer}, isVisible, isVisible and "fade" or "none")
     if isVisible then
         local hide = collectLayers({"J01-ConnectUSBLaptop","J02-ConnectUSBPC"})
-        if src.confLayer then table.insert(hide, "J05-ConferenceControls") end
+        if src.confLayer then table.insert(hide, "J10-ConferenceControlsPC") end
         updateLayerVisibility(hide, false, "none")
     elseif src.confLayer then
         updateConferenceState()
@@ -357,7 +358,7 @@ local function updateConferenceState()
     local src = getActiveSource()
     if not src then return end
     if not checkHDMIConnection() then
-        local hide = collectLayers({"J01-ConnectUSBLaptop","J02-ConnectUSBPC"}, {"J05-ConferenceControls"})
+        local hide = collectLayers({"J01-ConnectUSBLaptop","J02-ConnectUSBPC"}, {"J10-ConferenceControlsPC"})
         if src.helpLayer then table.insert(hide, src.helpLayer) end
         updateLayerVisibility(hide, false, "none")
         if src.helpLayer then syncHelpButtonStates(src.helpLayer) end
@@ -729,10 +730,9 @@ local function initLegendArrays()
         {suffix = "Nav",        count = 13}, 
         {suffix = "Routing",    count = 5}, 
         {suffix = "VidSrc",     count = 12},
-        {suffix = "GainPGM"},
         {suffix = "Gain",       count = 10}, 
         {suffix = "Display",    count = 4},
-        {single={"NavShutdown","RoomNameNav","RoomNameStart","RoutingRooms","RoutingSources"}},
+        {single={"NavShutdown","RoomNameNav","RoomNameStart","RoutingRooms","RoutingSources", "GainPGM"}},
     }
     local idx = 0
     for _, cfg in ipairs(legendConfig) do

@@ -1,6 +1,13 @@
--- Screen control: press → relay on → after hold time → reset (relay off, button off)
+---Named Components---
+compLift = Component.New("compProjector")
 
 timerMovementEnd = nil
+
+compLift["ledPower"].EventHandler = function(ctl)
+  if not ctl.Boolean then
+    print("Projector is off. Lift can now move up.")
+  end
+end
 
 function setDisabled(boolean)
   Controls.btnMoveUp.IsDisabled = boolean

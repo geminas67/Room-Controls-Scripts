@@ -1,14 +1,15 @@
 --[[
   Extron DXP Matrix Routing Controller
   Author: Nikolas Smith, Q-SYS
-  Date: 2026-04-03
-  Version: 5.4
-  Firmware Req: 10.0.0
+  Date: 2026-04-09
+  Version: 5.7
+  Firmware Req: 10.2.0
 
-  Room-combine matrix follows compDivisibleSpaceControls btnRoomState 1–3 (interlock); system power
-  and auto-switch still use compRoomControls. UCI publishes layer changes via Notifications (see
-  uciLayerNotifyMatrix); do not bind btnNav07–10 here—UCI owns those controls. Output handlers
-  refresh ledSourceRouted when output.N changes.
+  Room-combine matrix follows compDivisibleSpaceControls btnRoomState 1–3 (interlock). Two
+  compRoomControls selectors (RmA/RmB) track per-room power; auto-switch only asserts power on
+  room(s) allowed by roomLayoutMode (separated → source’s room only; combined → both). UCI
+  publishes layer changes via Notifications (uciLayerNotifyMatrix); do not bind btnNav07–10 here.
+  Output handlers refresh ledSourceRouted when output.N changes.
 ]]--
 
 -------------------[ Controls ]-------------------
@@ -73,6 +74,14 @@ local function cleanupComponentHandlers(oldComp, controlNames, debugCb)
     return cleaned
 end
 
+local function indexedControls(ctrl, count)
+    local tbl = {}
+    if ctrl then
+        for idx = 1, count do tbl[idx] = ctrl[idx] end
+    end
+    return tbl
+end
+
 -------------------[ Config ]-------------------
 local debugging  = true
 local clearString = "[Clear]"
@@ -96,10 +105,15 @@ local inputs = {
 
 local uciLayerToInput   = { [7] = inputs.TeamsPCRmA, [8] = inputs.TeamsPCRmB, [9] = inputs.LaptopRmA, [10] = inputs.LaptopRmB }
 
--- Must match UCIController(DivisibleSpace): cross-script handoff (Lua _G is not shared between scripts).
+-- Must match UCIController(DivisibleSpace): cross-script handoff.
 local uciLayerNotifyMatrix = "HitachiTraining_UCIMatrixLayer"
-local sourceButtonToInput = { [1] = 1, [2] = 2, [3] = 3, [4] = 4, [5] = 0}
-local sourceNames       = {
+local sourceButtonToInput = { [1] = 1, [2] = 2, [3] = 3, [4] = 4, [5] = 0 }
+local inputToSourceButton = {}
+for btnIdx, inputNum in pairs(sourceButtonToInput) do
+    inputToSourceButton[inputNum] = btnIdx
+end
+
+local sourceNames = {
     [0] = "No Source", [1] = "Laptop RmA", [2] = "Laptop RmB", [3] = "TeamsPC RmA", [4] = "TeamsPC RmB",
 }
 
@@ -109,24 +123,43 @@ local routingConfig = {
     outputsForRoomB = { 2 },
 }
 
+local outputInRoomA, outputInRoomB = {}, {}
+for _, out in ipairs(routingConfig.outputsForRoomA) do outputInRoomA[out] = true end
+for _, out in ipairs(routingConfig.outputsForRoomB) do outputInRoomB[out] = true end
+
+local combinedOutputsInUse = {}
+for _, outList in ipairs({ routingConfig.outputsForRoomA, routingConfig.outputsForRoomB }) do
+    for _, out in ipairs(outList) do table.insert(combinedOutputsInUse, out) end
+end
+
 -------------------[ State ]-------------------
 local norm = {}
 
 local components = {
     extronMatrix            = nil,
     callSync                = nil,
-    roomControls            = nil,
+    roomControls            = {},  -- [1] = RmA, [2] = RmB device_controller_script
     divisibleSpaceControls  = nil,
-    uciLayerSelector        = nil,
     invalid                 = {},
 }
 
 -- roomLayoutMode: 1 = Separated, 2/3 = Combined (both outputs follow selected source, e.g. UCI layer)
 -- lastSeparatedSourceA/B: expected routed input per side when separated (independent of the other room)
 local state = {
-    power = false, warming = true, cooling = false, roomLayoutMode = 1,
-    lastSeparatedSourceA = nil, lastSeparatedSourceB = nil,
+    powerRoomA = false,       -- Room A is powered off
+    powerRoomB = false,       -- Room B is powered off
+    warmingRoomA = true,      -- Room A is warming
+    warmingRoomB = true,      -- Room B is warming
+    coolingRoomA = false,     -- Room A is cooling
+    coolingRoomB = false,     -- Room B is cooling
+    roomLayoutMode = 1,       -- 1 = Separated, 2/3 = Combined
+    lastSeparatedSourceA = nil, -- Expected routed input for Room A when separated
+    lastSeparatedSourceB = nil, -- Expected routed input for Room B when separated
 }
+
+local function isCombinedLayout()
+    return state.roomLayoutMode == 2 or state.roomLayoutMode == 3
+end
 
 local uci = { controller = nil, enabled = true, matrixNotifySubId = nil }
 
@@ -145,11 +178,11 @@ local sourcePriority = {
         local led = norm.ledSignalPresence and norm.ledSignalPresence[2]
         return led and led.Boolean
     end },
-    { name = "Teams PCRmA (Sig3)", input = inputs.TeamsPCRmA, checkFunc = function()
+    { name = "Teams PCRmA (USB)", input = inputs.TeamsPCRmA, checkFunc = function()
         local led = norm.ledSignalPresence and norm.ledSignalPresence[3]
         return led and led.Boolean
     end },
-    { name = "Teams PCRmB", input = inputs.TeamsPCRmB, checkFunc = function()
+    { name = "Teams PCRmB (USB)", input = inputs.TeamsPCRmB, checkFunc = function()
         local led = norm.ledSignalPresence and norm.ledSignalPresence[4]
         return led and led.Boolean
     end },
@@ -171,23 +204,17 @@ end
 
 local function normalizeControlArrays()
     norm = {
-        btnSource          = {},
-        btnDestination     = {},
-        ledSourceRouted    = {},
-        ledSignalPresence  = {},
-        uciButtons         = { [7] = controls.btnNav07, [8] = controls.btnNav08, [9] = controls.btnNav09, [10] = controls.btnNav10 }
+        btnSource         = indexedControls(controls.btnSource, 6),
+        btnDestination    = indexedControls(controls.btnDestination, 5),
+        ledSourceRouted   = indexedControls(controls.ledSourceRouted, 4),
+        ledSignalPresence = indexedControls(controls.ledSignalPresence, 5),
+        uciButtons        = { [7] = controls.btnNav07, [8] = controls.btnNav08, [9] = controls.btnNav09, [10] = controls.btnNav10 },
     }
-    if controls.btnSource then
-        for idx = 1, 6 do norm.btnSource[idx] = controls.btnSource[idx] end
-    end
-    if controls.btnDestination then
-        for idx = 1, 5 do norm.btnDestination[idx] = controls.btnDestination[idx] end
-    end
-    if controls.ledSourceRouted then
-        for idx = 1, 4 do norm.ledSourceRouted[idx] = controls.ledSourceRouted[idx] end
-    end
-    if controls.ledSignalPresence then
-        for idx = 1, 5 do norm.ledSignalPresence[idx] = controls.ledSignalPresence[idx] end
+    local crc = Controls.compRoomControls
+    if crc then
+        controls.compRoomControls = isArr(crc) and crc or { crc }
+    else
+        controls.compRoomControls = nil
     end
 end
 
@@ -222,7 +249,8 @@ local function setComponent(ctrl, componentType, expectedType)
         return nil
     end
     local comp = Component.New(name)
-    if #Component.GetControls(comp) < 1 then
+    local ctrlList = comp and Component.GetControls(comp)
+    if not ctrlList or #ctrlList < 1 then
         setProp(ctrl, "String", "[Invalid Component Selected]")
         setProp(ctrl, "Color", "pink")
         components.invalid[componentType] = true
@@ -267,7 +295,7 @@ end
 
 local function discoverComponents()
     debugPrint("Discovering components...")
-    local discovered = { extronMatrix = {}, callSync = {}, clickShare = {}, roomControls = {} }
+    local discovered = { extronMatrix = {}, callSync = {}, roomControls = {} }
     for _, comp in pairs(Component.GetComponents()) do
         if comp.Type == componentTypes.extronMatrix then
             table.insert(discovered.extronMatrix, comp.Name)
@@ -275,15 +303,12 @@ local function discoverComponents()
         elseif comp.Type == componentTypes.callSync then
             table.insert(discovered.callSync, comp.Name)
             debugPrint("Discovered CallSync: " .. comp.Name)
-        elseif comp.Type == componentTypes.clickShare then
-            table.insert(discovered.clickShare, comp.Name)
-            debugPrint("Discovered ClickShare: " .. comp.Name)
         elseif comp.Type == componentTypes.roomControls and string.match(comp.Name, "^compRoomControls") then
             table.insert(discovered.roomControls, comp.Name)
             debugPrint("Discovered Room Controls: " .. comp.Name)
         end
     end
-    local total = #discovered.extronMatrix + #discovered.callSync + #discovered.clickShare + #discovered.roomControls
+    local total = #discovered.extronMatrix + #discovered.callSync + #discovered.roomControls
     debugPrint("Component discovery complete - " .. total .. " components found")
     return discovered
 end
@@ -303,10 +328,7 @@ end
 --- Keep txtSource / btnSource aligned with a matrix input index (1–4 or 0 = No Source).
 local function syncSourceButtonsToInput(input)
     if input == nil then updateSourceText(); return end
-    local targetIdx = nil
-    for btnIdx, inputNum in pairs(sourceButtonToInput) do
-        if inputNum == input then targetIdx = btnIdx; break end
-    end
+    local targetIdx = inputToSourceButton[input]
     if not targetIdx then updateSourceText(); return end
     for idx = 1, 6 do
         local btn = norm.btnSource and norm.btnSource[idx]
@@ -317,23 +339,10 @@ end
 
 --- Combined mode routes both outputs to the same source; keep btnSource/txtSource aligned with that input.
 local function syncSourceUIFromCombinedLayout(selectedInput)
-    if state.roomLayoutMode ~= 2 and state.roomLayoutMode ~= 3 then return end
+    if not isCombinedLayout() then return end
     if not selectedInput or selectedInput == inputs.NoSource then updateSourceText(); return end
     syncSourceButtonsToInput(selectedInput)
     debugPrint("Source UI → " .. (sourceNames[selectedInput] or tostring(selectedInput)) .. " (combined layout)")
-end
-
-local function tableContains(tbl, val)
-    if not tbl then return false end
-    for _, v in ipairs(tbl) do if v == val then return true end end
-    return false
-end
-
-local function allOutputsInUse()
-    local t = {}
-    for _, o in ipairs(routingConfig.outputsForRoomA) do table.insert(t, o) end
-    for _, o in ipairs(routingConfig.outputsForRoomB) do table.insert(t, o) end
-    return t
 end
 
 local function inputBelongsToRoomA(input)
@@ -344,20 +353,30 @@ local function inputBelongsToRoomB(input)
     return input == inputs.LaptopRmB or input == inputs.TeamsPCRmB
 end
 
+--- Which room indices need to be on for auto-switch given matrix input (respects roomLayoutMode).
+local function roomsToEnsurePoweredForSource(input)
+    if isCombinedLayout() then
+        return { 1, 2 }
+    end
+    if inputBelongsToRoomA(input) then return { 1 } end
+    if inputBelongsToRoomB(input) then return { 2 } end
+    return {}
+end
+
 local function expectedInputOnOutput(output)
-    if state.roomLayoutMode == 2 or state.roomLayoutMode == 3 then
-        if tableContains(routingConfig.outputsForRoomA, output) or tableContains(routingConfig.outputsForRoomB, output) then
+    if isCombinedLayout() then
+        if outputInRoomA[output] or outputInRoomB[output] then
             local sel = getSelectedSource()
             return (sel and sel ~= inputs.NoSource) and sel or 0
         end
         return 0
     end
     local expA, expB = state.lastSeparatedSourceA, state.lastSeparatedSourceB
-    if tableContains(routingConfig.outputsForRoomA, output) then
+    if outputInRoomA[output] then
         if expA and expA ~= inputs.NoSource and inputBelongsToRoomA(expA) then return expA end
         return 0
     end
-    if tableContains(routingConfig.outputsForRoomB, output) then
+    if outputInRoomB[output] then
         if expB and expB ~= inputs.NoSource and inputBelongsToRoomB(expB) then return expB end
         return 0
     end
@@ -365,9 +384,9 @@ local function expectedInputOnOutput(output)
 end
 
 local function outputAllowedForSource(out, selected)
-    if state.roomLayoutMode == 2 or state.roomLayoutMode == 3 then return true end
-    if inputBelongsToRoomA(selected) then return tableContains(routingConfig.outputsForRoomA, out) end
-    if inputBelongsToRoomB(selected) then return tableContains(routingConfig.outputsForRoomB, out) end
+    if isCombinedLayout() then return true end
+    if inputBelongsToRoomA(selected) then return outputInRoomA[out] or false end
+    if inputBelongsToRoomB(selected) then return outputInRoomB[out] or false end
     return false
 end
 
@@ -400,27 +419,23 @@ local function updateDestinationText()
     else setProp(controls.txtStatus, "String", table.concat(routes, ", ")) end
 end
 
-local function onExtronOutputChange()
+local function refreshDestinationUI()
     updateDestinationFeedback()
     updateDestinationText()
+end
+
+local function onExtronOutputChange()
+    refreshDestinationUI()
 end
 
 local extronOutputControls = { "output.1", "output.2", "output.3", "output.4" }
 
 local function setExtronMatrixComponent()
-    local oldComp = components.extronMatrix
-    if oldComp then
-        cleanupComponentHandlers(oldComp, extronOutputControls, function(msg) debugPrint("[Extron DXP] " .. msg) end)
+    local extronEventMap = {}
+    for _, ctrlName in ipairs(extronOutputControls) do
+        extronEventMap[ctrlName] = onExtronOutputChange
     end
-    components.extronMatrix = setComponent(controls.compExtronDXP, "Extron DXP Matrix")
-    local comp = components.extronMatrix
-    if comp then
-        local count = 0
-        for _, ctrlName in ipairs(extronOutputControls) do
-            if comp[ctrlName] and bind(comp[ctrlName], onExtronOutputChange) then count = count + 1 end
-        end
-        debugPrint("Registered " .. count .. " Extron output handlers for event-driven feedback")
-    end
+    setComponentByType(controls.compExtronDXP, "Extron DXP Matrix", "extronMatrix", extronEventMap)
 end
 
 -------------------[ Routing ]-------------------
@@ -429,20 +444,14 @@ local function setRoute(input, output, source, skipFeedback)
     setProp(components.extronMatrix['output.' .. output], "String", tostring(input))
     local sourceStr = source and " (Source: " .. source .. ")" or ""
     debugPrint("Routed Output " .. output .. " → Input " .. input .. sourceStr)
-    if not skipFeedback then
-        updateDestinationFeedback()
-        updateDestinationText()
-    end
+    if not skipFeedback then refreshDestinationUI() end
 end
 
 local function clearRoute(output, skipFeedback)
     if not components.extronMatrix then return end
     setProp(components.extronMatrix['output.' .. output], "String", "0")
     debugPrint("Cleared Output " .. output)
-    if not skipFeedback then
-        updateDestinationFeedback()
-        updateDestinationText()
-    end
+    if not skipFeedback then refreshDestinationUI() end
 end
 
 local function readRoomLayoutMode(comp)
@@ -461,30 +470,34 @@ end
 local function applyRoutesForSource(selected, source, skipFeedback, outputs)
     if not components.extronMatrix then return end
     local skip = skipFeedback == true
-    if state.roomLayoutMode == 2 or state.roomLayoutMode == 3 then
+    local function finishRoutingUI()
+        if skip then return end
+        refreshDestinationUI()
+    end
+    if isCombinedLayout() then
         if selected == nil or selected == inputs.NoSource then
-            for _, out in ipairs(allOutputsInUse()) do clearRoute(out, true) end
+            for _, out in ipairs(combinedOutputsInUse) do clearRoute(out, true) end
         else
-            local targets = outputs or allOutputsInUse()
+            local targets = outputs or combinedOutputsInUse
             for _, out in ipairs(targets) do
                 setRoute(selected, out, source, true)
             end
         end
         syncSourceUIFromCombinedLayout(selected)
-        if not skip then updateDestinationFeedback(); updateDestinationText() end
+        finishRoutingUI()
         return
     end
     if selected == nil or selected == inputs.NoSource then
-        for _, out in ipairs(allOutputsInUse()) do clearRoute(out, true) end
+        for _, out in ipairs(combinedOutputsInUse) do clearRoute(out, true) end
         state.lastSeparatedSourceA, state.lastSeparatedSourceB = nil, nil
-        if not skip then updateDestinationFeedback(); updateDestinationText() end
+        finishRoutingUI()
         return
     end
     if inputBelongsToRoomA(selected) then
         state.lastSeparatedSourceA = selected
         local targets = outputs or routingConfig.outputsForRoomA
         for _, out in ipairs(targets) do
-            if tableContains(routingConfig.outputsForRoomA, out) then
+            if outputInRoomA[out] then
                 setRoute(selected, out, source, true)
             end
         end
@@ -492,15 +505,15 @@ local function applyRoutesForSource(selected, source, skipFeedback, outputs)
         state.lastSeparatedSourceB = selected
         local targets = outputs or routingConfig.outputsForRoomB
         for _, out in ipairs(targets) do
-            if tableContains(routingConfig.outputsForRoomB, out) then
+            if outputInRoomB[out] then
                 setRoute(selected, out, source, true)
             end
         end
     else
-        for _, out in ipairs(allOutputsInUse()) do clearRoute(out, true) end
+        for _, out in ipairs(combinedOutputsInUse) do clearRoute(out, true) end
         state.lastSeparatedSourceA, state.lastSeparatedSourceB = nil, nil
     end
-    if not skip then updateDestinationFeedback(); updateDestinationText() end
+    finishRoutingUI()
 end
 
 local function setDivisibleSpaceControlsComponent()
@@ -540,20 +553,23 @@ local function setSource(input, source)
     if not components.extronMatrix then return end
     local src = source or "System"
     applyRoutesForSource(input, src, true)
-    if state.roomLayoutMode ~= 2 and state.roomLayoutMode ~= 3 and input ~= nil then
+    if not isCombinedLayout() and input ~= nil then
         syncSourceButtonsToInput(input)
     end
-    updateDestinationFeedback()
-    updateDestinationText()
+    refreshDestinationUI()
 end
 
 -------------------[ Auto-Switch ]-------------------
 local function checkAutoSwitch()
     for _, source in ipairs(sourcePriority) do
         if source.checkFunc() then
-            if not state.power and components.roomControls then
-                debugPrint("Powering on system for " .. source.name)
-                setProp(components.roomControls["btnSystemOnOff"], "Boolean", true)
+            local roomIdxs = roomsToEnsurePoweredForSource(source.input)
+            for _, idx in ipairs(roomIdxs) do
+                local comp = components.roomControls[idx]
+                if comp and comp["btnSystemOnOff"] and comp["ledSystemPower"] and not comp["ledSystemPower"].Boolean then
+                    debugPrint("Powering on Room " .. (idx == 1 and "A" or "B") .. " for " .. source.name)
+                    setProp(comp["btnSystemOnOff"], "Boolean", true)
+                end
             end
             debugPrint("Auto-switching to " .. source.name)
             setSource(source.input, "Auto-Switch")
@@ -567,33 +583,59 @@ local function setCallSyncComponent()
         { ["off.hook"] = function() checkAutoSwitch() end })
 end
 
-local function setRoomControlsComponent()
-    setComponentByType(controls.compRoomControls, "Room Controls", "roomControls", {
-        ["ledSystemPower"] = function(ctl)
-            state.power = ctl.Boolean
-            debugPrint("System power " .. (ctl.Boolean and "ON" or "OFF"))
+local roomControlLedNames = { "ledSystemPower", "ledSystemWarming", "ledSystemCooling" }
+
+local function setRoomControlsAtIndex(idx)
+    local selCtrl = controls.compRoomControls and controls.compRoomControls[idx]
+    local roomLabel = (idx == 1) and "RmA" or "RmB"
+    local componentType = "Room Controls " .. roomLabel
+    local oldComp = components.roomControls[idx]
+    if oldComp then
+        cleanupComponentHandlers(oldComp, roomControlLedNames, function(msg) debugPrint("[" .. componentType .. "] " .. msg) end)
+    end
+    components.roomControls[idx] = setComponent(selCtrl, componentType, nil)
+    local comp = components.roomControls[idx]
+    if not comp then return end
+    if comp["ledSystemPower"] then
+        bind(comp["ledSystemPower"], function(ctl)
+            if idx == 1 then state.powerRoomA = ctl.Boolean else state.powerRoomB = ctl.Boolean end
+            debugPrint("Room " .. roomLabel .. " system power " .. (ctl.Boolean and "ON" or "OFF"))
             if ctl.Boolean then checkAutoSwitch() end
-        end,
-        ["ledSystemWarming"] = function(ctl)
-            state.warming = ctl.Boolean
-            debugPrint("System warming " .. (ctl.Boolean and "ON" or "OFF"))
-            if not ctl.Boolean and state.power then checkAutoSwitch() end
-        end,
-        ["ledSystemCooling"] = function(ctl)
-            state.cooling = ctl.Boolean
-            debugPrint("System cooling " .. (ctl.Boolean and "ON" or "OFF"))
-            if not ctl.Boolean and not state.power then
+        end)
+    end
+    if comp["ledSystemWarming"] then
+        bind(comp["ledSystemWarming"], function(ctl)
+            if idx == 1 then state.warmingRoomA = ctl.Boolean else state.warmingRoomB = ctl.Boolean end
+            debugPrint("Room " .. roomLabel .. " warming " .. (ctl.Boolean and "ON" or "OFF"))
+            local powered = (idx == 1) and state.powerRoomA or state.powerRoomB
+            if not ctl.Boolean and powered then checkAutoSwitch() end
+        end)
+    end
+    if comp["ledSystemCooling"] then
+        bind(comp["ledSystemCooling"], function(ctl)
+            if idx == 1 then state.coolingRoomA = ctl.Boolean else state.coolingRoomB = ctl.Boolean end
+            debugPrint("Room " .. roomLabel .. " cooling " .. (ctl.Boolean and "ON" or "OFF"))
+            local powered = (idx == 1) and state.powerRoomA or state.powerRoomB
+            if not ctl.Boolean and not powered then
                 Timer.CallAfter(function()
-                    debugPrint("Power-off settle complete, checking priority sources")
+                    debugPrint("Power-off settle complete (Room " .. roomLabel .. "), checking priority sources")
                     checkAutoSwitch()
                 end, 2)
             end
-        end,
-    })
+        end)
+    end
+    debugPrint("Registered power/warming/cooling handlers for " .. componentType)
+end
+
+local function setRoomControlsComponent()
+    if not controls.compRoomControls then return end
+    for idx = 1, #controls.compRoomControls do
+        setRoomControlsAtIndex(idx)
+    end
 end
 
 local function setupComponentSelectors(discovered)
-    local function setup(ctrl, names, setMethod, componentType)
+    local function setup(ctrl, names, setMethod, componentType, slotIdx)
         if not ctrl then return end
         local choices = { clearString }
         for _, name in ipairs(names) do table.insert(choices, name) end
@@ -603,22 +645,21 @@ local function setupComponentSelectors(discovered)
             setMethod()
         end)
         if #names > 0 and (ctrl.String == "" or not ctrl.String) then
-            ctrl.String = names[1]
-            debugPrint("Auto-selected " .. componentType .. ": " .. names[1])
+            local pick = names[1]
+            if slotIdx == 2 and #names >= 2 then pick = names[2] end
+            ctrl.String = pick
+            debugPrint("Auto-selected " .. componentType .. ": " .. pick)
         end
         debugPrint("Registered event handler for " .. componentType .. " selector")
     end
     setup(controls.compExtronDXP, discovered.extronMatrix, setExtronMatrixComponent, "Extron DXP Matrix")
     setup(controls.compCallSync, discovered.callSync, setCallSyncComponent, "CallSync")
-    setup(controls.compRoomControls, discovered.roomControls, setRoomControlsComponent, "Room Controls")
-end
-
-local function setDestinationButtonProps(output, color, text, invisible)
-    local btn = norm.btnDestination and norm.btnDestination[output]
-    if not btn then return end
-    setProp(btn, "Color", color)
-    if text and text ~= "" then setProp(btn, "String", text) end
-    setProp(btn, "IsInvisible", invisible)
+    if controls.compRoomControls and isArr(controls.compRoomControls) then
+        for idx = 1, #controls.compRoomControls do
+            setup(controls.compRoomControls[idx], discovered.roomControls, setRoomControlsComponent,
+                "Room Controls [" .. idx .. "]", idx)
+        end
+    end
 end
 
 -------------------[ UCI Integration ]-------------------
@@ -656,6 +697,15 @@ local function onUCILayerChange(info)
 end
 
 -------------------[ Event Registration ]-------------------
+local function clearOtherSourceButtons(keepIdx)
+    for srcIdx = 1, 6 do
+        if srcIdx ~= keepIdx then
+            local other = norm.btnSource and norm.btnSource[srcIdx]
+            if other then setProp(other, "Boolean", false) end
+        end
+    end
+end
+
 local function registerEvents()
     local sourceCount = 0
     for idx = 1, 6 do
@@ -663,24 +713,11 @@ local function registerEvents()
         if btn then
             bind(btn, function(ctl)
                 if not ctl.Boolean then return end
-                for srcIdx = 1, 6 do
-                    if srcIdx ~= idx then
-                        local other = norm.btnSource and norm.btnSource[srcIdx]
-                        if other then setProp(other, "Boolean", false) end
-                    end
-                end
---[[                 if idx == 2 or idx == 3 then
-                    setDestinationButtonProps(2, '#ff6666', 'N/A', true)
-                    setDestinationButtonProps(4, '#ff6666', 'N/A', true)
-                else
-                    setDestinationButtonProps(2, '#ff7c7c7c', '', false)
-                    setDestinationButtonProps(4, '#ff7c7c7c', '', false)
-                end
- ]]             debugPrint("Source button " .. idx .. " pressed")
+                clearOtherSourceButtons(idx)
+                debugPrint("Source button " .. idx .. " pressed")
                 applyRoutesForSource(getSelectedSource(), "Source Button", true)
                 updateSourceText()
-                updateDestinationFeedback()
-                updateDestinationText()
+                refreshDestinationUI()
             end)
             sourceCount = sourceCount + 1
         end
@@ -694,17 +731,14 @@ local function registerEvents()
             bind(btn, function()
                 local selected = getSelectedSource()
                 if not selected then return end
-                if idx == 5 then
+                if idx == 5 or isCombinedLayout() then
                     applyRoutesForSource(selected, "User Button", true)
                 elseif not outputAllowedForSource(idx, selected) then
                     debugPrint("Destination " .. idx .. " not valid for current source (separated mode)")
-                elseif state.roomLayoutMode == 2 or state.roomLayoutMode == 3 then
-                    applyRoutesForSource(selected, "User Button", true)
                 else
                     setRoute(selected, idx, "User Button", true)
                 end
-                updateDestinationFeedback()
-                updateDestinationText()
+                refreshDestinationUI()
             end)
             destCount = destCount + 1
         end
@@ -721,14 +755,14 @@ end
 -------------------[ Initialization ]-------------------
 local function init()
     debugPrint("=== Initialization Started ===")
-    debugPrint("Configuration: debugging=" .. tostring(debugging) .. ", uciEnabled=" .. tostring(uci.enabled))
+    debugPrint("Configuration: roomName=" .. roomName .. ", debugging=" .. tostring(debugging) .. ", uciEnabled=" .. tostring(uci.enabled))
 
     local discovered = discoverComponents()
     setupComponentSelectors(discovered)
     setExtronMatrixComponent()
     setCallSyncComponent()
-    setRoomControlsComponent()
     setDivisibleSpaceControlsComponent()
+    setRoomControlsComponent()
     registerEvents()
 
     if uci.matrixNotifySubId then
@@ -751,25 +785,25 @@ local function init()
         debugPrint("UCI layer notification subscribe failed: " .. tostring(subErr))
     end
 
-    if components.roomControls then
-        state.power   = components.roomControls["ledSystemPower"].Boolean
-        state.warming = components.roomControls["ledSystemWarming"].Boolean
+    local powerKeys = { "powerRoomA", "powerRoomB" }
+    local warmingKeys = { "warmingRoomA", "warmingRoomB" }
+    for idx = 1, 2 do
+        local comp = components.roomControls[idx]
+        if comp and comp["ledSystemPower"] then
+            state[powerKeys[idx]] = comp["ledSystemPower"].Boolean
+        end
+        if comp and comp["ledSystemWarming"] then
+            state[warmingKeys[idx]] = comp["ledSystemWarming"].Boolean
+        end
     end
 
-    local ok, uciSel = pcall(function() return Component.New('BDRM-UCI Layer Selector') end)
-    if ok and uciSel then
-        components.uciLayerSelector = uciSel
-        debugPrint("UCI Layer Selector component set")
-    end
-
-    if state.roomLayoutMode == 2 or state.roomLayoutMode == 3 then
+    if isCombinedLayout() then
         applyRoutesForSource(getSelectedSource(), "Init", false)
     else
         setRoute(inputs.LaptopRmA, 1, "Init", true)
         setRoute(inputs.LaptopRmB, 2, "Init", true)
         state.lastSeparatedSourceA, state.lastSeparatedSourceB = inputs.LaptopRmA, inputs.LaptopRmB
-        updateDestinationFeedback()
-        updateDestinationText()
+        refreshDestinationUI()
     end
 
     debugPrint("=== Initialization Complete ===")
