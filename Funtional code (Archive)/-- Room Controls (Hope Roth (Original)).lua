@@ -37,7 +37,7 @@ end
 --------## Notifications ##--------
 
 function publishNotification()
-    SystemState = {
+    systemState = {
       PowerState = Controls.SystemPower.Boolean,
       SystemWarming = Controls.SystemWarming.Boolean,
       SystemCooling = Controls.SystemCooling.Boolean,
@@ -46,7 +46,7 @@ function publishNotification()
       VolumeLvl = Controls.VolumeFader.Position,
       VolumeMute = Controls.VolumeMute.Boolean
     }
-    Notifications.Publish(Controls.NotificationId.String, SystemState)
+    Notifications.Publish(Controls.NotificationId.String, systemState)
 end
 
 --------## System Components ##--------

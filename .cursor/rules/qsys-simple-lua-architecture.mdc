@@ -1,0 +1,62 @@
+---
+description: Q-SYS Lua “simple” layout — flat Hope Roth–style scripts (header, tables, constants, grouped functions, inline handlers, bottom init). Use for room UCI blocks without the full qsys-lua-architecture toolkit.
+globs: "**/*.lua"
+alwaysApply: false
+---
+
+# Q-SYS Lua — simple architecture (Hope Roth–style)
+
+Use this for **small-to-medium** control scripts where a **flat, readable layout** matters more than shared utilities or a strict local-module shell. The reference shape is [`Funtional code (Archive)/-- Room Controls (Hope Roth (Original)).lua`](Funtional%20code%20(Archive)/--%20Room%20Controls%20(Hope%20Roth%20(Original)).lua).
+
+```mermaid
+flowchart LR
+    Header[Header block]
+    Data[Tables and constants]
+    Funcs[Functions by banner]
+    EH[Event handlers]
+    Init[Init call]
+    Header --> Data --> Funcs --> EH --> Init
+```
+
+## Section order
+
+1. **Header comment** — script name, author/org, date, firmware requirement, version. See example lines 1–9.
+2. **Constant tables** — globals that hold runtime collections (e.g. per-device refs, invalid flags). Example lines 11–14 (`compDisplays`, `compInvalid`).
+3. **Constants** — toggles, UI strings, choice tables, `Timer.New()` instances. Example lines 16–26 (`stateDebug`, `strClear`, `MotionChoices`, timers).
+4. **Functions** — one large block, ordered so **callees appear before callers** where practical. Start with tiny helpers, then glue, then feature areas. Example starts at lines 28–29.
+5. **Event handlers** — after the functions they call, assign `.EventHandler` on `Controls.*`, timers, and indexed control arrays **at file scope** (no required `registerEvents()` wrapper). Example block ~lines 422–496.
+6. **Always run** — single init function (e.g. `funcInit`) that enables UI, fills choices, syncs feedback, and invokes the same `setcomp*` / setup paths as handlers. Call it **once** at the bottom. Example ~lines 498–516.
+
+## Comment banners
+
+Match the example’s visual structure:
+
+- Major areas: `--------** Label **--------`
+- Sub-areas: `--------## Label ##--------`
+
+Use **domain-oriented** labels (e.g. Notifications, System Components, System Power) so jumps in a long file stay obvious.
+
+## Patterns to follow from the example
+
+- **Direct `Controls.*`** in functions and handlers is fine; a `local controls = {}` map is optional, not required.
+- **Global `function Name()`** is acceptable for this style; `local function` is fine too if you prefer encapsulation without the full architecture doc’s section checklist.
+- **Component selection glue**: central helpers (e.g. populate combo `Choices` from `Component.GetComponents()`, validate selection, set/clear invalid state) keep feature code shorter — mirror the `getComponentNames` / `setComp` idea, not necessarily the API of the full-rule `setComponent` template.
+- **Debug**: a single gated helper (e.g. `debugMsg` when `stateDebug` is true) is enough; room-prefixed logs and init phase walls are optional.
+
+## Minimal code-quality rules
+
+- **No OOP** — no `setmetatable`, `__index`, `.new()`, or `self` for controllers; one script context, one `Controls` surface.
+- **Flat control flow** — guard clauses and early `return` over deep nesting when behavior branches.
+- **Naming** — prefer descriptive names; short Q-SYS–style prefixes (`btn`, `txt`, `ctl`) are normal. For loops, `i` / `k` / `v` are acceptable iterators.
+
+## Not required here (use the full rule instead)
+
+For [`.cursor/rules/qsys-lua-architecture.mdc`](.cursor/rules/qsys-lua-architecture.mdc) patterns, treat these as **optional** in simple scripts unless you explicitly need them:
+
+- Mandatory **`setProp` / `bind` / `bindArray` / `cleanupComponentHandlers`** toolkit and “always use setProp for assignments.”
+- Fixed **local-module section order** (Config → Controls → Utilities → … → Start) and all **`local function`** top level.
+- **Complexity tiers** (micro vs full controller), dense **refactoring checklists**, and line-reduction targets.
+- **Required `pcall` startup** — add only if you want init failures surfaced to `txtStatus` or the console without crashing the chunk.
+- **`GlobalName = { ... }` public API** — only when another script must call into this file.
+
+When a script grows (many rebinding selectors, cross-script APIs, or strict feedback-loop safety), consider migrating toward the full architecture rule rather than stretching the simple layout.
