@@ -14,9 +14,9 @@ function setDisabled(boolean)
   Controls.btnMoveDn.IsDisabled = boolean
 end
 
-function setFeedback(text)
-  print(text)
-  Controls.txtFeedback.String = text
+function setFeedback(txt)
+  print(txt)
+  Controls.txtFeedback.String = txt
 end
 
 function timerMovementCancel()
@@ -49,12 +49,18 @@ function resetControls()
   setDisabled(false)
 end
 
-function trigger(relayUp, relayDn, message)
+function setMovement(relayUp, relayDn, msg)
   Controls.pinRelayUp.Boolean = relayUp
   Controls.pinRelayDn.Boolean = relayDn
   Timer.CallAfter(clearPulseState, Controls.knbLatchTime.Value)
-  setFeedback(message)
+  setFeedback(msg)
   setDisabled(true)
+end
+
+function liftPosition(liftUp, liftDn, pos)
+  Controls.ledPosition[1].Boolean = liftUp
+  Controls.ledPosition[2].Boolean = liftDn
+  setFeedback(pos)
 end
 
 -- Initialization --
@@ -62,7 +68,7 @@ resetControls()
 
 Controls.btnMoveUp.EventHandler = function(ctl)
   if ctl.Boolean then
-    trigger(true, false, "Screen is going up. Controls will reenable once the screen has stopped moving.")
+    setMovement(true, false, "Lift is rising. Controls will re-enable when movement stops.")
     timerMovementSet()
   end
 end
@@ -70,14 +76,26 @@ end
 Controls.btnMoveStop.EventHandler = function(ctl)
   if ctl.Boolean then
     timerMovementCancel()
-    trigger(true, true, "Screen is stopped")
+    setMovement(true, true, "Lift is stopped")
     setDisabled(false)
   end
 end
 
 Controls.btnMoveDn.EventHandler = function(ctl)
   if ctl.Boolean then
-    trigger(false, true, "Screen is going down. Controls will reenable once the screen has stopped moving.")
+    setMovement(false, true, "Lift is lowering. Controls will re-enable when movement stops.")
     timerMovementSet()
+  end
+end
+
+Controls.ledPosition[1].EventHandler = function(ctl)
+  if ctl.Boolean then
+    liftPosition(true, false, "Lift is up")
+  end
+end
+
+Controls.ledPosition[2].EventHandler = function(ctl)
+  if ctl.Boolean then
+    liftPosition(false, true, "Lift is down")
   end
 end

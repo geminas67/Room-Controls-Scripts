@@ -20,10 +20,10 @@ strClear = "[Clear]" -- string used in combo boxes to clear out a component
 
 MotionChoices = {"Motion On/Off", "Motion Off", "Motion Disabled"}
 
-timerMotion = Timer.New() -- the additional timeout period after the motion sensor goes low
-timerGrace = Timer.New() -- the timeout period after turning the system off where the motion sensor won't turn the system on
-timerWarmup = Timer.New() -- the time it takes the system to warm up, power controls will lock out during this time.
-timerCooldown = Timer.New() -- the time it takes the system to cool down, power controls will lock out during this time.
+timerMotion     = Timer.New() -- the additional timeout period after the motion sensor goes low
+timerGrace      = Timer.New() -- the timeout period after turning the system off where the motion sensor won't turn the system on
+timerWarmup     = Timer.New() -- the time it takes the system to warm up, power controls will lock out during this time.
+timerCooldown   = Timer.New() -- the time it takes the system to cool down, power controls will lock out during this time.
 
 --------** Functions **--------
 
@@ -38,13 +38,13 @@ end
 
 function publishNotification()
     systemState = {
-      PowerState = Controls.SystemPower.Boolean,
+      PowerState    = Controls.SystemPower.Boolean,
       SystemWarming = Controls.SystemWarming.Boolean,
       SystemCooling = Controls.SystemCooling.Boolean,
-      AudioPrivacy = Controls.btnAudioPrivacy.Boolean,
-      VideoPrivacy = Controls.btnVideoPrivacy.Boolean,
-      VolumeLvl = Controls.VolumeFader.Position,
-      VolumeMute = Controls.VolumeMute.Boolean
+      AudioPrivacy  = Controls.btnAudioPrivacy.Boolean,
+      VideoPrivacy  = Controls.btnVideoPrivacy.Boolean,
+      VolumeLvl     = Controls.VolumeFader.Position,
+      VolumeMute    = Controls.VolumeMute.Boolean
     }
     Notifications.Publish(Controls.NotificationId.String, systemState)
 end
@@ -55,40 +55,40 @@ function getComponentNames()
     -- table to hold component names
     local NamesTable = {
         -- multi-dimensional table to store different component names
-        CallSyncNames = {}, -- call sync blocks
-        VideoBridgeNames = {}, -- video bridge blocks
-        DisplayNames = {}, -- display plugin blocks
-        GainNames = {}, -- gain blocks
-        MuteNames = {} -- system mute blocks
+        CallSyncNames = {},     -- call sync blocks
+        VideoBridgeNames = {},  -- video bridge blocks
+        DisplayNames = {},      -- display plugin blocks
+        GainNames = {},         -- gain blocks
+        MuteNames = {}          -- system mute blocks
     }
 
     -- gather component names
-    for i, v in pairs(Component.GetComponents()) do
-        --print(i, v.Name, v.Type)
-        if v.Type == "call_sync" then -- call sync
-            table.insert(NamesTable.CallSyncNames, v.Name)
-        elseif v.Type == "usb_uvc" then -- video bridge
-            table.insert(NamesTable.VideoBridgeNames, v.Name)
-        elseif v.Type == "%PLUGIN%_78a74df3-40bf-447b-a714-f564ebae238a_%FP%_17f7c2b905c38a7cdf412359a2a9a848" then -- generic display plugin
-            table.insert(NamesTable.DisplayNames, v.Name)
-        elseif v.Type == "gain" then -- call sync
-            table.insert(NamesTable.GainNames, v.Name)
-        elseif v.Type == "system_mute" then -- PSO Display Control Helper
-            table.insert(NamesTable.MuteNames, v.Name)
+    for i, comp in pairs(Component.GetComponents()) do
+        --print(i, comp.Name, comp.Type)
+        if comp.Type == "call_sync" then -- call sync
+            table.insert(NamesTable.CallSyncNames, comp.Name)
+        elseif comp.Type == "usb_uvc" then -- video bridge
+            table.insert(NamesTable.VideoBridgeNames, comp.Name)
+        elseif comp.Type == "%PLUGIN%_78a74df3-40bf-447b-a714-f564ebae238a_%FP%_17f7c2b905c38a7cdf412359a2a9a848" then -- generic display plugin
+            table.insert(NamesTable.DisplayNames, comp.Name)
+        elseif comp.Type == "gain" then -- call sync
+            table.insert(NamesTable.GainNames, comp.Name)
+        elseif comp.Type == "system_mute" then -- PSO Display Control Helper
+            table.insert(NamesTable.MuteNames, comp.Name)
         end
     end
 
-    for i, v in pairs(NamesTable) do -- iterate through our tables of tables, format them for our combo boxes
-        table.sort(v) -- sort alphabetically
-        table.insert(v, strClear) -- add "[clear]" to the end
+    for i, tbl in pairs(NamesTable) do -- iterate through our tables of tables, format them for our combo boxes
+        table.sort(tbl) -- sort alphabetically
+        table.insert(tbl, strClear) -- add "[clear]" to the end
     end
 
     -- set script choices
     Controls.compCallSync.Choices = NamesTable.CallSyncNames
     Controls.compVideoBridge.Choices = NamesTable.VideoBridgeNames
 
-    for i, v in ipairs(Controls.devDisplays) do
-        v.Choices = NamesTable.DisplayNames
+    for i, ctl in ipairs(Controls.devDisplays) do
+        ctl.Choices = NamesTable.DisplayNames
     end
 
     Controls.compProgramVolume.Choices = NamesTable.GainNames
@@ -98,7 +98,7 @@ end
 function getStatus()
     for i, v in pairs(compInvalid) do
         if v == true then -- we found
-            --debugMsg("There is at Least One Invalid Component")
+            debugMsg("There is at least one Invalid Component")
             Controls.txtStatus.String = "Invalid Components"
             Controls.txtStatus.Value = 1
             return
@@ -119,29 +119,29 @@ function setCompValid(componentType)
     getStatus()
 end
 
-function setComp(ctrl, componentType) -- a helper function that maps components to user selections
+function setComp(ctl, componentType) -- a helper function that maps components to user selections
     debugMsg("Setting Component: " .. componentType)
-    componentName = ctrl.String
+    componentName = ctl.String
     if componentName == "" then -- no component selected
         debugMsg("No " .. componentType .. " Component Selected")
-        ctrl.Color = "white"
+        ctl.Color = "white"
         setCompValid(componentType)
         return nil
     elseif componentName == strClear then -- component has been cleared by the user
         debugMsg(componentType .. ": Component Cleared")
-        ctrl.String = ""
-        ctrl.Color = "white"
+        ctl.String = ""
+        ctl.Color = "white"
         setCompValid(componentType)
         return nil
     elseif #Component.GetControls(Component.New(componentName)) < 1 then -- invalid component
         debugMsg(componentType .. " Component " .. componentName .. " is Invalid")
-        ctrl.String = "[Invalid Component Selected]"
-        ctrl.Color = "pink"
+        ctl.String = "[Invalid Component Selected]"
+        ctl.Color = "pink"
         setCompInvalid(componentType)
         return nil
     else -- great success!
-        debugMsg("Setting " .. componentType .. " Component: {" .. ctrl.String .. "}")
-        ctrl.Color = "white"
+        debugMsg("Setting " .. componentType .. " Component: {" .. ctl.String .. "}")
+        ctl.Color = "white"
         setCompValid(componentType)
         return Component.New(componentName)
     end--if
@@ -483,10 +483,10 @@ Controls.btnVideoPrivacy.EventHandler = function(ctl) -- set video privacy to bu
 end--EH
 
 -- change in control component selections
-Controls.compCallSync.EventHandler = setcompCallSync
-Controls.compVideoBridge.EventHandler = setcompVideoBridge
-Controls.MotionIn.EventHandler = getMotion
-Controls.compSystemMute.EventHandler = setcompMutePGM
+Controls.compCallSync.EventHandler      = setcompCallSync
+Controls.compVideoBridge.EventHandler   = setcompVideoBridge
+Controls.MotionIn.EventHandler          = getMotion
+Controls.compSystemMute.EventHandler    = setcompMutePGM
 Controls.compProgramVolume.EventHandler = setcompGainPGM
 
 for i, v in ipairs(Controls.devDisplays) do

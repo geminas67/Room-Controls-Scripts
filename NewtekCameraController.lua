@@ -9,7 +9,7 @@
 ]]
 
 -------------------[ Runtime Options ]-------------------
-local OFFLINE_MODE = true -- Set false for live camera/TCP testing
+local modeOffline = true -- Set false for live camera/TCP testing
 local presetSlots = 0
 
 local function getArrayCount(tbl)
@@ -94,7 +94,7 @@ end
 
 -- Sends VISCA command or logs it in offline mode
 local function sendVisca(cmd, label)
-    if OFFLINE_MODE then
+    if modeOffline then
         print("[MOCK SEND] " .. (label or "VISCA command"))
         return
     end
@@ -105,8 +105,8 @@ end
 devCam = TcpSocket.New() --creates the TCP socket
 --devCam:Connect("192.168.1.106",52381)
 function tcpConnect()
-  if OFFLINE_MODE then
-    print("OFFLINE_MODE enabled: TCP connection skipped")
+  if modeOffline then
+    print("Offline mode enabled: TCP connection skipped")
     return
   end
 

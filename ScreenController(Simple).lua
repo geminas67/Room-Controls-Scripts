@@ -1,4 +1,4 @@
--- Screen control: press → relay on → after hold time → reset (relay off, button off)
+
 
 timerMovementEnd = nil
 
@@ -7,9 +7,9 @@ function setDisabled(boolean)
   Controls.btnMoveDn.IsDisabled = boolean
 end
 
-function setFeedback(text)
-  print(text)
-  Controls.txtFeedback.String = text
+function setFeedback(txt)
+  print(txt)
+  Controls.txtFeedback.String = txt
 end
 
 function timerMovementCancel()
@@ -42,12 +42,18 @@ function resetControls()
   setDisabled(false)
 end
 
-function trigger(relayUp, relayDn, message)
+function setMovement(relayUp, relayDn, msg)
   Controls.pinRelayUp.Boolean = relayUp
   Controls.pinRelayDn.Boolean = relayDn
   Timer.CallAfter(clearPulseState, Controls.knbLatchTime.Value)
-  setFeedback(message)
+  setFeedback(msg)
   setDisabled(true)
+end
+
+function screenPosition(screenUp, screenDn, pos)
+  Controls.ledPosition[1].Boolean = screenUp
+  Controls.ledPosition[2].Boolean = screenDn
+  setFeedback(pos)
 end
 
 -- Initialization --
@@ -55,7 +61,7 @@ resetControls()
 
 Controls.btnMoveUp.EventHandler = function(ctl)
   if ctl.Boolean then
-    trigger(true, false, "Screen is going up. Controls will reenable once the screen has stopped moving.")
+    setMovement(true, false, "Screen is rising. Controls will re-enable when movement stops.")
     timerMovementSet()
   end
 end
@@ -63,14 +69,26 @@ end
 Controls.btnMoveStop.EventHandler = function(ctl)
   if ctl.Boolean then
     timerMovementCancel()
-    trigger(true, true, "Screen is stopped")
+    setMovement(true, true, "Screen is stopped")
     setDisabled(false)
   end
 end
 
 Controls.btnMoveDn.EventHandler = function(ctl)
   if ctl.Boolean then
-    trigger(false, true, "Screen is going down. Controls will reenable once the screen has stopped moving.")
+    setMovement(false, true, "Screen is lowering. Controls will re-enable when movement stops.")
     timerMovementSet()
+  end
+end
+
+Controls.ledPosition[1].EventHandler = function(ctl)
+  if ctl.Boolean then
+    screenPosition(true, false, "Screen is up")
+  end
+end
+
+Controls.ledPosition[2].EventHandler = function(ctl)
+  if ctl.Boolean then
+    screenPosition(false, true, "Screen is down")
   end
 end
