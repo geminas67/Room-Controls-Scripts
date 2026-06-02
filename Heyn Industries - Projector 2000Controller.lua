@@ -14,12 +14,12 @@ modeOffline = false -- Set true to log commands without TCP
 tcpPort = 5101
 --- Interval (seconds) for POWER:? polling while projector is warming / cooling (3–8s per instruction).
 amtPollTime = 1.5
---- Message terminator per instruction.
+--- Message terminator per exam instruction.
 txtEOL = "\x0D"
 
-sockTimeoutRead      = 0 -- Max wait for a read to complete before Timeout event (seconds)
-sockTimeoutWrite     = 5 -- Max wait for a write to complete before Timeout event (seconds)
-sockTimeoutReconnect = 5 -- Set the wait time before reconnecting (seconds)
+sockTimeoutRead      = 0 
+sockTimeoutWrite     = 5 
+sockTimeoutReconnect = 5 
 
 -------------------** State **-------------------
 currentPowerState = nil
@@ -50,17 +50,13 @@ function parsePowerState(line)
     if not line or line == "" then
         return nil
     end
-    s = line:gsub("^%s+", ""):gsub("%s+$", "")
-    if s:upper():find("NACK", 1, true) then
+    strState = line:gsub("^%s+", ""):gsub("%s+$", "")
+    if strState:upper():find("NACK", 1, true) then
         return nil, "NACK"
     end
-    d = s:match("POWER%s*:%s*([1-4])")
-        or s:match("STATUS%s*:%s*([1-4])")
-        or s:match("STATE%s*:%s*([1-4])")
-        or s:match("[:=]%s*([1-4])")
-        or s:match("^%s*([1-4])%s*$")
-    if d then
-        return tonumber(d)
+    dataMatch = strState:match("POWER%s*:%s*([1-4])")
+    if dataMatch then
+        return tonumber(dataMatch)
     end
     return nil
 end
@@ -71,13 +67,12 @@ end
 
 -- Disable power commands while WARMING (2) / COOLING (4) — matches ledPowerStatus[2]/[4] feedback.
 function btnDisabledState(state)
-    disable = isTransitionState(state)
+    boolDisabled = isTransitionState(state)
     Controls.btnPowerOn.IsDisabled = disable
     Controls.btnPowerOff.IsDisabled = disable
     Controls.btnPowerToggle.IsDisabled = disable
 end
 
--- Hope Roth-style: one place drives toggle + on/off control FB (WARMING/ON ⇒ true).
 function setPowerControlsFB(state)
     Controls.btnPowerToggle.Boolean = state
     Controls.btnPowerOn.Boolean = state
@@ -230,12 +225,8 @@ tcpSocket.EventHandler = function(sock, evt, err)
 end
 
 -------------------** Event Handlers **-------------------
-if Controls.txtIPAddress then
-    Controls.txtIPAddress.EventHandler = tcpConnect
-end
-if Controls.knbPortNumber then
-    Controls.knbPortNumber.EventHandler = tcpConnect
-end
+Controls.txtIPAddress.EventHandler = tcpConnect
+Controls.knbPortNumber.EventHandler = tcpConnect
 
 Controls.btnPowerOn.EventHandler = function(ctl)
     cmdPowerOn()

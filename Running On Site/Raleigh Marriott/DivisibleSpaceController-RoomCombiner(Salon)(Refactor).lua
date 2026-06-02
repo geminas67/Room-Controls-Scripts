@@ -24,8 +24,8 @@ local numberToRoomMap = {}
 for roomName, num in pairs(roomNumberMap) do numberToRoomMap[num] = roomName end
 
 local gainControlNames = {
-  "lvlSalonD", "lvlSalonE", "lvlSalonA", "lvlSalonB",
-  "lvlSalonC", "lvlSalonF", "lvlSalonG", "lvlSalonH"
+  "lvl-SalonD", "lvl-SalonE", "lvl-SalonA", "lvl-SalonB",
+  "lvl-SalonC", "lvl-SalonF", "lvl-SalonG", "lvl-SalonH"
 }
 
 local wallRoomPairs = {
@@ -1001,7 +1001,7 @@ DivisibleSpaceController = {
 -----------------------------[ Start ]-----------------------------
 local ok, err = pcall(function()
   print("Initializing DivisibleSpaceController for " .. const.roomName .. "...")
-  if not validateControls()    then error("Control validation failed - check required UI controls") end
+  if not validateControls() then error("Control validation failed - check required UI controls") end
   normalizeControlArrays()
   init()
 end)

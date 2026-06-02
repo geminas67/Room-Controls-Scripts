@@ -49,13 +49,11 @@ local layersToHide = {
 }
 
 local SwitcherTypes = {
-    ExtronDXP = {
-        componentType = "%PLUGIN%_qsysc.extron.matrix.0.0.0.0-master_%FP%_bf09cd55c73845eb6fc31e4b896516ff",
-        switcherNames = {"devExtronDXP","compExtronDXP"},
-        outputMappings = {
-            CollabA = {[7]="Input 3",[8]="Input 4",[9]="Input 1",[10]="Input 2"},
-            CollabB = {[7]="Input 7",[8]="Input 8",[9]="Input 5",[10]="Input 6"}
-        }
+    AVProEdge = {
+        componentType = "%PLUGIN%_0a62fae1-c3d6-308a-8b7f-3586d7abdf9d_%FP%_1d35ac9dec572bc00d3405021155333f",
+        switcherNames = {"devAVProEdge","compAVProEdge"},
+        routingMethod = "trigger",
+        defaultMapping = {[7] = "Input 3",[8] = "Input 4",[9] = "Input 1",[10] = "Input 2"}
     }
 }
 
@@ -533,17 +531,17 @@ end
 
 local function buildLayerConfigs()
     layerConfigs = {
-        [kLayer.Alarm] = { show={"A01-Alarm"}, hideBase=true },
-        [kLayer.IncomingCall] = { show={"B01-IncomingCall"} },
-        [kLayer.Start] = { show={"C05-Start"}, hideBase=true },
-        [kLayer.Warming] = { show={"E05-SystemProgress","E01-SystemProgressWarming"}, hideBase=true },
-        [kLayer.Cooling] = { show={"E05-SystemProgress","E02-SystemProgressCooling"}, hideBase=true },
-        [kLayer.RoomControls] = { conditional=true, showRoomControls=true, hide={"X01-ProgramVolume"}, fn=function() updateCallActiveState() end },
-        [kLayer.Wireless] = { show={"W05-Wireless"}, fn=function() updateWirelessHelpState(); updateCallActiveState() end },
-        [kLayer.Routing] = { show={"R10-Routing"}, fn=function() updateCallActiveState() end },
-        [kLayer.Dialer] = { show={"V05-Dialer"}, fn=function() updateDialerHelpState(); updateCallActiveState() end },
-        [kLayer.StreamMusic] = { show={"S10-StreamMusic"}, fn=function() updateStreamMusicHelpState(); updateCallActiveState() end },
-        [kLayer.RoomCombining] = { show={"H04-RoomCombining"}, hideBase=true, fn=function() resetTouchInactivityTimer(); updateCallActiveState() end },
+        [kLayer.Alarm]          = { show={"A01-Alarm"}, hideBase=true },
+        [kLayer.IncomingCall]   = { show={"B01-IncomingCall"} },
+        [kLayer.Start]          = { show={"C05-Start"}, hideBase=true },
+        [kLayer.Warming]        = { show={"E05-SystemProgress","E01-SystemProgressWarming"}, hideBase=true },
+        [kLayer.Cooling]        = { show={"E05-SystemProgress","E02-SystemProgressCooling"}, hideBase=true },
+        [kLayer.RoomControls]   = { conditional=true, showRoomControls=true, hide={"X01-ProgramVolume"}, fn=function() updateCallActiveState() end },
+        [kLayer.Wireless]       = { show={"W05-Wireless"}, fn=function() updateWirelessHelpState(); updateCallActiveState() end },
+        [kLayer.Routing]        = { show={"R10-Routing"}, fn=function() updateCallActiveState() end },
+        [kLayer.Dialer]         = { show={"V05-Dialer"}, fn=function() updateDialerHelpState(); updateCallActiveState() end },
+        [kLayer.StreamMusic]    = { show={"S10-StreamMusic"}, fn=function() updateStreamMusicHelpState(); updateCallActiveState() end },
+        [kLayer.RoomCombining]  = { show={"H04-RoomCombining"}, hideBase=true, fn=function() resetTouchInactivityTimer(); updateCallActiveState() end },
     }
     for name, def in pairs(configSource) do
         layerConfigs[def.layer] = { conditional=true, show={def.base}, fn=makeSourceLayerFn(name) }

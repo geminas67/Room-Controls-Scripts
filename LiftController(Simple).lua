@@ -1,9 +1,9 @@
 ---Named Components---
-compLift = Component.New("compProjector")
+devProj = Component.New("devProjector2000")
 
 timerMovementEnd = nil
 
-compLift["ledPower"].EventHandler = function(ctl)
+devProj["ledPowerStatus 1"].EventHandler = function(ctl)
   if not ctl.Boolean then
     print("Projector is off. Lift can now move up.")
   end

@@ -1,17 +1,12 @@
 --[[
-    Simple Display Controller - Time of Day Shutdown (System Reset) (Refactored)
+    Time of Day Shutdown (System Reset)
     Author: Nikolas Smith, Q-SYS
-    Version: 1.1 | Date: 2025-12-17
+    Version: 1.2 | Date: 2025-12-17
     Firmware Req: 10.0.0
     Description: Responds to Time of Day Active change and triggers Power Off commands.
 ]]
 
--------------------[ Configuration ]-------------------
--- Time of Day Shutdown Enable Time (24-hour format)
-local enableTime = {
-    hour = 7,
-    min = 0
-}
+--------** Constant Tables **--------
 
 local roomConfig = {
     { roomControlName = 'roomControlsSalonA', componentName = 'compRoomControlsSalonA', roomName = 'Salon A' },
@@ -24,138 +19,56 @@ local roomConfig = {
     { roomControlName = 'roomControlsSalonH', componentName = 'compRoomControlsSalonH', roomName = 'Salon H' }
 }
 
--------------------[ Component References ]-------------------
 local components = {
     todShutdown = Component.New('todShutdown')
 }
 
--- Build room control components from configuration
 for _, config in ipairs(roomConfig) do
     components[config.roomControlName] = Component.New(config.componentName)
 end
 
--------------------[ Control References ]-------------------
-local controls = {
-    btnResetEnabled = Controls.btnResetEnabled
+--------** Constants **--------
+
+local enableTime = {
+    hour = 7,
+    min = 0
 }
 
--------------------[ Utility Functions ]-------------------
-local function setProp(ctrl, prop, val)
-    if not ctrl or ctrl[prop] == val then return false end
-    ctrl[prop] = val
-    return true
-end
+stateDebug = false
 
-local function bind(ctrl, handler)
-    if ctrl and handler then ctrl.EventHandler = handler end
-end
+timerEnableCheck = Timer.New()
 
--- Debug logging helper
-local function debug(msg, ...)
-    if ... then
-        print(string.format("DEBUG: " .. msg, ...))
-    else
-        print("DEBUG: " .. msg)
+--------** Functions **--------
+
+function debugMsg(str)
+    if stateDebug then
+        print("[TimeOfDayShutdown] " .. str)
     end
 end
 
--- Safely get component control
-local function getControl(component, controlName)
-    return component and component[controlName] or nil
-end
-
--- Sync enable state to component
-local function syncEnableToComponent(enabled)
-    local enableCtrl = getControl(components.todShutdown, 'enable')
+function syncEnableToComponent(enabled)
+    local enableCtrl = components.todShutdown and components.todShutdown['enable']
     if enableCtrl then
         enableCtrl.Boolean = enabled
     end
 end
 
--------------------[ Control Validation ]-------------------
-local function validateComponentControl(component, controlName, missing, displayName)
-    if not component then
-        table.insert(missing, displayName .. " component")
-        return false
-    end
-    if not component[controlName] then
-        table.insert(missing, displayName .. " '" .. controlName .. "' control")
-        return false
-    end
-    return true
-end
+--------## Time of Day Shutdown ##--------
 
-local function validateRoomControl(roomControlName, missing)
-    local roomControl = components[roomControlName]
-    if not roomControl then
-        table.insert(missing, roomControlName .. " component")
+function handleTimeOfDayShutdown()
+    if not Controls.btnResetEnabled.Boolean then
+        debugMsg("Enable is false, shutdown skipped")
         return
     end
-    
-    local requiredControls = {'btnSystemOff'}
-    for _, controlName in ipairs(requiredControls) do
-        if not roomControl[controlName] then
-            table.insert(missing, roomControlName .. " " .. controlName .. " control")
-        end
-    end
-end
 
-local function validateControls()
-    local missing = {}
-    
-    -- Validate time of day shutdown trigger component and its controls
-    validateComponentControl(components.todShutdown, 'active', missing, "todShutdown")
-    validateComponentControl(components.todShutdown, 'enable', missing, "todShutdown")
-    
-    -- Validate script control
-    if not controls.btnResetEnabled then
-        table.insert(missing, "btnResetEnabled script control")
-    end
-    
-    -- Validate configured room controls
-    for _, config in ipairs(roomConfig) do
-        validateRoomControl(config.roomControlName, missing)
-    end
-    
-    if #missing > 0 then
-        print("ERROR: TimeOfDayShutdown validation failed - Missing:")
-        for _, name in ipairs(missing) do
-            print("  - " .. name)
-        end
-        return false
-    end
-    
-    print("TimeOfDayShutdown validation passed")
-    return true
-end
-
--------------------[ Control Normalization ]-------------------
-local function normalizeControlArrays()
-    -- No arrays to normalize in this script
-end
-
--------------------[ Core Logic ]-------------------
--- (Core logic implemented in handleTimeOfDayShutdown)
-
--------------------[ Event Handlers ]-------------------
-local function handleTimeOfDayShutdown()
-    local activeCtrl = getControl(components.todShutdown, 'active')
-    debug("handleTimeOfDayShutdown called - active state: %s", tostring(activeCtrl and activeCtrl.Boolean))
-    
-    -- Only execute when todShutdown active becomes true AND enable is true
-    if not controls.btnResetEnabled.Boolean then
-        debug("Enable is false, shutdown is disabled")
+    local activeCtrl = components.todShutdown['active']
+    if not activeCtrl or not activeCtrl.Boolean then
+        debugMsg("Active is false, returning early")
         return
     end
-    
-    if not (activeCtrl and activeCtrl.Boolean) then
-        debug("Active is false, returning early")
-        return
-    end
-    
+
     print("Time of Day Shutdown triggered - powering off all rooms")
-    
-    -- Loop through all room controls and trigger power off
+
     for _, config in ipairs(roomConfig) do
         local roomControl = components[config.roomControlName]
         if roomControl and roomControl['btnSystemOff'] then
@@ -168,38 +81,30 @@ local function handleTimeOfDayShutdown()
             end
         else
             print("  WARNING: Could not access btnSystemOff for " .. config.roomName)
-            if roomControl then
-                print("    Component exists but btnSystemOff control not found")
-            else
-                print("    Component reference is nil")
-            end
         end
     end
 end
 
-local function handleEnableChange()
-    local enableCtrl = controls.btnResetEnabled
+function handleEnableChange()
+    local enableCtrl = Controls.btnResetEnabled
     local timeStr = string.format("%02d:%02d", enableTime.hour, enableTime.min)
-    
-    -- Update the legend based on state
+
     if enableCtrl.Boolean then
-        setProp(enableCtrl, 'Legend', 'Enabled')
+        enableCtrl.Legend = 'Enabled'
         print("Time of Day shutdown enabled")
     else
-        setProp(enableCtrl, 'Legend', 'Disabled\nEnabled at ' .. timeStr)
+        enableCtrl.Legend = 'Disabled\nEnabled at ' .. timeStr
         print("Time of Day shutdown disabled - will re-enable at " .. timeStr)
     end
-    
-    -- Sync the state to the component control to enable/disable the todShutdown component
+
     syncEnableToComponent(enableCtrl.Boolean)
 end
 
-local function checkAndEnableAtTimeConfig()
+function checkAndEnableAtTimeConfig()
     local currentTime = os.date("*t")
-    
-    -- Check if it's the configured enable time
+
     if currentTime.hour == enableTime.hour and currentTime.min == enableTime.min then
-        local enableCtrl = controls.btnResetEnabled
+        local enableCtrl = Controls.btnResetEnabled
         if enableCtrl and not enableCtrl.Boolean then
             local timeStr = string.format("%02d:%02d", enableTime.hour, enableTime.min)
             print(timeStr .. " reached - enabling Time of Day shutdown")
@@ -209,35 +114,26 @@ local function checkAndEnableAtTimeConfig()
     end
 end
 
--------------------[ Initialization ]-------------------
-local function registerEventHandlers()
-    -- Bind Time of Day shutdown trigger (validation already confirmed it exists)
-    local activeCtrl = getControl(components.todShutdown, 'active')
-    debug("Registering event handler for todShutdown['active']")
-    debug("Initial state of todShutdown['active'].Boolean: %s", tostring(activeCtrl and activeCtrl.Boolean))
-    bind(activeCtrl, handleTimeOfDayShutdown)
-    print("Time of Day shutdown handler registered successfully")
-    
-    -- Bind Enable control (validation already confirmed it exists)
-    bind(controls.btnResetEnabled, handleEnableChange)
-    handleEnableChange() -- Initialize the legend on startup
-    print("Time of Day enable handler registered successfully")
-    
-    -- Setup timer to check for configured enable time every minute
-    Timer.New():Start(checkAndEnableAtTimeConfig, 60)
-end
+--------** Event Handlers **--------
 
-local function funcInit()
-    if not validateControls() then
-        print("ERROR: TimeOfDayShutdown failed to initialize - validation failed")
+components.todShutdown['active'].EventHandler = handleTimeOfDayShutdown
+Controls.btnResetEnabled.EventHandler = handleEnableChange
+
+--------** Always Run **--------
+
+function funcInit()
+    if not components.todShutdown['active'] or not components.todShutdown['enable'] then
+        print("ERROR: TimeOfDayShutdown - todShutdown active/enable controls missing")
         return
     end
-    
-    normalizeControlArrays()
-    registerEventHandlers()
-    
+    if not Controls.btnResetEnabled then
+        print("ERROR: TimeOfDayShutdown - btnResetEnabled control missing")
+        return
+    end
+
+    handleEnableChange()
+    timerEnableCheck:Start(checkAndEnableAtTimeConfig, 60)
     print("TimeOfDayShutdown initialized successfully")
 end
 
--------------------[ Main Execution ]-------------------
 funcInit()
