@@ -8,33 +8,47 @@
   
   ]] --
 
---------** Constant Tables **--------
+-------------------[ Configuration ]-------------------
+
+local componentTypes = {
+  callSync    = "call_sync",
+  videoBridge = "usb_uvc",
+  display     = "%PLUGIN%_78a74df3-40bf-447b-a714-f564ebae238a_%FP%_17f7c2b905c38a7cdf412359a2a9a848",
+  gain        = "gain",
+  systemMute  = "system_mute",
+}
+
+MotionChoices = {"Motion On/Off", "Motion Off", "Motion Disabled"}
+
+-------------------[ Constant Tables ]-------------------
 
 compDisplays = {} -- list of all display control components
 compInvalid = {} -- table containing all components that are currently invalid
+compCallSync = nil
+compVideoBridge = nil
+SystemMute = nil
+ProgramVolume = nil
 
---------** Constants **--------
+-------------------[ Constants ]-------------------
 
 stateDebug = true -- set to true in order to print debugMsg statements
 strClear = "[Clear]" -- string used in combo boxes to clear out a component
-
-MotionChoices = {"Motion On/Off", "Motion Off", "Motion Disabled"}
 
 timerMotion     = Timer.New() -- the additional timeout period after the motion sensor goes low
 timerGrace      = Timer.New() -- the timeout period after turning the system off where the motion sensor won't turn the system on
 timerWarmup     = Timer.New() -- the time it takes the system to warm up, power controls will lock out during this time.
 timerCooldown   = Timer.New() -- the time it takes the system to cool down, power controls will lock out during this time.
 
---------** Functions **--------
+-------------------[ Functions ]-------------------
 
---------## Setup ##--------
+-------------------[ Setup ]-------------------
 function debugMsg(str) -- helper function that prints debugMsg statements when enabled
     if stateDebug then
         print("[debugMsg] " .. str)
     end
 end
 
---------## Notifications ##--------
+-------------------[ Notifications ]-------------------
 
 function publishNotification()
     systemState = {
@@ -49,7 +63,7 @@ function publishNotification()
     Notifications.Publish(Controls.NotificationId.String, systemState)
 end
 
---------## System Components ##--------
+-------------------[ Discovery ]-------------------
 
 function getComponentNames()
     -- table to hold component names
@@ -65,15 +79,15 @@ function getComponentNames()
     -- gather component names
     for i, comp in pairs(Component.GetComponents()) do
         --print(i, comp.Name, comp.Type)
-        if comp.Type == "call_sync" then -- call sync
+        if comp.Type == componentTypes.callSync then
             table.insert(NamesTable.CallSyncNames, comp.Name)
-        elseif comp.Type == "usb_uvc" then -- video bridge
+        elseif comp.Type == componentTypes.videoBridge then
             table.insert(NamesTable.VideoBridgeNames, comp.Name)
-        elseif comp.Type == "%PLUGIN%_78a74df3-40bf-447b-a714-f564ebae238a_%FP%_17f7c2b905c38a7cdf412359a2a9a848" then -- generic display plugin
+        elseif comp.Type == componentTypes.display then
             table.insert(NamesTable.DisplayNames, comp.Name)
-        elseif comp.Type == "gain" then -- call sync
+        elseif comp.Type == componentTypes.gain then
             table.insert(NamesTable.GainNames, comp.Name)
-        elseif comp.Type == "system_mute" then -- PSO Display Control Helper
+        elseif comp.Type == componentTypes.systemMute then
             table.insert(NamesTable.MuteNames, comp.Name)
         end
     end
@@ -94,6 +108,8 @@ function getComponentNames()
     Controls.compProgramVolume.Choices = NamesTable.GainNames
     Controls.compSystemMute.Choices = NamesTable.MuteNames
 end
+
+-------------------[ Status ]-------------------
 
 function getStatus()
     for i, v in pairs(compInvalid) do
@@ -147,7 +163,7 @@ function setComp(ctl, componentType) -- a helper function that maps components t
     end--if
 end--func
 
----- Call Sync and Video Privacy ----
+-------------------[ Components ]-------------------
 
 function setcompCallSync()
     compCallSync = setComp(Controls.compCallSync, "Call Sync")
@@ -206,7 +222,7 @@ function setVideoPrivacy(state)
     publishNotification()
 end--func
 
----- Displays ----
+-------------------[ Displays ]-------------------
 
 function setcompDisplay(idx)
     compDisplays[idx] = setComp(Controls.devDisplays[idx], "Display [" .. idx .. "]")
@@ -240,7 +256,7 @@ function setcompDisplayPower(state)
     end--for
 end--func
 
----- Motion ----
+-------------------[ Motion ]-------------------
 
 function getMotion()
     debugMsg("Checking Motion")
@@ -263,7 +279,7 @@ function getMotion()
     end--if
 end--func
 
----- System Mute ----
+-------------------[ System Mute ]-------------------
 
 function setcompMutePGM()
     SystemMute = setComp(Controls.compSystemMute, "System Mute")
@@ -277,7 +293,7 @@ function setCompSystemMute(state) -- mute all audio in the system using the syst
         SystemMute["mute"].Boolean = state
     end--if
 end--func
----- Volume ----
+-------------------[ Volume ]-------------------
 
 function setGainVisualFeedback()
     -- Check if volume fader is at position 0 OR if mute is explicitly set to true
@@ -361,7 +377,7 @@ function setVolumeUpDown(ctrl, state)
     end--if
 end--func
 
---------## System Power ##--------
+-------------------[ System Power ]-------------------
 function setEnableDisablePowerControls(state)
     Controls.btnSystemOnOff.IsDisabled = not state
     Controls.btnSystemOn.IsDisabled = not state
@@ -405,7 +421,7 @@ function setSystemPowerOff() -- turn system off
     publishNotification() -- send out notification with current system state
 end--func
 
--------- Fire Alarm --------
+-------------------[ Fire Alarm ]-------------------
 
 function setFireAlarm(state)
     if state then -- fire alarm start
@@ -419,7 +435,7 @@ function setFireAlarm(state)
     end--if
 end--func
 
--------- Event Handlers --------
+-------------------[ Event Handlers ]-------------------
 
 timerMotion.EventHandler = function()
     -- trigger system off after timeout period ends
@@ -495,7 +511,7 @@ for i, v in ipairs(Controls.devDisplays) do
     end--EH
 end--for
 
--------- Always Run --------
+-------------------[ Always Run ]-------------------
 function funcInit()
     setEnableDisablePowerControls(true) --enable power controls
     getVideoPrivacyState() --sync video privacy fb
