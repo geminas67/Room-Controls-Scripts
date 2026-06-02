@@ -617,7 +617,6 @@ ClockAudioCDTMicController = {
     end,
     getMicBoxCount = getMicBoxCount,
 }
-
 -------------------[ Start ]-------------------
 local ok, err = pcall(function()
     print("Initializing ClockAudioCDTMicController for " .. const.roomName .. "...")
@@ -635,3 +634,4 @@ else
         setProp(controls.txtStatus, "Value", 2)
     end
 end
+
