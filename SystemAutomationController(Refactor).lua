@@ -1,6 +1,11 @@
 --[[
   System Automation Controller - Q-SYS Control Script
   Manages power, audio, video, displays, and motion detection
+  Allows for components to be added and removed dynamically during runtime
+  Provides a public API for interacting with the system
+  Author: Nikolas Smith, Q-SYS
+  Version: 3.0 | Date: 2026-06-03
+  Firmware Req: 10.3.0
 ]]
 
 -------------------[ Configuration ]-------------------

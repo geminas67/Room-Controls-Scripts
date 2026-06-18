@@ -3,12 +3,6 @@ devProj = Component.New("devProjector2000")
 
 timerMovementEnd = nil
 
-devProj["ledPowerStatus 1"].EventHandler = function(ctl)
-  if not ctl.Boolean then
-    print("Projector is off. Lift can now move up.")
-  end
-end
-
 function setDisabled(boolean)
   Controls.btnMoveUp.IsDisabled = boolean
   Controls.btnMoveDn.IsDisabled = boolean
@@ -68,6 +62,11 @@ resetControls()
 
 Controls.btnMoveUp.EventHandler = function(ctl)
   if ctl.Boolean then
+    if not devProj["ledPowerStatus 1"].Boolean then
+      setFeedback("Cannot raise lift while projector is on.")
+      Controls.btnMoveUp.Boolean = false
+      return
+    end
     setMovement(true, false, "Lift is rising. Controls will re-enable when movement stops.")
     timerMovementSet()
   end

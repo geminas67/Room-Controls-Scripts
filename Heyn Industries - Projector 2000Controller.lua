@@ -10,7 +10,6 @@
 ]]
 
 -------------------** Runtime Options **-------------------
-modeOffline = false -- Set true to log commands without TCP
 tcpPort = 5101
 --- Interval (seconds) for POWER:? polling while projector is warming / cooling (3–8s per instruction).
 amtPollTime = 1.5
@@ -80,10 +79,6 @@ function setPowerControlsFB(state)
 end
 
 function tcpSend(request, label)
-    if modeOffline then
-        debugMsg("[MOCK TX] " .. tostring(label) .. ": " .. request:gsub(txtEOL, "<CR>"))
-        return true
-    end
     if not tcpSocket.IsConnected then
         setStatus("Not connected — command not sent")
         debugMsg("tcpSend skipped (" .. tostring(label) .. "): socket not connected")
@@ -142,7 +137,7 @@ end
 
 pollTransitions.EventHandler = function()
     pollTransitions:Stop()
-    if not modeOffline and not tcpSocket.IsConnected then
+    if not tcpSocket.IsConnected then
         return
     end
     queryPower("Warm/cool poll")
@@ -177,11 +172,6 @@ end
 
 function tcpConnect()
     stopTransitionPoll()
-    if modeOffline then
-        setStatus("modeOffline — no TCP")
-        debugMsg("modeOffline: TCP skipped")
-        return
-    end
     tcpSocket:Disconnect()
     ip = Controls.txtIPAddress and Controls.txtIPAddress.String or ""
     if ip == "" then
