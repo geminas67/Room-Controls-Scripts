@@ -1,0 +1,49 @@
+---
+description: Q-SYS Lua API reference — consult help.qsys.com before editing any .lua script in this workspace.
+globs: "**/*.lua"
+alwaysApply: false
+---
+
+# Q-SYS Lua — Official Documentation
+
+Q-SYS control scripts use **Q-SYS Lua (Script v2)**, not standard Lua. Before adding, changing, or refactoring any `.lua` file in this workspace, consult [Q-SYS Help](https://help.qsys.com) for the correct APIs, syntax, and limitations.
+
+## Required behavior
+
+- **Do not assume** standard Lua/stdlib features exist unless documented for Q-SYS.
+- **Verify** APIs against help.qsys.com — especially `Component.*`, `Controls.*`, `Timer.*`, and event-handler patterns.
+- **Match** existing project conventions in `.cursor/rules/qsys-lua-architecture.mdc` and `qsys-simple-lua-architecture.mdc` unless the official docs require otherwise.
+
+## Primary references
+
+| Topic | Help page |
+|-------|-----------|
+| Named components | [Component](https://help.qsys.com/Content/Control_Scripting/Using_Lua_in_Q-Sys/Component.htm) |
+| Script controls (Text Controller) | [Text Controller](https://help.qsys.com/Content/Schematic_Library/device_controller_script.htm) |
+| Wired script pins | [Controls IO](https://help.qsys.com/q-sys_9.8/Content/Control_Scripting/Using_Lua_in_Q-Sys/Controls_IO.htm) |
+| Full scripting index | [Using Lua in Q-SYS](https://help.qsys.com/Content/Control_Scripting/Using_Lua_in_Q-Sys/) |
+
+## Q-SYS-specific patterns (not generic Lua)
+
+```lua
+-- Named component access (requires Code Name + Script Access on the block)
+local gain = Component.New("Main_Gain")
+gain.gain.EventHandler = function(ctl)
+    if gain.gain.Value > 0 then gain.mute.Boolean = true end
+end
+
+-- Script-defined controls on a Text Controller
+Controls.compExample.EventHandler = function(ctl) ... end
+
+-- Discovery
+for _, comp in pairs(Component.GetComponents()) do ... end
+
+-- Timers
+local t = Timer.New()
+```
+
+**Control names with decimals** (v9.12+): escape the dot — e.g. `comp["31\\.5Hz.gain"]`.
+
+## When unsure
+
+Search or browse [help.qsys.com](https://help.qsys.com) for the component type, control property, or library before implementing. Prefer official examples over generic Lua patterns.
