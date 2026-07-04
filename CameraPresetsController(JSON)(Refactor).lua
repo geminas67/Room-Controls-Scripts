@@ -21,7 +21,6 @@ local controls = {
     knbHoldTime = Controls.knbHoldTime,
     compcamRouter = Controls.compcamRouter,
     routerOutput = Controls.routerOutput,
-    compRoomControls = Controls.compRoomControls,
     compCallSync = Controls.compCallSync,
     txtStatus = Controls.txtStatus
 }
@@ -38,8 +37,7 @@ local config = {
 
 local componentTypes = {
     camera = "onvif_camera_operative",
-    camRouter = "video_router",
-    roomControls = "device_controller_script"
+    camRouter = "video_router"
 }
 
 rapidjson = require("rapidjson")
@@ -106,8 +104,7 @@ local const = {
 local components = {
     cameras = {},
     presets = {},
-    routers = {},
-    roomControls = {}
+    routers = {}
 }
 
 local state = {
@@ -320,21 +317,7 @@ local function discoverRouters()
     end
 end
 
-local function discoverRoomControls()
-    components.roomControls = {}
-    local ok, comps = pcall(Component.GetComponents)
-    if not ok or not comps then return end
-    for _, comp in pairs(comps) do
-        if comp.Type == componentTypes.roomControls and comp.Name then
-            if comp.Name:match("^compRoomControls") and validateComponent(comp.Name) then
-                components.roomControls[comp.Name] = Component.New(comp.Name)
-                debugPrint("Room controls found: " .. comp.Name)
-            end
-        end
-    end
-end
-
-local function syncCamWithRouter(router, key, camCtrl)
+local function syncToCamRouter(router, key, camCtrl)
     if not router or not router[key] or not camCtrl then return false end
     debugPrint("Setting up sync monitor for router output: " .. key .. " (Source: setupRouterSync)")
     router[key].EventHandler = function()
@@ -345,11 +328,10 @@ local function syncCamWithRouter(router, key, camCtrl)
         if not camCtrl.Choices then return end
         if idx and idx > 0 and idx <= #camCtrl.Choices then
             local newCam = camCtrl.Choices[idx]
-            if setProp(camCtrl, "Value", idx) then
-                camCtrl.String = newCam
-                debugPrint(string.format("Camera switched: %s → %s via router output %s (Source: Router Sync)",
-                    currentCam, newCam, key))
-            end
+            setProp(camCtrl, "Value", idx)
+            camCtrl.String = newCam
+            debugPrint(string.format("Camera switched: %s → %s via router output %s (Source: Router Sync)",
+                currentCam, newCam, key))
             updatePresetMatchLEDs()
         end
     end
@@ -386,7 +368,7 @@ local function setupRouterSync()
         return false
     end
     if not controls.devCams then return false end
-    local success = syncCamWithRouter(router, outKey, controls.devCams)
+    local success = syncToCamRouter(router, outKey, controls.devCams)
     debugPrint("=== setupRouterSync END === Success: " .. tostring(success))
     return success
 end
@@ -449,39 +431,20 @@ end
 local function updateRouterOutputChoices()
     if not controls.routerOutput or not controls.compcamRouter then return end
     local routerName = controls.compcamRouter.String
-    if not routerName or routerName == "" or routerName == const.clearString then
-        controls.routerOutput.Choices = {}
-        controls.routerOutput.String = ""
-        return
-    end
-    local router = components.routers[routerName]
-    if not router then
-        controls.routerOutput.Choices = {}
-        controls.routerOutput.String = ""
-        return
-    end
-    local outputNames = {}
-    for controlName, _ in pairs(router) do
-        if type(controlName) == "string" and controlName:match("^select%.%d+$") then
-            table.insert(outputNames, controlName)
+    local router = (routerName ~= "" and routerName ~= const.clearString) and components.routers[routerName]
+    local outputs = {}
+    if router then
+        for k in pairs(router) do
+            local n = type(k) == "string" and k:match("^select%.(%d+)$")
+            if n then outputs[#outputs + 1] = { tonumber(n), k } end
         end
+        table.sort(outputs, function(a, b) return a[1] < b[1] end)
+        for i, v in ipairs(outputs) do outputs[i] = v[2] end
     end
-    table.sort(outputNames, function(a, b)
-        return tonumber(a:match("%.(%d+)$")) < tonumber(b:match("%.(%d+)$"))
-    end)
-    if #outputNames > 0 then
-        setProp(controls.routerOutput, "Choices", outputNames)
-        local currentOutput = controls.routerOutput.String
-        local found = false
-        for _, outputName in ipairs(outputNames) do
-            if outputName == currentOutput then found = true; break end
-        end
-        if not found then controls.routerOutput.String = outputNames[1] end
-        debugPrint(string.format("Router output choices: %d available", #outputNames))
-    else
-        controls.routerOutput.Choices = {"select.1"}
-        controls.routerOutput.String = "select.1"
-    end
+    local out = controls.routerOutput
+    setProp(out, "Choices", outputs)
+    if not router or not router[out.String] then setProp(out, "String", outputs[1] or "") end
+    if #outputs > 0 then debugPrint("Router output choices: " .. #outputs .. " available") end
 end
 
 local function handleSave(presetIdx)
@@ -621,7 +584,6 @@ local function init()
     end
     for camIdx, name in ipairs(cams) do debugPrint(string.format("Camera[%d]: %s", camIdx, name)) end
     discoverRouters()
-    discoverRoomControls()
     if initPresets() then saveJSON() end
     setupCameraMonitoring(cams)
     setupCameraChoices(cams)

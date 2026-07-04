@@ -203,6 +203,7 @@ local config = {
 
 -------------------[ State ]-------------------
 local btnNavEventHandler
+local reflectPowerState
 local state = {
     activeLayer = kLayer.Start, 
     layerStates = {}, 
@@ -640,7 +641,7 @@ local function startLoadingBar(isPoweringOn)
     debugPrint("Loading bar started ("..duration.."s)")
 end
 
-local function reflectPowerState(isOn, source)
+reflectPowerState = function(isOn, source)
     startLoadingBar(isOn)
     btnNavEventHandler(isOn and kLayer.Warming or kLayer.Cooling, source)
 end

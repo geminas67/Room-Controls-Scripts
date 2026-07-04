@@ -348,7 +348,7 @@ local function discoverRoomControls(roomIdx)
     end
 end
 
-local function syncCamWithRouter(roomIdx, router, key, camCtrl)
+local function syncToCamRouter(roomIdx, router, key, camCtrl)
     if not router or not router[key] or not camCtrl then return false end
     debugPrint(string.format("Room[%d] Setting up sync monitor for router output: %s (Source: setupRouterSync)", roomIdx, key))
     router[key].EventHandler = function()
@@ -398,7 +398,7 @@ local function setupRouterSync(roomIdx)
         return false
     end
     if not controls.devCams or not controls.devCams[roomIdx] then return false end
-    local success = syncCamWithRouter(roomIdx, router, outKey, controls.devCams[roomIdx])
+    local success = syncToCamRouter(roomIdx, router, outKey, controls.devCams[roomIdx])
     debugPrint(string.format("Room[%d] === setupRouterSync END === Success: %s", roomIdx, tostring(success)))
     return success
 end
@@ -444,7 +444,7 @@ local function updateRouterChoices()
     local names = {}
     for name, _ in pairs(routerSet) do table.insert(names, name) end
     table.sort(names)
-    table.insert(names, clearString)
+    table.insert(names, const.clearString)
     controls.compcamRouter.Choices = names
     if #names > 0 then
         controls.compcamRouter.String = names[1]
@@ -455,37 +455,25 @@ end
 local function updateRouterOutputChoices(roomIdx)
     if not controls.routerOutput or not controls.routerOutput[roomIdx] or not controls.compcamRouter then return end
     local routerName = controls.compcamRouter.String
-    if not routerName or routerName == "" or routerName == clearString then
-        controls.routerOutput[roomIdx].Choices = {}
-        controls.routerOutput[roomIdx].String = ""
-        return
-    end
-    local router = (components.routers[roomIdx] or {})[routerName]
-    if not router then
-        controls.routerOutput[roomIdx].Choices = {}
-        controls.routerOutput[roomIdx].String = ""
-        return
-    end
-    local outputNames = {}
-    for name, _ in pairs(router) do
-        if type(name) == "string" and name:match("^select%.%d+$") then table.insert(outputNames, name) end
-    end
-    table.sort(outputNames, function(a, b) return tonumber(a:match("%.(%d+)$")) < tonumber(b:match("%.(%d+)$")) end)
-    if #outputNames > 0 then
-        setProp(controls.routerOutput[roomIdx], "Choices", outputNames)
-        local currentOutput = controls.routerOutput[roomIdx].String or ""
-        local isValid = false
-        for _, outputName in ipairs(outputNames) do
-            if outputName == currentOutput then isValid = true; break end
+    local router = (routerName ~= "" and routerName ~= const.clearString) and (components.routers[roomIdx] or {})[routerName]
+    local outputs = {}
+    if router then
+        for k in pairs(router) do
+            local n = type(k) == "string" and k:match("^select%.(%d+)$")
+            if n then outputs[#outputs + 1] = { tonumber(n), k } end
         end
-        if not isValid then
-            local newOutput = outputNames[roomIdx] or outputNames[1]
-            controls.routerOutput[roomIdx].String = newOutput
-            debugPrint(string.format("Room[%d] Router output: '%s' → '%s' (cache invalid)", roomIdx, currentOutput, newOutput))
+        table.sort(outputs, function(a, b) return a[1] < b[1] end)
+        for i, v in ipairs(outputs) do outputs[i] = v[2] end
+    end
+    local out = controls.routerOutput[roomIdx]
+    setProp(out, "Choices", outputs)
+    local current = out.String or ""
+    if not router or not router[current] then
+        local newOutput = outputs[roomIdx] or outputs[1] or ""
+        setProp(out, "String", newOutput)
+        if newOutput ~= "" and current ~= newOutput then
+            debugPrint(string.format("Room[%d] Router output: '%s' → '%s' (cache invalid)", roomIdx, current, newOutput))
         end
-    else
-        controls.routerOutput[roomIdx].Choices = {"select.1"}
-        controls.routerOutput[roomIdx].String = "select.1"
     end
 end
 

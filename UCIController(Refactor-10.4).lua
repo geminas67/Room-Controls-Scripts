@@ -18,14 +18,14 @@ local layersToHide = {
     "E01-SystemProgressWarming","E02-SystemProgressCooling","E05-SystemProgress",
     "H01-PasscodeEntry","H10-RoomControls",
     "I01-CallActive","I02-HelpLaptop","I03-HelpPC","I04-HelpWireless","I05-HelpRouting","I07-HelpStreamMusic",
-    "J01-ConnectUSBLaptop","J02-ConnectUSBPC","J03-ACPRActive","J04-CamPresetSaved","J09-ConferenceControlsLaptop","J10-ConferenceControlsPC",
-    "L01-HDMIDisconnected","L05-Laptop","P01-HDMIDisconnected","P05-PC","W01-HDMIDisconnected","W05-Wireless",
+    "J01-ConnectUSBLaptop","J02-ConnectUSBPC","J03-ACPRActive","J04-CamPresetSaved","J09-ConferenceLaptop","J10-ConferencePC",
+    "L01-HDMIDisc","L05-Laptop","P01-HDMIDisc","P05-PC","W01-HDMIDisc","W05-Wireless",
     "R01-Routing01","R02-Routing02","R03-Routing03","R04-Routing04","R05-Routing05","R10-Routing",
     "S05-StreamMusic","V05-Dialer"
 }
 local routingLayers = {"R01-Routing01","R02-Routing02","R03-Routing03","R04-Routing04","R05-Routing05"}
 local usbConnectLayers = {"J01-ConnectUSBLaptop","J02-ConnectUSBPC"}
-local confLayers = {"J09-ConferenceControlsLaptop","J10-ConferenceControlsPC"}
+local confLayers = {"J09-ConferenceLaptop","J10-ConferencePC"}
 
 local SwitcherTypes = {
     NV32 = {
@@ -70,9 +70,9 @@ local configSource = {
         hdmiKey = "pinLEDHDMI01Connect",
         usbKey  = "pinLEDUSBPC",
         base    = "P05-PC",
-        disc    = "P01-HDMIDisconnected",
+        disc    = "P01-HDMIDisc",
         usb     = "J02-ConnectUSBPC",
-        conf    = "J10-ConferenceControlsPC",
+        conf    = "J10-ConferencePC",
         help    = "I03-HelpPC"
     },
     Laptop = {
@@ -80,9 +80,9 @@ local configSource = {
         hdmiKey = "pinLEDHDMI02Connect",
         usbKey  = "pinLEDUSBLaptop",
         base    = "L05-Laptop",
-        disc    = "L01-HDMIDisconnected",
+        disc    = "L01-HDMIDisc",
         usb     = "J01-ConnectUSBLaptop",
-        conf    = "J09-ConferenceControlsLaptop",
+        conf    = "J09-ConferenceLaptop",
         help    = "I02-HelpLaptop"
     },
     Wireless = {
@@ -90,7 +90,7 @@ local configSource = {
         hdmiKey = "pinLEDHDMI03Connect",
         usbKey  = nil,
         base    = "W05-Wireless",
-        disc    = "W01-HDMIDisconnected",
+        disc    = "W01-HDMIDisc",
         usb     = nil,
         conf    = nil,
         help    = "I04-HelpWireless"
@@ -226,7 +226,7 @@ local function collectConfiguredLayerNames()
     for _, def in pairs(configSource) do
         add(def.base); add(def.disc); add(def.usb); add(def.conf); add(def.help)
     end
-    add("H05-RoomControls")
+    add("H10-RoomControls")
     return out
 end
 
@@ -247,6 +247,7 @@ end
 
 -------------------[ State ]-------------------
 local btnNavEventHandler
+local reflectPowerState
 local state = {
     activeLayer = kLayer.Start,
     layerStates = {},
@@ -405,8 +406,8 @@ local function buildSourceOverlays(desired, transitions, src, hdmiOk, callActive
         want(desired, transitions, src.helpLayer, helpVis, helpVis and "fade" or "none")
         if helpVis then
             want(desired, transitions, usbConnectLayers, false)
-            if src.confLayer == "J10-ConferenceControlsPC" then
-                want(desired, transitions, "J10-ConferenceControlsPC", false)
+            if src.confLayer == "J10-ConferencePC" then
+                want(desired, transitions, "J10-ConferencePC", false)
             end
         end
     end
@@ -679,7 +680,7 @@ local function startLoadingBar(isPoweringOn)
     debugPrint("Loading bar started ("..duration.."s)")
 end
 
-local function reflectPowerState(isOn, source)
+reflectPowerState = function(isOn, source)
     startLoadingBar(isOn)
     btnNavEventHandler(isOn and kLayer.Warming or kLayer.Cooling, source)
 end
