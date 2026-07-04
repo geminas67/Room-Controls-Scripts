@@ -38,7 +38,7 @@ local config = {
 
 local componentTypes = {
     camera = "onvif_camera_operative",
-    videoRouter = "video_router",
+    camRouter = "video_router",
     roomControls = "device_controller_script"
 }
 
@@ -198,20 +198,35 @@ local function discoverCameras()
     return names
 end
 
+local function purgeRemovedCameras()
+    local changed = false
+    for camName, _ in pairs(components.presets) do
+        if not components.cameras[camName] then
+            components.presets[camName] = nil
+            debugPrint("Purged presets for removed camera: " .. camName)
+            changed = true
+        end
+    end
+    return changed
+end
+
 local function initPresets()
     local names = {}
     for camName, _ in pairs(components.cameras) do table.insert(names, camName) end
-    if #names == 0 then return end
+    if #names == 0 then return false end
     local btnArr = isArr(controls.btnCamPreset) and controls.btnCamPreset or {controls.btnCamPreset}
     local numPresets = #btnArr
-    if numPresets == 0 then return end
+    if numPresets == 0 then return false end
+    local changed = purgeRemovedCameras()
     for _, camName in pairs(names) do
         if not components.presets[camName] then
             components.presets[camName] = {}
             for presetIdx = 1, numPresets do components.presets[camName][presetIdx] = "0 0 0" end
             debugPrint("Presets initialized for " .. camName)
+            changed = true
         end
     end
+    return changed
 end
 
 local function updateLEDsInternal()
@@ -298,7 +313,7 @@ local function discoverRouters()
     local ok, comps = pcall(Component.GetComponents)
     if not ok or not comps then return end
     for _, comp in pairs(comps) do
-        if comp.Type and comp.Type:match(componentTypes.videoRouter) and comp.Name and validateComponent(comp.Name) then
+        if comp.Type and comp.Type:match(componentTypes.camRouter) and comp.Name and validateComponent(comp.Name) then
             components.routers[comp.Name] = Component.New(comp.Name)
             debugPrint("Router found: " .. comp.Name)
         end
@@ -607,7 +622,7 @@ local function init()
     for camIdx, name in ipairs(cams) do debugPrint(string.format("Camera[%d]: %s", camIdx, name)) end
     discoverRouters()
     discoverRoomControls()
-    initPresets()
+    if initPresets() then saveJSON() end
     setupCameraMonitoring(cams)
     setupCameraChoices(cams)
     updateRouterChoices()

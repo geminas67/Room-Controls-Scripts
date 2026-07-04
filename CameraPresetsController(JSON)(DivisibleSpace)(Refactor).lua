@@ -55,7 +55,7 @@ local config = {
 
 local componentTypes = {
     camera = "onvif_camera_operative",
-    videoRouter = "video_router",
+    camRouter = "video_router",
     roomControls = "device_controller_script"
 }
 
@@ -330,7 +330,7 @@ local function discoverRouters(roomIdx)
     local ok, comps = pcall(Component.GetComponents)
     if not ok or not comps then return end
     for _, comp in pairs(comps) do
-        if comp.Type and comp.Type:match(componentTypes.videoRouter) and comp.Name and validateComponent(comp.Name) then
+        if comp.Type and comp.Type:match(componentTypes.camRouter) and comp.Name and validateComponent(comp.Name) then
             components.routers[roomIdx][comp.Name] = Component.New(comp.Name)
             debugPrint(string.format("Room[%d] Router found: %s", roomIdx, comp.Name))
         end
