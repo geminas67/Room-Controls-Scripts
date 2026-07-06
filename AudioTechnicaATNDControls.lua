@@ -21,7 +21,7 @@ local config = {
 -------------------[ Controls ]-------------------
 local controls = {
     devATND = Controls.devATND,
-    btnATNDMute = Controls.btnATNDMute,
+    btnMute = Controls.btnMute,
     compRoomControls = Controls.compRoomControls,
     compCallSync = Controls.compCallSync,
     txtStatus = Controls.txtStatus,
@@ -82,7 +82,7 @@ local function cleanupComponentHandlers(oldComponent, controlNames, debugCallbac
 end
 
 local function validateControls()
-    local required = { "devATND", "btnATNDMute" }
+    local required = { "devATND", "btnMute" }
     local missing = {}
     for _, name in ipairs(required) do
         if not controls[name] then table.insert(missing, name) end
@@ -104,7 +104,7 @@ end
 local components = {
     callSync = nil,
     roomControls = nil,
-    atndDevices = {},
+    micATND = {},
     invalid = {},
 }
 
@@ -119,7 +119,7 @@ local state = {
 local ledToggleTimer = nil
 local componentTypes = {
     callSync = "call_sync",
-    atndDevices = "%PLUGIN%_005284C9-04CA-43c1-8D87-EEB0803B4AD9_%FP%_30fd6e855cd3e1f89b7105fc0eb1ce08",
+    micATND = "%PLUGIN%_005284C9-04CA-43c1-8D87-EEB0803B4AD9_%FP%_30fd6e855cd3e1f89b7105fc0eb1ce08",
     roomControls = "device_controller_script",
 }
 
@@ -142,10 +142,10 @@ local function updateStatus()
     setProp(controls.txtStatus, "Value", 0)
 end
 
-local function resetATNDDevices()
+local function resetmicATND()
     local cleared = {}
-    for idx in pairs(components.atndDevices) do
-        components.atndDevices[idx] = nil
+    for idx in pairs(components.micATND) do
+        components.micATND[idx] = nil
         table.insert(cleared, idx)
     end
     if #cleared > 0 then
@@ -196,7 +196,7 @@ local function getComponentNames()
         if comp.Type == componentTypes.callSync then
             table.insert(namesTable.CallSyncNames, comp.Name)
             debugPrint("  Found Call Sync: " .. comp.Name)
-        elseif comp.Type == componentTypes.atndDevices then
+        elseif comp.Type == componentTypes.micATND then
             table.insert(namesTable.ATNDNames, comp.Name)
             debugPrint("  Found ATND device: " .. comp.Name)
         elseif comp.Type == componentTypes.roomControls and string.match(comp.Name, "^compRoomControls") then
@@ -218,14 +218,14 @@ end
 
 local function getATNDDeviceCount()
     local count = 0
-    for _, device in pairs(components.atndDevices) do
+    for _, device in pairs(components.micATND) do
         if device then count = count + 1 end
     end
     return count
 end
 
 local function setAllATNDLEDsColor(color)
-    for _, device in pairs(components.atndDevices) do
+    for _, device in pairs(components.micATND) do
         if device and device.LedUnmuteColor then
             setProp(device.LedUnmuteColor, "String", color)
         end
@@ -357,13 +357,13 @@ local function registerATNDEventHandlers(idx, device)
 end
 
 local function setupATNDComponents()
-    resetATNDDevices()
+    resetmicATND()
     if not controls.devATND then return end
 
     forEach(controls.devATND, function(idx, ctrl)
         local device = setComponent(ctrl, "ATND [" .. idx .. "]")
         if device then
-            components.atndDevices[idx] = device
+            components.micATND[idx] = device
             registerATNDEventHandlers(idx, device)
         end
     end)
@@ -377,7 +377,7 @@ end
 
 -------------------[ Events ]-------------------
 local function registerEvents()
-    bind(controls.btnATNDMute, function(ctl)
+    bind(controls.btnMute, function(ctl)
         setAllATNDLEDsColor(config.ledGreen)
         debugPrint("Mute: " .. tostring(ctl.Boolean) .. " (Source: Mute Button)")
     end)
@@ -388,7 +388,7 @@ local function registerEvents()
     bindArray(controls.devATND, function(idx, ctrl)
         local device = setComponent(ctrl, "ATND [" .. idx .. "]")
         if device then
-            components.atndDevices[idx] = device
+            components.micATND[idx] = device
             registerATNDEventHandlers(idx, device)
         end
     end)
@@ -426,10 +426,10 @@ local function cleanup()
     if ledToggleTimer then ledToggleTimer:Stop() end
     cleanupComponentHandlers(components.callSync, { "off.hook", "mute" }, function(msg) debugPrint("[Cleanup] " .. msg) end)
     cleanupComponentHandlers(components.roomControls, { "ledSystemPower", "ledFireAlarm" }, function(msg) debugPrint("[Cleanup] " .. msg) end)
-    for idx, device in pairs(components.atndDevices) do
+    for idx, device in pairs(components.micATND) do
         cleanupComponentHandlers(device, { "LedUnmuteColor" }, function(msg) debugPrint("[Cleanup ATND " .. idx .. "] " .. msg) end)
     end
-    resetATNDDevices()
+    resetmicATND()
     components.callSync = nil
     components.roomControls = nil
     components.invalid = {}
@@ -449,7 +449,7 @@ ATNDController = {
     setHookState = setHookState,
     setMuteState = setMuteState,
     getDeviceCount = getATNDDeviceCount,
-    resetATNDDevices = resetATNDDevices,
+    resetmicATND = resetmicATND,
     getComponentNames = getComponentNames,
     cleanup = cleanup,
 }

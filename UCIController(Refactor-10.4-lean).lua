@@ -16,7 +16,7 @@ local acprConfig = { disableACPRShow = true }
 local layersBase = {"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}
 local layersToHide = {
     "A01-Alarm","B01-IncomingCall","C05-Start","D01-ShutdownConfirm",
-    "E01-SystemProgressWarming","E02-SystemProgressCooling","E05-SystemProgress",
+    "E01-ProgressWarming","E02-ProgressCooling","E05-Progress",
     "H01-PasscodeEntry","H10-RoomControls",
     "I01-CallActive","I02-HelpLaptop","I03-HelpPC","I04-HelpWireless","I05-HelpRouting","I07-HelpStreamMusic",
     "J01-ConnectUSBLaptop","J02-ConnectUSBPC","J03-ACPRActive","J04-CamPresetSaved","J09-ConferenceLaptop","J10-ConferencePC",
@@ -117,8 +117,8 @@ local layerConfigs = {
     [kLayer.Alarm]        = { show = {"A01-Alarm"}, hideBase = true },
     [kLayer.IncomingCall] = { show = {"B01-IncomingCall"} },
     [kLayer.Start]        = { show = {"C05-Start"}, hideBase = true },
-    [kLayer.Warming]      = { show = {"E05-SystemProgress","E01-SystemProgressWarming"}, hideBase = true },
-    [kLayer.Cooling]      = { show = {"E05-SystemProgress","E02-SystemProgressCooling"}, hideBase = true },
+    [kLayer.Warming]      = { show = {"E05-Progress","E01-ProgressWarming"}, hideBase = true },
+    [kLayer.Cooling]      = { show = {"E05-Progress","E02-ProgressCooling"}, hideBase = true },
     [kLayer.RoomControls] = { show = {"H05-RoomControls"}, hide = {"X01-ProgramVolume"} },
     [kLayer.Laptop]       = { show = {"L05-Laptop"} },
     [kLayer.PC]           = { show = {"P05-PC"} },
@@ -130,12 +130,13 @@ local layerConfigs = {
 }
 
 local legendConfig = {
-    {suffix = "Nav",     count = 13},
+    {suffix = "Nav",     count = 12},
     {suffix = "Routing", count = 5},
-    {suffix = "VidSrc",  count = 12},
+    --{suffix = "VidSrc",  count = 12},
+    {suffix = "GainPGM"},
     {suffix = "Gain",    count = 10},
     {suffix = "Display", count = 4},
-    {single = {"NavShutdown","RoomNameNav","RoomNameStart","RoutingRooms","RoutingSources","GainPGM"}},
+    {single = {"NavShutdown","RoomNameNav","RoomNameStart","RoutingRooms","RoutingSources"}},
 }
 
 local navHidden = {}
@@ -161,6 +162,7 @@ btnNav = {}
 btnRouting = {}
 arrUCILegends = {}
 arrUCIUserLabels = {}
+legendCount = 0
 
 -------------------[ Constants ]-------------------
 
@@ -699,7 +701,8 @@ end
 -------------------[ Legends ]-------------------
 
 function syncLegends()
-    for i, lbl in ipairs(arrUCILegends) do
+    for i = 1, legendCount do
+        local lbl = arrUCILegends[i]
         if lbl and arrUCIUserLabels[i] then
             setProp(lbl, "Legend", arrUCIUserLabels[i].String or "")
         end
@@ -708,26 +711,57 @@ end
 
 function initLegendArrays()
     local idx = 0
-    for _, cfg in ipairs(legendConfig) do
-        if cfg.suffix then
-            for i = 1, cfg.count do
-                idx = idx + 1
-                local name = cfg.suffix..string.format("%02d", i)
-                arrUCILegends[idx] = Controls["txt"..name]
-                arrUCIUserLabels[idx] = Uci.Variables["txtLabel"..name]
+    local missingOptional, missingRequired = 0, 0
+
+    local function registerLegend(name, required)
+        idx = idx + 1
+        local ctrlName = "txt"..name
+        local varName = "txtLabel"..name
+        local ctrl = Controls[ctrlName]
+        local var = Uci.Variables[varName]
+        arrUCILegends[idx] = ctrl
+        arrUCIUserLabels[idx] = var
+        if not ctrl then
+            if required then
+                missingRequired = missingRequired + 1
+                print("ERROR: Required legend control missing: "..ctrlName)
+            else
+                missingOptional = missingOptional + 1
+                debugPrint("Warning: Legend control not found: "..ctrlName)
             end
-        elseif cfg.single then
-            for _, name in ipairs(cfg.single) do
-                idx = idx + 1
-                arrUCILegends[idx] = Controls["txt"..name]
-                arrUCIUserLabels[idx] = Uci.Variables["txtLabel"..name]
+        end
+        if not var then
+            if required then
+                missingRequired = missingRequired + 1
+                print("ERROR: Required legend variable missing: "..varName)
+            else
+                missingOptional = missingOptional + 1
+                debugPrint("Warning: Legend variable not found: "..varName)
             end
         end
     end
-    for _, label in ipairs(arrUCIUserLabels) do
+
+    for _, cfg in ipairs(legendConfig) do
+        if cfg.suffix then
+            local count = cfg.count or 1
+            for i = 1, count do
+                local name = cfg.count and (cfg.suffix..string.format("%02d", i)) or cfg.suffix
+                registerLegend(name, false)
+            end
+        elseif cfg.single then
+            for _, name in ipairs(cfg.single) do
+                registerLegend(name, true)
+            end
+        end
+    end
+    legendCount = idx
+    for i = 1, legendCount do
+        local label = arrUCIUserLabels[i]
         if label then label.EventHandler = function() syncLegends() end end
     end
-    debugPrint("Legends: "..(#arrUCILegends).." controls")
+    debugPrint("Legends: "..legendCount.." slots configured")
+    if missingOptional > 0 then debugPrint("Legends: "..missingOptional.." optional control/variable reference(s) missing") end
+    if missingRequired > 0 then print("ERROR: Legends: "..missingRequired.." required control/variable reference(s) missing") end
 end
 
 -------------------[ Event Handlers ]-------------------
@@ -857,7 +891,8 @@ myUCI = {
         if components.passcode and components.passcode["PasscodeCorrect"] then
             components.passcode["PasscodeCorrect"].EventHandler = nil
         end
-        for _, label in ipairs(arrUCIUserLabels) do
+        for i = 1, legendCount do
+            local label = arrUCIUserLabels[i]
             if label then label.EventHandler = nil end
         end
         debugPrint("Cleanup complete")
@@ -874,7 +909,7 @@ local ok, err = pcall(function()
 end)
 
 if ok then
-    print("✓ UCIController (lean) initialized for "..pageUCI)
+    print("✓ UCIController initialized for "..pageUCI)
 else
-    print("✗ ERROR: UCIController (lean) failed: "..tostring(err))
+    print("✗ ERROR: UCIController initialization failed: "..tostring(err))
 end
