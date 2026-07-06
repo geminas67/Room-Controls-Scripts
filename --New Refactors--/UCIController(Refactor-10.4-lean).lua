@@ -130,9 +130,9 @@ local layerConfigs = {
 }
 
 local legendConfig = {
-    {suffix = "Nav",     count = 13},
+    {suffix = "Nav",     count = 12},
     {suffix = "Routing", count = 5},
-    {suffix = "VidSrc",  count = 12},
+    --{suffix = "VidSrc",  count = 12},
     {suffix = "GainPGM"},
     {suffix = "Gain",    count = 10},
     {suffix = "Display", count = 4},
@@ -711,20 +711,46 @@ end
 
 function initLegendArrays()
     local idx = 0
+    local missingOptional, missingRequired = 0, 0
+
+    local function registerLegend(name, required)
+        idx = idx + 1
+        local ctrlName = "txt"..name
+        local varName = "txtLabel"..name
+        local ctrl = Controls[ctrlName]
+        local var = Uci.Variables[varName]
+        arrUCILegends[idx] = ctrl
+        arrUCIUserLabels[idx] = var
+        if not ctrl then
+            if required then
+                missingRequired = missingRequired + 1
+                print("ERROR: Required legend control missing: "..ctrlName)
+            else
+                missingOptional = missingOptional + 1
+                debugPrint("Warning: Legend control not found: "..ctrlName)
+            end
+        end
+        if not var then
+            if required then
+                missingRequired = missingRequired + 1
+                print("ERROR: Required legend variable missing: "..varName)
+            else
+                missingOptional = missingOptional + 1
+                debugPrint("Warning: Legend variable not found: "..varName)
+            end
+        end
+    end
+
     for _, cfg in ipairs(legendConfig) do
         if cfg.suffix then
             local count = cfg.count or 1
             for i = 1, count do
-                idx = idx + 1
                 local name = cfg.count and (cfg.suffix..string.format("%02d", i)) or cfg.suffix
-                arrUCILegends[idx] = Controls["txt"..name]
-                arrUCIUserLabels[idx] = Uci.Variables["txtLabel"..name]
+                registerLegend(name, false)
             end
         elseif cfg.single then
             for _, name in ipairs(cfg.single) do
-                idx = idx + 1
-                arrUCILegends[idx] = Controls["txt"..name]
-                arrUCIUserLabels[idx] = Uci.Variables["txtLabel"..name]
+                registerLegend(name, true)
             end
         end
     end
@@ -733,7 +759,9 @@ function initLegendArrays()
         local label = arrUCIUserLabels[i]
         if label then label.EventHandler = function() syncLegends() end end
     end
-    debugPrint("Legends: "..legendCount.." controls")
+    debugPrint("Legends: "..legendCount.." slots configured")
+    if missingOptional > 0 then debugPrint("Legends: "..missingOptional.." optional control/variable reference(s) missing") end
+    if missingRequired > 0 then print("ERROR: Legends: "..missingRequired.." required control/variable reference(s) missing") end
 end
 
 -------------------[ Event Handlers ]-------------------
@@ -881,7 +909,7 @@ local ok, err = pcall(function()
 end)
 
 if ok then
-    print("✓ UCIController (lean) initialized for "..pageUCI)
+    print("✓ UCIController initialized for "..pageUCI)
 else
-    print("✗ ERROR: UCIController (lean) failed: "..tostring(err))
+    print("✗ ERROR: UCIController initialization failed: "..tostring(err))
 end
