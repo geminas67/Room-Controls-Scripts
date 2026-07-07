@@ -14,12 +14,12 @@ Use a single local helper (name may vary) for the per-display **On** / **Off** c
 
 ```lua
 local function setPowerOnOffRowFeedback(index, powerState)
-    setProp(controls.btnDisplayPowerOn and controls.btnDisplayPowerOn[index], "Boolean", powerState)
-    setProp(controls.btnDisplayPowerOff and controls.btnDisplayPowerOff[index], "Boolean", not powerState)
+    setProp(controls.btnPowerOn and controls.btnPowerOn[index], "Boolean", powerState)
+    setProp(controls.btnPowerOff and controls.btnPowerOff[index], "Boolean", not powerState)
 end
 ```
 
-Use the same `setProp(controls.btnDisplayPowerSingle and controls.btnDisplayPowerSingle[index], "Boolean", ...)` style for the single toggle — avoid redundant `if ctrl and ctrl[index]` wrappers; `setProp` no-ops on nil.
+Use the same `setProp(controls.btnPowerSingle and controls.btnPowerSingle[index], "Boolean", ...)` style for the single toggle — avoid redundant `if ctrl and ctrl[index]` wrappers; `setProp` no-ops on nil.
 
 ## Hardware-driven, not optimistic
 
