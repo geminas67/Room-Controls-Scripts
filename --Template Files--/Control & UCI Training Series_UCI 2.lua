@@ -1,0 +1,260 @@
+-- Constants --
+kLayer_Room = 1
+kLayer_Displays = 2
+kLayer_Cameras = 3
+varActiveLayer = kLayer_Room
+
+-- Functions --
+function funcUpdateLegends()
+  Controls.btnNavRoom.Legend = Uci.Variables.navBtnRoomLegend.String
+  Controls.btnNavDisplays.Legend = Uci.Variables.navBtnDisplaysLegend.String
+  Controls.btnNavCameras.Legend = Uci.Variables.navBtnCamerasLegend.String
+  Controls.btnCam01Sel.Legend = Uci.Variables.btnCam01SelLegend.String
+  Controls.btnCam02Sel.Legend = Uci.Variables.btnCam02SelLegend.String
+end
+
+function funcShowCameraSublayer()
+  if Controls.pinLEDUSB.Boolean then 
+    Uci.SetLayerVisibility("classUCI", "C2_USB_Connected", true, "fade")
+    Uci.SetLayerVisibility("classUCI", "C3_USB_Connected_NOT", false, "none")
+  else
+    Uci.SetLayerVisibility("classUCI", "C2_USB_Connected", false, "none")
+    Uci.SetLayerVisibility("classUCI", "C3_USB_Connected_NOT", true, "fade")
+  end
+
+  for i, layer in ipairs(cameraLayers) do
+    local btn = camButtons[i]
+    if btn.Boolean then
+      Uci.SetLayerVisibility("classUCI", layer, true, "fade")
+      print("Set UCI to "..layer.." to show")
+    else
+      Uci.SetLayerVisibility("classUCI", layer, false, "none")
+      print("Set UCI to "..layer.." to hide")
+    end
+  end
+end
+--turn off ALL layers --turn on the layer of varActiveLayer
+function  funcShowLayer()
+  Uci.SetLayerVisibility( "classUCI", "A1_Room", false , "none" )
+  Uci.SetLayerVisibility( "classUCI", "B1_Displays", false , "none" )
+  Uci.SetLayerVisibility( "classUCI", "C1_Cameras", false , "none" )
+  Uci.SetLayerVisibility( "classUCI", "C2_USB_Connected", false , "none" )
+  Uci.SetLayerVisibility( "classUCI", "C3_USB_Connected_NOT", false , "none" )
+  Uci.SetLayerVisibility( "classUCI", "C4_Camera_01_Presets", false , "none" )
+  Uci.SetLayerVisibility( "classUCI", "C5_Camera_02_Presets", false , "none" )
+  Uci.SetLayerVisibility( "classUCI", "Y1_Base Controls", true , "fade" )
+  Uci.SetLayerVisibility( "classUCI", "Z1_BG", true , "fade" )
+
+  if varActiveLayer == kLayer_Room then
+    Uci.SetLayerVisibility( "classUCI", "A1_Room", true , "fade" )
+  elseif varActiveLayer == kLayer_Displays then 
+    Uci.SetLayerVisibility( "classUCI", "B1_Displays", true , "fade" )
+  elseif varActiveLayer == kLayer_Cameras then
+    Uci.SetLayerVisibility( "classUCI", "C1_Cameras", true , "fade" )
+    funcShowCameraSublayer()
+  end --if
+end
+--set ALL layers and buttons false, then set layer Visibility of the button with Boolean that is true
+function funcInterlock() 
+  Controls.btnNavRoom.Boolean = false 
+  Controls.btnNavDisplays.Boolean = false 
+  Controls.btnNavCameras.Boolean = false
+
+  if varActiveLayer == kLayer_Room then
+    Controls.btnNavRoom.Boolean = true 
+  elseif varActiveLayer == kLayer_Displays then 
+    Controls.btnNavDisplays.Boolean = true 
+  elseif varActiveLayer == kLayer_Cameras then
+    Controls.btnNavCameras.Boolean = true
+  end--if
+end 
+--print varActiveLayer to Debugger window
+function funcDebugger()
+  if varActiveLayer == kLayer_Room then
+    print("Set UCI to Room") 
+  elseif varActiveLayer == kLayer_Displays then 
+    print("Set UCI to Displays") 
+  elseif varActiveLayer == kLayer_Cameras then
+    print("Set UCI to Cameras") 
+  end--if
+end 
+--btnNavRoom is Active
+Controls.btnNavRoom.EventHandler = function ()
+  varActiveLayer = kLayer_Room
+  funcShowLayer()
+  funcInterlock()
+  funcDebugger()
+end
+--btnNavDisplays is Active
+Controls.btnNavDisplays.EventHandler = function ()
+  varActiveLayer = kLayer_Displays
+  funcShowLayer()
+  funcInterlock()
+  funcDebugger()
+end
+--btnNavCameras is Active
+Controls.btnNavCameras.EventHandler = function ()
+  varActiveLayer = kLayer_Cameras
+  funcShowLayer()
+  funcInterlock()
+  funcDebugger()
+end
+
+Controls.pinLEDUSB.EventHandler = function (ctl)
+  if ctl.Boolean then
+  varActiveLayer = kLayer_Cameras
+  end--if
+  funcShowLayer()
+  funcInterlock()
+  funcDebugger()
+end
+
+-- Table of camera selection buttons
+camButtons = {
+Controls.btnCam01Sel,
+Controls.btnCam02Sel
+}
+-- Table of camera preset layer names (expand as needed)
+cameraLayers = {
+  [1] = "C4_Camera_01_Presets",
+  [2] = "C5_Camera_02_Presets"
+}
+-- Camera selection function
+function selectCamera(index)
+  for i, btn in ipairs(camButtons) do
+    btn.Boolean = (i == index)
+  end
+  funcShowCameraSublayer()
+end
+
+-- Factory function to capture index by value (fixes classic Lua closure issue)
+-- Without this, all handlers would reference the final loop value
+local function camButtonHandler(index)
+  return function()
+    selectCamera(index)
+  end
+end
+
+-- Assign event handlers using factory function to capture index
+for i, btn in ipairs(camButtons) do
+  btn.EventHandler = camButtonHandler(i)
+end
+
+-- Update UCI Legends
+
+local legendVars = {
+  Uci.Variables.navBtnRoomLegend,
+  Uci.Variables.navBtnDisplaysLegend,
+  Uci.Variables.navBtnCamerasLegend,
+  Uci.Variables.btnCam01SelLegend,
+  Uci.Variables.btnCam02SelLegend
+}
+
+for _, var in ipairs(legendVars) do
+  var.EventHandler = funcUpdateLegends
+end
+-------------------------------------------------------------------------------------------------------------------------------------
+
+function funcSetNV32CodeName()
+  devNV32 = Component.New(Uci.Variables.varNV32CodeName.String)
+end
+Uci.Variables.varNV32CodeName.EventHandler = funcSetNV32CodeName
+
+arrListBox = {
+  Controls.listOut01,
+  Controls.listOut02,
+}
+
+function funcSetNV32Choices()
+  arrFriendlyNames = {
+    --assign name of list box
+    Uci.Variables.friendlyHDMI01.String,
+    Uci.Variables.friendlyHDMI02.String,
+    Uci.Variables.friendlyHDMI03.String,
+    Uci.Variables.friendlyGraphic01.String,
+  }
+  tblBabelFish = {}
+  tblBabelFish[Uci.Variables.friendlyHDMI01.String] = "HDMI 1"
+  tblBabelFish[Uci.Variables.friendlyHDMI02.String] = "HDMI 2"
+  tblBabelFish[Uci.Variables.friendlyHDMI03.String] = "HDMI 3"
+  tblBabelFish[Uci.Variables.friendlyGraphic01.String] = "Graphic 1"
+  tblBabelFish[Uci.Variables.friendlyGraphic02.String] = "Graphic 2"
+  tblBabelFish[Uci.Variables.friendlyGraphic03.String] = "Graphic 3"
+
+  tblBabelFish["HDMI 1"] = Uci.Variables.friendlyHDMI01.String
+  tblBabelFish["HDMI 2"] = Uci.Variables.friendlyHDMI02.String
+  tblBabelFish["HDMI 3"] = Uci.Variables.friendlyHDMI03.String
+  tblBabelFish["Graphic 1"] = Uci.Variables.friendlyGraphic01.String
+  tblBabelFish["Graphic 2"] = Uci.Variables.friendlyGraphic02.String
+  tblBabelFish["Graphic 3"] = Uci.Variables.friendlyGraphic03.String
+
+  --loop to assign .Choices
+  for i, ctl in ipairs(arrListBox) do
+    ctl.Choices = arrFriendlyNames
+  end--for
+end
+--list EventHandlers
+Uci.Variables.friendlyHDMI01.EventHandler = funcSetNV32Choices
+Uci.Variables.friendlyHDMI02.EventHandler = funcSetNV32Choices
+Uci.Variables.friendlyHDMI03.EventHandler = funcSetNV32Choices
+Uci.Variables.friendlyGraphic01.EventHandler = funcSetNV32Choices
+Uci.Variables.friendlyGraphic02.EventHandler = funcSetNV32Choices
+Uci.Variables.friendlyGraphic03.EventHandler = funcSetNV32Choices
+
+function funcVideoDebugger(argWho,argInput,argWhy)
+  print(string.format("%s routed %s/%s because : %s", argWho, argInput, tblBabelFish[argInput], argWhy))
+end
+
+function funcVideoSwitch(argOutNumber, argInputString)
+    devNV32["hdmi.out."..argOutNumber..".select.pretty.name"].String = tblBabelFish[argInputString]
+end
+
+--loop to write the EventHandlers
+for i, ctl in ipairs(arrListBox) do
+  ctl.EventHandler = function()
+    funcVideoDebugger("listOut0"..i, ctl.String, "user interaction")--print("listOut0"..i.." chose source "..ctl.String.." / "..tblBabelFish[ctl.String])
+    funcVideoSwitch(i, ctl.String)--devNV32["hdmi.out."..i..".select.pretty.name"].String = tblBabelFish[ctl.String]
+  end--for
+end
+funcSetNV32CodeName()
+--NV32 gives a new "Pretty Name"
+--translate "Pretty Name" into "Friendly Name"
+--update the .String of the List Box
+for i = 1, 2 do --for loop each list box...
+  devNV32["hdmi.out."..i..".select.pretty.name"].EventHandler = function (ctl)
+    funcVideoDebugger("NV32 Out "..i, ctl.String, "device updated")
+    arrListBox[i].String = tblBabelFish[ctl.String]
+  end
+end
+-- Routing Display and Laptop constants --
+kDisplay01 = 1
+kDisplay02 = 2
+kLaptop01 = 1
+kLaptop02 = 2
+
+Controls.pinLEDLaptop01Active.EventHandler = function (ctl)
+  if ctl.Boolean then 
+    funcVideoSwitch(kDisplay01, arrFriendlyNames[kLaptop01])
+    funcVideoSwitch(kDisplay02, arrFriendlyNames[kLaptop01])
+  end--if 
+end
+
+Controls.pinLEDLaptop02Active.EventHandler = function (ctl)
+  if ctl.Boolean then
+    funcVideoSwitch(kDisplay01, arrFriendlyNames[kLaptop02])
+    funcVideoSwitch(kDisplay02, arrFriendlyNames[kLaptop02])
+  end--if
+end
+
+function funcInit()
+  varActiveLayer = kLayer_Room
+  funcShowLayer()
+  funcInterlock()
+  funcDebugger()
+  funcUpdateLegends()
+  funcSetNV32Choices()
+  funcSetNV32CodeName()
+  print("UCI Initialized")
+end
+--in the Mainline of the script and will run once at Startup
+funcInit()
