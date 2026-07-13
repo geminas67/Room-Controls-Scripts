@@ -10,8 +10,8 @@
 
 -------------------[ Configuration ]-------------------
 
-local conferenceStateConfig = { skip = { [7]=true, [8]=true, [9]=true } }
-local acprConfig = { disableACPRShow = true }
+local conferenceStateConfig = { skip = { [9]=true } }  -- PC/Laptop: show J01/J02 when USB disconnected, J09/J10 when connected
+local acprConfig = { disableACPRShow = false }
 
 local layersBase = {"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}
 local layersToHide = {
@@ -119,7 +119,7 @@ local layerConfigs = {
     [kLayer.Start]        = { show = {"C05-Start"}, hideBase = true },
     [kLayer.Warming]      = { show = {"E05-Progress","E01-ProgressWarming"}, hideBase = true },
     [kLayer.Cooling]      = { show = {"E05-Progress","E02-ProgressCooling"}, hideBase = true },
-    [kLayer.RoomControls] = { show = {"H05-RoomControls"}, hide = {"X01-ProgramVolume"} },
+    [kLayer.RoomControls] = { show = {"H10-RoomControls"}, hide = {"X01-ProgramVolume"} },
     [kLayer.Laptop]       = { show = {"L05-Laptop"} },
     [kLayer.PC]           = { show = {"P05-PC"} },
     [kLayer.Wireless]     = { show = {"W05-Wireless"} },

@@ -159,7 +159,8 @@ page {
   }
   
   /* Variant: destructive action */
-  .btn-danger {
+  .btn-danger,
+  .btn-danger.off {
     background-color: rgba(239, 68, 68, 0.12);
     border-color: #b91c1c;
     color: #fecaca;

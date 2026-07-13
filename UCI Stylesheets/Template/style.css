@@ -9,280 +9,348 @@
    - Utility classes for layout and states
    ========================================================= */
 
-   :root {
+:root {
 
-    /* ====================== Scaling tokens ====================== */
-    --radius-scale: var(--scale-perfect-fifth);
-    --spacing-scale: var(--scale-perfect-fifth);
-    --type-scale: var(--scale-desktop);
-    --scale-perfect-fifth: 1.5;
-    --scale-desktop: 1.333;
+  /* ====================== Scaling tokens ====================== */
+  --radius-scale: var(--scale-perfect-fifth);
+  --spacing-scale: var(--scale-perfect-fifth);
+  --type-scale: var(--scale-desktop);
+  --scale-perfect-fifth: 1.5;
+  --scale-desktop: 1.333;
 
+  /* ====================== Palette (hex — retheme here) ====================== */
+  --primary: #3b82f6;
+  --primary-light: #60a5fa;
+  --primary-dark: #1d4ed8;
 
-    /* ====================== Color tokens ====================== */
-    --color-primary: #3b82f6;
-    --color-secondary: #60a5fa;
-    --color-neutral: #9ca3af;
-    --color-base-dark: #101319;
-    --color-base-dark-alt: #181c24;
-    --color-base-light: #232834;
-    --color-base-light-alt: #2d333f;
-    --color-border: #3a4253;
-    --color-accent: #3b82f6;
-    --color-accent-muted: lch(55.63% 66.78 285.24 / 0.15);
-    --color-success: #22c55e;
-    --color-warning: #facc15;
-    --color-danger: #ef4444a2; 
-    --color-text-light: #f9fafb;
-    --color-text-dark-muted: #9ca3af;
-    --color-text-dark: #0b0e14;
-  
-    /* ====================== Typography ====================== */
-    --font-sans: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont,
-                 "Roboto", sans-serif;
-    --font-mono: "JetBrains Mono", "Consolas", "SF Mono", ui-monospace, monospace;
-  
-    --font-size-xs: 10px;
-    --font-size-sm: 11px;
-    --font-size-md: 13px;
-    --font-size-lg: 15px;
-    --font-size-xl: 18px;
-  
-    /* ====================== Spacing scale ====================== */
-    --space-xs: 2px;
-    --space-sm: 4px;
-    --space-md: 8px;
-    --space-lg: 12px;
-    --space-xl: 16px;
-    --space-2xl: 24px;
-    --space-3xl: 32px;
-    --space-4xl: 40px;
-    --space-5xl: 48px;
-    --space-6xl: 56px;
-    --space-7xl: 64px;
-    --space-8xl: 72px;
-    --space-9xl: 80px;
-    --space-10xl: 88px;
-  
-    /* ====================== Radii ====================== */
-    --radius-xs: calc(var(--radius-sm) * calc(var(--radius-scale) * -1));
-    --radius-sm: calc(var(--radius) * calc(var(--radius-scale) * -1));
-    --radius: 6px;
-    --radius-md: calc(var(--radius) * var(--radius-scale));
-    --radius-lg: calc(var(--radius-md) * var(--radius-scale));
-    --radius-xl: calc(var(--radius-lg) * var(--radius-scale));
-    --radius-pill: 999px;
-  
-    /* ====================== Borders & shadows ====================== */
-    --border-default: 1px solid var(--color-border);
-    --shadow-sm: 0 2px 2px rgba(0, 0, 0, 0.4);
-    --shadow-md: 0 4px 4px rgba(0, 0, 0, 0.4);
-    --shadow-lg: 0 8px 8px rgba(0, 0, 0, 0.4);
-  
-    /* ====================== Fader / meter specific ====================== */
-    --fader-track: var(--color-base-alt);
-    --fader-cap: var(--color-accent);
-    --fader-cap-border: var(--color-accent-muted);
-    --meter-bg: var(--color-base-alt);
-    --meter-fill: var(--color-success);
-    --meter-warning: var(--color-warning);
-    --meter-danger: var(--color-danger);
-  }
-  
+  --base-ultra-dark: #101319;
+  --base-dark: #181c24;
+  --base: #232834;
+  --base-light: #2d333f;
+  --base-border: #3a4253;
 
-  /* Example custom font (optional)
-  @font-face {
-    font-family: "UCIIcons";
-    src: url("fonts/UCIIcons.ttf") format("truetype");
-  }
-  */
+  --text-light: #f9fafb;
+  --text-dark: #0b0e14;
 
-  /* ====================== Full page background and base text ====================== */
+  --success: #22c55e;
+  --warning: #facc15;
+  --danger: #ef4444;
+
+  /* ====================== Derived palette (fine-tune relative to above) ====================== */
+  --primary-hover: #2563eb;
+  --primary-contrast: var(--text-dark);
+  --primary-muted: rgba(59, 130, 246, 0.15);
+
+  --text-light-muted: #9ca3af;
+  --text-dark-muted: #6b7280;
+
+  --danger-muted: rgba(239, 68, 68, 0.12);
+  --danger-border: #b91c1c;
+  --danger-border-active: #f87171;
+  --danger-text-soft: #fecaca;
+
+  /* ====================== Surfaces ====================== */
+  --surface-page: var(--base-ultra-dark);
+  --surface-panel: var(--base-dark);
+  --surface-raised: var(--base);
+  --surface-elevated: var(--base-light);
+  --border-color: var(--base-border);
+
+  /* ====================== Surface → text pairings ====================== */
+  --surface-page-text: var(--text-light);
+  --surface-page-text-muted: var(--text-light-muted);
+  --surface-panel-text: var(--text-light);
+  --surface-panel-text-muted: var(--text-light-muted);
+  --surface-raised-text: var(--text-light);
+  --surface-primary-text: var(--primary-contrast);
+
+  /* ====================== Typography ====================== */
+  --font-sans: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont,
+               "Roboto", sans-serif;
+  --font-mono: "JetBrains Mono", "Consolas", "SF Mono", ui-monospace, monospace;
+
+  --font-size-xs: 10px;
+  --font-size-sm: 11px;
+  --font-size-md: 13px;
+  --font-size-lg: 15px;
+  --font-size-xl: 18px;
+
+  /* ====================== Spacing scale ====================== */
+  --space-xs: 2px;
+  --space-sm: 4px;
+  --space-md: 8px;
+  --space-lg: 12px;
+  --space-xl: 16px;
+  --space-2xl: 24px;
+  --space-3xl: 32px;
+  --space-4xl: 40px;
+  --space-5xl: 48px;
+  --space-6xl: 56px;
+  --space-7xl: 64px;
+  --space-8xl: 72px;
+  --space-9xl: 80px;
+  --space-10xl: 88px;
+
+  /* ====================== Radii ====================== */
+  --radius-xs: calc(var(--radius-sm) * calc(var(--radius-scale) * -1));
+  --radius-sm: calc(var(--radius) * calc(var(--radius-scale) * -1));
+  --radius: 6px;
+  --radius-md: calc(var(--radius) * var(--radius-scale));
+  --radius-lg: calc(var(--radius-md) * var(--radius-scale));
+  --radius-xl: calc(var(--radius-lg) * var(--radius-scale));
+  --radius-pill: 999px;
+
+  /* ====================== Borders & shadows ====================== */
+  --border-default: 1px solid var(--border-color);
+  --shadow-sm: 0 2px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 4px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 8px rgba(0, 0, 0, 0.4);
+  --shadow-cap-ring: rgba(15, 23, 42, 0.8);
+  --shadow-cap-drop: rgba(0, 0, 0, 0.7);
+
+  /* ====================== Fader / meter aliases ====================== */
+  --fader-track: var(--surface-panel);
+  --fader-cap: var(--primary);
+  --fader-cap-border: var(--primary-light);
+  --meter-bg: var(--surface-panel);
+  --meter-fill: var(--success);
+  --meter-warning: var(--warning);
+  --meter-danger: var(--danger);
+}
+
+/* Example custom font (optional)
+@font-face {
+  font-family: "UCIIcons";
+  src: url("fonts/UCIIcons.ttf") format("truetype");
+}
+*/
+
+/* ====================== Surface utilities ====================== */
+.bg--page {
+  background: var(--surface-page);
+  color: var(--surface-page-text);
+}
+
+.bg--panel {
+  background: var(--surface-panel);
+  color: var(--surface-panel-text);
+}
+
+.bg--raised {
+  background: var(--surface-raised);
+  color: var(--surface-raised-text);
+}
+
+.bg--elevated {
+  background: var(--surface-elevated);
+  color: var(--surface-raised-text);
+}
+
+.text--muted {
+  color: var(--text-light-muted);
+}
+
+.text--primary {
+  color: var(--primary);
+}
+
+/* ====================== Full page background and base text ====================== */
 page {
-    background: radial-gradient(circle at top, #1f2933, #020617);
-    color: var(--color-text-light);
-    font-family: var(--font-sans);
-    font-size: var(--font-size-md);
-  }
-  
-  /* ====================== Generic section container ====================== */
-  .u-section {
-    background-color: var(--color-base-alt);
-    border: var(--border-default);
-    border-radius: var(--radius-md);
-    padding: var(--space-6);
-    box-shadow: var(--shadow-md);
-  }
-  
-  /* ====================== Header bar (use on a rectangle behind your title row) ====================== */
-  .u-header {
-    background: linear-gradient(90deg, #020617, #111827);
-    border-bottom: 1px solid #1f2937;
-    padding: var(--space-4) var(--space-6);
-  }
-  
-  .u-header__title {
-    font-size: var(--font-size-xl);
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--color-text-light);
-  }
-  
-  .u-header__subtitle {
-    font-size: var(--font-size-sm);
-    color: var(--color-text-dark-muted);
-  }
+  background: radial-gradient(
+    circle at top,
+    var(--base-light),
+    var(--base-ultra-dark)
+  );
+  color: var(--surface-page-text);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-md);
+}
 
-  /* ====================== Buttons and button groups ====================== */
-  .btn-group {
-    display: flex;
-    gap: var(--space-2);
-  }
-  
-  .btn-group .btn {
-    flex: 1;
-  }
+/* ====================== Generic section container ====================== */
+.u-section {
+  background-color: var(--surface-panel);
+  border: var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-6);
+  box-shadow: var(--shadow-md);
+}
 
-  /* ====================== Base button: assign CSS Class Name "btn" in Designer ====================== */
+/* ====================== Header bar (use on a rectangle behind your title row) ====================== */
+.u-header {
+  background: linear-gradient(
+    90deg,
+    var(--base-ultra-dark),
+    var(--base-dark)
+  );
+  border-bottom: 1px solid var(--base);
+  padding: var(--space-4) var(--space-6);
+}
+
+.u-header__title {
+  font-size: var(--font-size-xl);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--surface-panel-text);
+}
+
+.u-header__subtitle {
+  font-size: var(--font-size-sm);
+  color: var(--surface-panel-text-muted);
+}
+
+/* ====================== Buttons and button groups ====================== */
+.btn-group {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.btn-group .btn {
+  flex: 1;
+}
+
+/* ====================== Base button: assign CSS Class Name "btn" in Designer ====================== */
 .btn {
-    background-color: var(--color-base-alt);
-    border: var(--border-default);
-    border-radius: var(--radius-pill);
-    color: var(--color-text-light);
-    font-size: var(--font-size-md);
-    font-weight: 500;
-    padding: var(--space-3) var(--space-6);
-    text-align: center;
-  }
-  
-  /* ====================== Hover / focus look (Q-SYS maps state via .on / .off and :active) ====================== */
-  .btn.off {
-    background-color: var(--color-base-alt);
-    color: var(--color-text-light);
-  }
-  
-  .btn.on {
-    background-color: var(--color-accent);
-    border-color: var(--color-accent);
-    color: var(--color-text-dark);
-    box-shadow: 0 0 0 1px var(--color-accent-muted);
-  }
-  
-  /* ====================== Variant: primary action ====================== */
-  .btn-primary {
-    background-color: var(--color-accent);
-    border-color: var(--color-accent);
-    color: var(--color-text-dark);
-  }
-  
-  /* ====================== Variant: destructive action ====================== */
-  .btn-danger {
-    background-color: rgba(239, 68, 68, 0.12);
-    border-color: #b91c1c;
-    color: #fecaca;
-  }
-  
-  .btn-danger.on {
-    background-color: #ef4444;
-    border-color: #f87171;
-    color: var(--color-text-dark);
-  }
-  
-  /* ====================== Pill-style source selector row ====================== */
-  .btn-source {
-    border-radius: var(--radius-pill);
-    font-size: var(--font-size-sm);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-  }
+  background-color: var(--btn-bg, var(--surface-raised));
+  border: 1px solid var(--btn-border, var(--border-color));
+  border-radius: var(--radius-pill);
+  color: var(--btn-text, var(--surface-raised-text));
+  font-size: var(--font-size-md);
+  font-weight: 500;
+  padding: var(--space-3) var(--space-6);
+  text-align: center;
+}
 
-  
-  /* ====================== Generic label text ====================== */
+/* Q-SYS maps state via .on / .off and :active */
+.btn.off {
+  --btn-bg: var(--surface-raised);
+  --btn-text: var(--surface-raised-text);
+  --btn-border: var(--border-color);
+}
+
+.btn.on {
+  --btn-bg: var(--primary);
+  --btn-text: var(--primary-contrast);
+  --btn-border: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary-muted);
+}
+
+/* Variant: primary action */
+.btn-primary {
+  --btn-bg: var(--primary);
+  --btn-text: var(--primary-contrast);
+  --btn-border: var(--primary);
+}
+
+/* Variant: destructive action */
+.btn-danger,
+.btn-danger.off {
+  --btn-bg: var(--danger-muted);
+  --btn-text: var(--danger-text-soft);
+  --btn-border: var(--danger-border);
+}
+
+.btn-danger.on {
+  --btn-bg: var(--danger);
+  --btn-text: var(--text-light);
+  --btn-border: var(--danger-border-active);
+}
+
+/* Pill-style source selector row */
+.btn-pill {
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* ====================== Generic label text ====================== */
 .label {
-    font-size: var(--font-size-sm);
-    color: var(--color-text-dark-muted);
-  }
-  
-  /* Page titles  */
-  .label-title {
-    font-size: var(--font-size-lg);
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--color-text-light);
-  }
-  
-  /* ====================== Value readouts (e.g., dB, percentages) ====================== */
-  .label-value {
-    font-family: var(--font-mono);
-    font-size: var(--font-size-md);
-    color: var(--color-text-light);
-  }
-  
-  /* Subtle caption or helper text  */
-  .label-caption {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-dark-muted);
-  }
-  
-  /* ====================== Base fader: assign CSS Class Name "fader" ====================== */
+  font-size: var(--font-size-sm);
+  color: var(--text-light-muted);
+}
+
+.label-title {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-light);
+}
+
+.label-value {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-md);
+  color: var(--text-light);
+}
+
+.label-caption {
+  font-size: var(--font-size-xs);
+  color: var(--text-light-muted);
+}
+
+/* ====================== Base fader: assign CSS Class Name "fader" ====================== */
 fader.fader {
-    -qsc-render-style: layer;
-    background-color: var(--fader-track);
-    border-radius: var(--radius-pill);
-    border: var(--border-default);
-  }
-  
-  /*  Track and cap layers (Q-SYS-specific properties)  */
-  fader.fader {
-    -qsc-fader-slot-class: fader-track;
-    -qsc-fader-cap-class: fader-cap;
-    -qsc-fader-cap-width: 18px;
-    -qsc-fader-cap-height: 40px;
-  }
-  
-  /*  Track appearance  */
-  .fader-track {
-    background: linear-gradient(180deg, #020617, #0b1120);
-    border-radius: var(--radius-pill);
-  }
-  
-  /*  Cap appearance  */
-  .fader-cap {
-    background: radial-gradient(circle at 30% 20%, #ffffff, #93c5fd 40%, #1d4ed8 100%);
-    border: 1px solid var(--fader-cap-border);
-    border-radius: var(--radius-pill);
-    box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.8), 0 2px 4px rgba(0, 0, 0, 0.7);
-  }
-  
-  /* Fader value text box  */
-  .fader-value {
-    font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
-    color: var(--color-text-light);
-    background-color: #020617;
-    border-radius: var(--radius-sm);
-    border: 1px solid #111827;
-  }
-  
-  /* ====================== Base meter: assign CSS Class Name "meter" ====================== */
+  -qsc-render-style: layer;
+  background-color: var(--fader-track);
+  border-radius: var(--radius-pill);
+  border: var(--border-default);
+}
+
+fader.fader {
+  -qsc-fader-slot-class: fader-track;
+  -qsc-fader-cap-class: fader-cap;
+  -qsc-fader-cap-width: 18px;
+  -qsc-fader-cap-height: 40px;
+}
+
+.fader-track {
+  background: linear-gradient(
+    180deg,
+    var(--base-ultra-dark),
+    var(--base-dark)
+  );
+  border-radius: var(--radius-pill);
+}
+
+.fader-cap {
+  background: radial-gradient(
+    circle at 30% 20%,
+    var(--text-light),
+    var(--primary-light) 40%,
+    var(--primary-dark) 100%
+  );
+  border: 1px solid var(--fader-cap-border);
+  border-radius: var(--radius-pill);
+  box-shadow:
+    0 0 0 1px var(--shadow-cap-ring),
+    0 2px 4px var(--shadow-cap-drop);
+}
+
+.fader-value {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  color: var(--text-light);
+  background-color: var(--base-ultra-dark);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--base-dark);
+}
+
+/* ====================== Base meter: assign CSS Class Name "meter" ====================== */
 meter.meter {
-    -qsc-render-style: layer;
-    background-color: var(--meter-bg);
-    border-radius: var(--radius-pill);
-    border: var(--border-default);
-    -qsc-meter-indicator-class: meter-fill;
-  }
-  
-  /* Meter indicator uses :value() for zones if desired  */
-  .meter-fill {
-    background: linear-gradient(
-      to top,
-      var(--meter-danger) 0%,
-      var(--meter-warning) 40%,
-      var(--meter-fill) 100%
-    );
-    border-radius: var(--radius-pill);
-  }
-  
+  -qsc-render-style: layer;
+  background-color: var(--meter-bg);
+  border-radius: var(--radius-pill);
+  border: var(--border-default);
+  -qsc-meter-indicator-class: meter-fill;
+}
+
+.meter-fill {
+  background: linear-gradient(
+    to top,
+    var(--meter-danger) 0%,
+    var(--meter-warning) 40%,
+    var(--meter-fill) 100%
+  );
+  border-radius: var(--radius-pill);
+}
