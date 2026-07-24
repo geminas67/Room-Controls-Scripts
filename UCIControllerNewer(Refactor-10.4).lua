@@ -47,80 +47,79 @@ local SwitcherTypes = {
     defaultMapping = { [7] = "Input 3", [8] = "Input 4", [9] = "Input 1", [10] = "Input 2" }
   }
 }
-
+-- Layer index constants
 local kLayer = {
-  Alarm = 1,
-  IncomingCall = 2,
-  Start = 3,
-  Warming = 4,
-  Cooling = 5,
-  RoomControls = 6,
-  PC = 7,
-  Laptop = 8,
-  Wireless = 9,
-  Routing = 10,
-  Dialer = 11,
-  StreamMusic = 12,
-  Passcode = 13
+  Alarm         = 1,
+  IncomingCall  = 2,
+  Start         = 3,
+  Warming       = 4,
+  Cooling       = 5,
+  RoomControls  = 6,
+  PC            = 7,
+  Laptop        = 8,
+  Wireless      = 9,
+  Routing       = 10,
+  Dialer        = 11,
+  StreamMusic   = 12,
+  Passcode      = 13
 }
 
 local configSource = {
   PC = {
-    layer = kLayer.PC,
+    layer   = kLayer.PC,
     hdmiKey = "pinLEDHDMI01Connect",
-    usbKey = "pinLEDUSBPC",
-    base = "P05-PC",
-    disc = "P01-HDMIDisc",
-    usb = "J02-ConnectUSBPC",
-    conf = "J10-ConferencePC",
-    help = "I03-HelpPC"
+    usbKey  = "pinLEDUSBPC",
+    base    = "P05-PC",
+    disc    = "P01-HDMIDisc",
+    usb     = "J02-ConnectUSBPC",
+    conf    = "J10-ConferencePC",
+    help    = "I03-HelpPC"
   },
   Laptop = {
-    layer = kLayer.Laptop,
+    layer   = kLayer.Laptop,
     hdmiKey = "pinLEDHDMI02Connect",
-    usbKey = "pinLEDUSBLaptop",
-    base = "L05-Laptop",
-    disc = "L01-HDMIDisc",
-    usb = "J01-ConnectUSBLaptop",
-    conf = "J09-ConferenceLaptop",
-    help = "I02-HelpLaptop"
+    usbKey  = "pinLEDUSBLaptop",
+    base    = "L05-Laptop",
+    disc    = "L01-HDMIDisc",
+    usb     = "J01-ConnectUSBLaptop",
+    conf    = "J09-ConferenceLaptop",
+    help    = "I02-HelpLaptop"
   },
   Wireless = {
-    layer = kLayer.Wireless,
+    layer   = kLayer.Wireless,
     hdmiKey = "pinLEDHDMI03Connect",
-    usbKey = nil,
-    base = "W05-Wireless",
-    disc = "W01-HDMIDisc",
-    usb = nil,
-    conf = nil,
-    help = "I04-HelpWireless"
+    usbKey  = nil,
+    base    = "W05-Wireless",
+    disc    = "W01-HDMIDisc",
+    usb     = nil,
+    conf    = nil,
+    help    = "I04-HelpWireless"
   }
 }
 
 -------------------[ Constant Tables ]-------------------
-
 local controls = {
   btnNav = {
     Controls.btnNav01, Controls.btnNav02, Controls.btnNav03, Controls.btnNav04, Controls.btnNav05, Controls.btnNav06,
     Controls.btnNav07, Controls.btnNav08, Controls.btnNav09, Controls.btnNav10, Controls.btnNav11, Controls.btnNav12, Controls.btnNav13
   },
-  btnStartSystem = Controls.btnStartSystem,
-  btnNavShutdown = Controls.btnNavShutdown,
-  btnShutdownCancel = Controls.btnShutdownCancel,
-  btnShutdownConfirm = Controls.btnShutdownConfirm,
+  btnStartSystem      = Controls.btnStartSystem,
+  btnNavShutdown      = Controls.btnNavShutdown,
+  btnShutdownCancel   = Controls.btnShutdownCancel,
+  btnShutdownConfirm  = Controls.btnShutdownConfirm,
 
   btnOpenHelp = {
-    Laptop = Controls.btnOpenHelpLaptop,
-    PC = Controls.btnOpenHelpPC,
-    Wireless = Controls.btnOpenHelpWireless,
-    Routing = Controls.btnOpenHelpRouting,
+    Laptop      = Controls.btnOpenHelpLaptop,
+    PC          = Controls.btnOpenHelpPC,
+    Wireless    = Controls.btnOpenHelpWireless,
+    Routing     = Controls.btnOpenHelpRouting,
     StreamMusic = Controls.btnOpenHelpStreamMusic
   },
   btnCloseHelp = {
-    Laptop = Controls.btnCloseHelpLaptop,
-    PC = Controls.btnCloseHelpPC,
-    Wireless = Controls.btnCloseHelpWireless,
-    Routing = Controls.btnCloseHelpRouting,
+    Laptop      = Controls.btnCloseHelpLaptop,
+    PC          = Controls.btnCloseHelpPC,
+    Wireless    = Controls.btnCloseHelpWireless,
+    Routing     = Controls.btnCloseHelpRouting,
     StreamMusic = Controls.btnCloseHelpStreamMusic
   },
 
@@ -129,40 +128,40 @@ local controls = {
   knbProgressBar = Controls.knbProgressBar,
   txtProgressBar = Controls.txtProgressBar,
 
-  pinCallActive = Controls.pinCallActive,
-  pinLEDUSBLaptop = Controls.pinLEDUSBLaptop,
-  pinLEDUSBPC = Controls.pinLEDUSBPC,
-  pinLEDOffHookLaptop = Controls.pinLEDOffHookLaptop,
-  pinLEDOffHookPC = Controls.pinLEDOffHookPC,
-  pinLEDHDMI01Active = Controls.pinLEDHDMI01Active,
-  pinLEDHDMI02Active = Controls.pinLEDHDMI02Active,
-  pinLEDHDMI03Active = Controls.pinLEDHDMI03Active,
-  pinLEDPresetSaved = Controls.pinLEDPresetSaved,
-  pinLEDHDMI01Connect = Controls.pinLEDHDMI01Connect,
-  pinLEDHDMI02Connect = Controls.pinLEDHDMI02Connect,
-  pinLEDHDMI03Connect = Controls.pinLEDHDMI03Connect,
-  pinLEDACPRBypassActive = Controls.pinLEDACPRBypassActive,
-  pinLEDTouchActivity = Controls.pinLEDTouchActivity
+  pinCallActive           = Controls.pinCallActive,
+  pinLEDUSBLaptop         = Controls.pinLEDUSBLaptop,
+  pinLEDUSBPC             = Controls.pinLEDUSBPC,
+  pinLEDOffHookLaptop     = Controls.pinLEDOffHookLaptop,
+  pinLEDOffHookPC         = Controls.pinLEDOffHookPC,
+  pinLEDHDMI01Active      = Controls.pinLEDHDMI01Active,
+  pinLEDHDMI02Active      = Controls.pinLEDHDMI02Active,
+  pinLEDHDMI03Active      = Controls.pinLEDHDMI03Active,
+  pinLEDPresetSaved       = Controls.pinLEDPresetSaved,
+  pinLEDHDMI01Connect     = Controls.pinLEDHDMI01Connect,
+  pinLEDHDMI02Connect     = Controls.pinLEDHDMI02Connect,
+  pinLEDHDMI03Connect     = Controls.pinLEDHDMI03Connect,
+  pinLEDACPRBypassActive  = Controls.pinLEDACPRBypassActive,
+  pinLEDTouchActivity     = Controls.pinLEDTouchActivity
 }
 
 local components = {
-  roomControls = nil,
-  prevPowerState = nil,
-  videoSwitcher = nil,
-  switcherType = nil,
+  roomControls      = nil,
+  prevPowerState    = nil,
+  videoSwitcher     = nil,
+  switcherType      = nil,
   uciToInputMapping = {},
-  passcode = nil,
-  passcodeRoom = nil,
-  passcodeEnabled = false
+  passcode          = nil,
+  passcodeRoom      = nil,
+  passcodeEnabled   = false
 }
 
 local state = {
-  activeLayer = kLayer.Start,
-  activeRoutingLayer = 1,
-  callActive = false,
-  isAnimating = false,
-  isInitialized = false,
-  layerStates = {}
+  activeLayer       = kLayer.Start,
+  activeRoutingLayer = 1, -- default routing layer index (R01-Routing01)
+  callActive        = false, -- default call active state (false)
+  isAnimating       = false, -- default animation state (false)
+  isInitialized     = false, -- default initialization state (false)
+  layerStates       = {}, -- default layer states (empty table)
 }
 
 local timers = {
@@ -297,16 +296,16 @@ function buildSources()
   sources = {}
   for name, def in pairs(configSource) do
     sources[name] = {
-      layerConst = def.layer,
-      hdmiPin = controls[def.hdmiKey],
-      usbPin = def.usbKey and controls[def.usbKey],
-      baseLayer = def.base,
-      discLayer = def.disc,
-      usbConnect = def.usb,
-      confLayer = def.conf,
-      helpLayer = def.help,
-      btnOpen = controls.btnOpenHelp[name],
-      btnClose = controls.btnCloseHelp[name]
+      layerConst  = def.layer, -- layer constant (kLayer.PC, kLayer.Laptop, kLayer.Wireless)
+      hdmiPin     = controls[def.hdmiKey], -- HDMI connection control (pinLEDHDMI01Connect, pinLEDHDMI02Connect, pinLEDHDMI03Connect)
+      usbPin      = def.usbKey and controls[def.usbKey], -- USB connection control (pinLEDUSBPC, pinLEDUSBLaptop) (nil if not configured)
+      baseLayer   = def.base, -- base layer name (P05-PC or L05-Laptop)
+      discLayer   = def.disc, -- display layer name (P01-HDMIDisc or L01-HDMIDisc)
+      usbConnect  = def.usb, -- USB connection layer name (J02-ConnectUSBPC or J01-ConnectUSBLaptop) (nil if not configured)
+      confLayer   = def.conf, -- conference layer name (J10-ConferencePC or J09-ConferenceLaptop) (nil if not configured)
+      helpLayer   = def.help, -- help layer name (I02-HelpLaptop, I03-HelpPC, I04-HelpWireless, I05-HelpRouting, I07-HelpStreamMusic)
+      btnOpen     = controls.btnOpenHelp[name], -- open help button control (Controls.btnOpenHelpLaptop, Controls.btnOpenHelpPC, Controls.btnOpenHelpWireless, Controls.btnOpenHelpRouting, Controls.btnOpenHelpStreamMusic)
+      btnClose    = controls.btnCloseHelp[name] -- close help button control (Controls.btnCloseHelpLaptop, Controls.btnCloseHelpPC, Controls.btnCloseHelpWireless, Controls.btnCloseHelpRouting, Controls.btnCloseHelpStreamMusic)
     }
   end
 
@@ -320,19 +319,19 @@ end
 
 function buildLayerConfigs()
   layerConfigs = {
-    [kLayer.Alarm] = { show = { "A01-Alarm" }, hideBase = true },
+    [kLayer.Alarm]        = { show = { "A01-Alarm" }, hideBase = true },
     [kLayer.IncomingCall] = { show = { "B01-IncomingCall" } },
-    [kLayer.Start] = { show = { "C05-Start" }, hideBase = true },
-    [kLayer.Warming] = { show = { "E05-SystemProgress", "E01-SystemProgressWarming" }, hideBase = true },
-    [kLayer.Cooling] = { show = { "E05-SystemProgress", "E02-SystemProgressCooling" }, hideBase = true },
+    [kLayer.Start]        = { show = { "C05-Start" }, hideBase = true },
+    [kLayer.Warming]      = { show = { "E05-SystemProgress", "E01-SystemProgressWarming" }, hideBase = true },
+    [kLayer.Cooling]      = { show = { "E05-SystemProgress", "E02-SystemProgressCooling" }, hideBase = true },
     [kLayer.RoomControls] = { show = { "H10-RoomControls" }, hide = { "X01-ProgramVolume" } },
-    [kLayer.Laptop] = { show = { "L05-Laptop" } },
-    [kLayer.PC] = { show = { "P05-PC" } },
-    [kLayer.Wireless] = { show = { "W05-Wireless" } },
-    [kLayer.Routing] = { show = { "R10-Routing" } },
-    [kLayer.Dialer] = { show = { "V05-Dialer" } },
-    [kLayer.StreamMusic] = { show = { "S05-StreamMusic" } },
-    [kLayer.Passcode] = { show = { "H01-PasscodeEntry" }, hideBase = true }
+    [kLayer.Laptop]       = { show = { "L05-Laptop" } },
+    [kLayer.PC]           = { show = { "P05-PC" } },
+    [kLayer.Wireless]     = { show = { "W05-Wireless" } },
+    [kLayer.Routing]      = { show = { "R10-Routing" } },
+    [kLayer.Dialer]       = { show = { "V05-Dialer" } },
+    [kLayer.StreamMusic]  = { show = { "S05-StreamMusic" } },
+    [kLayer.Passcode]     = { show = { "H01-PasscodeEntry" }, hideBase = true }
   }
 end
 

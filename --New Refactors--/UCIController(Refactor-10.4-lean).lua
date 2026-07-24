@@ -16,7 +16,7 @@ local acprConfig = { disableACPRShow = false }
 local layersBase = {"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}
 local layersToHide = {
     "A01-Alarm","B01-IncomingCall","C05-Start","D01-ShutdownConfirm",
-    "E01-ProgressWarming","E02-ProgressCooling","E05-Progress",
+    "E05-Progress",
     "H01-PasscodeEntry","H10-RoomControls",
     "I01-CallActive","I02-HelpLaptop","I03-HelpPC","I04-HelpWireless","I05-HelpRouting","I07-HelpStreamMusic",
     "J01-ConnectUSBLaptop","J02-ConnectUSBPC","J03-ACPRActive","J04-CamPresetSaved","J09-ConferenceLaptop","J10-ConferencePC",
@@ -113,12 +113,18 @@ local helpControls = {
     StreamMusic = { open = Controls.btnOpenHelpStreamMusic, close = Controls.btnCloseHelpStreamMusic },
 }
 
+local progressText = {
+    warming = "Starting the AV system, please wait as the system powers on.",
+    cooling = "Shutting down the AV system, please wait as the system powers off.",
+}
+local progressLayerConfig = { show = {"E05-Progress"}, hideBase = true }
+
 local layerConfigs = {
     [kLayer.Alarm]        = { show = {"A01-Alarm"}, hideBase = true },
     [kLayer.IncomingCall] = { show = {"B01-IncomingCall"} },
     [kLayer.Start]        = { show = {"C05-Start"}, hideBase = true },
-    [kLayer.Warming]      = { show = {"E05-Progress","E01-ProgressWarming"}, hideBase = true },
-    [kLayer.Cooling]      = { show = {"E05-Progress","E02-ProgressCooling"}, hideBase = true },
+    [kLayer.Warming]      = progressLayerConfig,
+    [kLayer.Cooling]      = progressLayerConfig,
     [kLayer.RoomControls] = { show = {"H10-RoomControls"}, hide = {"X01-ProgramVolume"} },
     [kLayer.Laptop]       = { show = {"L05-Laptop"} },
     [kLayer.PC]           = { show = {"P05-PC"} },
@@ -233,7 +239,7 @@ function validateControls()
         "btnNav08","btnNav09","btnNav10","btnNav11","btnNav12","btnNav13",
         "btnStartSystem","btnNavShutdown","btnShutdownCancel","btnShutdownConfirm",
         "btnRouting01","btnRouting02","btnRouting03","btnRouting04","btnRouting05",
-        "knbProgressBar","txtProgressBar",
+        "knbProgressBar","txtProgressBar","txtPowerProgress",
         "ledCallActive","ledUSBLaptop","ledUSBPC",
         "ledPresetSaved","ledHDMI01Connect","ledHDMI02Connect","ledHDMI03Connect",
         "ledACPRBypassActive",
@@ -587,6 +593,7 @@ end
 function startLoadingBar(isPoweringOn)
     if state.isAnimating then return end
     state.isAnimating = true
+    setProp(Controls.txtPowerProgress, "String", isPoweringOn and progressText.warming or progressText.cooling)
     timers.loading = stopTimer(timers.loading)
     timers.timeout = stopTimer(timers.timeout)
     local duration = 10
