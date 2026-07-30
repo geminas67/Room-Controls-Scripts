@@ -16,7 +16,7 @@ local acprConfig = { disableACPRShow = false }
 local layersBase = {"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}
 local layersToHide = {
     "A01-Alarm","B01-IncomingCall","C05-Start","D01-ShutdownConfirm",
-    "E05-Progress",
+    "E05-ProgressBar",
     "H01-PasscodeEntry","H10-RoomControls",
     "I01-CallActive","I02-HelpLaptop","I03-HelpPC","I04-HelpWireless","I05-HelpRouting","I07-HelpStreamMusic",
     "J01-ConnectUSBLaptop","J02-ConnectUSBPC","J03-ACPRActive","J04-CamPresetSaved","J09-ConferenceLaptop","J10-ConferencePC",
@@ -114,10 +114,10 @@ local helpControls = {
 }
 
 local progressText = {
-    warming = "Starting the AV system, please wait as the system powers on.",
-    cooling = "Shutting down the AV system, please wait as the system powers off.",
+    warming = "Starting the AV system, please wait while the system powers on.",
+    cooling = "Shutting down the AV system, please wait while the system powers off.",
 }
-local progressLayerConfig = { show = {"E05-Progress"}, hideBase = true }
+local progressLayerConfig = { show = {"E05-ProgressBar"}, hideBase = true }
 
 local layerConfigs = {
     [kLayer.Alarm]        = { show = {"A01-Alarm"}, hideBase = true },
@@ -159,22 +159,27 @@ state = {
     isInitialized = false,
 }
 components = {
-    roomControls = nil, prevPowerState = nil,
-    videoSwitcher = nil, switcherType = nil, uciToInputMapping = {},
-    passcode = nil, passcodeRoom = nil, passcodeEnabled = false,
+    roomControls        = nil, 
+    prevPowerState      = nil,
+    videoSwitcher       = nil, 
+    switcherType        = nil, 
+    uciToInputMapping   = {},
+    passcode            = nil, 
+    passcodeRoom        = nil, 
+    passcodeEnabled     = false,
 }
-timers = { loading = nil, timeout = nil, inactivity = Timer.New() }
-btnNav = {}
-btnRouting = {}
-arrUCILegends = {}
+timers          = { loading = nil, timeout = nil, inactivity = Timer.New() }
+btnNav          = {}
+btnRouting      = {}
+arrUCILegends   = {}
 arrUCIUserLabels = {}
-legendCount = 0
+legendCount     = 0
 
 -------------------[ Constants ]-------------------
 
 stateDebug = true
-defaultLayer = tonumber(Uci.Variables.numDefaultActiveLayer and Uci.Variables.numDefaultActiveLayer.Value) or 8
-defaultRouting = tonumber(Uci.Variables.numDefaultRoutingLayer and Uci.Variables.numDefaultRoutingLayer.Value) or 4
+defaultLayer    = tonumber(Uci.Variables.numDefaultActiveLayer and Uci.Variables.numDefaultActiveLayer.Value) or 8
+defaultRouting  = tonumber(Uci.Variables.numDefaultRoutingLayer and Uci.Variables.numDefaultRoutingLayer.Value) or 4
 state.activeRoutingLayer = defaultRouting
 
 -------------------[ Functions ]-------------------
@@ -239,7 +244,7 @@ function validateControls()
         "btnNav08","btnNav09","btnNav10","btnNav11","btnNav12","btnNav13",
         "btnStartSystem","btnNavShutdown","btnShutdownCancel","btnShutdownConfirm",
         "btnRouting01","btnRouting02","btnRouting03","btnRouting04","btnRouting05",
-        "knbProgressBar","txtProgressBar","txtPowerProgress",
+        "knbProgressBar","numProgressBar","txtProgressBar",
         "ledCallActive","ledUSBLaptop","ledUSBPC",
         "ledPresetSaved","ledHDMI01Connect","ledHDMI02Connect","ledHDMI03Connect",
         "ledACPRBypassActive",
@@ -593,7 +598,7 @@ end
 function startLoadingBar(isPoweringOn)
     if state.isAnimating then return end
     state.isAnimating = true
-    setProp(Controls.txtPowerProgress, "String", isPoweringOn and progressText.warming or progressText.cooling)
+    setProp(Controls.txtProgressBar, "String", isPoweringOn and progressText.warming or progressText.cooling)
     timers.loading = stopTimer(timers.loading)
     timers.timeout = stopTimer(timers.timeout)
     local duration = 10
@@ -608,7 +613,7 @@ function startLoadingBar(isPoweringOn)
     end
     local steps, interval, currentStep = 100, duration / 100, 0
     setProp(Controls.knbProgressBar, "Value", isPoweringOn and 0 or 100)
-    setProp(Controls.txtProgressBar, "String", (isPoweringOn and 0 or 100).."%")
+    setProp(Controls.numProgressBar, "String", (isPoweringOn and 0 or 100).."%")
     timers.loading = Timer.New()
     timers.timeout = Timer.New()
     timers.timeout.EventHandler = function()
@@ -621,7 +626,7 @@ function startLoadingBar(isPoweringOn)
         currentStep = currentStep + 1
         local prog = isPoweringOn and currentStep or (100 - currentStep)
         setProp(Controls.knbProgressBar, "Value", prog)
-        setProp(Controls.txtProgressBar, "String", prog.."%")
+        setProp(Controls.numProgressBar, "String", prog.."%")
         if currentStep >= steps then
             timers.loading = stopTimer(timers.loading)
             timers.timeout = stopTimer(timers.timeout)

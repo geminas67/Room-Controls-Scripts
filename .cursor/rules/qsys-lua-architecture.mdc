@@ -1,0 +1,72 @@
+---
+description: Q-SYS Lua full layout — large UCI and orchestration scripts. Use setProp/bind surgically, not by default. Prefer qsys-simple-lua-architecture for room and device scripts.
+globs: "**/*UCI*.lua"
+alwaysApply: false
+---
+
+# Q-SYS Lua — full architecture
+
+Use for **large UCI controllers and orchestration scripts** — many layers, nav buttons, dynamic component rebinding, paired open/close controls, or cross-script APIs.
+
+**Default elsewhere:** [qsys-simple-lua-architecture](.cursor/rules/qsys-simple-lua-architecture.mdc) for room controls, device plugins, routers, and mic/camera scripts.
+
+**Reference scripts:**
+
+- [`UCIController(Refactor).lua`](UCIController(Refactor).lua)
+- [`UCIController(DivisibleSpace)(Refactor).lua`](UCIController(DivisibleSpace)(Refactor).lua)
+
+## When this rule applies
+
+| Use full architecture | Use simple architecture |
+|----------------------|-------------------------|
+| UCI layer/nav orchestration | Single-room or single-device control |
+| Dozens of controls and paired toggles | Bounded component set, linear event flow |
+| Real feedback-loop risk (A sets B, B sets A) | One-way handler → component writes |
+| Cross-script public API | Self-contained Text Controller |
+
+**Do not** copy the full toolkit into every script because a UCI file uses it. UCI complexity often drove `setProp`/`bind` everywhere; that is **indirection**, not a universal requirement. Ask: *“Does removing the wrapper change behavior, or only remove ceremony?”*
+
+## Toolkit — surgical, not universal
+
+| Utility | Use when | Skip when |
+|---------|----------|-----------|
+| `setProp(ctrl, prop, val)` | Control echoes back and retriggers its handler | One-shot or guarded assignment |
+| `bind` / `bindArray` | Many indexed handlers; isolate handler errors with `pcall` | Small handler; fail loud in console |
+| `cleanupComponentHandlers` | Stale component ref may still fire before rebind | Reassigning `.EventHandler` on new component is enough |
+| `local controls = {}` | Large control surface, repeated names | Handful of `Controls.*` |
+
+```lua
+local function setProp(ctrl, prop, val)
+  if not ctrl or ctrl[prop] == val then return end
+  ctrl[prop] = val
+end
+```
+
+Apply `setProp` to the **few controls that actually loop**, not every `String`/`Boolean` write in the file.
+
+## Layout (UCI-scale scripts)
+
+Same top-level sections as the simple rule (Configuration → Constant Tables → Constants → Functions → Event Handlers → Always Run), plus optional blocks when warranted:
+
+- **`local controls = {}`** — map large `Controls` surface (nav arrays, paired help buttons, etc.).
+- **Utilities** — `setProp`, `bind`, `bindArray`, and domain helpers (`bindPairedControls`, `collectLayers`, …) grouped once at the top of Functions or in a Utilities sub-banner.
+- **`local state` / `local components`** — acceptable when the script tracks layer animation, routing, or switcher type the schematic does not expose on one control.
+
+Keep **Configuration** as the first editable block (`componentTypes`, layer lists, routing maps, UCI variables).
+
+## Patterns
+
+- **Init mirrors handlers** — `funcInit()` calls the same paths combo-box and nav handlers use.
+- **One setup function per component selector** — no parallel init vs `registerEvents()` duplicates.
+- **State** — store only what you cannot read from a component or control at event time; do not mirror `mute.Boolean` in a table if `compCallSync["mute"]` is already bound.
+- **Public API** (`GlobalName = { ... }`) — only when another script calls in; omit otherwise.
+
+## Refactoring
+
+- **Toward simple:** room/device scripts with unused wrappers, duplicate setup, or debug-only handlers → flatten per simple rule.
+- **Toward full:** script acquires many rebinding selectors, paired UI, or feedback loops → add utilities selectively, not wholesale.
+- **Preserve semantics when shortening** — overloaded parameters (e.g. one function serving hook state and timer blink) need explicit branch order or split functions; collapsed guards are a common regression source.
+
+## Relationship to simple rule
+
+Most scripts in this repo should stay on [qsys-simple-lua-architecture](.cursor/rules/qsys-simple-lua-architecture.mdc). This rule is the **escape hatch** when simple layout is genuinely stretched — not the default style for new work.

@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Q-SYS Lua — simple architecture
 
-Use this for **small-to-medium** control scripts where a **flat, readable layout** matters more than shared utilities or a strict local-module shell.
+**Default for this repo.** Use for **small-to-medium** room and device scripts where a **flat, readable layout** matters more than shared utilities or a strict local-module shell. Prefer this over [qsys-lua-architecture](.cursor/rules/qsys-lua-architecture.mdc) unless the script clearly needs the full toolkit.
 
 **Reference scripts** (same section order and banner style):
 
@@ -180,14 +180,25 @@ funcInit()
 - **Flat control flow** — guard clauses and early `return` over deep nesting.
 - **Naming** — descriptive names; Q-SYS prefixes (`btn`, `txt`, `ctl`, `comp`) are normal. Loop iterators `i` / `j` / `v` are acceptable.
 
+## Direct assignment over ceremony
+
+- Assign **`Controls.*` and component properties directly** unless a control is known to feedback-loop.
+- Do **not** wrap every write in `setProp` or every handler in `bind` — that pattern came from large UCI scripts and often adds indirection without safety benefit here.
+- Avoid **`local controls = {}` maps**, **`registerEvents()` wrappers**, duplicate init/handler paths, and **state that mirrors** a component property you can read when needed.
+- **`GlobalName = { ... }` public API** — only when another script must call into this file.
+
+## Refactoring for length
+
+- Collapse duplicate setup (init vs combo-box handler should call the same `setcomp*` function).
+- Trim debug that logs every property change; log **state transitions** instead.
+- When shortening logic, **preserve branch order and semantics** — a function called from multiple contexts (e.g. hook state vs timer blink) may overload one parameter; merging guards can silently break behavior.
+
 ## Not required here (use the full rule instead)
 
 For [`.cursor/rules/qsys-lua-architecture.mdc`](.cursor/rules/qsys-lua-architecture.mdc) patterns, treat these as **optional** unless you explicitly need them:
 
-- Mandatory **`setProp` / `bind` / `bindArray` / `cleanupComponentHandlers`** toolkit.
+- **`setProp` / `bind` / `bindArray` / `cleanupComponentHandlers`** — surgical use only; see full rule.
 - Fixed **local-module section order** and all **`local function`** at top level.
-- **Complexity tiers**, dense refactoring checklists, and line-reduction targets.
 - **Required `pcall` startup** — add only to surface init failures to `txtStatus` or the console.
-- **`GlobalName = { ... }` public API** — only when another script must call into this file.
 
-When a script grows (many rebinding selectors, cross-script APIs, or strict feedback-loop safety), migrate toward the full architecture rule rather than stretching this layout.
+When a script grows (many rebinding selectors, cross-script APIs, or real feedback-loop risk), migrate toward the full architecture rule rather than stretching this layout.
