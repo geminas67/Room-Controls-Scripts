@@ -1,8 +1,9 @@
 --[[
   Camera Preset Controller - Q-SYS Control Script
   Author: Nikolas Smith, Q-SYS
-  Version: 8.0 (Simple architecture)
-  Firmware Req: 10.0.0
+  Date: 2026-07-30
+  Version: 8.0
+  Firmware Req: 10.4.0
 
   Camera/preset management, JSON sync, router integration.
 ]]--
