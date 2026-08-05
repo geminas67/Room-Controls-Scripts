@@ -1,7 +1,7 @@
 --[[
   UCI Controller (Lean) - Q-SYS Control Script
   Author: Nikolas Smith, Q-SYS
-  Version: 5.0 | Date: 2026-07-04
+  Version: 5.1 | Date: 2026-08-05
   Firmware Req: 10.4
 
   Flat single-room UCI: configSource, declarative visibility (buildDesired/applyDesired),
@@ -12,6 +12,9 @@
 
 local conferenceStateConfig = { skip = { [9]=true } }  -- PC/Laptop: show J01/J02 when USB disconnected, J09/J10 when connected
 local acprConfig = { disableACPRShow = false }
+
+local navCount = 13
+local routingCount = 5
 
 local layersBase = {"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}
 local layersToHide = {
@@ -98,20 +101,25 @@ local configSource = {
     },
 }
 
-local layerToSourceKey = { [7]="PC", [8]="Laptop", [9]="Wireless" }
 local configHelpPairKeys = {"Laptop","PC","Wireless","Routing","StreamMusic"}
-local layerHelpToKey = {
-    ["I02-HelpLaptop"]="Laptop", ["I03-HelpPC"]="PC", ["I04-HelpWireless"]="Wireless",
-    ["I05-HelpRouting"]="Routing", ["I07-HelpStreamMusic"]="StreamMusic",
-}
 
-local helpControls = {
-    Laptop      = { open = Controls.btnOpenHelpLaptop,      close = Controls.btnCloseHelpLaptop },
-    PC          = { open = Controls.btnOpenHelpPC,          close = Controls.btnCloseHelpPC },
-    Wireless    = { open = Controls.btnOpenHelpWireless,    close = Controls.btnCloseHelpWireless },
-    Routing     = { open = Controls.btnOpenHelpRouting,     close = Controls.btnCloseHelpRouting },
-    StreamMusic = { open = Controls.btnOpenHelpStreamMusic, close = Controls.btnCloseHelpStreamMusic },
+local layerToSourceKey = {}
+local layerHelpToKey = {
+    ["I05-HelpRouting"] = "Routing",
+    ["I07-HelpStreamMusic"] = "StreamMusic",
 }
+for key, def in pairs(configSource) do
+    layerToSourceKey[def.layer] = key
+    if def.help then layerHelpToKey[def.help] = key end
+end
+
+local helpControls = {}
+for _, key in ipairs(configHelpPairKeys) do
+    helpControls[key] = {
+        open  = Controls["btnOpenHelp"..key],
+        close = Controls["btnCloseHelp"..key],
+    }
+end
 
 local progressText = {
     warming = "Starting the AV system, please wait while the system powers on.",
@@ -146,6 +154,7 @@ local legendConfig = {
 }
 
 local navHidden = {}
+local refreshLayerPins = {"ledACPRBypassActive", "ledPresetSaved", "ledCallActive"}
 
 -------------------[ Constant Tables ]-------------------
 
@@ -159,13 +168,13 @@ state = {
     isInitialized = false,
 }
 components = {
-    roomControls        = nil, 
+    roomControls        = nil,
     prevPowerState      = nil,
-    videoSwitcher       = nil, 
-    switcherType        = nil, 
+    videoSwitcher       = nil,
+    switcherType        = nil,
     uciToInputMapping   = {},
-    passcode            = nil, 
-    passcodeRoom        = nil, 
+    passcode            = nil,
+    passcodeRoom        = nil,
     passcodeEnabled     = false,
 }
 timers          = { loading = nil, timeout = nil, inactivity = Timer.New() }
@@ -200,6 +209,27 @@ function debugPrint(str)
     if stateDebug and pageUCI then print("["..pageUCI.."] "..str) end
 end
 
+function interlockButtons(btnArray, activeIndex)
+    for i, btn in ipairs(btnArray) do
+        if btn then setProp(btn, "Boolean", i == activeIndex) end
+    end
+end
+
+function bindHelpPair(openCtrl, closeCtrl)
+    if openCtrl then
+        openCtrl.EventHandler = function()
+            if closeCtrl then setProp(closeCtrl, "Boolean", false) end
+            refreshLayers()
+        end
+    end
+    if closeCtrl then
+        closeCtrl.EventHandler = function()
+            if openCtrl then setProp(openCtrl, "Boolean", false) end
+            refreshLayers()
+        end
+    end
+end
+
 -------------------[ Discovery ]-------------------
 
 function resolvePageName(hint)
@@ -231,7 +261,6 @@ function validateLayersAtInit(pageName)
     for _, def in pairs(configSource) do
         check(def.base); check(def.disc); check(def.usb); check(def.conf); check(def.help)
     end
-    check("H10-RoomControls")
     if #missing > 0 then
         print("WARNING ["..pageName.."]: configured layers not found in UCI design:")
         for _, name in ipairs(missing) do print("  - "..name) end
@@ -240,15 +269,14 @@ end
 
 function validateControls()
     local required = {
-        "btnNav01","btnNav02","btnNav03","btnNav04","btnNav05","btnNav06","btnNav07",
-        "btnNav08","btnNav09","btnNav10","btnNav11","btnNav12","btnNav13",
         "btnStartSystem","btnNavShutdown","btnShutdownCancel","btnShutdownConfirm",
-        "btnRouting01","btnRouting02","btnRouting03","btnRouting04","btnRouting05",
         "knbProgressBar","numProgressBar","txtProgressBar",
         "ledCallActive","ledUSBLaptop","ledUSBPC",
         "ledPresetSaved","ledHDMI01Connect","ledHDMI02Connect","ledHDMI03Connect",
         "ledACPRBypassActive",
     }
+    for i = 1, navCount do table.insert(required, "btnNav"..string.format("%02d", i)) end
+    for i = 1, routingCount do table.insert(required, "btnRouting"..string.format("%02d", i)) end
     local missing = {}
     for _, name in ipairs(required) do
         if not Controls[name] then table.insert(missing, name) end
@@ -294,6 +322,15 @@ function applyDesired(desired, transitions)
             else debugPrint("Layer '"..name.."' error: "..tostring(err)) end
         end
     end
+end
+
+function applyHelpLayer(desired, transitions, helpKey, helpLayer, useFade)
+    local hc = helpControls[helpKey]
+    if not helpLayer or not hc or not hc.open then return false end
+    local helpVis = hc.open.Boolean or false
+    local trans = useFade and (helpVis and "fade" or "none") or "none"
+    want(desired, transitions, helpLayer, helpVis, trans)
+    return helpVis
 end
 
 function applySourceOverlay(desired, transitions, sourceKey, callActive)
@@ -343,10 +380,8 @@ function applySourceOverlay(desired, transitions, sourceKey, callActive)
         want(desired, transitions, "J03-ACPRActive", false)
     end
 
-    local hc = helpControls[sourceKey]
-    if def.help and hc and hc.open then
-        local helpVis = hc.open.Boolean or false
-        want(desired, transitions, def.help, helpVis, helpVis and "fade" or "none")
+    if def.help then
+        local helpVis = applyHelpLayer(desired, transitions, sourceKey, def.help, true)
         if helpVis then
             want(desired, transitions, usbConnectLayers, false)
             if def.conf == "J10-ConferencePC" then
@@ -385,26 +420,20 @@ function buildDesired()
             local show = i == state.activeRoutingLayer
             want(desired, transitions, name, show, show and "fade" or "none")
         end
-        local routingHelp = helpControls.Routing and helpControls.Routing.open and helpControls.Routing.open.Boolean or false
-        want(desired, transitions, "I05-HelpRouting", routingHelp, "none")
+        applyHelpLayer(desired, transitions, "Routing", "I05-HelpRouting", false)
     end
 
     if state.activeLayer == kLayer.StreamMusic then
-        local musicHelp = helpControls.StreamMusic and helpControls.StreamMusic.open and helpControls.StreamMusic.open.Boolean or false
-        want(desired, transitions, "I07-HelpStreamMusic", musicHelp, "none")
+        applyHelpLayer(desired, transitions, "StreamMusic", "I07-HelpStreamMusic", false)
     end
 
     local sourceKey = layerToSourceKey[state.activeLayer]
     if sourceKey then
-        if state.activeLayer == kLayer.PC or state.activeLayer == kLayer.Laptop then
+        local def = configSource[sourceKey]
+        if conferenceStateConfig.skip[def.layer] then
+            applyHelpLayer(desired, transitions, sourceKey, def.help, true)
+        else
             applySourceOverlay(desired, transitions, sourceKey, state.callActive)
-        elseif state.activeLayer == kLayer.Wireless then
-            local def = configSource.Wireless
-            local hc = helpControls.Wireless
-            if def.help and hc and hc.open then
-                local helpVis = hc.open.Boolean or false
-                want(desired, transitions, def.help, helpVis, helpVis and "fade" or "none")
-            end
         end
     end
 
@@ -427,19 +456,15 @@ function refreshLayers()
     syncHelpButtons()
 end
 
-function interlockNav()
-    for i, btn in ipairs(btnNav) do
-        if btn then setProp(btn, "Boolean", i == state.activeLayer) end
-    end
-end
-
-function interlockRouting()
-    for i, btn in ipairs(btnRouting) do
-        if btn then setProp(btn, "Boolean", i == state.activeRoutingLayer) end
-    end
-end
-
 -------------------[ Switcher ]-------------------
+
+function setSwitcher(comp, swType, label)
+    components.videoSwitcher = comp
+    components.switcherType = swType
+    components.uciToInputMapping = SwitcherTypes[swType].defaultMapping
+    debugPrint("Video switcher: "..swType..(label and (" ("..label..")") or ""))
+    return true
+end
 
 function initVideoSwitcher()
     for swType, cfg in pairs(SwitcherTypes) do
@@ -447,13 +472,7 @@ function initVideoSwitcher()
             local ctrl = Controls[name]
             if ctrl and ctrl.String and ctrl.String ~= "" then
                 local ok, comp = pcall(function() return Component.New(ctrl.String) end)
-                if ok and comp then
-                    components.videoSwitcher = comp
-                    components.switcherType = swType
-                    components.uciToInputMapping = cfg.defaultMapping
-                    debugPrint("Video switcher: "..swType)
-                    return true
-                end
+                if ok and comp then return setSwitcher(comp, swType) end
             end
         end
     end
@@ -461,13 +480,7 @@ function initVideoSwitcher()
         for swType, cfg in pairs(SwitcherTypes) do
             if comp.Type == cfg.componentType then
                 local ok, c = pcall(function() return Component.New(comp.Name) end)
-                if ok and c then
-                    components.videoSwitcher = c
-                    components.switcherType = swType
-                    components.uciToInputMapping = cfg.defaultMapping
-                    debugPrint("Video switcher: "..swType.." (auto-detect)")
-                    return true
-                end
+                if ok and c then return setSwitcher(c, swType, "auto-detect") end
             end
         end
     end
@@ -500,7 +513,7 @@ function goToLayer(layerIndex, source)
         switchToInput(components.uciToInputMapping[layerIndex])
     end
     refreshLayers()
-    interlockNav()
+    interlockButtons(btnNav, state.activeLayer)
     debugPrint("Layer "..prev.." → "..layerIndex.." (Source: "..source..")")
 end
 
@@ -508,7 +521,7 @@ function routingButtonHandler(buttonIndex)
     if buttonIndex < 1 or buttonIndex > #routingLayers then return end
     state.activeRoutingLayer = buttonIndex
     refreshLayers()
-    interlockRouting()
+    interlockButtons(btnRouting, state.activeRoutingLayer)
     debugPrint("Routing → "..routingLayers[buttonIndex])
 end
 
@@ -669,16 +682,13 @@ function syncRoomControlsState()
 end
 
 function startSystem(eventSource)
-    eventSource = eventSource or "System Start"
     powerOn()
-    startLoadingBar(true)
-    goToLayer(kLayer.Warming, eventSource)
+    reflectPowerState(true, eventSource or "System Start")
 end
 
 function shutdownSystem()
     powerOff()
-    startLoadingBar(false)
-    goToLayer(kLayer.Cooling, "System Shutdown")
+    reflectPowerState(false, "System Shutdown")
 end
 
 function ensureSystemIsOn(targetLayer)
@@ -739,7 +749,7 @@ function initLegendArrays()
                 print("ERROR: Required legend control missing: "..ctrlName)
             else
                 missingOptional = missingOptional + 1
-                debugPrint("Warning: Legend control not found: "..ctrlName)
+                debugPrint("Warning: Legend control missing: "..ctrlName)
             end
         end
         if not var then
@@ -748,7 +758,7 @@ function initLegendArrays()
                 print("ERROR: Required legend variable missing: "..varName)
             else
                 missingOptional = missingOptional + 1
-                debugPrint("Warning: Legend variable not found: "..varName)
+                debugPrint("Warning: Legend variable missing: "..varName)
             end
         end
     end
@@ -778,29 +788,28 @@ end
 
 -------------------[ Event Handlers ]-------------------
 
-for i, btn in ipairs({
-    Controls.btnNav01, Controls.btnNav02, Controls.btnNav03, Controls.btnNav04, Controls.btnNav05,
-    Controls.btnNav06, Controls.btnNav07, Controls.btnNav08, Controls.btnNav09, Controls.btnNav10,
-    Controls.btnNav11, Controls.btnNav12, Controls.btnNav13
-}) do
+for i = 1, navCount do
+    local btn = Controls["btnNav"..string.format("%02d", i)]
     btnNav[i] = btn
-    ;(function(idx, ctl)
-        ctl.EventHandler = function()
-            goToLayer(idx, "User Button")
-        end
-    end)(i, btn)
+    if btn then
+        ;(function(idx, ctl)
+            ctl.EventHandler = function()
+                goToLayer(idx, "User Button")
+            end
+        end)(i, btn)
+    end
 end
 
-for i, btn in ipairs({
-    Controls.btnRouting01, Controls.btnRouting02, Controls.btnRouting03,
-    Controls.btnRouting04, Controls.btnRouting05
-}) do
+for i = 1, routingCount do
+    local btn = Controls["btnRouting"..string.format("%02d", i)]
     btnRouting[i] = btn
-    ;(function(idx, ctl)
-        ctl.EventHandler = function()
-            routingButtonHandler(idx)
-        end
-    end)(i, btn)
+    if btn then
+        ;(function(idx, ctl)
+            ctl.EventHandler = function()
+                routingButtonHandler(idx)
+            end
+        end)(i, btn)
+    end
 end
 
 Controls.btnStartSystem.EventHandler = function()
@@ -821,25 +830,18 @@ end
 
 for _, key in ipairs(configHelpPairKeys) do
     local hc = helpControls[key]
-    if hc then
-        if hc.open then
-            hc.open.EventHandler = function()
-                if hc.close then setProp(hc.close, "Boolean", false) end
-                refreshLayers()
-            end
-        end
-        if hc.close then
-            hc.close.EventHandler = function()
-                if hc.open then setProp(hc.open, "Boolean", false) end
-                refreshLayers()
-            end
-        end
-    end
+    if hc then bindHelpPair(hc.open, hc.close) end
+end
+
+local function onRefreshLayers() refreshLayers() end
+
+for _, name in ipairs(refreshLayerPins) do
+    if Controls[name] then Controls[name].EventHandler = onRefreshLayers end
 end
 
 for _, def in pairs(configSource) do
     local hdmiCtrl = Controls[def.hdmiKey]
-    if hdmiCtrl then hdmiCtrl.EventHandler = function() refreshLayers() end end
+    if hdmiCtrl then hdmiCtrl.EventHandler = onRefreshLayers end
     if def.usbKey then
         local usbCtrl = Controls[def.usbKey]
         if usbCtrl then
@@ -851,10 +853,6 @@ for _, def in pairs(configSource) do
         end
     end
 end
-
-Controls.ledACPRBypassActive.EventHandler = function() refreshLayers() end
-Controls.ledPresetSaved.EventHandler = function() refreshLayers() end
-Controls.ledCallActive.EventHandler = function() refreshLayers() end
 
 if Controls.ledTouchActivity then
     Controls.ledTouchActivity.EventHandler = function()
@@ -881,8 +879,8 @@ function funcInit()
     end
 
     refreshLayers()
-    interlockNav()
-    interlockRouting()
+    interlockButtons(btnNav, state.activeLayer)
+    interlockButtons(btnRouting, state.activeRoutingLayer)
     syncLegends()
 
     state.isInitialized = true
