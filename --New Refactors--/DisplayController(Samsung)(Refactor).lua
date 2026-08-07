@@ -22,25 +22,15 @@ local displayControls = {
   powerOn             = "PowerOn",
   powerOff            = "PowerOff",
   powerStatus         = "PowerStatus",
-  inputSelectComboBox = "InputSelectComboBox",
-  ledInputStatus      = "InputStatus",
-  inputButtons        = "InputButtons",
-  currentInput        = "Input",
+  inputCurrent        = "Input",        -- read-only
+  inputButtons        = "InputButtons", -- InputButtons1 Trigger; HDMI1 = 1
   displayVolume0      = "Volume",
 }
 
 local inputButtonMap = {
-  HDMI1 = 1, 
-  HDMI2 = 2, 
-  HDMI3 = 3, 
-  HDMI4 = 4,
-  DisplayPort1 = 5, 
-  DisplayPort2 = 6, 
-  DisplayPort3 = 7,
-  DTV = 8,
-  S_Video   = 9, 
-  Component = 10,
-  USB_C     = 11,
+  HDMI1 = 1, HDMI2 = 2, HDMI3 = 3, HDMI4 = 4,
+  DisplayPort1 = 5, DisplayPort2 = 6, DisplayPort3 = 7,
+  DTV = 8, S_Video = 9, Component = 10, USB_C = 11,
 }
 
 -------------------[ Constant Tables ]-------------------
@@ -48,6 +38,8 @@ local inputButtonMap = {
 compDisplays = {}
 compInvalid = {}
 compRoomControls = nil
+pendingInputVerify = {}
+pendingVolumeMute = {}
 
 -------------------[ Constants ]-------------------
 
@@ -56,6 +48,7 @@ strClear = "[Clear]"
 roomName = "[Samsung Display]"
 maxDisplays = 9
 defaultInput = "HDMI1"
+timerDelay = 5
 warmupTime = 7
 cooldownTime = 5
 lastInput = "HDMI1"
@@ -65,9 +58,9 @@ isCooling = false
 
 timerWarmup = Timer.New()
 timerCooldown = Timer.New()
-timerVolumeMute = {}
+timerPostPower = {}
 for idx = 1, maxDisplays do
-  timerVolumeMute[idx] = Timer.New()
+  timerPostPower[idx] = Timer.New()
 end
 
 -------------------[ Functions ]-------------------
@@ -161,8 +154,6 @@ function safeDisplayAccess(component, control, action, value)
     if action == "trigger" then component[control]:Trigger(); return true end
     if action == "get" then return component[control].Boolean end
     if action == "getString" then return component[control].String end
-    if action == "set" then component[control].Boolean = value; return true end
-    if action == "setString" then component[control].String = value; return true end
   end)
   return success and result or false
 end
@@ -201,9 +192,13 @@ end
 
 -------------------[ Power ]-------------------
 
-function getInputButtonNumber(input)
-  local normalizedInput = input:gsub("USB%-C", "USB_C")
-  return inputButtonMap[normalizedInput]
+function setInputOnDisplay(index, input)
+  local display = compDisplays[index]
+  local btn = inputButtonMap[input:gsub("USB%-C", "USB_C")]
+  if not display or not btn then return end
+  safeDisplayAccess(display, displayControls.inputButtons .. btn, "trigger")
+  pendingInputVerify[index] = input
+  timerPostPower[index]:Start(timerDelay)
 end
 
 function getDisplayCount()
@@ -238,39 +233,35 @@ function powerAll(onState)
   debugMsg("Powering all displays: " .. tostring(onState) .. " (Source: Power All)")
   local ctrl = onState and displayControls.powerOn or displayControls.powerOff
   for idx, display in pairs(compDisplays) do
-    if display then safeDisplayAccess(display, ctrl, "trigger") end
+    if display then
+      safeDisplayAccess(display, ctrl, "trigger")
+      if onState then setInputOnDisplay(idx, defaultInput) end
+    end
   end
   powerState = onState
+  if onState then lastInput = defaultInput end
 end
 
 function powerSingle(index, onState)
   debugMsg("Powering display " .. index .. " to: " .. tostring(onState) .. " (Source: Single Display)")
   local display = compDisplays[index]
   local ctrl = onState and displayControls.powerOn or displayControls.powerOff
-  if display then safeDisplayAccess(display, ctrl, "trigger") end
+  if display then
+    safeDisplayAccess(display, ctrl, "trigger")
+    if onState then setInputOnDisplay(index, defaultInput) end
+  end
 end
 
 function setInputAll(input)
   debugMsg("Setting all displays to input: " .. input .. " (Source: Input All)")
   for idx, display in pairs(compDisplays) do
-    if display then
-      if display[displayControls.inputSelectComboBox] then
-        safeDisplayAccess(display, displayControls.inputSelectComboBox, "setString", input)
-      else
-        local buttonNumber = getInputButtonNumber(input)
-        if buttonNumber then
-          local buttonName = displayControls.inputButtons .. buttonNumber .. "Trigger"
-          safeDisplayAccess(display, buttonName, "trigger")
-        end
-      end
-    end
+    if display then setInputOnDisplay(idx, input) end
   end
   lastInput = input
-  if Controls.ledDisplayInput then Controls.ledDisplayInput.String = input end
 end
 
 function enablePowerControls(enabled)
-  for _, name in ipairs({"btnPowerOn", "btnPowerOff", "btnPowerToggle", "btnPowerAll", "btnInputAll"}) do
+  for _, name in ipairs({"btnPowerOn", "btnPowerOff", "btnPowerToggle", "btnPowerAll"}) do
     local ctrl = Controls[name]
     if ctrl then
       if type(ctrl) == "table" and ctrl[1] then
@@ -326,13 +317,13 @@ end
 
 function powerOnDisplay(index)
   debugMsg("Powering on display " .. index .. " (Source: Power On Button)")
+  pendingVolumeMute[index] = true
   powerSingle(index, true)
   enablePowerControlIndex(index, false)
   setOppositePowerButtonLegend(index, true)
   isWarming = true
   if Controls.ledDisplayWarming then Controls.ledDisplayWarming.Boolean = true end
   timerWarmup:Start(warmupTime)
-  if timerVolumeMute[index] then timerVolumeMute[index]:Start(5) end
 end
 
 function powerOffDisplay(index)
@@ -430,13 +421,23 @@ timerCooldown.EventHandler = function()
 end
 
 for idx = 1, maxDisplays do
-  timerVolumeMute[idx].EventHandler = function()
+  timerPostPower[idx].EventHandler = function()
     local display = compDisplays[idx]
-    if display then
+    local input = pendingInputVerify[idx]
+    pendingInputVerify[idx] = nil
+    if display and input then
+      local btn = inputButtonMap[input:gsub("USB%-C", "USB_C")]
+      local expected = input == "USB_C" and "USB-C" or input == "S_Video" and "S-Video" or input:gsub("(%a+)(%d+)", "%1 %2")
+      if btn and safeDisplayAccess(display, displayControls.inputCurrent, "getString") ~= expected then
+        safeDisplayAccess(display, displayControls.inputButtons .. btn, "trigger")
+      end
+    end
+    if display and pendingVolumeMute[idx] then
+      pendingVolumeMute[idx] = nil
       debugMsg("Muting volume for display " .. idx .. " (Source: Timer)")
       safeDisplayAccess(display, displayControls.displayVolume0, "trigger")
     end
-    timerVolumeMute[idx]:Stop()
+    timerPostPower[idx]:Stop()
   end
 end
 
@@ -449,12 +450,6 @@ end
 if Controls.btnPowerAll then
   Controls.btnPowerAll.EventHandler = function(ctl)
     if ctl.Boolean then powerOnAll() else powerOffAll() end
-  end
-end
-
-if Controls.btnInputAll then
-  Controls.btnInputAll.EventHandler = function()
-    setInputAll(defaultInput)
   end
 end
 
