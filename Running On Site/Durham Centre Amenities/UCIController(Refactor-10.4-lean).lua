@@ -33,19 +33,19 @@ local SwitcherTypes = {
         componentType   = "streamer_hdmi_switcher",
         switcherNames   = {"devNV32","compNV32"},
         routingMethod   = "hdmi.out.1.select.index",
-        defaultMapping  = {[7] = 7,[8] = 8,[9] = 9}
+        defaultMapping  = {[kLayer.PC] = 4,[kLayer.Laptop] = 5,[kLayer.Wireless] = 6}
     },
     ExtronDXP = {
         componentType   = "%PLUGIN%_qsysc.extron.matrix.0.0.0.0-master_%FP%_bf09cd55c73845eb6fc31e4b896516ff",
         switcherNames   = {"devExtronDXP","compExtronDXP"},
         routingMethod   = "output.1",
-        defaultMapping  = {[7] = 2,[8] = 4,[9] = 1}
+        defaultMapping  = {[kLayer.PC] = 2,[kLayer.Laptop] = 4,[kLayer.Wireless] = 1}
     },
     AVProEdge = {
         componentType   = "%PLUGIN%_0a62fae1-c3d6-308a-8b7f-3586d7abdf9d_%FP%_1d35ac9dec572bc00d3405021155333f",
         switcherNames   = {"devAVProEdge","compAVProEdge"},
         routingMethod   = "trigger",
-        defaultMapping  = {[7] = "Input 3",[8] = "Input 4",[9] = "Input 1",[10] = "Input 2"}
+        defaultMapping  = {[kLayer.PC] = "Input 3",[kLayer.Laptop] = "Input 4",[kLayer.Wireless] = "Input 1",[kLayer.Routing] = "Input 2"}
     }
 }
 
@@ -98,7 +98,7 @@ local configSource = {
     },
 }
 
-local layerToSourceKey = { [7]="PC", [8]="Laptop", [9]="Wireless" }
+local layerToSourceKey = { [kLayer.PC]="PC", [kLayer.Laptop]="Laptop", [kLayer.Wireless]="Wireless" }
 local configHelpPairKeys = {"Laptop","PC","Wireless","Routing","StreamMusic"}
 local layerHelpToKey = {
     ["I02-HelpLaptop"]="Laptop", ["I03-HelpPC"]="PC", ["I04-HelpWireless"]="Wireless",
