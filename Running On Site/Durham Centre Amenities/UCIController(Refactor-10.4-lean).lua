@@ -118,11 +118,6 @@ local progressText = {
     cooling = "Shutting down the AV system, please wait as the system powers off.",
 }
 
-local powerProgressLeds = {
-    { key = "ledSystemCooling", mode = "cooling", startSource = "Room Automation Cooling", endSource = "Cooldown Complete" },
-    { key = "ledSystemWarming", mode = "warming", startSource = "Room Automation Warming", endSource = "Warmup Complete" },
-}
-
 local layerConfigs = {
     [kLayer.Alarm]        = { show = {"A01-Alarm"}, hideBase = true },
     [kLayer.IncomingCall] = { show = {"B01-IncomingCall"} },
@@ -175,15 +170,15 @@ state = {
     activeLayer = kLayer.Start,
     layerStates = {},
     activeRoutingLayer = nil,
-    powerProgress = nil,
+    isAnimating = false,
     isInitialized = false,
 }
 components = {
-    roomControls = nil,
+    roomControls = nil, prevPowerState = nil,
     videoSwitcher = nil, switcherType = nil, uciToInputMapping = {},
     passcode = nil, passcodeRoom = nil, passcodeEnabled = false,
 }
-timers = { progress = nil, inactivity = Timer.New() }
+timers = { loading = nil, timeout = nil, inactivity = Timer.New() }
 arrUCIStringLabels = {}
 arrUCIStringVariables = {}
 labelCount = 0
@@ -591,24 +586,25 @@ function initRoomControls()
         if page then compName = "compRoomControls"..page:gsub("%s+", "") end
     end
     if not compName then
-        print("ERROR: Room Controls: could not determine component name")
         debugPrint("Room Controls: could not determine component")
         return false
     end
     local ok, comp = pcall(function() return Component.New(compName) end)
     if not ok or not comp then
-        print("ERROR: Room Controls not found: "..compName)
         debugPrint("Room Controls not found: "..compName)
         return false
     end
     components.roomControls = comp
-    for _, cfg in ipairs(powerProgressLeds) do
-        if comp[cfg.key] then
-            comp[cfg.key].EventHandler = function(ctl)
-                onPowerProgress(cfg.mode, ctl.Boolean, ctl.Boolean and cfg.startSource or cfg.endSource)
-            end
-            debugPrint("Registered: "..cfg.key)
+    components.prevPowerState = comp["ledSystemPower"] and comp["ledSystemPower"].Boolean
+    if comp["ledSystemPower"] then
+        comp["ledSystemPower"].EventHandler = function(ctl)
+            local cur = ctl.Boolean
+            if cur == components.prevPowerState then return end
+            debugPrint("Power → "..(cur and "ON" or "OFF").." (Source: Room Controls)")
+            components.prevPowerState = cur
+            handlePowerStateChange(cur, cur and "Room Automation Power On" or "Room Automation Power Off")
         end
+        debugPrint("Registered: ledSystemPower (event-driven)")
     end
     return true
 end
@@ -627,70 +623,72 @@ function powerOff()
     return true
 end
 
--------------------[ Power Progress ]-------------------
-
-function updateProgressBar(percent)
-    setProp(Controls.knbProgressBar, "Value", percent)
-    setProp(Controls.txtProgressBar, "String", percent.."%")
-end
-
-function onPowerProgress(mode, active, source)
-    timers.progress = stopTimer(timers.progress)
-    if not active then
-        if state.powerProgress ~= mode then return end
-        state.powerProgress = nil
-        updateProgressBar(mode == "warming" and 100 or 0)
-        goToLayer(mode == "warming" and defaultLayer or kLayer.Start, source)
-        return
+function startLoadingBar(isPoweringOn)
+    if state.isAnimating then return end
+    state.isAnimating = true
+    setProp(Controls.txtPowerProgress, "String", isPoweringOn and progressText.warming or progressText.cooling)
+    timers.loading = stopTimer(timers.loading)
+    timers.timeout = stopTimer(timers.timeout)
+    local duration = 10
+    if components.roomControls then
+        if isPoweringOn and components.roomControls["warmupTime"] then
+            duration = components.roomControls["warmupTime"].Value
+        elseif not isPoweringOn and components.roomControls["cooldownTime"] then
+            duration = components.roomControls["cooldownTime"].Value
+        end
+    else
+        duration = isPoweringOn and (tonumber(Uci.Variables.timeProgressWarming) or 10) or (tonumber(Uci.Variables.timeProgressCooling) or 5)
     end
-    state.powerProgress = mode
-    setProp(Controls.txtPowerProgress, "String", progressText[mode])
-    updateProgressBar(mode == "warming" and 0 or 100)
-    goToLayer(mode == "warming" and kLayer.Warming or kLayer.Cooling, source)
-    local default = mode == "warming" and 10 or 5
-    local timeKey = mode == "warming" and "warmupTime" or "cooldownTime"
-    local ctrl = components.roomControls and components.roomControls[timeKey]
-    local duration = tonumber(ctrl and ctrl.Value) or default
-    if duration < 1 then duration = 1 elseif duration > 120 then duration = 120 end
     local steps, interval, currentStep = 100, duration / 100, 0
-    timers.progress = Timer.New()
-    timers.progress.EventHandler = function()
+    setProp(Controls.knbProgressBar, "Value", isPoweringOn and 0 or 100)
+    setProp(Controls.txtProgressBar, "String", (isPoweringOn and 0 or 100).."%")
+    timers.loading = Timer.New()
+    timers.timeout = Timer.New()
+    timers.timeout.EventHandler = function()
+        state.isAnimating = false
+        timers.loading = stopTimer(timers.loading)
+        goToLayer(isPoweringOn and defaultLayer or kLayer.Start, "Loading Timeout")
+    end
+    timers.timeout:Start(300)
+    timers.loading.EventHandler = function()
         currentStep = currentStep + 1
-        updateProgressBar(mode == "warming" and currentStep or (100 - currentStep))
+        local prog = isPoweringOn and currentStep or (100 - currentStep)
+        setProp(Controls.knbProgressBar, "Value", prog)
+        setProp(Controls.txtProgressBar, "String", prog.."%")
         if currentStep >= steps then
-            timers.progress = stopTimer(timers.progress)
+            timers.loading = stopTimer(timers.loading)
+            timers.timeout = stopTimer(timers.timeout)
+            state.isAnimating = false
+            goToLayer(isPoweringOn and defaultLayer or kLayer.Start, isPoweringOn and "Warmup Complete" or "Cooldown Complete")
         else
-            timers.progress:Start(interval)
+            timers.loading:Start(interval)
         end
     end
-    timers.progress:Start(interval)
-    debugPrint("Power progress started ("..mode..", "..duration.."s visual)")
+    timers.loading:Start(interval)
+    debugPrint("Loading bar started ("..duration.."s)")
+end
+
+function handlePowerStateChange(isOn, source)
+    startLoadingBar(isOn)
+    goToLayer(isOn and kLayer.Warming or kLayer.Cooling, source)
 end
 
 function requestPowerOn(source)
     source = source or "System Start"
-    if not components.roomControls then
-        print("ERROR: Power on refused — room controls not connected")
-        return
-    end
     if powerOn() then
         debugPrint("Power on requested ("..source..")")
-    else
-        print("ERROR: Power on failed — btnSystemOnOff unavailable")
+        return
     end
+    handlePowerStateChange(true, source.." (no room controls)")
 end
 
 function requestPowerOff(source)
     source = source or "System Shutdown"
-    if not components.roomControls then
-        print("ERROR: Power off refused — room controls not connected")
-        return
-    end
     if powerOff() then
         debugPrint("Power off requested ("..source..")")
-    else
-        print("ERROR: Power off failed — btnSystemOnOff unavailable")
+        return
     end
+    handlePowerStateChange(false, source.." (no room controls)")
 end
 
 function resetTouchInactivityTimer()
@@ -723,18 +721,14 @@ function ensureSystemIsOn(targetLayer)
 end
 
 function initSyncFromSystemController()
-    if not components.roomControls then return end
-    for _, cfg in ipairs(powerProgressLeds) do
-        local led = components.roomControls[cfg.key]
-        if led and led.Boolean then
-            onPowerProgress(cfg.mode, true, "Init Sync")
-            debugPrint("Synced: "..string.upper(cfg.mode))
-            return
-        end
-    end
-    local power = components.roomControls["ledSystemPower"]
-    if power and power.Boolean then
-        goToLayer(defaultLayer, "Init Sync Ready")
+    if not mySystemController or not mySystemController.state or not components.roomControls then return end
+    local led = components.roomControls["ledSystemPower"]
+    if not led or not led.Boolean then return end
+    if mySystemController.state.isWarming then
+        handlePowerStateChange(true, "System Controller Sync")
+        debugPrint("Synced: WARMING")
+    else
+        state.activeLayer = defaultLayer
         debugPrint("Synced: READY")
     end
 end
@@ -874,9 +868,7 @@ function funcInit()
     loadLayerStatesFromUci()
     state.activeLayer = kLayer.Start
     initLabelArrays()
-    if not initRoomControls() then
-        print("ERROR: Room controls unavailable — power actions disabled")
-    end
+    initRoomControls()
     initVideoSwitcher()
     initPasscode()
     initSyncFromSystemController()
@@ -899,14 +891,11 @@ end
 
 myUCI = {
     cleanup = function()
-        timers.progress = stopTimer(timers.progress)
+        timers.loading = stopTimer(timers.loading)
+        timers.timeout = stopTimer(timers.timeout)
         if timers.inactivity then timers.inactivity:Stop() end
-        if components.roomControls then
-            for _, cfg in ipairs(powerProgressLeds) do
-                if components.roomControls[cfg.key] then
-                    components.roomControls[cfg.key].EventHandler = nil
-                end
-            end
+        if components.roomControls and components.roomControls["ledSystemPower"] then
+            components.roomControls["ledSystemPower"].EventHandler = nil
         end
         if components.passcode and components.passcode["PasscodeCorrect"] then
             components.passcode["PasscodeCorrect"].EventHandler = nil

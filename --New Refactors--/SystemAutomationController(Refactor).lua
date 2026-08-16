@@ -1,5 +1,8 @@
 --[[
   System Automation Controller - Q-SYS Control Script
+  Author: Nikolas Smith, Q-SYS
+  Version: 1.0 | Date: 2026-08-07 
+  Firmware Req: 10.4
   Manages power, audio, video, displays, and motion detection
 ]]
 
@@ -206,13 +209,11 @@ local function setComponent(ctrl, componentType)
 end
 
 local function updateVolumeVisuals(idx)
-    local fader = controls.knbVolumeFader and controls.knbVolumeFader[idx]
     local mute = controls.btnVolumeMute and controls.btnVolumeMute[idx]
-    if not fader or not mute then return end
-    local isMuted = mute.Boolean
+    if not mute then return end
     local gainType = getGainType(idx)
-    -- setProp(mute, "CssClass", isMuted and (gainType == "Mic" and "icon-mic_none" or "icon-volume_mute") or (gainType == "Mic" and "icon-mic_off" or "icon-volume_off"))
-    -- setProp(fader, "Color", isMuted and "#CCCCCC" or "#0561A5")
+    -- Mute on/off look is handled in style.css (.on / .off); Lua only picks mic vs volume icon by gain type
+    -- setProp(mute, "CssClass", gainType == "Mic" and "icon-mic_off" or "icon-volume_off") --set the css classes for the mute button
 end
 
 local function publishNotification()
