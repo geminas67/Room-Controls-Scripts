@@ -213,7 +213,7 @@ local function updateVolumeVisuals(idx)
     if not mute then return end
     local gainType = getGainType(idx)
     -- Mute on/off look is handled in style.css (.on / .off); Lua only picks mic vs volume icon by gain type
-    -- setProp(mute, "CssClass", gainType == "Mic" and "icon-mic_off" or "icon-volume_off") --set the css classes for the mute button
+    setProp(mute, "CssClass", gainType == "Mic" and "button-mute-mic" or "button-mute-volume") --set the css classes for the mute button
 end
 
 local function publishNotification()

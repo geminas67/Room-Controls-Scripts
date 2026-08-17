@@ -28,27 +28,6 @@ local routingLayers = {"R01-Routing01","R02-Routing02","R03-Routing03","R04-Rout
 local usbConnectLayers = {"J01-ConnectUSBLaptop","J02-ConnectUSBPC"}
 local confLayers = {"J09-ConferenceLaptop","J10-ConferencePC"}
 
-local SwitcherTypes = {
-    NV32 = {
-        componentType   = "streamer_hdmi_switcher",
-        switcherNames   = {"devNV32","compNV32"},
-        routingMethod   = "hdmi.out.1.select.index",
-        defaultMapping  = {[kLayer.PC] = 4,[kLayer.Laptop] = 5,[kLayer.Wireless] = 6}
-    },
-    ExtronDXP = {
-        componentType   = "%PLUGIN%_qsysc.extron.matrix.0.0.0.0-master_%FP%_bf09cd55c73845eb6fc31e4b896516ff",
-        switcherNames   = {"devExtronDXP","compExtronDXP"},
-        routingMethod   = "output.1",
-        defaultMapping  = {[kLayer.PC] = 2,[kLayer.Laptop] = 4,[kLayer.Wireless] = 1}
-    },
-    AVProEdge = {
-        componentType   = "%PLUGIN%_0a62fae1-c3d6-308a-8b7f-3586d7abdf9d_%FP%_1d35ac9dec572bc00d3405021155333f",
-        switcherNames   = {"devAVProEdge","compAVProEdge"},
-        routingMethod   = "trigger",
-        defaultMapping  = {[kLayer.PC] = "Input 3",[kLayer.Laptop] = "Input 4",[kLayer.Wireless] = "Input 1",[kLayer.Routing] = "Input 2"}
-    }
-}
-
 local kLayer = {
     Alarm           = 1,
     IncomingCall    = 2,
@@ -96,6 +75,27 @@ local configSource = {
         conf    = nil,
         help    = "I04-HelpWireless"
     },
+}
+
+local SwitcherTypes = {
+    NV32 = {
+        componentType   = "streamer_hdmi_switcher",
+        switcherNames   = {"devNV32","compNV32"},
+        routingMethod   = "hdmi.out.1.select.index",
+        defaultMapping  = {[kLayer.PC] = 4,[kLayer.Laptop] = 5,[kLayer.Wireless] = 6}
+    },
+    ExtronDXP = {
+        componentType   = "%PLUGIN%_qsysc.extron.matrix.0.0.0.0-master_%FP%_bf09cd55c73845eb6fc31e4b896516ff",
+        switcherNames   = {"devExtronDXP","compExtronDXP"},
+        routingMethod   = "output.1",
+        defaultMapping  = {[kLayer.PC] = 2,[kLayer.Laptop] = 4,[kLayer.Wireless] = 1}
+    },
+    AVProEdge = {
+        componentType   = "%PLUGIN%_0a62fae1-c3d6-308a-8b7f-3586d7abdf9d_%FP%_1d35ac9dec572bc00d3405021155333f",
+        switcherNames   = {"devAVProEdge","compAVProEdge"},
+        routingMethod   = "trigger",
+        defaultMapping  = {[kLayer.PC] = "Input 3",[kLayer.Laptop] = "Input 4",[kLayer.Wireless] = "Input 1",[kLayer.Routing] = "Input 2"}
+    }
 }
 
 local layerToSourceKey = { [kLayer.PC]="PC", [kLayer.Laptop]="Laptop", [kLayer.Wireless]="Wireless" }
@@ -171,6 +171,7 @@ state = {
     layerStates = {},
     activeRoutingLayer = nil,
     isAnimating = false,
+    shutdownConfirm = false,
     isInitialized = false,
 }
 components = {
@@ -409,6 +410,8 @@ function buildDesired()
     local preset = Controls.ledPresetSaved and Controls.ledPresetSaved.Boolean or false
     want(desired, transitions, "J04-CamPresetSaved", preset, preset and "fade" or "none")
 
+    want(desired, transitions, "D01-ShutdownConfirm", state.shutdownConfirm, state.shutdownConfirm and "fade" or "none")
+
     if state.activeLayer == kLayer.Routing then
         if state.activeRoutingLayer < 1 or state.activeRoutingLayer > #routingLayers then
             state.activeRoutingLayer = 1
@@ -523,6 +526,7 @@ function goToLayer(layerIndex, source)
     source = source or "Navigation"
     local prev = state.activeLayer
     state.activeLayer = layerIndex
+    state.shutdownConfirm = false
     if layerIndex == kLayer.Passcode then resetTouchInactivityTimer() end
     if components.videoSwitcher and components.uciToInputMapping[layerIndex] then
         switchToInput(components.uciToInputMapping[layerIndex])
@@ -809,14 +813,17 @@ Controls.btnStartSystem.EventHandler = function()
 end
 
 Controls.btnNavShutdown.EventHandler = function()
-    applyDesired({["D01-ShutdownConfirm"] = true}, {["D01-ShutdownConfirm"] = "fade"})
+    state.shutdownConfirm = true
+    refreshLayers()
 end
 
 Controls.btnShutdownCancel.EventHandler = function()
-    applyDesired({["D01-ShutdownConfirm"] = false}, {["D01-ShutdownConfirm"] = "fade"})
+    state.shutdownConfirm = false
+    refreshLayers()
 end
 
 Controls.btnShutdownConfirm.EventHandler = function()
+    state.shutdownConfirm = false
     requestPowerOff("System Shutdown")
 end
 
