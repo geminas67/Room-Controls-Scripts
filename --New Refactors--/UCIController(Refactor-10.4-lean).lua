@@ -306,7 +306,6 @@ function want(desired, transitions, names, visible, transition)
 end
 
 function applyDesired(desired, transitions)
-    loadLayerStatesFromUci()
     for name, wantVis in pairs(desired) do
         if state.layerStates[name] ~= wantVis then
             local trans = (transitions and transitions[name]) or (wantVis and "fade" or "none")
@@ -445,13 +444,9 @@ function buildDesired()
 end
 
 function syncHelpButtons()
-    for helpLayer, key in pairs(layerHelpToKey) do
+    for _, key in pairs(layerHelpToKey) do
         local hc = helpControls[key]
-        if hc and hc.open then
-            local vis = state.layerStates[helpLayer] == true
-            setProp(hc.open, "Boolean", vis)
-            setProp(hc.close, "Boolean", false)
-        end
+        if hc and hc.close then setProp(hc.close, "Boolean", false) end
     end
 end
 
