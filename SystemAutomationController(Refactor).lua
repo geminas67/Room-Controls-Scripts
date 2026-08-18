@@ -229,8 +229,8 @@ local function updateVolumeVisuals(idx)
     if not fader or not mute then return end
     local isMuted = mute.Boolean
     local gainType = getGainType(idx)
-    setProp(mute, "CssClass", isMuted and (gainType == "Mic" and "icon-mic_none" or "icon-volume_mute") or (gainType == "Mic" and "icon-mic_off" or "icon-volume_off"))
-    setProp(fader, "Color", isMuted and "#CCCCCC" or "#0561A5")
+    setProp(mute, "CssClass", gainType == "Mic" and "button-mute-mic" or "button-mute-volume") --set the css classes for the mute button
+    setProp(fader, "CssClass", isMuted and "meter-muted" or "meter") --set the css classes for the fader
 end
 
 local function publishNotification()

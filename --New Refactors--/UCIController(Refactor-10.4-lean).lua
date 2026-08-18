@@ -113,14 +113,17 @@ local helpControls = {
     StreamMusic = { open = Controls.btnOpenHelpStreamMusic, close = Controls.btnCloseHelpStreamMusic },
 }
 
-local progressText = {
-    warming = "Starting the AV system, please wait as the system powers on.",
-    cooling = "Shutting down the AV system, please wait as the system powers off.",
-}
-
-local powerProgressLeds = {
-    { key = "ledSystemCooling", mode = "cooling", startSource = "Room Automation Cooling", endSource = "Cooldown Complete" },
-    { key = "ledSystemWarming", mode = "warming", startSource = "Room Automation Warming", endSource = "Warmup Complete" },
+local powerProgressConfig = {
+    {
+        mode = "warming", key = "ledSystemWarming",
+        text = "Starting the AV system, please wait as the system powers on.",
+        startSource = "Room Automation Warming", endSource = "Warmup Complete",
+    },
+    {
+        mode = "cooling", key = "ledSystemCooling",
+        text = "Shutting down the AV system, please wait as the system powers off.",
+        startSource = "Room Automation Cooling", endSource = "Cooldown Complete",
+    },
 }
 
 local layerConfigs = {
@@ -601,10 +604,10 @@ function initRoomControls()
         return false
     end
     components.roomControls = comp
-    for _, cfg in ipairs(powerProgressLeds) do
+    for _, cfg in ipairs(powerProgressConfig) do
         if comp[cfg.key] then
             comp[cfg.key].EventHandler = function(ctl)
-                onPowerProgress(cfg.mode, ctl.Boolean, ctl.Boolean and cfg.startSource or cfg.endSource)
+                onPowerProgress(cfg, ctl.Boolean, ctl.Boolean and cfg.startSource or cfg.endSource)
             end
             debugPrint("Registered: "..cfg.key)
         end
@@ -633,7 +636,8 @@ function updateProgressBar(percent)
     setProp(Controls.txtProgressBar, "String", percent.."%")
 end
 
-function onPowerProgress(mode, active, source)
+function onPowerProgress(cfg, active, source)
+    local mode = cfg.mode
     timers.progress = stopTimer(timers.progress)
     if not active then
         if state.powerProgress ~= mode then return end
@@ -643,7 +647,7 @@ function onPowerProgress(mode, active, source)
         return
     end
     state.powerProgress = mode
-    setProp(Controls.txtPowerProgress, "String", progressText[mode])
+    setProp(Controls.txtPowerProgress, "String", cfg.text)
     updateProgressBar(mode == "warming" and 0 or 100)
     goToLayer(mode == "warming" and kLayer.Warming or kLayer.Cooling, source)
     local default = mode == "warming" and 10 or 5
@@ -723,10 +727,10 @@ end
 
 function initSyncFromSystemController()
     if not components.roomControls then return end
-    for _, cfg in ipairs(powerProgressLeds) do
+    for _, cfg in ipairs(powerProgressConfig) do
         local led = components.roomControls[cfg.key]
         if led and led.Boolean then
-            onPowerProgress(cfg.mode, true, "Init Sync")
+            onPowerProgress(cfg, true, "Init Sync")
             debugPrint("Synced: "..string.upper(cfg.mode))
             return
         end
@@ -904,7 +908,7 @@ myUCI = {
         timers.progress = stopTimer(timers.progress)
         if timers.inactivity then timers.inactivity:Stop() end
         if components.roomControls then
-            for _, cfg in ipairs(powerProgressLeds) do
+            for _, cfg in ipairs(powerProgressConfig) do
                 if components.roomControls[cfg.key] then
                     components.roomControls[cfg.key].EventHandler = nil
                 end

@@ -209,11 +209,13 @@ local function setComponent(ctrl, componentType)
 end
 
 local function updateVolumeVisuals(idx)
+    local fader = controls.knbVolumeFader and controls.knbVolumeFader[idx]
     local mute = controls.btnVolumeMute and controls.btnVolumeMute[idx]
-    if not mute then return end
+    if not fader or not mute then return end
+    local isMuted = mute.Boolean
     local gainType = getGainType(idx)
-    -- Mute on/off look is handled in style.css (.on / .off); Lua only picks mic vs volume icon by gain type
     setProp(mute, "CssClass", gainType == "Mic" and "button-mute-mic" or "button-mute-volume") --set the css classes for the mute button
+    setProp(fader, "CssClass", isMuted and "meter-muted" or "meter") 
 end
 
 local function publishNotification()
