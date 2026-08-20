@@ -2,7 +2,7 @@
   Camera Preset Controller - Q-SYS Control Script
   Author: Nikolas Smith, Q-SYS
   Date: 2026-07-30
-  Version: 8.0
+  Version: 8.1
   Firmware Req: 10.4.0
 
   Camera/preset management, JSON sync, router integration.
@@ -28,8 +28,8 @@ local debounceDelay = 0.1
 
 compCams = {}
 compPresets = {}
-compRouters = {}
-compRouterCurrent = nil
+compRouter = nil
+compRouterName = ""
 
 -------------------[ Constants ]-------------------
 
@@ -37,6 +37,7 @@ stateDebug = true
 roomName = "CameraPreset"
 strClear = "[Clear]"
 isSavingJSON = false
+routerOutKey = nil
 longPressed = {}
 countdownTimers = {}
 ledTimers = {}
@@ -141,13 +142,16 @@ function discoverCameras()
 end
 
 function discoverRouters()
-  compRouters = {}
+  compRouter = nil
+  compRouterName = ""
   local ok, comps = pcall(Component.GetComponents)
   if not ok then return end
   for _, comp in pairs(comps) do
     if comp.Type and comp.Type:match(componentTypes.camRouter) and validComponent(comp.Name) then
-      compRouters[comp.Name] = Component.New(comp.Name)
+      compRouter = Component.New(comp.Name)
+      compRouterName = comp.Name
       debugMsg("Router found: " .. comp.Name)
+      return
     end
   end
 end
@@ -226,21 +230,30 @@ end
 
 -------------------[ Router Sync ]-------------------
 
-function setupRouterSync()
-  local routerName = Controls.compcamRouter.String
-  if routerName == "" then return false end
-  local outKey = Controls.routerOutput.String ~= "" and Controls.routerOutput.String or "select.1"
-  if compRouterCurrent and compRouterCurrent[outKey] then
-    compRouterCurrent[outKey].EventHandler = nil
+function unbindRouterSync()
+  if compRouter and routerOutKey and compRouter[routerOutKey] then
+    compRouter[routerOutKey].EventHandler = nil
   end
-  local router = compRouters[routerName]
-  if not router or not router[outKey] then
-    debugMsg("Router/output invalid: " .. routerName .. " / " .. outKey, true)
+  routerOutKey = nil
+end
+
+function setupRouterSync()
+  if not compRouter then return false end
+  local routerName = Controls.compcamRouter.String
+  if routerName == "" or routerName == strClear then
+    unbindRouterSync()
     return false
   end
-  compRouterCurrent = router
-  router[outKey].EventHandler = function()
-    local idx = router[outKey].Value
+  local outKey = Controls.routerOutput.String ~= "" and Controls.routerOutput.String or "select.1"
+  if routerOutKey and routerOutKey ~= outKey then
+    unbindRouterSync()
+  end
+  if not compRouter[outKey] then
+    debugMsg("Router output invalid: " .. outKey, true)
+    return false
+  end
+  compRouter[outKey].EventHandler = function()
+    local idx = compRouter[outKey].Value
     local choices = Controls.devCams.Choices
     if idx and choices and idx > 0 and idx <= #choices then
       Controls.devCams.Value = idx
@@ -249,25 +262,23 @@ function setupRouterSync()
       debounceUpdateLEDs()
     end
   end
-  router[outKey].EventHandler()
+  routerOutKey = outKey
+  compRouter[outKey].EventHandler()
   return true
 end
 
 function updateRouterChoices()
   local names = {}
-  for name in pairs(compRouters) do names[#names + 1] = name end
-  table.sort(names)
+  if compRouterName ~= "" then names[1] = compRouterName end
   names[#names + 1] = strClear
   Controls.compcamRouter.Choices = names
   Controls.compcamRouter.String = names[1] or ""
 end
 
 function updateRouterOutputChoices()
-  local routerName = Controls.compcamRouter.String
-  local router = routerName ~= strClear and compRouters[routerName]
   local outputs = {}
-  if router then
-    for k in pairs(router) do
+  if compRouter then
+    for k in pairs(compRouter) do
       local n = type(k) == "string" and k:match("^select%.(%d+)$")
       if n then outputs[#outputs + 1] = { tonumber(n), k } end
     end
@@ -275,7 +286,7 @@ function updateRouterOutputChoices()
     for i, v in ipairs(outputs) do outputs[i] = v[2] end
   end
   Controls.routerOutput.Choices = outputs
-  if not router or not router[Controls.routerOutput.String] then
+  if not compRouter or not compRouter[Controls.routerOutput.String] then
     Controls.routerOutput.String = outputs[1] or ""
   end
 end
