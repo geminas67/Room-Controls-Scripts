@@ -1,29 +1,27 @@
 --[[
   System Automation Controller - Q-SYS Control Script
-  Manages power, audio, video, displays, and motion detection
-  Allows for components to be added and removed dynamically during runtime
-  Provides a public API for interacting with the system
   Author: Nikolas Smith, Q-SYS
-  Version: 3.0 | Date: 2026-06-03
-  Firmware Req: 10.3.0
+  Version: 1.0 | Date: 2026-08-07 
+  Firmware Req: 10.4
+  Manages power, audio, video, displays, and motion detection
 ]]
 
 -------------------[ Configuration ]-------------------
 local const = {
     componentTypes = {
     callSync = "call_sync",
-    videoBridge = "onvif_camera_operative",
-    displays = "%PLUGIN%_80a40a84-e685-4b13-a5c4-fbdc12bd85e6_%FP%_cac5837f40ef3a83d7365386eb4b8d16",
+    videoBridge = "usb_uvc",
+    displays = "%PLUGIN%_bd0a5e74-c1bf-48ee-8574-e42e1e7b2bb9_%FP%_31e2e2d7be2243768d2bd9c853a6295c",
     gains = "gain",
     systemMute = "system_mute",
-    camACPR = "%PLUGIN%_6ddbd63b-ebb6-43ed-9c5a-9a7d6dac6f37_%FP%_e114a64149fd1bfd9a7fa61aa51085bd"
+    camACPR = "%PLUGIN%_6ddbd63b-ebb6-43ed-9c5a-9a7d6dac6f37_%FP%_e114a64149fd1bfd9a7fa61aa51085bd" --NEW
     },
 
     gainTypeAssignments = {
     ["Conference Room"] = { "Program", "Mic", "Mic", "Mic", "Mic", "Mic", "Mic", "Mic", "Gain", "Gain", "Gain", "Gain" },
-    ["Huddle Room"] = { "Program", "Gain", "Gain", "Gain", "Mic", "Mic", "Mic" },
-    ["Custom Room"] = { "Program", "Mic", "Mic", "Mic", "Gain", "Gain", "Gain", "Gain", "Gain" },
-    ["Default"] = { "Program", "Gain", "Gain", "Gain", "Mic", "Mic", "Mic", "Mic" }
+    ["Huddle Room"]     = { "Program", "Gain", "Gain", "Gain", "Mic", "Mic", "Mic" },
+    ["Custom Room"]     = { "Program", "Mic", "Mic", "Mic", "Gain", "Gain", "Gain", "Gain", "Gain" },
+    ["Default"]         = { "Program", "Gain", "Gain", "Gain", "Mic", "Mic", "Mic", "Mic" }
     }
 }
 -------------------[ Controls ]-------------------
@@ -104,19 +102,6 @@ local function forEach(ctrls, fn)
     for i, ctrl in ipairs(getControlArray(ctrls)) do fn(i, ctrl) end
 end
 
-local function cleanupComponentHandlers(oldComp, controlNames, debugCb)
-    if not oldComp or not controlNames then return 0 end
-    local cleaned = 0
-    for _, name in ipairs(controlNames) do
-        if oldComp[name] and oldComp[name].EventHandler then
-            oldComp[name].EventHandler = nil
-            cleaned = cleaned + 1
-        end
-    end
-    if debugCb and cleaned > 0 then debugCb("Cleaned up " .. cleaned .. " handler(s) from old component") end
-    return cleaned
-end
-
 -------------------[ Config ]-------------------
 local clearString = "[Clear]"
 
@@ -164,7 +149,7 @@ local function safeAccess(component, control, action, value)
         return false
     end)
     if not success then debugPrint("Component access error: "..tostring(result)); return false end
-    return result
+    return success and result or false
 end
 
 local function getGainComponent(idx) return components.gains[idx] end
@@ -199,8 +184,8 @@ local function setComponent(ctrl, componentType)
     end
     local name = ctrl.String
     if not name or name == "" or name == clearString then
-        if name == clearString then setProp(ctrl, "String", "") end
-        setProp(ctrl, "Color", "white")
+        if name == clearString then ctrl.String = "" end
+        ctrl.Color = "white"
         components.invalid[componentType] = false
         checkStatus()
         debugPrint("No " .. componentType .. " component selected")
@@ -209,14 +194,14 @@ local function setComponent(ctrl, componentType)
     local comp = Component.New(name)
     local ctrlList = comp and Component.GetControls(comp)
     if not ctrlList or #ctrlList < 1 then
-        setProp(ctrl, "String", "[Invalid Component Selected]")
-        setProp(ctrl, "Color", "pink")
+        ctrl.String = "[Invalid Component Selected]"
+        ctrl.Color = "pink"
         components.invalid[componentType] = true
         checkStatus()
         debugPrint("ERROR: Invalid component '" .. name .. "' for " .. componentType)
         return nil
     end
-    setProp(ctrl, "Color", "white")
+    ctrl.Color = "white"
     components.invalid[componentType] = false
     checkStatus()
     debugPrint("Connected " .. componentType .. ": " .. name)
@@ -224,13 +209,11 @@ local function setComponent(ctrl, componentType)
 end
 
 local function updateVolumeVisuals(idx)
-    local fader = controls.knbVolumeFader and controls.knbVolumeFader[idx]
     local mute = controls.btnVolumeMute and controls.btnVolumeMute[idx]
-    if not fader or not mute then return end
-    local isMuted = mute.Boolean
+    if not mute then return end
     local gainType = getGainType(idx)
-    setProp(mute, "CssClass", gainType == "Mic" and "button-mute-mic" or "button-mute-volume") --set the css classes for the mute button
-    setProp(fader, "CssClass", isMuted and "meter-muted" or "meter") --set the css classes for the fader
+    -- Mute on/off look is handled in style.css (.on / .off); Lua only picks mic vs volume icon by gain type
+    -- setProp(mute, "CssClass", gainType == "Mic" and "icon-mic_off" or "icon-volume_off") --set the css classes for the mute button
 end
 
 local function publishNotification()
@@ -336,7 +319,7 @@ end
 local function setAudioPrivacy(privacyState)
     safeAccess(components.callSync, "mute", "set", privacyState)
     setProp(controls.btnAudioPrivacy, "Boolean", privacyState)
-    setProp(controls.btnAudioPrivacy, "CssClass", privacyState and "icon-mic_none" or "icon-mic_off")
+    -- setProp(controls.btnAudioPrivacy, "CssClass", privacyState and "icon-mic_none" or "icon-mic_off")
     publishNotification()
 end
 
@@ -437,8 +420,9 @@ local function powerOn()
     publishNotification()
 end
 
-local function powerOff()
-    debugPrint("[Power] Powering Off (Source: User)")
+local function powerOff(sourceTag)
+    sourceTag = sourceTag or "User"
+    debugPrint("[Power] Powering Off (Source: " .. sourceTag .. ")")
     if controls.btnSystemOffTrig then controls.btnSystemOffTrig:Trigger() end
     enablePowerControls(false)
     state.isCooling = true
@@ -478,15 +462,6 @@ local function checkMotion()
     end
 end
 
-local function setupComponentSelector(ctrl, names, componentType)
-    if not ctrl then return end
-    ctrl.Choices = names
-    if #names == 2 and (not ctrl.String or ctrl.String == "") then
-        setProp(ctrl, "String", names[1])
-        debugPrint("Auto-selected " .. componentType .. ": " .. names[1])
-    end
-end
-
 local function getComponentNames()
     local names = { callSync = {}, videoBridge = {}, camACPR = {}, displays = {}, gains = {}, systemMute = {} }
     for _, comp in pairs(Component.GetComponents()) do
@@ -498,20 +473,16 @@ local function getComponentNames()
         elseif comp.Type == const.componentTypes.camACPR then table.insert(names.camACPR, comp.Name) end
     end
     for _, list in pairs(names) do table.sort(list); table.insert(list, clearString) end
-    setupComponentSelector(controls.compCallSync, names.callSync, "Call Sync")
-    forEach(controls.compVideoBridge, function(_, ctrl) setupComponentSelector(ctrl, names.videoBridge, "Video Bridge") end)
-    setupComponentSelector(controls.compSystemMute, names.systemMute, "System Mute")
-    setupComponentSelector(controls.compACPR, names.camACPR, "Camera ACPR")
-    forEach(controls.compGains, function(_, ctrl) setupComponentSelector(ctrl, names.gains, "Gain") end)
-    forEach(controls.devDisplays, function(_, ctrl) setupComponentSelector(ctrl, names.displays, "Display") end)
+    if controls.compCallSync then controls.compCallSync.Choices = names.callSync end
+    forEach(controls.compVideoBridge, function(_, ctrl) ctrl.Choices = names.videoBridge end)
+    if controls.compSystemMute then controls.compSystemMute.Choices = names.systemMute end
+    if controls.compACPR then controls.compACPR.Choices = names.camACPR end
+    forEach(controls.compGains, function(_, ctrl) ctrl.Choices = names.gains end)
+    forEach(controls.devDisplays, function(_, ctrl) ctrl.Choices = names.displays end)
     debugPrint("Discovery complete: " .. (#names.callSync - 1) .. " callSync, " .. (#names.videoBridge - 1) .. " videoBridge, " .. (#names.gains - 1) .. " gains, " .. (#names.displays - 1) .. " displays")
 end
 
 local function setCallSyncComponent()
-    local oldComp = components.callSync
-    if oldComp then
-        cleanupComponentHandlers(oldComp, {"off.hook", "mute"}, function(msg) debugPrint("[Call Sync] " .. msg) end)
-    end
     components.callSync = setComponent(controls.compCallSync, "Call Sync")
     local comp = components.callSync
     if not comp then return end
@@ -521,10 +492,6 @@ end
 
 local function setVideoBridgeComponent(idx)
     if not controls.compVideoBridge or not controls.compVideoBridge[idx] then return end
-    local oldComp = components.videoBridge[idx]
-    if oldComp then
-        cleanupComponentHandlers(oldComp, {"toggle.privacy"}, function(msg) debugPrint("[Video Bridge " .. idx .. "] " .. msg) end)
-    end
     components.videoBridge[idx] = setComponent(controls.compVideoBridge[idx], "Video Bridge [" .. idx .. "]")
     local comp = components.videoBridge[idx]
     if not comp then return end
@@ -536,10 +503,6 @@ end
 
 local function setGainComponent(idx)
     if not controls.compGains or not controls.compGains[idx] then return end
-    local oldComp = components.gains[idx]
-    if oldComp then
-        cleanupComponentHandlers(oldComp, {"gain", "mute"}, function(msg) debugPrint("[Gain " .. idx .. "] " .. msg) end)
-    end
     components.gains[idx] = setComponent(controls.compGains[idx], "Gain [" .. idx .. "]")
     local comp = components.gains[idx]
     if not comp then return end
@@ -554,10 +517,6 @@ local function setSystemMuteComponent()
 end
 
 local function setCamACPRComponent()
-    local oldComp = components.camACPR
-    if oldComp then
-        cleanupComponentHandlers(oldComp, {"TrackingBypass"}, function(msg) debugPrint("[Camera ACPR] " .. msg) end)
-    end
     components.camACPR = setComponent(controls.compACPR, "Camera ACPR")
     local comp = components.camACPR
     if not comp then return end
@@ -713,7 +672,7 @@ local function init()
     timers.motion.EventHandler = function()
         state.motionTimeoutActive = false
         setProp(controls.ledMotionTimeoutActive, "Boolean", false)
-        powerOff()
+        powerOff("Motion timeout")
     end
     timers.grace.EventHandler = function()
         state.motionGraceActive = false
@@ -731,6 +690,8 @@ local function init()
         enablePowerControls(true)
         publishNotification()
     end
+
+    powerOff("Initialization")
 
     debugPrint("Ready - " .. getGainCount() .. " gain controls detected")
     debugPrint("=== Initialization Complete ===")
@@ -784,8 +745,8 @@ if ok then
 else
     print("✗ ERROR: Initialization failed: " .. tostring(err))
     if controls and controls.txtStatus then
-        setProp(controls.txtStatus, "String", "INIT FAILED")
-        setProp(controls.txtStatus, "Value", 2)
+        controls.txtStatus.String = "INIT FAILED"
+        controls.txtStatus.Value = 2
     end
 end
 
