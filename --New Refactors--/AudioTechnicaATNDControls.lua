@@ -1,9 +1,9 @@
 --[[
   ATNDController - Q-SYS Control Script
   Author: Nikolas Smith, Q-SYS
-  Date: 2025-09-10
+  Date: 2026-08-25
   Version: 4.1
-  Firmware Req: 10.0.0
+  Firmware Req: 10.4.0
 
   Audio-Technica ATND mic LEDs via call sync, room controls, and mute.
 
@@ -34,6 +34,7 @@ ledBlack = "Black"
 ledRed = "Red"
 ledGreen = "Green"
 ledToggleInterval = 1.5
+hookMuteSyncDelay = 0.3
 
 fireAlarm = false
 audioPrivacy = false
@@ -192,9 +193,19 @@ function setFireAlarm(active)
   setAllATNDLEDs(offHook)
 end
 
+function reconcileHookMuteState()
+  if isCallOffHook() then
+    setPrivacyLEDColor(getCallMuteState())
+  end
+end
+
 function setHookState(offHook)
-  setAllATNDLEDs(offHook)
-  setPrivacyLEDColor(getCallMuteState())
+  if offHook then
+    setPrivacyLEDColor(false)
+    Timer.CallAfter(reconcileHookMuteState, hookMuteSyncDelay)
+  else
+    setAllATNDLEDs(false)
+  end
 end
 
 function setMuteState(muteState)
@@ -262,13 +273,6 @@ end
 timerLEDToggle.EventHandler = function()
   ledState = not ledState
   setAllATNDLEDs(ledState)
-end
-
-if Controls.btnMute then
-  Controls.btnMute.EventHandler = function(ctl)
-    audioPrivacy = ctl.Boolean
-    setPrivacyLEDColor(ctl.Boolean)
-  end
 end
 
 if Controls.compRoomControls then
