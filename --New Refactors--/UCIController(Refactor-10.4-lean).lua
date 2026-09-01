@@ -10,7 +10,7 @@
 
 -------------------[ Configuration ]-------------------
 
-local conferenceStateConfig = { skip = { [9]=true } }  -- PC/Laptop: show J01/J02 when USB disconnected, J09/J10 when connected
+local conferenceStateConfig = { skip = { [9]=true } }  -- PC/Laptop: conference layers follow nav; J01/J02 overlay when USB disconnected
 local acprConfig = { disableACPRShow = false }
 
 local layersBase = {"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}
@@ -342,14 +342,14 @@ function applySourceOverlay(desired, transitions, sourceKey)
     end
 
     if not conferenceStateConfig.skip[def.layer] then
+        if def.conf then want(desired, transitions, def.conf, true, "fade") end
+
         local usbPin = def.usbKey and Controls[def.usbKey]
         local usb = usbPin and usbPin.Boolean or false
         if usb then
-            if def.conf then want(desired, transitions, def.conf, true, "fade") end
             want(desired, transitions, usbConnectLayers, false)
         elseif def.usb then
             want(desired, transitions, def.usb, true, "fade")
-            if def.conf then want(desired, transitions, def.conf, false) end
             if def.help then want(desired, transitions, def.help, false) end
         end
     end
@@ -359,10 +359,8 @@ function applySourceOverlay(desired, transitions, sourceKey)
         local offHook = Controls.ledOffHook and Controls.ledOffHook.Boolean or false
         if not bypass and offHook then
             want(desired, transitions, "J03-ACPRActive", true, "fade")
-            if def.conf then want(desired, transitions, def.conf, false) end
         else
             want(desired, transitions, "J03-ACPRActive", false)
-            if def.conf then want(desired, transitions, def.conf, bypass, bypass and "fade" or "none") end
         end
     else
         want(desired, transitions, "J03-ACPRActive", false)
@@ -374,9 +372,6 @@ function applySourceOverlay(desired, transitions, sourceKey)
         want(desired, transitions, def.help, helpVis, helpVis and "fade" or "none")
         if helpVis then
             want(desired, transitions, usbConnectLayers, false)
-            if def.conf == "J10-ConferencePC" then
-                want(desired, transitions, "J10-ConferencePC", false)
-            end
         end
     end
 end
