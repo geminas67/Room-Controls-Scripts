@@ -888,17 +888,17 @@ myUCI = {
 
 local hint = Uci.Variables.txtUCIPageName and Uci.Variables.txtUCIPageName.String or ""
 local ok, err
-for _, pn in ipairs(buildPageNameCandidates(hint)) do
-    pageUCI = pn
+for _, pageName in ipairs(buildPageNameCandidates(hint)) do
+    pageUCI = pageName
     ok, err = pcall(function()
         if not validateControls() then error("Control validation failed") end
         funcInit()
     end)
     if ok then
-        print("✓ UCIController initialized for "..pn)
+        print("✓ UCIController initialized for "..pageName)
         break
     end
-    print("UCI attempt for '"..pn.."': "..tostring(err))
+    print("UCI attempt for '"..pageName.."': "..tostring(err))
 end
 
 if not ok then
