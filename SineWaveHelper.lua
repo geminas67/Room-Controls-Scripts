@@ -19,13 +19,13 @@ local valuesSines = {
   '8000',
 }
 
-function interlockSineButtons(index)
+local function interlockSineButtons(index)
   for i,ctl in ipairs(Controls.btnPreset) do
     ctl.Boolean = (i == index)
   end
 end
 
-function setSine(index)
+local function setSine(index)
   sineGen['frequency'].Value = tonumber(valuesSines[index])
   interlockSineButtons(index)
 end

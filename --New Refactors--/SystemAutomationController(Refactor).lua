@@ -209,11 +209,13 @@ local function setComponent(ctrl, componentType)
 end
 
 local function updateVolumeVisuals(idx)
+    local fader = controls.knbVolumeFader and controls.knbVolumeFader[idx]
     local mute = controls.btnVolumeMute and controls.btnVolumeMute[idx]
-    if not mute then return end
+    if not mute or not fader then return end
     local gainType = getGainType(idx)
-    -- Mute on/off look is handled in style.css (.on / .off); Lua only picks mic vs volume icon by gain type
-    -- setProp(mute, "CssClass", gainType == "Mic" and "icon-mic_off" or "icon-volume_off") --set the css classes for the mute button
+    local isMuted = mute.Boolean
+    setProp(fader, "CssClass", isMuted and "meter-muted" or "meter") --set the css classes for the fader
+    setProp(mute, "CssClass", gainType == "Mic" and "icon-mic_off" or "icon-volume_off") --set the css classes for the mute button
 end
 
 local function publishNotification()
@@ -319,7 +321,6 @@ end
 local function setAudioPrivacy(privacyState)
     safeAccess(components.callSync, "mute", "set", privacyState)
     setProp(controls.btnAudioPrivacy, "Boolean", privacyState)
-    -- setProp(controls.btnAudioPrivacy, "CssClass", privacyState and "icon-mic_none" or "icon-mic_off")
     publishNotification()
 end
 
@@ -346,7 +347,7 @@ end
 local function setVideoPrivacy(privacyState, idx)
     local apply = function(index, videoBridge)
         safeAccess(videoBridge, "toggle.privacy", "set", privacyState)
-        -- videoBridgeCheckPrivacy called from event
+        -- getVideoBridgePrivacyState called from event
     end
     if idx then
         local videoBridge = components.videoBridge[idx]
@@ -357,7 +358,7 @@ local function setVideoPrivacy(privacyState, idx)
     publishNotification()
 end
 
-local function videoBridgeCheckPrivacy(idx)
+local function getVideoBridgePrivacyState(idx)
     idx = idx or 1
     local videoBridge = components.videoBridge[idx]
     if not videoBridge then return end
@@ -370,19 +371,19 @@ local function videoBridgeCheckPrivacy(idx)
     end
 end
 
-local function callSyncCheckMute()
+local function getCallSyncMuteState()
     if not components.callSync then return end
     local muteState = safeAccess(components.callSync, "mute", "get")
     debugPrint("Call Sync Mute State: " .. tostring(muteState) .. " (Source: Component)")
     if controls.btnAudioPrivacy then setProp(controls.btnAudioPrivacy, "Boolean", muteState) end
 end
 
-local function callSyncCheckConnection()
+local function getCallSyncHookState()
     if not components.callSync then return end
     local offHook = safeAccess(components.callSync, "off.hook", "get")
-    callSyncCheckMute()
+    getCallSyncMuteState()
     for idx in pairs(components.videoBridge) do setVideoPrivacy(not offHook, idx) end
-    if components.videoBridge[1] then videoBridgeCheckPrivacy(1) end
+    if components.videoBridge[1] then getVideoBridgePrivacyState(1) end
     if components.camACPR and components.camACPR["TrackingBypass"] then
         components.camACPR["TrackingBypass"].IsDisabled = not offHook
         safeAccess(components.camACPR, "TrackingBypass", "set", not offHook)
@@ -486,8 +487,8 @@ local function setCallSyncComponent()
     components.callSync = setComponent(controls.compCallSync, "Call Sync")
     local comp = components.callSync
     if not comp then return end
-    if comp["off.hook"] then comp["off.hook"].EventHandler = callSyncCheckConnection end
-    if comp["mute"] then comp["mute"].EventHandler = callSyncCheckMute end
+    if comp["off.hook"] then comp["off.hook"].EventHandler = getCallSyncHookState end
+    if comp["mute"] then comp["mute"].EventHandler = getCallSyncMuteState end
 end
 
 local function setVideoBridgeComponent(idx)
@@ -496,9 +497,9 @@ local function setVideoBridgeComponent(idx)
     local comp = components.videoBridge[idx]
     if not comp then return end
     if comp["toggle.privacy"] then
-        comp["toggle.privacy"].EventHandler = function() videoBridgeCheckPrivacy(idx) end
+        comp["toggle.privacy"].EventHandler = function() getVideoBridgePrivacyState(idx) end
     end
-    videoBridgeCheckPrivacy(idx)
+    getVideoBridgePrivacyState(idx)
 end
 
 local function setGainComponent(idx)
@@ -529,7 +530,7 @@ local function setCamACPRComponent()
             cam["TrackingBypass"].Legend = cam["TrackingBypass"].IsDisabled and "Disabled" or (bypassState and "Off" or "Auto")
         end
     end
-    callSyncCheckConnection()
+    getCallSyncHookState()
 end
 
 local function setDisplayComponent(idx)

@@ -40,7 +40,7 @@ end
 
 -------------------[ Interlock ]-------------------
 
-function interlockPreset(index)
+function interlockPresets(index)
   for i, ctl in ipairs(Controls.btnLightingPreset) do
     ctl.Boolean = (i == index)
   end
@@ -55,7 +55,7 @@ function sendLevelCommand(level)
 end
 
 function applyPreset(index)
-  interlockPreset(index)
+  interlockPresets(index)
   sendLevelCommand(lightingLevels[index])
 end
 
@@ -87,7 +87,7 @@ function parseLevelResponse(line)
   level = tonumber(string.sub(line, -2, -1))
   debugMsg("parseLevelResponse level: " .. tostring(level) .. " " .. type(level))
   Controls.fdrLevel.Value = level
-  interlockPreset(levelToButton[level])
+  interlockPresets(levelToButton[level])
 end
 
 function drainSocketLines()
