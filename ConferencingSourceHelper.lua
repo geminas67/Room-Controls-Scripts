@@ -9,8 +9,8 @@
 
 -------------------[ Configuration ]-------------------
 local sourceMap = {
-    { btn = "btnNav07", hid = "usbBridgeCTL01", pgm = 1, acpr = "01", cam = "select.1", makeVis = true},
-    { btn = "btnNav08", hid = "usbBridgeIOB01", pgm = 2, acpr = "02", cam = "select.2", makeVis = false},
+    { btn = "btnNav07", hid = "usbBridgeCTL01", pgm = 1, acpr = "01", cam = "select.1", muteVis = true},
+    { btn = "btnNav08", hid = "usbBridgeIOB01", pgm = 2, acpr = "02", cam = "select.2", muteVis = false},
   }
   
   -------------------[ Control References ]-------------------
@@ -28,8 +28,8 @@ local sourceMap = {
         rtrPGM['select.1'].Value = route.pgm
         compACPR["CameraRouterOutput"].String = route.acpr
         compCamPreset["routerOutput"].String = route.cam
-        genericHDMI01["channel.1.output.mute.visible"].Boolean = route.makeVis
-        genericHDMI01["channel.2.output.mute.visible"].Boolean = route.makeVis
+        genericHDMI01["channel.1.output.mute.visible"].Boolean = route.muteVis
+        genericHDMI01["channel.2.output.mute.visible"].Boolean = route.muteVis
         return
       end
     end
