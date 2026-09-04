@@ -21,7 +21,7 @@ local componentTypes = {
 
 compCallSync = nil
 compRoomControls = nil
-compMicATND = {}
+compATND = {}
 compInvalid = {}
 
 -------------------[ Constants ]-------------------
@@ -35,6 +35,7 @@ ledRed = "Red"
 ledGreen = "Green"
 ledToggleInterval = 1.5
 hookMuteSyncDelay = 0.3
+disablePulseDuration = 0.3
 
 fireAlarm = false
 audioPrivacy = false
@@ -140,7 +141,7 @@ end
 -------------------[ LEDs ]-------------------
 
 function setAllATNDLEDsColor(color)
-  for _, device in pairs(compMicATND) do
+  for _, device in pairs(compATND) do
     if device and device["LEDColorUnmuted"] then
       device["LEDColorUnmuted"].String = color
     end
@@ -254,15 +255,43 @@ function setcompRoomControls()
   end
 end
 
+function pulseATNDDisable(device)
+  if not device or not device["Disable"] then return end
+  device["Disable"].Boolean = true
+  Timer.CallAfter(function()
+    if device["Disable"] then
+      device["Disable"].Boolean = false
+    end
+  end, disablePulseDuration)
+end
+
+function bindATNDInitialized(device, idx)
+  if not device or not device["Initiliazed"] then return end
+
+  device["Initiliazed"].EventHandler = function(ctl)
+    if not ctl.Boolean then
+      debugMsg("ATND [" .. idx .. "] uninitialized — pulsing Disable")
+      pulseATNDDisable(device)
+    end
+  end
+
+  if not device["Initiliazed"].Boolean then
+    pulseATNDDisable(device)
+  end
+end
+
 function setcompATND(idx)
   local devs = getATNDControls()
   if not devs[idx] then return end
 
-  compMicATND[idx] = setComp(devs[idx], "ATND [" .. idx .. "]")
+  compATND[idx] = setComp(devs[idx], "ATND [" .. idx .. "]")
+  if compATND[idx] then
+    bindATNDInitialized(compATND[idx], idx)
+  end
 end
 
 function setcompAllATND()
-  for idx in pairs(compMicATND) do compMicATND[idx] = nil end
+  for idx in pairs(compATND) do compATND[idx] = nil end
   for i in ipairs(getATNDControls()) do
     setcompATND(i)
   end
