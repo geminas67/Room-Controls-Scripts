@@ -11,6 +11,7 @@
 local sineGen = Component.New('sineGenerator')
 
 local valuesSines = {
+  
   '400',
   '800',
   '1000',
