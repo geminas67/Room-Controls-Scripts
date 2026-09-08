@@ -1,7 +1,7 @@
 --[[
   UCI Controller (Lean) - Q-SYS Control Script
   Author: Nikolas Smith, Q-SYS
-  Version: 5.1 | Date: 2026-09-02
+  Version: 5.1 | Date: 2026-09-06
   Firmware Req: pre-10.4 compatible (no GetUciPages / GetUciPageLayers / GetLayerVisibility)
 
   Flat single-room UCI: configSource, declarative visibility (buildDesired/applyDesired),
@@ -18,11 +18,9 @@ local layersToHide = {
     "A01-Alarm","B01-IncomingCall","C05-Start","D01-ShutdownConfirm",
     "E05-PowerProgress",
     "H01-PasscodeEntry","H10-RoomControls",
-    "I01-CallActive","I02-HelpLaptop","I03-HelpPC","I04-HelpWireless","I05-HelpRouting","I07-HelpStreamMusic",
+    "I01-CallActive","I02-HelpLaptop","I03-HelpPC",
     "J01-ConnectUSBLaptop","J02-ConnectUSBPC","J03-ACPRActive","J04-CamPresetSaved","J09-ConferenceLaptop","J10-ConferencePC",
-    "L01-HDMIDisc","L05-Laptop","P01-HDMIDisc","P05-PC","W01-HDMIDisc","W05-Wireless",
-    "R01-Routing01","R02-Routing02","R03-Routing03","R04-Routing04","R05-Routing05","R10-Routing",
-    "S05-StreamMusic","V05-Dialer"
+    "L01-HDMIDisc","L05-Laptop","P01-HDMIDisc","P05-PC",
 }
 local usbConnectLayers = {"J01-ConnectUSBLaptop","J02-ConnectUSBPC"}
 local confLayers = {"J09-ConferenceLaptop","J10-ConferencePC"}
