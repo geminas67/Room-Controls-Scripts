@@ -65,7 +65,7 @@ local SwitcherTypes = {
         componentType   = "streamer_hdmi_switcher",
         switcherNames   = {"devNV32","compNV32"},
         routingMethod   = "hdmi.out.1.select.index",
-        defaultMapping  = {[kLayer.PC]= 7,[kLayer.Laptop] = 8}
+        defaultMapping  = {[kLayer.PC]= 4,[kLayer.Laptop] = 4}
     },
     ExtronDXP = {
         componentType   = "%PLUGIN%_qsysc.extron.matrix.0.0.0.0-master_%FP%_bf09cd55c73845eb6fc31e4b896516ff",
