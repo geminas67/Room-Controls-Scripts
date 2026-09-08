@@ -17,7 +17,9 @@ local hzProfiles = {
 }
 local activeRange = 1
 
--- limit the sweep knobs to the active Hz profile range
+local rmsLevel = -20 -- dBFS
+
+-- limit the knobs to the active Hz profile range
 local function clamp(v, lo, hi)
   return math.max(lo, math.min(hi, v))
 end
@@ -32,6 +34,16 @@ local function clampHzKnobs()
   Controls.knbHzEnd.Value = clamp(Controls.knbHzEnd.Value, profile.min, profile.max)
 end
 
+local function clampSineFreq()
+  local profile = hzProfiles[activeRange]
+  local hz = sineGen['frequency'].Value
+  local clamped = clamp(hz, profile.min, profile.max)
+  if clamped ~= hz then
+    sineGen['frequency'].RampTime = 0
+    sineGen['frequency'].Value = clamped
+  end
+end
+
 local function updatePresetButtons()
   local profile = hzProfiles[activeRange]
   for i, btn in ipairs(Controls.btnPreset) do
@@ -44,7 +56,7 @@ end
 
 local function setSine(i)
   if Controls.btnPreset[i].IsDisabled then return end
-  sineGen.frequency.Value = tonumber(valuesSines[i])
+  sineGen['frequency'].Value = tonumber(valuesSines[i])
   interlock(Controls.btnPreset, i)
 end
 
@@ -53,11 +65,29 @@ for i = 1, #valuesSines do
   Controls.btnPreset[i].EventHandler = function() setSine(i) end
 end
 
+local function limitRMSLevel()
+  local level = sineGen['level'].Value
+  if level > rmsLevel then
+    sineGen['level'].RampTime = 0
+    sineGen['level'].Value = rmsLevel
+  end
+end
+
+sineGen['level'].EventHandler = limitRMSLevel
+
 -------------------[ Sweep Frequency ]-------------------
 local sweepTimer = Timer.New()
+local sweepCompleteTimer = nil
 local hzStart, hzEnd, freqRatio, sweepDuration = 0, 0, 1, 0
 local sweepStartTime, elapsedPrePause = 0, 0
 local isSweeping, isPaused = false, false
+
+local function cancelSweepComplete()
+  if sweepCompleteTimer then
+    sweepCompleteTimer:Cancel()
+    sweepCompleteTimer = nil
+  end
+end
 
 local function setHzRange(i)
   local profile = hzProfiles[i]
@@ -66,13 +96,16 @@ local function setHzRange(i)
   activeRange = i
   updatePresetButtons()
   Controls.knbHzStart.Value, Controls.knbHzEnd.Value = profile.min, profile.max
+  clampSineFreq()
   sweepTimer:Stop()
+  cancelSweepComplete()
   isSweeping, isPaused, elapsedPrePause = false, false, 0
+  limitRMSLevel()
 end
 
 local function setFreq(Hz)
-  sineGen.frequency.RampTime = 0
-  sineGen.frequency.Value = Hz
+  sineGen['frequency'].RampTime = 0
+  sineGen['frequency'].Value = Hz
 end
 
 local function logSweepStart()
@@ -83,10 +116,11 @@ local function logSweepStart()
 
   freqRatio = hzEnd / hzStart
   sweepTimer:Stop()
+  cancelSweepComplete()
   elapsedPrePause = 0
   sweepStartTime = Timer.Now()
   setFreq(hzStart)
-  sineGen.mute.Boolean = false
+  sineGen['mute'].Boolean = false
   isSweeping, isPaused = true, false
   sweepTimer:Start(0.05)
 end
@@ -95,15 +129,15 @@ local function logSweepPause()
   if not isSweeping then return end
   elapsedPrePause = elapsedPrePause + (Timer.Now() - sweepStartTime)
   sweepTimer:Stop()
-  setFreq(sineGen.frequency.Value)
-  sineGen.mute.Boolean = true
+  setFreq(sineGen['frequency'].Value)
+  sineGen['mute'].Boolean = true
   isSweeping, isPaused = false, true
 end
 
 local function logSweepResume()
   if not isPaused or hzStart <= 0 or hzEnd <= hzStart or sweepDuration <= 0 then return end
   sweepStartTime = Timer.Now()
-  sineGen.mute.Boolean = false
+  sineGen['mute'].Boolean = false
   isSweeping, isPaused = true, false
   sweepTimer:Start(0.05)
 end
@@ -113,8 +147,13 @@ sweepTimer.EventHandler = function()
   setFreq(hzStart * (freqRatio ^ progress))
   if progress >= 1 then
     sweepTimer:Stop()
-    setFreq(hzEnd)
     isSweeping, isPaused, elapsedPrePause = false, false, 0
+    cancelSweepComplete()
+    sweepCompleteTimer = Timer.CallAfter(function()
+      setFreq(hzStart)
+      sineGen['mute'].Boolean = true
+      sweepCompleteTimer = nil
+    end, 2)
   end
 end
 
@@ -131,4 +170,6 @@ end
 
 Controls.knbHzStart.EventHandler = clampHzKnobs
 Controls.knbHzEnd.EventHandler = clampHzKnobs
-setHzRange(1)
+sineGen['frequency'].EventHandler = clampSineFreq
+
+setHzRange(1) -- default to HF profile on init
