@@ -9,8 +9,8 @@
 
 -------------------[ Configuration ]-------------------
 local sourceMap = {
-    { btn = "btnNav07", hid = "usbBridgeCTL01", pgm = 1, acpr = "01", cam = "select.1", muteVis = true},
-    { btn = "btnNav08", hid = "usbBridgeIOB01", pgm = 2, acpr = "02", cam = "select.2", muteVis = false},
+    { btn = "btnNav07", hid = "usbBridgeCTL01", pgm = 1, acpr = "01", cam = "select.1", muteVis = false},
+    { btn = "btnNav08", hid = "usbBridgeIOB01", pgm = 2, acpr = "02", cam = "select.2", muteVis = true},
   }
   
   -------------------[ Control References ]-------------------

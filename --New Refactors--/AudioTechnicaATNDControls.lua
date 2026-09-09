@@ -35,7 +35,6 @@ ledRed = "Red"
 ledGreen = "Green"
 ledToggleInterval = 1.5
 hookMuteSyncDelay = 0.3
-disablePulseDuration = 0.3
 
 fireAlarm = false
 audioPrivacy = false
@@ -262,7 +261,7 @@ function pulseATNDDisable(device)
     if device["Disable"] then
       device["Disable"].Boolean = false
     end
-  end, disablePulseDuration)
+  end, 0.3)
 end
 
 function bindATNDInitialized(device, idx)
