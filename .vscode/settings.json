@@ -1,5 +1,24 @@
 {
+    "Lua.runtime.version": "Lua 5.3",
     "Lua.diagnostics.globals": [
-        "Controls"
-    ]
+        "Component",
+        "Controls",
+        "Notifications",
+        "TcpSocket",
+        "Timer",
+        "Uci",
+        "UdpSocket",
+        "SerialPort",
+        "Ssh",
+        "HttpClient",
+        "NamedControl",
+        "UsbMonitor",
+        "MidiMonitor"
+    ],
+    "Lua.diagnostics.disable": [
+        "duplicate-set-field"
+    ],
+    "files.associations": {
+        "*.qplug": "lua"
+    }
 }
