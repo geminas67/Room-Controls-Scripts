@@ -5,7 +5,7 @@
   Firmware Req: pre-10.4 compatible (no GetUciPages / GetUciPageLayers / GetLayerVisibility)
 
   Flat single-room UCI: configSource, declarative visibility (buildDesired/applyDesired),
-  event-driven power sync, switcher auto-detect. Three engines — visibility, room sync, switcher.
+  event-driven power sync. Two engines — visibility, room sync.
 ]]--
 
 -------------------[ Configuration ]-------------------
@@ -75,27 +75,6 @@ local configSource = {
         conf    = nil,
         help    = "I04-HelpWireless"
     },
-}
-
-local SwitcherTypes = {
-    NV32 = {
-        componentType   = "streamer_hdmi_switcher",
-        switcherNames   = {"devNV32","compNV32"},
-        routingMethod   = "hdmi.out.1.select.index",
-        defaultMapping  = {[kLayer.PC]= 7,[kLayer.Laptop] = 8,[kLayer.Wireless] = 9}
-    },
-    ExtronDXP = {
-        componentType   = "%PLUGIN%_qsysc.extron.matrix.0.0.0.0-master_%FP%_bf09cd55c73845eb6fc31e4b896516ff",
-        switcherNames   = {"devExtronDXP","compExtronDXP"},
-        routingMethod   = "output.1",
-        defaultMapping  = {[kLayer.PC] = 2,[kLayer.Laptop] = 4,[kLayer.Wireless] = 1}
-    },
-    AVProEdge = {
-        componentType   = "%PLUGIN%_0a62fae1-c3d6-308a-8b7f-3586d7abdf9d_%FP%_1d35ac9dec572bc00d3405021155333f",
-        switcherNames   = {"devAVProEdge","compAVProEdge"},
-        routingMethod   = "trigger",
-        defaultMapping  = {[kLayer.PC] = "Input 3",[kLayer.Laptop] = "Input 4",[kLayer.Wireless] = "Input 1",[kLayer.Routing] = "Input 2"}
-    }
 }
 
 local layerToSourceKey = { [kLayer.PC] ="PC", [kLayer.Laptop]="Laptop", [kLayer.Wireless]="Wireless" }
@@ -434,56 +413,6 @@ function interlockRouting()
     end
 end
 
--------------------[ Switcher ]-------------------
-
-function initVideoSwitcher()
-    for swType, cfg in pairs(SwitcherTypes) do
-        for _, name in ipairs(cfg.switcherNames) do
-            local ctrl = Controls[name]
-            if ctrl and ctrl.String and ctrl.String ~= "" then
-                local ok, comp = pcall(function() return Component.New(ctrl.String) end)
-                if ok and comp then
-                    components.videoSwitcher = comp
-                    components.switcherType = swType
-                    components.uciToInputMapping = cfg.defaultMapping
-                    debugPrint("Video switcher: "..swType)
-                    return true
-                end
-            end
-        end
-    end
-    for _, comp in pairs(Component.GetComponents()) do
-        for swType, cfg in pairs(SwitcherTypes) do
-            if comp.Type == cfg.componentType then
-                local ok, c = pcall(function() return Component.New(comp.Name) end)
-                if ok and c then
-                    components.videoSwitcher = c
-                    components.switcherType = swType
-                    components.uciToInputMapping = cfg.defaultMapping
-                    debugPrint("Video switcher: "..swType.." (auto-detect)")
-                    return true
-                end
-            end
-        end
-    end
-    return false
-end
-
-function switchToInput(inputNumber)
-    if not components.videoSwitcher or not components.switcherType then return false end
-    local cfg = SwitcherTypes[components.switcherType]
-    if not cfg then return false end
-    local ok, err = pcall(function()
-        if components.switcherType == "NV32" then
-            setProp(components.videoSwitcher[cfg.routingMethod], "Value", inputNumber)
-        else
-            setProp(components.videoSwitcher[cfg.routingMethod], "String", tostring(inputNumber))
-        end
-    end)
-    if ok then debugPrint("Video → input "..inputNumber) else debugPrint("Video switch error: "..tostring(err)) end
-    return ok
-end
-
 -------------------[ Navigation ]-------------------
 
 function goToLayer(layerIndex, source)
@@ -492,9 +421,6 @@ function goToLayer(layerIndex, source)
     state.activeLayer = layerIndex
     state.shutdownConfirm = false
     if layerIndex == kLayer.Passcode then resetTouchInactivityTimer() end
-    if components.videoSwitcher and components.uciToInputMapping[layerIndex] then
-        switchToInput(components.uciToInputMapping[layerIndex])
-    end
     refreshLayers()
     interlockNav()
     debugPrint("Layer "..prev.." → "..layerIndex.." (Source: "..source..")")
@@ -844,7 +770,6 @@ function funcInit()
     if not initRoomControls() then
         print("ERROR: Room controls unavailable — power actions disabled")
     end
-    initVideoSwitcher()
     initPasscode()
     initSyncFromSystemController()
 

@@ -17,10 +17,10 @@ roomState                  = false -- true = combined, false = separated
 
 stateDebug      = true
 strClear        = "[Clear]"
-roomName        = "MX44 Router"
+compName        = "MX44 Router"
 numInputs       = 4   -- btnOutput01[1-4] and btnOutput02[1-4]
 numMX44Outputs  = 4   -- MX44 plugin output columns (handler cleanup)
-typeMX44   = "%PLUGIN%_0a62fae1-c3d6-308a-8b7f-3586d7abdf9d_%FP%_1d35ac9dec572bc00d3405021155333f"
+typeMX44        = "%PLUGIN%_0a62fae1-c3d6-308a-8b7f-3586d7abdf9d_%FP%_1d35ac9dec572bc00d3405021155333f"
 
 --------** Functions **--------
 
@@ -28,7 +28,7 @@ typeMX44   = "%PLUGIN%_0a62fae1-c3d6-308a-8b7f-3586d7abdf9d_%FP%_1d35ac9dec572bc
 
 function debugMsg(str)
     if stateDebug then
-        print("[" .. roomName .. "] " .. str)
+        print("[" .. compName .. "] " .. str)
     end
 end
 

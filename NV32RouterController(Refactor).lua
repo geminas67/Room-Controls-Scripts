@@ -31,7 +31,7 @@ local inputs = {
 local outputs = { Output01 = 1, Output02 = 2 }
 
 -- Button row order matches uciInputs indices (output preset buttons)
-local uciInputs = { inputs.HDMI1, inputs.HDMI1, inputs.AV3, inputs.Graphic1, inputs.Graphic2 }
+local uciInputs = { inputs.AV1, inputs.AV2, inputs.AV3, inputs.Graphic1, inputs.Graphic2 }
 
 -- UCI nav layer index → uciInputs slot (btnNav07 / btnNav08 / btnNav09)
 local uciLayerToInput = {

@@ -5,7 +5,7 @@
   Firmware Req: 10.4
 
   Layer visibility: buildFullDesired + reconcileLayers via GetLayerVisibility.
-  GetUciPages / GetUciPageLayers for init. Event-driven power sync, video switcher auto-detect.
+  GetUciPages / GetUciPageLayers for init. Event-driven power sync.
 ]]
 
 -------------------[ Configuration ]-------------------
@@ -26,27 +26,6 @@ local layersToHide = {
 local routingLayers = {"R01-Routing01","R02-Routing02","R03-Routing03","R04-Routing04","R05-Routing05"}
 local usbConnectLayers = {"J01-ConnectUSBLaptop","J02-ConnectUSBPC"}
 local confLayers = {"J09-ConferenceLaptop","J10-ConferencePC"}
-
-local SwitcherTypes = {
-    NV32 = {
-        componentType   = "streamer_hdmi_switcher",
-        switcherNames   = {"devNV32","compNV32"},
-        routingMethod   = "hdmi.out.1.select.index",
-        defaultMapping  = {[7] = 7,[8] = 8,[9] = 9}
-    },
-    ExtronDXP = {
-        componentType   = "%PLUGIN%_qsysc.extron.matrix.0.0.0.0-master_%FP%_bf09cd55c73845eb6fc31e4b896516ff",
-        switcherNames   = {"devExtronDXP","compExtronDXP"},
-        routingMethod   = "output.1",
-        defaultMapping  = {[7] = 2,[8] = 4,[9] = 1}
-    },
-    AVProEdge = {
-        componentType   = "%PLUGIN%_0a62fae1-c3d6-308a-8b7f-3586d7abdf9d_%FP%_1d35ac9dec572bc00d3405021155333f",
-        switcherNames   = {"devAVProEdge","compAVProEdge"},
-        routingMethod   = "trigger",
-        defaultMapping  = {[7] = "Input 3",[8] = "Input 4",[9] = "Input 1",[10] = "Input 2"}
-    }
-}
 
 local kLayer = {
     Alarm           = 1,
@@ -546,54 +525,6 @@ local function initPasscode()
     return true
 end
 
-local function initVideoSwitcher()
-    for swType, cfg in pairs(SwitcherTypes) do
-        for _, name in ipairs(cfg.switcherNames) do
-            local ctrl = Controls[name]
-            if ctrl and ctrl.String and ctrl.String ~= "" then
-                local ok, comp = pcall(function() return Component.New(ctrl.String) end)
-                if ok and comp then
-                    components.videoSwitcher = comp
-                    components.switcherType = swType
-                    components.uciToInputMapping = cfg.defaultMapping
-                    debugPrint("Video switcher: "..swType)
-                    return true
-                end
-            end
-        end
-    end
-    for _, comp in pairs(Component.GetComponents()) do
-        for swType, cfg in pairs(SwitcherTypes) do
-            if comp.Type == cfg.componentType then
-                local ok, c = pcall(function() return Component.New(comp.Name) end)
-                if ok and c then
-                    components.videoSwitcher = c
-                    components.switcherType = swType
-                    components.uciToInputMapping = cfg.defaultMapping
-                    debugPrint("Video switcher: "..swType.." (auto-detect)")
-                    return true
-                end
-            end
-        end
-    end
-    return false
-end
-
-local function switchToInput(inputNumber, _uciButton)
-    if not components.videoSwitcher or not components.switcherType then return false end
-    local cfg = SwitcherTypes[components.switcherType]
-    if not cfg then return false end
-    local ok, err = pcall(function()
-        if components.switcherType == "NV32" then
-            setProp(components.videoSwitcher[cfg.routingMethod], "Value", inputNumber)
-        else
-            setProp(components.videoSwitcher[cfg.routingMethod], "String", tostring(inputNumber))
-        end
-    end)
-    if ok then debugPrint("Video → input "..inputNumber) else debugPrint("Video switch error: "..tostring(err)) end
-    return ok
-end
-
 local function initRoomControls()
     local compName = Uci.Variables.compRoomControls and Uci.Variables.compRoomControls.String
     if not compName then
@@ -741,9 +672,6 @@ btnNavEventHandler = function(layerIndex, source)
     local prev = state.activeLayer
     state.activeLayer = layerIndex
     if layerIndex == kLayer.Passcode then resetTouchInactivityTimer() end
-    if components.videoSwitcher and components.uciToInputMapping[layerIndex] then
-        switchToInput(components.uciToInputMapping[layerIndex], layerIndex)
-    end
     refreshLayers()
     interlock()
     debugPrint("Layer "..prev.." → "..layerIndex.." (Source: "..source..")")
@@ -864,7 +792,6 @@ local function init()
     normalizeControlArrays()
     initLegendArrays()
     initRoomControls()
-    initVideoSwitcher()
     initPasscode()
     registerEvents()
     initSyncFromSystemController()
@@ -904,7 +831,6 @@ myUCI = {
         end
         debugPrint("Cleanup complete")
     end,
-    switchToInput = switchToInput,
     powerOn = powerOn,
     powerOff = powerOff,
     startLoadingBar = startLoadingBar,
