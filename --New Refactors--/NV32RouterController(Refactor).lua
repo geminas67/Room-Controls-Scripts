@@ -21,7 +21,7 @@ local compName = {
     uciController = "^uciController",
 }
 
-enableOutput2 = false
+enableOutput2 = true
 
 input = {
     Graphic1 = 1, Graphic2 = 2, Graphic3 = 3,
@@ -31,7 +31,7 @@ input = {
 
 output = { Out01 = 1, Out02 = 2 }
 
-uciInputs = { input.HDMI1, input.HDMI2, input.HDMI3, input.Graphic1, input.Graphic2 }
+uciInputs = { input.HDMI1, input.HDMI2, input.HDMI3, input.Mediacast1, input.Graphic1 }
 
 outputConfigs = {
     { output = output.Out01, controlName = "hdmi.out.1.select.index", buttons = Controls.btnOut01, label = "Output 1", enabled = true },
@@ -41,14 +41,14 @@ outputConfigs = {
 uciNavRoute = {
     btnNav07 = {
         { input = uciInputs[1], output = output.Out01 },
-        { input = uciInputs[1], output = output.Out02 },
+        { input = uciInputs[2], output = output.Out02 },
     },
     btnNav08 = {
-        { input = uciInputs[1], output = output.Out01 },
-        { input = uciInputs[1], output = output.Out02 },
+        { input = uciInputs[3], output = output.Out01 },
+        { input = uciInputs[3], output = output.Out02 },
     },
     btnNav09 = {
-        { input = uciInputs[3], output = output.Out01 },
+        { input = uciInputs[4], output = output.Out01 },
     },
 }
 

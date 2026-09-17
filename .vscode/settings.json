@@ -1,5 +1,8 @@
 {
     "Lua.runtime.version": "Lua 5.3",
+    "Lua.workspace.library": [
+        "${workspaceFolder}/.vscode"
+    ],
     "Lua.diagnostics.globals": [
         "Component",
         "Controls",
@@ -16,7 +19,9 @@
         "MidiMonitor"
     ],
     "Lua.diagnostics.disable": [
-        "duplicate-set-field"
+        "duplicate-set-field",
+        "lowercase-global",
+        "undefined-global"
     ],
     "files.associations": {
         "*.qplug": "lua"
