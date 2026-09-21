@@ -1,85 +1,56 @@
 --[[
   Auto Source Switching Helper - Q-SYS Control Script
   Author: Nikolas Smith, Q-SYS
-  Version: 1.0 | Date: 2026-02-25
+  Version: 1.1 | Date: 2026-02-25
   Firmware Req: 10.1.1
 
-  Priority-based auto source: reads priority pins from UCI component, 
-  triggers RoomControls btnSystemOn and sets AV switcher. 
+  Priority-based auto source: reads priority pins from UCI component,
+  triggers RoomControls btnSystemOn and btnNav on UCI component (NV32 uciNavRoute keys).
   Call Sync used for call-active gating.
   Configure component names in Config section to match design.
 ]]
-
--------------------[ Configuration ]-------------------
-local SwitcherTypes = {
-    NV32 = {
-        componentType   = "streamer_hdmi_switcher",
-        switcherNames   = { "devNV32", "compNV32" },
-        routingMethod   = "hdmi.out.1.select.index",
-        defaultMapping  = { [7] = 7, [8] = 8, [9] = 9 },
-    },
-    ExtronDXP = {
-        componentType   = "%PLUGIN%_qsysc.extron.matrix.0.0.0.0-master_%FP%_bf09cd55c73845eb6fc31e4b896516ff",
-        switcherNames   = { "devExtronDXP", "compExtronDXP" },
-        routingMethod   = "output.1",
-        defaultMapping  = { [7] = 2, [8] = 4, [9] = 1 },
-    },
-    AVProEdge = {
-        componentType   = "%PLUGIN%_0a62fae1-c3d6-308a-8b7f-3586d7abdf9d_%FP%_1d35ac9dec572bc00d3405021155333f",
-        switcherNames   = { "devAVProEdge", "compAVProEdge" },
-        routingMethod   = "trigger",
-        defaultMapping  = { [7] = "Input 3", [8] = "Input 4", [9] = "Input 1", [10] = "Input 2" },
-    },
-}
 
 -------------------[ Config ]-------------------
 local config = {
     debug = true,
     compRoomControls = nil,  -- e.g. "compRoomControls" or set via Uci.Variables
     compCallSync     = nil,  -- e.g. "compCallSync" (control: pinCallActive or equivalent)
-    compUCI          = nil,  -- control processor running UCI script (has priority pins)
+    compUCI          = nil,  -- UCI component with priority pins + btnNav07/08/09
 }
 
 -------------------[ State ]-------------------
 local components = {
-    roomControls        = nil,
-    callSync            = nil,
-    uciComp             = nil,
-    videoSwitcher       = nil,
-    switcherType        = nil,
-    uciToInputMapping   = nil,
+    roomControls = nil,
+    callSync     = nil,
+    uciComp      = nil,
 }
 
 -- Priority = array order (first match wins). priority >= 100 bypasses call-active block.
+-- btnNav keys match NV32RouterController uciNavRoute.
 local sourcePriority = {
-    { name = "OffHook Laptop", layer = 8, priority = 200, checkFunc = function()
+    { name = "OffHook Laptop", btnNav = "btnNav08", priority = 200, checkFunc = function()
         local pin = components.uciComp and components.uciComp["pinLEDOffHookLaptop"]
         return pin and pin.Boolean
     end },
-    { name = "OffHook PC", layer = 7, priority = 200, checkFunc = function()
+    { name = "OffHook PC", btnNav = "btnNav07", priority = 200, checkFunc = function()
         local pin = components.uciComp and components.uciComp["pinLEDOffHookPC"]
         return pin and pin.Boolean
     end },
-    { name = "HDMI03", layer = 9, priority = 30, checkFunc = function()
+    { name = "HDMI03", btnNav = "btnNav09", priority = 30, checkFunc = function()
         local pin = components.uciComp and components.uciComp["pinLEDHDMI03Active"]
         return pin and pin.Boolean
     end },
-    { name = "HDMI02", layer = 7, priority = 20, checkFunc = function()
+    { name = "HDMI02", btnNav = "btnNav07", priority = 20, checkFunc = function()
         local pin = components.uciComp and components.uciComp["pinLEDHDMI02Active"]
         return pin and pin.Boolean
     end },
-    { name = "HDMI01", layer = 8, priority = 10, checkFunc = function()
+    { name = "HDMI01", btnNav = "btnNav08", priority = 10, checkFunc = function()
         local pin = components.uciComp and components.uciComp["pinLEDHDMI01Active"]
         return pin and pin.Boolean
     end },
 }
 
 -------------------[ Utilities ]-------------------
-local function setProp(ctrl, prop, val)
-    if not ctrl or ctrl[prop] == val then return end
-    ctrl[prop] = val
-end
-
 local function bind(ctrl, handler)
     if not ctrl or not handler then return false end
     return pcall(function() ctrl.EventHandler = handler end)
@@ -111,20 +82,12 @@ local function isRoomOn()
     return components.roomControls["ledSystemPower"].Boolean
 end
 
-local function switchToInput(layer)
-    if not components.videoSwitcher or not components.switcherType then return false end
-    local inputVal = components.uciToInputMapping[layer]
-    if inputVal == nil then return false end
-    local cfg = SwitcherTypes[components.switcherType]
-    if not cfg then return false end
-    local ok, err = pcall(function()
-        if components.switcherType == "NV32" then
-            setProp(components.videoSwitcher[cfg.routingMethod], "Value", inputVal)
-        else
-            setProp(components.videoSwitcher[cfg.routingMethod], "String", tostring(inputVal))
-        end
-    end)
-    if ok then debugPrint("Video → input " .. tostring(inputVal)) else debugPrint("Video switch error: " .. tostring(err)) end
+local function triggerNav(btnName)
+    if not components.uciComp then return false end
+    local btn = components.uciComp[btnName]
+    if not btn then debugPrint(btnName .. " not found"); return false end
+    local ok, err = pcall(function() btn:Trigger() end)
+    if ok then debugPrint("Triggered " .. btnName) else debugPrint("Nav error: " .. tostring(err)) end
     return ok
 end
 
@@ -142,7 +105,7 @@ local function handlePriorityChange()
                 debugPrint("RoomControls or btnSystemOn not available")
             end
         end
-        switchToInput(active.layer)
+        triggerNav(active.btnNav)
     else
         debugPrint("Source switch BLOCKED: call in progress (priority " .. active.priority .. ")")
     end
@@ -194,40 +157,6 @@ local function initUciComp()
     return true
 end
 
-local function initVideoSwitcher()
-    for swType, cfg in pairs(SwitcherTypes) do
-        for _, name in ipairs(cfg.switcherNames) do
-            local ctrl = Controls[name]
-            if ctrl and ctrl.String and ctrl.String ~= "" then
-                local ok, comp = pcall(function() return Component.New(ctrl.String) end)
-                if ok and comp then
-                    components.videoSwitcher = comp
-                    components.switcherType = swType
-                    components.uciToInputMapping = cfg.defaultMapping
-                    debugPrint("Video switcher: " .. swType)
-                    return true
-                end
-            end
-        end
-    end
-    for _, comp in pairs(Component.GetComponents()) do
-        for swType, cfg in pairs(SwitcherTypes) do
-            if comp.Type == cfg.componentType then
-                local ok, compNew = pcall(function() return Component.New(comp.Name) end)
-                if ok and compNew then
-                    components.videoSwitcher = compNew
-                    components.switcherType = swType
-                    components.uciToInputMapping = cfg.defaultMapping
-                    debugPrint("Video switcher: " .. swType .. " (auto-detect)")
-                    return true
-                end
-            end
-        end
-    end
-    debugPrint("No video switcher found")
-    return false
-end
-
 local function registerEvents()
     if not components.uciComp then return end
     local priorityPins = {
@@ -245,14 +174,9 @@ end
 -------------------[ Init ]-------------------
 local function init()
     debugPrint("=== AutoSourceSwitching init ===")
-    config.compRoomControls = config.compRoomControls or nil
-    config.compCallSync     = config.compCallSync or nil
-    config.compUCI          = config.compUCI or nil
-
     initRoomControls()
     initCallSync()
     initUciComp()
-    initVideoSwitcher()
     registerEvents()
     debugPrint("=== AutoSourceSwitching ready ===")
 end
