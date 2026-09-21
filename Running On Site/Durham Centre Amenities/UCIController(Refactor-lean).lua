@@ -102,7 +102,7 @@ local labelConfig = {
     {suffix = "GainPGM"},
     {suffix = "Gain",    count = 10},
     {suffix = "Display", count = 4},
-    {single = {"NavShutdown","RoomNameNav","RoomNameStart"}},
+    {single = {"NavShutdown","RoomNameNav","RoomNameStart", "NavTeams"}},
 }
 
 btnNav = {
@@ -599,7 +599,7 @@ function initLabelArrays()
     end
     labelCount = idx
     for i = 1, labelCount do
-        local label = arrUCIStringLabels[i]
+        local label = arrUCIStringVariables[i]
         if label then label.EventHandler = function() syncLabels() end end
     end
     debugPrint("String Labels: "..labelCount.." slots configured")
@@ -709,7 +709,7 @@ myUCI = {
             components.passcode["PasscodeCorrect"].EventHandler = nil
         end
         for i = 1, labelCount do
-            local label = arrUCIStringLabels[i]
+            local label = arrUCIStringVariables[i]
             if label then label.EventHandler = nil end
         end
         debugPrint("Cleanup complete")

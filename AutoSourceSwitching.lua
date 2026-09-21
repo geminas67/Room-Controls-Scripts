@@ -90,7 +90,7 @@ local function debugPrint(str)
 end
 
 -------------------[ Functions ]-------------------
-local function findHighestPriorityActiveSource()
+local function checkPrioritySource()
     for _, source in ipairs(sourcePriority) do
         if source.checkFunc() then
             return source
@@ -102,9 +102,6 @@ end
 local function isCallActive()
     if components.callSync and components.callSync["pinCallActive"] then
         return components.callSync["pinCallActive"].Boolean
-    end
-    if components.uciComp and components.uciComp["pinCallActive"] then
-        return components.uciComp["pinCallActive"].Boolean
     end
     return false
 end
@@ -131,8 +128,8 @@ local function switchToInput(layer)
     return ok
 end
 
-local function handlePrioritySourceChange()
-    local active = findHighestPriorityActiveSource()
+local function handlePriorityChange()
+    local active = checkPrioritySource()
     if not active then return end
     debugPrint("Priority: " .. active.name .. " (Source: Pin Event)")
     local callActive = isCallActive()
@@ -240,7 +237,7 @@ local function registerEvents()
     local count = 0
     for _, pinName in ipairs(priorityPins) do
         local pin = components.uciComp[pinName]
-        if pin and bind(pin, function() handlePrioritySourceChange() end) then count = count + 1 end
+        if pin and bind(pin, function() handlePriorityChange() end) then count = count + 1 end
     end
     debugPrint("Registered " .. count .. " priority pin handlers")
 end
