@@ -10,7 +10,7 @@
 
 -------------------[ Configuration ]-------------------
 
-local compType = {
+compType = {
     extronMatrix = "%PLUGIN%_qsysc.extron.matrix.0.0.0.0-master_%FP%_bf09cd55c73845eb6fc31e4b896516ff",
 }
 

@@ -13,12 +13,12 @@
 
 -------------------[ Configuration ]-------------------
 
-local componentTypes = {
+componentTypes = {
   displays     = "%PLUGIN%_bd0a5e74-c1bf-48ee-8574-e42e1e7b2bb9_%FP%_31e2e2d7be2243768d2bd9c853a6295c",
   roomControls = "device_controller_script",
 }
 
-local displayControls = {
+displayControls = {
   powerOn             = "PowerOn",
   powerOff            = "PowerOff",
   powerStatus         = "PowerStatus",
@@ -27,7 +27,7 @@ local displayControls = {
   displayVolume0      = "Volume",
 }
 
-local inputButtonMap = {
+inputButtonMap = {
   HDMI1 = 1, HDMI2 = 2, HDMI3 = 3, HDMI4 = 4,
   DisplayPort1 = 5, DisplayPort2 = 6, DisplayPort3 = 7,
   DTV = 8, S_Video = 9, Component = 10, USB_C = 11,

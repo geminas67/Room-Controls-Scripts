@@ -8,14 +8,14 @@
 ]]
 
 -------------------[ Control References ]-------------------
-local camPresets = Component.New('camPresetsControls')
-local uciRoomA = Component.New('uciControllerRoomA')
-local uciRoomB = Component.New('uciControllerRoomB')
-local divSpace   = Component.New('compDivisibleSpaceControls')
+camPresets = Component.New('camPresetsControls')
+uciRoomA = Component.New('uciControllerRoomA')
+uciRoomB = Component.New('uciControllerRoomB')
+divSpace   = Component.New('compDivisibleSpaceControls')
 
-local numPresets = 6
+numPresets = 6
 
-local function anyLedSaved(comp, namePrefix)
+function anyLedSaved(comp, namePrefix)
   for i = 1, numPresets do
     if comp[namePrefix .. i].Boolean then return true end
   end

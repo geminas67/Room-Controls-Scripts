@@ -10,11 +10,11 @@
 
 -------------------[ Configuration ]-------------------
 
-local conferenceStateConfig = { skip = {} }
-local acprConfig = { disableACPRShow = false }
+conferenceStateConfig = { skip = {} }
+acprConfig = { disableACPRShow = false }
 
-local layersBase = {"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}
-local layersToHide = {
+layersBase = {"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}
+layersToHide = {
     "A01-Alarm","B01-IncomingCall","C05-Start","D01-ShutdownConfirm",
     "E05-PowerProgress",
     "H01-PasscodeEntry","H10-RoomControls",
@@ -22,10 +22,10 @@ local layersToHide = {
     "J01-ConnectUSBLaptop","J02-ConnectUSBPC","J03-ACPRActive","J04-CamPresetSaved","J09-ConferenceLaptop","J10-ConferencePC",
     "L01-HDMIDisc","L05-Laptop","P01-HDMIDisc","P05-PC",
 }
-local usbConnectLayers = {"J01-ConnectUSBLaptop","J02-ConnectUSBPC"}
-local confLayers = {"J09-ConferenceLaptop","J10-ConferencePC"}
+usbConnectLayers = {"J01-ConnectUSBLaptop","J02-ConnectUSBPC"}
+confLayers = {"J09-ConferenceLaptop","J10-ConferencePC"}
 
-local kLayer = {
+kLayer = {
     Alarm           = 1,
     IncomingCall    = 2,
     Start           = 3,
@@ -37,7 +37,7 @@ local kLayer = {
     Passcode        = 9
 }
 
-local configSource = {
+configSource = {
     PC = {
         layer   = kLayer.PC,
         hdmiKey = "ledHDMI01Connect",
@@ -60,18 +60,18 @@ local configSource = {
     },
 }
 
-local layerToSourceKey = { [kLayer.PC] ="PC", [kLayer.Laptop]="Laptop" }
-local configHelpPairKeys = {"Laptop","PC"}
-local layerHelpToKey = {
+layerToSourceKey = { [kLayer.PC] ="PC", [kLayer.Laptop]="Laptop" }
+configHelpPairKeys = {"Laptop","PC"}
+layerHelpToKey = {
     ["I02-HelpLaptop"]="Laptop", ["I03-HelpPC"]="PC",
 }
 
-local helpControls = {
+helpControls = {
     Laptop = { open = Controls.btnOpenHelpLaptop, close = Controls.btnCloseHelpLaptop },
     PC     = { open = Controls.btnOpenHelpPC,     close = Controls.btnCloseHelpPC },
 }
 
-local powerProgressConfig = {
+powerProgressConfig = {
     {
         mode = "warming", key = "ledSystemWarming",
         text = "Starting the AV system, please wait as the system powers on.",
@@ -84,7 +84,7 @@ local powerProgressConfig = {
     },
 }
 
-local layerConfigs = {
+layerConfigs = {
     [kLayer.Alarm]        = { show = {"A01-Alarm"}, hideBase = true },
     [kLayer.IncomingCall] = { show = {"B01-IncomingCall"} },
     [kLayer.Start]        = { show = {"C05-Start"}, hideBase = true },
@@ -96,7 +96,7 @@ local layerConfigs = {
     [kLayer.Passcode]     = { show = {"H01-PasscodeEntry"}, hideBase = true },
 }
 
-local labelConfig = {
+labelConfig = {
     {suffix = "Nav",     count = 9},
     --{suffix = "VidSrc",  count = 12},
     {suffix = "GainPGM"},
@@ -716,8 +716,8 @@ myUCI = {
     end,
 }
 
-local hint = Uci.Variables.txtUCIPageName and Uci.Variables.txtUCIPageName.String or ""
-local ok, err
+hint = Uci.Variables.txtUCIPageName and Uci.Variables.txtUCIPageName.String or ""
+ok, err = nil, nil
 for _, pageName in ipairs(buildPageNameCandidates(hint)) do
     pageUCI = pageName
     ok, err = pcall(function()

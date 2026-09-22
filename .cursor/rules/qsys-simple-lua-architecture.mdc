@@ -60,7 +60,7 @@ Put everything a technician might edit when deploying to a new room **immediatel
 ```lua
 -------------------[ Configuration ]-------------------
 
-local componentTypes = {
+componentTypes = {
   callSync     = "call_sync",
   micBoxes     = "%PLUGIN%_91b57fdec7bd41fb9b9741210ad2a1f3_%FP%_6bb184f66fd3a12efe1844e433fc11c3",
   micMixer     = "mixer",
@@ -68,7 +68,7 @@ local componentTypes = {
 }
 
 -- optional name filter when type alone is not enough (inline in getComponentNames is also fine)
--- local roomControlsNameMatch = "^compRoomControls"
+-- roomControlsNameMatch = "^compRoomControls"
 
 -- site/hardware maps (button indices, channel maps, timeouts, etc.)
 micButtonConfigs = {
@@ -79,7 +79,7 @@ micButtonConfigs = {
 
 **Belongs in Configuration:**
 
-- `local componentTypes` — Q-SYS `comp.Type` strings and plugin fingerprints; discovery loops reference `componentTypes.*` instead of repeating type strings.
+- `componentTypes` — Q-SYS `comp.Type` strings and plugin fingerprints; discovery loops reference `componentTypes.*` instead of repeating type strings (script-global; sandboxed per script).
 - Per-site tables (button maps, I/O indices, channel routes, combo choice lists such as `MotionChoices`).
 - Optional name-filter patterns when type alone is not enough.
 
@@ -118,7 +118,7 @@ Use a small helper (e.g. `fillChoices`) inside discovery when many combo boxes s
 
 -------------------[ Configuration ]-------------------
 
-local componentTypes = { ... }
+componentTypes = { ... }
 -- site-specific tables here
 
 -------------------[ Constant Tables ]-------------------
@@ -179,6 +179,19 @@ funcInit()
 - **No OOP** — no `setmetatable`, `__index`, `.new()`, or `self` for controllers; one script context, one `Controls` surface.
 - **Flat control flow** — guard clauses and early `return` over deep nesting.
 - **Naming** — descriptive names; Q-SYS prefixes (`btn`, `txt`, `ctl`, `comp`) are normal. Loop iterators `i` / `j` / `v` are acceptable.
+
+## Local vs global scoping (qLua)
+
+Each control script is **sandboxed**: it runs in its own qLua context. Names without `local` are **global only inside that script**—nothing leaks to other Text Controllers or blocks in the design. Prefer globals for script-lifetime data because of qLua rules below, **not** because the schematic shares one Lua state (it does not). Cross-script access is always **explicit** (e.g. `GlobalName = { ... }`), never accidental file-scope visibility.
+
+`local` vs global is not generic Lua “encapsulation”—it affects **garbage collection** and which **Q-SYS extension APIs** are valid:
+
+1. Declaring **`local`** explicitly marks a variable as eligible for **garbage collection** when it goes out of scope.
+2. **Ephemeral** variables (loop indices, short-lived temps inside a function) may be declared **`local`**, if desired.
+3. **Persistent** variables—configuration tables, component refs, state flags, tables populated at init and used from event handlers, functions referenced by `.EventHandler`—should be left **global** (file scope without `local`). Aligns with **Constant tables**, **Constants**, and global `function Name()` in the skeleton above.
+4. The Q-SYS Help documentation **forbids** `local` with many Q-SYS extensions to Lua (e.g. **named timers**, **TcpSockets**, and similar). Create and retain those at **global** scope.
+
+Do **not** declare `Timer.New()`, sockets, or other extension objects as `local`. Use `local function` only for small inner helpers that are not stored on controls or passed as persistent callbacks.
 
 ## Direct assignment over ceremony
 

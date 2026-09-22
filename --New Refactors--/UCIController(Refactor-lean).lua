@@ -10,11 +10,11 @@
 
 -------------------[ Configuration ]-------------------
 
-local conferenceStateConfig = { skip = { [9]=true } }  -- PC/Laptop: conference layers follow nav; J01/J02 overlay when USB disconnected
-local acprConfig = { disableACPRShow = false }
+conferenceStateConfig = { skip = { [9]=true } }  -- PC/Laptop: conference layers follow nav; J01/J02 overlay when USB disconnected
+acprConfig = { disableACPRShow = false }
 
-local layersBase = {"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}
-local layersToHide = {
+layersBase = {"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}
+layersToHide = {
     "A01-Alarm","B01-IncomingCall","C05-Start","D01-ShutdownConfirm",
     "E05-PowerProgress",
     "H01-PasscodeEntry","H10-RoomControls",
@@ -24,11 +24,11 @@ local layersToHide = {
     "R01-Routing01","R02-Routing02","R03-Routing03","R04-Routing04","R05-Routing05","R10-Routing",
     "S05-StreamMusic","V05-Dialer"
 }
-local routingLayers = {"R01-Routing01","R02-Routing02","R03-Routing03","R04-Routing04","R05-Routing05"}
-local usbConnectLayers = {"J01-ConnectUSBLaptop","J02-ConnectUSBPC"}
-local confLayers = {"J09-ConferenceLaptop","J10-ConferencePC"}
+routingLayers = {"R01-Routing01","R02-Routing02","R03-Routing03","R04-Routing04","R05-Routing05"}
+usbConnectLayers = {"J01-ConnectUSBLaptop","J02-ConnectUSBPC"}
+confLayers = {"J09-ConferenceLaptop","J10-ConferencePC"}
 
-local kLayer = {
+kLayer = {
     Alarm           = 1,
     IncomingCall    = 2,
     Start           = 3,
@@ -44,7 +44,7 @@ local kLayer = {
     Passcode        = 13
 }
 
-local configSource = {
+configSource = {
     PC = {
         layer   = kLayer.PC,
         hdmiKey = "ledHDMI01Connect",
@@ -77,14 +77,14 @@ local configSource = {
     },
 }
 
-local layerToSourceKey = { [kLayer.PC] ="PC", [kLayer.Laptop]="Laptop", [kLayer.Wireless]="Wireless" }
-local configHelpPairKeys = {"Laptop","PC","Wireless","Routing","StreamMusic"}
-local layerHelpToKey = {
+layerToSourceKey = { [kLayer.PC] ="PC", [kLayer.Laptop]="Laptop", [kLayer.Wireless]="Wireless" }
+configHelpPairKeys = {"Laptop","PC","Wireless","Routing","StreamMusic"}
+layerHelpToKey = {
     ["I02-HelpLaptop"]="Laptop", ["I03-HelpPC"]="PC", ["I04-HelpWireless"]="Wireless",
     ["I05-HelpRouting"]="Routing", ["I07-HelpStreamMusic"]="StreamMusic",
 }
 
-local helpControls = {
+helpControls = {
     Laptop      = { open = Controls.btnOpenHelpLaptop,      close = Controls.btnCloseHelpLaptop },
     PC          = { open = Controls.btnOpenHelpPC,          close = Controls.btnCloseHelpPC },
     Wireless    = { open = Controls.btnOpenHelpWireless,    close = Controls.btnCloseHelpWireless },
@@ -92,7 +92,7 @@ local helpControls = {
     StreamMusic = { open = Controls.btnOpenHelpStreamMusic, close = Controls.btnCloseHelpStreamMusic },
 }
 
-local powerProgressConfig = {
+powerProgressConfig = {
     {
         mode = "warming", key = "ledSystemWarming",
         text = "Starting the AV system, please wait as the system powers on.",
@@ -105,7 +105,7 @@ local powerProgressConfig = {
     },
 }
 
-local layerConfigs = {
+layerConfigs = {
     [kLayer.Alarm]        = { show = {"A01-Alarm"}, hideBase = true },
     [kLayer.IncomingCall] = { show = {"B01-IncomingCall"} },
     [kLayer.Start]        = { show = {"C05-Start"}, hideBase = true },
@@ -122,12 +122,12 @@ local layerConfigs = {
 }
 
 -- Optional help overlays tied to active base layer + open-button state
-local overlayConfigs = {
+overlayConfigs = {
     [kLayer.Routing]     = { layer = "I05-HelpRouting",     helpKey = "Routing" },
     [kLayer.StreamMusic] = { layer = "I07-HelpStreamMusic", helpKey = "StreamMusic" },
 }
 
-local labelConfig = {
+labelConfig = {
     {suffix = "Nav",     count = 13},
     {suffix = "Routing", count = 5},
     --{suffix = "VidSrc",  count = 12},
@@ -137,7 +137,7 @@ local labelConfig = {
     {single = {"NavShutdown","RoomNameNav","RoomNameStart","RoutingRooms","RoutingSources"}},
 }
 
-local navHidden = {}
+navHidden = {}
 
 btnNav = {
     Controls.btnNav01, Controls.btnNav02, Controls.btnNav03, Controls.btnNav04,
@@ -811,7 +811,7 @@ myUCI = {
     end,
 }
 
-local hint = Uci.Variables.txtUCIPageName and Uci.Variables.txtUCIPageName.String or ""
+hint = Uci.Variables.txtUCIPageName and Uci.Variables.txtUCIPageName.String or ""
 local ok, err
 for _, pageName in ipairs(buildPageNameCandidates(hint)) do
     pageUCI = pageName

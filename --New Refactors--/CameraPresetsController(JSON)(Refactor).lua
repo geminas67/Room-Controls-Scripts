@@ -12,17 +12,17 @@
 
 -------------------[ Configuration ]-------------------
 
-local componentTypes = {
+componentTypes = {
   camera = "onvif_camera_operative",
   camRouter = "video_router"
 }
 
-local presetTolerance = 0.03
-local holdTime = 3.0
-local ledOnTime = 2.5
-local defaultCamera = "devCam01"
-local defaultPreset = 1
-local debounceDelay = 0.1
+presetTolerance = 0.03
+holdTime = 3.0
+ledOnTime = 2.5
+defaultCamera = "devCam01"
+defaultPreset = 1
+debounceDelay = 0.1
 
 -------------------[ Constant Tables ]-------------------
 

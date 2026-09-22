@@ -50,9 +50,22 @@ Same top-level sections as the simple rule (Configuration → Constant Tables �
 
 - **`local controls = {}`** — map large `Controls` surface (nav arrays, paired help buttons, etc.).
 - **Utilities** — `setProp`, `bind`, `bindArray`, and domain helpers (`bindPairedControls`, `collectLayers`, …) grouped once at the top of Functions or in a Utilities sub-banner.
-- **`local state` / `local components`** — acceptable when the script tracks layer animation, routing, or switcher type the schematic does not expose on one control.
+- **Script-global tables** (`state`, `components`, …) — when the script tracks layer animation, routing, or switcher type the schematic does not expose on one control; prefer file scope **without** `local` so handlers retain them (see [Local vs global scoping](#local-vs-global-scoping-qlua)).
 
 Keep **Configuration** as the first editable block (`componentTypes`, layer lists, routing maps, UCI variables).
+
+## Local vs global scoping (qLua)
+
+Each control script is **sandboxed**: it runs in its own qLua context. Names without `local` are **global only inside that script**—nothing leaks to other Text Controllers or blocks in the design. Prefer globals for script-lifetime data because of qLua rules below, **not** to share state across the schematic (use an explicit `GlobalName = { ... }` API when another script must call in).
+
+`local` vs global affects **garbage collection** and which **Q-SYS extension APIs** are valid:
+
+1. Declaring **`local`** explicitly marks a variable as eligible for **garbage collection** when it goes out of scope.
+2. **Ephemeral** variables (loop indices, short-lived temps inside a function) may be declared **`local`**, if desired.
+3. **Persistent** variables—component refs, layer/nav state used across handlers, tables populated at init, functions referenced by `.EventHandler`, public API tables—should be left **global** (file scope without `local`).
+4. The Q-SYS Help documentation **forbids** `local` with many Q-SYS extensions to Lua (e.g. **named timers**, **TcpSockets**, and similar). Create and retain those at **global** scope.
+
+Utility closures (`setProp`, `bind`, …) may be `local function` at file top. Do **not** wrap Q-SYS extension objects in `local`. Timers, sockets, component refs, and anything event handlers need for the life of the script stay **global**; avoid `local state` / `local components` for that lifetime data (see Layout note above).
 
 ## Patterns
 

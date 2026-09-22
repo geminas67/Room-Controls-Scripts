@@ -7,7 +7,7 @@
 ]]
 
 -------------------[ Configuration ]-------------------
-local const = {
+const = {
     componentTypes = {
     callSync = "call_sync",
     videoBridge = "usb_uvc",
@@ -25,7 +25,7 @@ local const = {
     }
 }
 -------------------[ Controls ]-------------------
-local controls = {
+controls = {
     roomName = Controls.roomName,
     txtStatus = Controls.txtStatus,
     compCallSync = Controls.compCallSync,
@@ -65,27 +65,27 @@ local controls = {
 }
 
 -------------------[ Utilities ]-------------------
-local function isArr(t)
+function isArr(t)
     return type(t) == "table" and t[1] ~= nil
 end
 
-local function setProp(ctrl, prop, val)
+function setProp(ctrl, prop, val)
     if not ctrl or ctrl[prop] == val then return end
     ctrl[prop] = val
 end
 
-local function bind(ctrl, handler)
+function bind(ctrl, handler)
     if not ctrl or not handler then return false end
     local ok = pcall(function() ctrl.EventHandler = handler end)
     return ok
 end
 
-local function getControlArray(ctrl)
+function getControlArray(ctrl)
     if isArr(ctrl) then return ctrl end
     return type(ctrl) == "table" and { ctrl } or {}
 end
 
-local function bindArray(ctrls, handler)
+function bindArray(ctrls, handler)
     if not ctrls or not handler then return 0 end
     local array = getControlArray(ctrls)
     local count = 0
@@ -98,28 +98,28 @@ local function bindArray(ctrls, handler)
     return count
 end
 
-local function forEach(ctrls, fn)
+function forEach(ctrls, fn)
     for i, ctrl in ipairs(getControlArray(ctrls)) do fn(i, ctrl) end
 end
 
 -------------------[ Config ]-------------------
-local clearString = "[Clear]"
+clearString = "[Clear]"
 
 -------------------[ State ]-------------------
-local roomName = ""
-local config = {}
-local defaultConfigs = {}
-local state = { isWarming = false, isCooling = false, powerLocked = false, motionTimeoutActive = false, motionGraceActive = false }
-local components = { callSync = nil, videoBridge = {}, displays = {}, gains = {}, systemMute = nil, camACPR = nil, invalid = {} }
-local timers = { motion = Timer.New(), grace = Timer.New(), warmup = Timer.New(), cooldown = Timer.New() }
+roomName = ""
+config = {}
+defaultConfigs = {}
+state = { isWarming = false, isCooling = false, powerLocked = false, motionTimeoutActive = false, motionGraceActive = false }
+components = { callSync = nil, videoBridge = {}, displays = {}, gains = {}, systemMute = nil, camACPR = nil, invalid = {} }
+timers = { motion = Timer.New(), grace = Timer.New(), warmup = Timer.New(), cooldown = Timer.New() }
 
 -------------------[ Debug ]-------------------
-local function debugPrint(str)
+function debugPrint(str)
     if config.debugging ~= false then print("[" .. roomName .. "] " .. str) end
 end
 
 -------------------[ Functions ]-------------------
-local function validateControls()
+function validateControls()
     for _, name in ipairs({"roomName", "txtStatus", "btnSystemOnOff", "ledSystemPower"}) do
         if not controls[name] then
             print("ERROR: Missing required control: " .. name)
@@ -129,14 +129,14 @@ local function validateControls()
     return true
 end
 
-local function normalizeControlArrays()
+function normalizeControlArrays()
     for _, controlName in ipairs({"compVideoBridge", "compGains", "devDisplays", "typeGain", "btnVideoPrivacy", "knbVolumeFader", "btnVolumeMute", "btnVolumeUp", "btnVolumeDn"}) do
         local ctrl = controls[controlName]
         if ctrl and not isArr(ctrl) then controls[controlName] = { ctrl } end
     end
 end
 
-local function safeAccess(component, control, action, value)
+function safeAccess(component, control, action, value)
     if not component or not component[control] then return false end
     local success, result = pcall(function()
         if      action == "set"         then component[control].Boolean = value; return true
@@ -152,19 +152,19 @@ local function safeAccess(component, control, action, value)
     return success and result or false
 end
 
-local function getGainComponent(idx) return components.gains[idx] end
+function getGainComponent(idx) return components.gains[idx] end
 
-local function getGainType(idx)
+function getGainType(idx)
     if controls.typeGain and controls.typeGain[idx] then return controls.typeGain[idx].String end
     return idx == 1 and "Program" or "Mic"
 end
 
-local function getDefaultVolumeForType(gainType)
+function getDefaultVolumeForType(gainType)
     local defaults = { Program = config.defaultProgramVolume, Mic = config.defaultMicVolume, Gain = config.defaultGainVolume }
     return defaults[gainType] or defaults.Mic
 end
 
-local function checkStatus()
+function checkStatus()
     for _, isInvalid in pairs(components.invalid) do
         if isInvalid then
             setProp(controls.txtStatus, "String", "Invalid Components")
@@ -176,7 +176,7 @@ local function checkStatus()
     setProp(controls.txtStatus, "Value", 0)
 end
 
-local function setComponent(ctrl, componentType)
+function setComponent(ctrl, componentType)
     if not ctrl then
         components.invalid[componentType] = true
         checkStatus()
@@ -208,7 +208,7 @@ local function setComponent(ctrl, componentType)
     return comp
 end
 
-local function updateVolumeVisuals(idx)
+function updateVolumeVisuals(idx)
     local fader = controls.knbVolumeFader and controls.knbVolumeFader[idx]
     local mute = controls.btnVolumeMute and controls.btnVolumeMute[idx]
     if not mute or not fader then return end
@@ -218,7 +218,7 @@ local function updateVolumeVisuals(idx)
     setProp(mute, "CssClass", gainType == "Mic" and "icon-mic_off" or "icon-volume_off") --set the css classes for the mute button
 end
 
-local function publishNotification()
+function publishNotification()
     if not controls.txtNotificationID or controls.txtNotificationID.String == "" then return end
     local systemState = {
         RoomName = roomName,
@@ -247,30 +247,30 @@ local function publishNotification()
     Notifications.Publish(controls.txtNotificationID.String, systemState)
 end
 
-local function getGainCount()
+function getGainCount()
     local count = 0
     for _ in pairs(components.gains) do count = count + 1 end
     return count
 end
 
-local function enablePowerControls(enabled)
+function enablePowerControls(enabled)
     for _, btn in ipairs({controls.btnSystemOnOff, controls.btnSystemOn, controls.btnSystemOff}) do
         if btn then setProp(btn, "IsDisabled", not enabled) end
     end
 end
 
-local function setSystemPowerFB(powerState)
+function setSystemPowerFB(powerState)
     setProp(controls.ledSystemPower, "Boolean", powerState)
     setProp(controls.btnSystemOnOff, "Boolean", powerState)
     setProp(controls.btnSystemOn, "Boolean", powerState)
     setProp(controls.btnSystemOff, "Boolean", not powerState)
 end
 
-local function endCalls()
+function endCalls()
     if components.callSync then safeAccess(components.callSync, "call.decline", "trigger") end
 end
 
-local function applyVolumeDefaults()
+function applyVolumeDefaults()
     debugPrint("Applying volume defaults based on current typeGain settings")
     for idx, gain in pairs(components.gains) do
         if gain then
@@ -283,14 +283,14 @@ local function applyVolumeDefaults()
     end
 end
 
-local function powerDisplays(displayState)
+function powerDisplays(displayState)
     local control = displayState and "PowerOn" or "PowerOff"
     for _, display in pairs(components.displays) do
         if display then safeAccess(display, control, "trigger") end
     end
 end
 
-local function setVolume(level, gainIndex)
+function setVolume(level, gainIndex)
     local update = function(idx, gain)
         safeAccess(gain, "gain", "setPosition", level)
         updateVolumeVisuals(idx)
@@ -304,7 +304,7 @@ local function setVolume(level, gainIndex)
     publishNotification()
 end
 
-local function setMute(muteState, gainIndex)
+function setMute(muteState, gainIndex)
     local mute = function(idx, gain)
         safeAccess(gain, "mute", "set", muteState)
         updateVolumeVisuals(idx)
@@ -318,17 +318,17 @@ local function setMute(muteState, gainIndex)
     publishNotification()
 end
 
-local function setAudioPrivacy(privacyState)
+function setAudioPrivacy(privacyState)
     safeAccess(components.callSync, "mute", "set", privacyState)
     setProp(controls.btnAudioPrivacy, "Boolean", privacyState)
     publishNotification()
 end
 
-local function setSystemMute(muteState)
+function setSystemMute(muteState)
     if components.systemMute then safeAccess(components.systemMute, "mute", "set", muteState) end
 end
 
-local function setVolumeUpDown(direction, pressed, gainIndex)
+function setVolumeUpDown(direction, pressed, gainIndex)
     local action = direction == "up" and "stepper.increase" or "stepper.decrease"
     local step = function(idx, gain)
         safeAccess(gain, action, "set", pressed)
@@ -344,7 +344,7 @@ local function setVolumeUpDown(direction, pressed, gainIndex)
     publishNotification()
 end
 
-local function setVideoPrivacy(privacyState, idx)
+function setVideoPrivacy(privacyState, idx)
     local apply = function(index, videoBridge)
         safeAccess(videoBridge, "toggle.privacy", "set", privacyState)
         -- getVideoBridgePrivacyState called from event
@@ -358,7 +358,7 @@ local function setVideoPrivacy(privacyState, idx)
     publishNotification()
 end
 
-local function getVideoBridgePrivacyState(idx)
+function getVideoBridgePrivacyState(idx)
     idx = idx or 1
     local videoBridge = components.videoBridge[idx]
     if not videoBridge then return end
@@ -371,14 +371,14 @@ local function getVideoBridgePrivacyState(idx)
     end
 end
 
-local function getCallSyncMuteState()
+function getCallSyncMuteState()
     if not components.callSync then return end
     local muteState = safeAccess(components.callSync, "mute", "get")
     debugPrint("Call Sync Mute State: " .. tostring(muteState) .. " (Source: Component)")
     if controls.btnAudioPrivacy then setProp(controls.btnAudioPrivacy, "Boolean", muteState) end
 end
 
-local function getCallSyncHookState()
+function getCallSyncHookState()
     if not components.callSync then return end
     local offHook = safeAccess(components.callSync, "off.hook", "get")
     getCallSyncMuteState()
@@ -390,7 +390,7 @@ local function getCallSyncHookState()
     end
 end
 
-local function getVolumeLvl(idx)
+function getVolumeLvl(idx)
     local gain = getGainComponent(idx)
     if not gain or not controls.knbVolumeFader or not controls.knbVolumeFader[idx] then return end
     setProp(controls.knbVolumeFader[idx], "Position", safeAccess(gain, "gain", "getPosition"))
@@ -398,7 +398,7 @@ local function getVolumeLvl(idx)
     publishNotification()
 end
 
-local function getVolumeMute(idx)
+function getVolumeMute(idx)
     local gain = getGainComponent(idx)
     if not gain or not controls.btnVolumeMute or not controls.btnVolumeMute[idx] then return end
     setProp(controls.btnVolumeMute[idx], "Boolean", safeAccess(gain, "mute", "get"))
@@ -406,7 +406,7 @@ local function getVolumeMute(idx)
     publishNotification()
 end
 
-local function powerOn()
+function powerOn()
     debugPrint("[Power] Powering On (Source: User)")
     if controls.btnSystemOnTrig then controls.btnSystemOnTrig:Trigger() end
     enablePowerControls(false)
@@ -421,7 +421,7 @@ local function powerOn()
     publishNotification()
 end
 
-local function powerOff(sourceTag)
+function powerOff(sourceTag)
     sourceTag = sourceTag or "User"
     debugPrint("[Power] Powering Off (Source: " .. sourceTag .. ")")
     if controls.btnSystemOffTrig then controls.btnSystemOffTrig:Trigger() end
@@ -443,7 +443,7 @@ local function powerOff(sourceTag)
     publishNotification()
 end
 
-local function checkMotion()
+function checkMotion()
     debugPrint("[Motion] Checking Motion")
     if controls.ledMotionIn and controls.ledMotionIn.Boolean then
         state.motionTimeoutActive = false
@@ -463,7 +463,7 @@ local function checkMotion()
     end
 end
 
-local function getComponentNames()
+function getComponentNames()
     local names = { callSync = {}, videoBridge = {}, camACPR = {}, displays = {}, gains = {}, systemMute = {} }
     for _, comp in pairs(Component.GetComponents()) do
         if comp.Type == const.componentTypes.callSync then table.insert(names.callSync, comp.Name)
@@ -483,7 +483,7 @@ local function getComponentNames()
     debugPrint("Discovery complete: " .. (#names.callSync - 1) .. " callSync, " .. (#names.videoBridge - 1) .. " videoBridge, " .. (#names.gains - 1) .. " gains, " .. (#names.displays - 1) .. " displays")
 end
 
-local function setCallSyncComponent()
+function setCallSyncComponent()
     components.callSync = setComponent(controls.compCallSync, "Call Sync")
     local comp = components.callSync
     if not comp then return end
@@ -491,7 +491,7 @@ local function setCallSyncComponent()
     if comp["mute"] then comp["mute"].EventHandler = getCallSyncMuteState end
 end
 
-local function setVideoBridgeComponent(idx)
+function setVideoBridgeComponent(idx)
     if not controls.compVideoBridge or not controls.compVideoBridge[idx] then return end
     components.videoBridge[idx] = setComponent(controls.compVideoBridge[idx], "Video Bridge [" .. idx .. "]")
     local comp = components.videoBridge[idx]
@@ -502,7 +502,7 @@ local function setVideoBridgeComponent(idx)
     getVideoBridgePrivacyState(idx)
 end
 
-local function setGainComponent(idx)
+function setGainComponent(idx)
     if not controls.compGains or not controls.compGains[idx] then return end
     components.gains[idx] = setComponent(controls.compGains[idx], "Gain [" .. idx .. "]")
     local comp = components.gains[idx]
@@ -513,11 +513,11 @@ local function setGainComponent(idx)
     getVolumeMute(idx)
 end
 
-local function setSystemMuteComponent()
+function setSystemMuteComponent()
     components.systemMute = setComponent(controls.compSystemMute, "System Mute")
 end
 
-local function setCamACPRComponent()
+function setCamACPRComponent()
     components.camACPR = setComponent(controls.compACPR, "Camera ACPR")
     local comp = components.camACPR
     if not comp then return end
@@ -533,12 +533,12 @@ local function setCamACPRComponent()
     getCallSyncHookState()
 end
 
-local function setDisplayComponent(idx)
+function setDisplayComponent(idx)
     if not controls.devDisplays or not controls.devDisplays[idx] then return end
     components.displays[idx] = setComponent(controls.devDisplays[idx], "Display [" .. idx .. "]")
 end
 
-local function setGainTypeAssignments(roomType)
+function setGainTypeAssignments(roomType)
     roomType = roomType or (controls.selDefaultConfigs and controls.selDefaultConfigs.String) or "Default"
     local assign = const.gainTypeAssignments[roomType] or const.gainTypeAssignments["Default"]
     for idx, gainType in ipairs(assign) do
@@ -549,7 +549,7 @@ local function setGainTypeAssignments(roomType)
     end
 end
 
-local function setupConfigSelection()
+function setupConfigSelection()
     if not controls.selDefaultConfigs then return end
     controls.selDefaultConfigs.Choices = { "Conference Room", "Huddle Room", "Default", "Custom Room", "User Defined" }
     local maps = {
@@ -592,7 +592,7 @@ local function setupConfigSelection()
     updateValues("Default")
 end
 
-local function setFireAlarm(alarmState)
+function setFireAlarm(alarmState)
     if alarmState then
         setSystemMute(true)
         powerDisplays(false)
@@ -605,7 +605,7 @@ local function setFireAlarm(alarmState)
 end
 
 -------------------[ Events ]-------------------
-local function registerEvents()
+function registerEvents()
     local btnCount, arrayCount = 0, 0
     if bind(controls.btnSystemOnOff, function(ctl) if ctl.Boolean then powerOn() else powerOff() end end) then btnCount = btnCount + 1 end
     if bind(controls.btnSystemOn, powerOn) then btnCount = btnCount + 1 end
@@ -653,7 +653,7 @@ local function registerEvents()
 end
 
 -------------------[ Init ]-------------------
-local function init()
+function init()
     debugPrint("=== Initialization Started ===")
     roomName = "[" .. (controls.roomName.String or "Unknown") .. "]"
     debugPrint("Configuration: ROOM_NAME=" .. roomName .. ", debugging=" .. tostring(config.debugging ~= false))
@@ -699,7 +699,7 @@ local function init()
 end
 
 -------------------[ Factory ]-------------------
-local function getDefaultConfig(roomType)
+function getDefaultConfig(roomType)
     local base = { defaultProgramVolume = 0.7, defaultMicVolume = 0.5, defaultGainVolume = 0.7 }
     if roomType == "User Defined" then
         return {
@@ -723,7 +723,7 @@ local function getDefaultConfig(roomType)
 end
 
 -------------------[ Start ]-------------------
-local ok, err = pcall(function()
+ok, err = pcall(function()
     print("Initializing SystemAutomationController...")
     if not validateControls() then error("Control validation failed") end
     local configType = controls.selDefaultConfigs and controls.selDefaultConfigs.String or "Default"

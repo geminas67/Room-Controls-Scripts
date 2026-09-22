@@ -13,23 +13,23 @@
 -- luacheck: globals Controls Timer Component rapidjson
 
 -------------------[ Control Discovery ]-------------------
-local function discoverNumRooms()
+function discoverNumRooms()
     for i = 1, 10 do
         if not Controls["btnCamPreset" .. i] then return i - 1 end
     end
     return 0
 end
 
-local function buildPerRoomControls(baseName, numRooms)
+function buildPerRoomControls(baseName, numRooms)
     local arr = {}
     for i = 1, numRooms do arr[i] = Controls[baseName .. i] end
     return #arr > 0 and arr or nil
 end
 
-local numRooms = discoverNumRooms()
+numRooms = discoverNumRooms()
 
 -------------------[ Controls ]-------------------
-local controls = {
+controls = {
     devCams = Controls.devCams,
     routerOutput = Controls.routerOutput,
     compRoomControls = Controls.compRoomControls,
@@ -45,7 +45,7 @@ local controls = {
 }
 
 -------------------[ Configuration ]-------------------
-local config = {
+config = {
     presetTolerance = 0.02,
     holdTime = 3.0,
     ledOnTime = 2.5,
@@ -53,7 +53,7 @@ local config = {
     debounceDelay = 0.1
 }
 
-local componentTypes = {
+componentTypes = {
     camera = "onvif_camera_operative",
     camRouter = "video_router",
     roomControls = "device_controller_script"
@@ -62,22 +62,22 @@ local componentTypes = {
 rapidjson = require("rapidjson")
 
 -------------------[ Utilities ]-------------------
-local function isArr(t)
+function isArr(t)
     return type(t) == "table" and t[1] ~= nil
 end
 
-local function setProp(ctrl, prop, val)
+function setProp(ctrl, prop, val)
     if not ctrl or ctrl[prop] == val then return end
     ctrl[prop] = val
 end
 
-local function bind(ctrl, handler)
+function bind(ctrl, handler)
     if not ctrl or not handler then return false end
     local ok = pcall(function() ctrl.EventHandler = handler end)
     return ok
 end
 
-local function bindArray(ctrls, handler)
+function bindArray(ctrls, handler)
     if not ctrls or not handler then return 0 end
     local array = isArr(ctrls) and ctrls or { ctrls }
     local count = 0
@@ -90,7 +90,7 @@ local function bindArray(ctrls, handler)
     return count
 end
 
-local function validateComponent(name)
+function validateComponent(name)
     if not name or name == "" then return false end
     local ok, comp = pcall(Component.New, name)
     if not ok or not comp then return false end
@@ -98,7 +98,7 @@ local function validateComponent(name)
     return ok2 and ctrls and #ctrls > 0
 end
 
-local function cleanupHandlers(comp, ctrlNames)
+function cleanupHandlers(comp, ctrlNames)
     if not comp or not ctrlNames then return 0 end
     local cleaned = 0
     for _, name in ipairs(ctrlNames) do
@@ -118,14 +118,14 @@ const = {
 }
 
 -------------------[ State ]-------------------
-local components = {
+components = {
     cameras = {},
     presets = {},
     routers = {},
     roomControls = {}
 }
 
-local state = {
+state = {
     longPressed = {},
     countdownTimers = {},
     ledTimers = {},
@@ -138,14 +138,14 @@ local state = {
 }
 
 -------------------[ Debug ]-------------------
-local function debugPrint(str, isError)
+function debugPrint(str, isError)
     if isError or const.debug then
         print("[" .. const.roomName .. (isError and " ERROR" or "") .. "] " .. str)
     end
 end
 
 -------------------[ Functions ]-------------------
-local function parsePreset(str)
+function parsePreset(str)
     if not str or type(str) ~= "string" or str == "" then return nil, nil, nil end
     local clean = str:gsub("%s+", " "):match("^%s*(.-)%s*$")
     local pan, tilt, zoom = clean:match("([%d%.%-]+)%s+([%d%.%-]+)%s+([%d%.%-]+)")
@@ -156,7 +156,7 @@ local function parsePreset(str)
     return nil, nil, nil
 end
 
-local function presetsMatch(current, saved, tolerance)
+function presetsMatch(current, saved, tolerance)
     if not current or not saved or saved == "0 0 0" then return false end
     if current == saved then return true end
     local cp, ct, cz = parsePreset(current)
@@ -172,7 +172,7 @@ local function presetsMatch(current, saved, tolerance)
     return math.abs(cp - sp) <= tolerance and math.abs(ct - st) <= tolerance and math.abs(cz - sz) <= tolerance
 end
 
-local function saveJSON()
+function saveJSON()
     if not components.presets then debugPrint("No presets to save", true); return false end
     local ok, json = pcall(rapidjson.encode, components.presets, {pretty = true, sort_keys = true})
     if not ok then debugPrint("JSON encode failed: " .. tostring(json), true); return false end
@@ -184,7 +184,7 @@ local function saveJSON()
     return true
 end
 
-local function loadJSON()
+function loadJSON()
     local str = controls.txtJSONStorage.String or ""
     if str == "" then debugPrint("JSON storage empty - using defaults"); return false end
     local ok, tbl = pcall(rapidjson.decode, str)
@@ -197,7 +197,7 @@ local function loadJSON()
     return false
 end
 
-local function discoverCameras(roomIdx)
+function discoverCameras(roomIdx)
     if not roomIdx or roomIdx < 1 or roomIdx > numRooms then
         debugPrint("Invalid room index: " .. tostring(roomIdx), true)
         return {}
@@ -217,7 +217,7 @@ local function discoverCameras(roomIdx)
     return names
 end
 
-local function initPresets(roomIdx)
+function initPresets(roomIdx)
     if not roomIdx or roomIdx < 1 or roomIdx > numRooms then return end
     local roomCams = components.cameras[roomIdx] or {}
     local names = {}
@@ -235,7 +235,7 @@ local function initPresets(roomIdx)
     end
 end
 
-local function updateLEDsInternal(roomIdx)
+function updateLEDsInternal(roomIdx)
     local function clearLEDs()
         local leds = controls.ledPresetMatch[roomIdx] or {}
         local arr = isArr(leds) and leds or {leds}
@@ -266,7 +266,7 @@ local function updateLEDsInternal(roomIdx)
     end
 end
 
-local function updatePresetMatchLEDs(roomIdx)
+function updatePresetMatchLEDs(roomIdx)
     if not roomIdx or roomIdx < 1 or roomIdx > numRooms then return end
     if not state.debounceTimers[roomIdx] then state.debounceTimers[roomIdx] = Timer.New() end
     local timer = state.debounceTimers[roomIdx]
@@ -275,14 +275,14 @@ local function updatePresetMatchLEDs(roomIdx)
     timer:Start(config.debounceDelay)
 end
 
-local function reloadJSON()
+function reloadJSON()
     if not loadJSON() then return false end
     for roomIdx = 1, numRooms do updatePresetMatchLEDs(roomIdx) end
     debugPrint("JSON reloaded from external source - all rooms synced")
     return true
 end
 
-local function savePreset(roomIdx, presetIdx)
+function savePreset(roomIdx, presetIdx)
     if not roomIdx or roomIdx < 1 or roomIdx > numRooms then return false end
     if not controls.devCams or not controls.devCams[roomIdx] then return false end
     local camName = controls.devCams[roomIdx].String or ""
@@ -306,7 +306,7 @@ local function savePreset(roomIdx, presetIdx)
     return true
 end
 
-local function recallPreset(roomIdx, presetIdx)
+function recallPreset(roomIdx, presetIdx)
     if not roomIdx or roomIdx < 1 or roomIdx > numRooms then return false end
     if not controls.devCams or not controls.devCams[roomIdx] then return false end
     local camName = controls.devCams[roomIdx].String or ""
@@ -324,7 +324,7 @@ local function recallPreset(roomIdx, presetIdx)
     return true
 end
 
-local function discoverRouters(roomIdx)
+function discoverRouters(roomIdx)
     if not roomIdx or roomIdx < 1 or roomIdx > numRooms then return end
     if not components.routers[roomIdx] then components.routers[roomIdx] = {} end
     local ok, comps = pcall(Component.GetComponents)
@@ -337,7 +337,7 @@ local function discoverRouters(roomIdx)
     end
 end
 
-local function discoverRoomControls(roomIdx)
+function discoverRoomControls(roomIdx)
     if not roomIdx or roomIdx < 1 or roomIdx > numRooms then return end
     if not controls.compRoomControls or not controls.compRoomControls[roomIdx] then return end
     local name = controls.compRoomControls[roomIdx].String
@@ -348,7 +348,7 @@ local function discoverRoomControls(roomIdx)
     end
 end
 
-local function syncToCamRouter(roomIdx, router, key, camCtrl)
+function syncToCamRouter(roomIdx, router, key, camCtrl)
     if not router or not router[key] or not camCtrl then return false end
     debugPrint(string.format("Room[%d] Setting up sync monitor for router output: %s (Source: setupRouterSync)", roomIdx, key))
     router[key].EventHandler = function()
@@ -374,7 +374,7 @@ local function syncToCamRouter(roomIdx, router, key, camCtrl)
     return false
 end
 
-local function setupRouterSync(roomIdx)
+function setupRouterSync(roomIdx)
     if not roomIdx or roomIdx < 1 or roomIdx > numRooms then return false end
     if not controls.compcamRouter then return false end
     local routerName = controls.compcamRouter.String
@@ -403,7 +403,7 @@ local function setupRouterSync(roomIdx)
     return success
 end
 
-local function setupCameraMonitoring(roomIdx, camNames)
+function setupCameraMonitoring(roomIdx, camNames)
     local cams = components.cameras[roomIdx] or {}
     for _, name in pairs(camNames) do
         local cam = cams[name]
@@ -420,7 +420,7 @@ local function setupCameraMonitoring(roomIdx, camNames)
     end
 end
 
-local function setupCameraChoices(roomIdx, camNames)
+function setupCameraChoices(roomIdx, camNames)
     if not controls.devCams or not controls.devCams[roomIdx] then return end
     setProp(controls.devCams[roomIdx], "Choices", camNames)
     debugPrint(string.format("Room[%d] Camera choices: %d available", roomIdx, #camNames))
@@ -435,7 +435,7 @@ local function setupCameraChoices(roomIdx, camNames)
     end
 end
 
-local function updateRouterChoices()
+function updateRouterChoices()
     if not controls.compcamRouter then return end
     local routerSet = {}
     for roomIdx = 1, numRooms do
@@ -452,7 +452,7 @@ local function updateRouterChoices()
     end
 end
 
-local function updateRouterOutputChoices(roomIdx)
+function updateRouterOutputChoices(roomIdx)
     if not controls.routerOutput or not controls.routerOutput[roomIdx] or not controls.compcamRouter then return end
     local routerName = controls.compcamRouter.String
     local router = (routerName ~= "" and routerName ~= const.clearString) and (components.routers[roomIdx] or {})[routerName]
@@ -477,7 +477,7 @@ local function updateRouterOutputChoices(roomIdx)
     end
 end
 
-local function handleSave(roomIdx, presetIdx)
+function handleSave(roomIdx, presetIdx)
     if not savePreset(roomIdx, presetIdx) then return end
     local leds = controls.ledPresetSaved and controls.ledPresetSaved[roomIdx]
     if leds then
@@ -490,12 +490,12 @@ local function handleSave(roomIdx, presetIdx)
     updatePresetMatchLEDs(roomIdx)
 end
 
-local function handleRecall(roomIdx, presetIdx)
+function handleRecall(roomIdx, presetIdx)
     if not recallPreset(roomIdx, presetIdx) then return end
     updatePresetMatchLEDs(roomIdx)
 end
 
-local function initPresetButtons()
+function initPresetButtons()
     if not controls.btnCamPreset then return end
     for roomIdx = 1, numRooms do
         if not controls.btnCamPreset[roomIdx] then goto continue end
@@ -540,7 +540,7 @@ local function initPresetButtons()
     end
 end
 
-local function validateControls()
+function validateControls()
     if not Controls.devCams then debugPrint("devCams control missing", true); return false end
     if not Controls.btnCamPreset1 then debugPrint("btnCamPreset1 control missing", true); return false end
     if not controls.btnCamPreset or not isArr(controls.btnCamPreset) then
@@ -561,7 +561,7 @@ local function validateControls()
 end
 
 -------------------[ Events ]-------------------
-local function registerEvents()
+function registerEvents()
     debugPrint("Registering event handlers...")
     if controls.txtJSONStorage then
         bind(controls.txtJSONStorage, function()
@@ -609,7 +609,7 @@ local function registerEvents()
 end
 
 -------------------[ Init ]-------------------
-local function init()
+function init()
     if state.initialized then return end
     debugPrint("=== Initialization Started ===")
     debugPrint(string.format("Config: debugging=%s, rooms=%d, tolerance=%.3f, hold=%.1fs, led=%.1fs",
@@ -637,7 +637,7 @@ local function init()
     debugPrint(string.format("Ready - %d rooms operational", numRooms))
 end
 
-local function cleanup()
+function cleanup()
     debugPrint("=== Cleanup Started ===")
     for roomIdx = 1, numRooms do
         if state.countdownTimers[roomIdx] then
@@ -673,7 +673,7 @@ CameraPresetController = {
 }
 
 -------------------[ Start ]-------------------
-local ok, err = pcall(function()
+ok, err = pcall(function()
     print("Initializing CameraPresetController for " .. numRooms .. " rooms...")
     if numRooms == 0 then error("No rooms detected - check controls") end
     if not validateControls() then error("Control validation failed") end

@@ -11,7 +11,7 @@
 
 -------------------[ Configuration ]-------------------
 
-local componentTypes = {
+componentTypes = {
   callSync     = "call_sync",
   micMXA       = "%PLUGIN%_15f47939-2779-495a-881b-b10317365958_%FP%_53a1bc56de2ede23e07c7d9e32bec505",
   roomControls = "device_controller_script",

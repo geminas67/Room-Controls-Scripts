@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Q-SYS Lua — Official Documentation
 
-Q-SYS control scripts use **Q-SYS Lua (Script v2)**, not standard Lua. Before adding, changing, or refactoring any `.lua` file in this workspace, consult [Q-SYS Help](https://help.qsys.com) for the correct APIs, syntax, and limitations.
+Q-SYS control scripts use **Q-SYS Lua (Script v2)**, not standard Lua. Each script is **sandboxed**—file-scope names are visible only inside that Text Controller, not across the design. Before adding, changing, or refactoring any `.lua` file in this workspace, consult [Q-SYS Help](https://help.qsys.com) for the correct APIs, syntax, and limitations.
 
 ## Required behavior
 
@@ -27,9 +27,9 @@ Q-SYS control scripts use **Q-SYS Lua (Script v2)**, not standard Lua. Before ad
 
 ```lua
 -- Named component access (requires Code Name + Script Access on the block)
-local gain = Component.New("Main_Gain")
-gain.gain.EventHandler = function(ctl)
-    if gain.gain.Value > 0 then gain.mute.Boolean = true end
+compGain = Component.New("Main_Gain")
+compGain.gain.EventHandler = function(ctl)
+    if compGain.gain.Value > 0 then compGain.mute.Boolean = true end
 end
 
 -- Script-defined controls on a Text Controller
@@ -38,8 +38,8 @@ Controls.compExample.EventHandler = function(ctl) ... end
 -- Discovery
 for _, comp in pairs(Component.GetComponents()) do ... end
 
--- Timers
-local t = Timer.New()
+-- Timers (script-global; do not use local — see architecture rules)
+timerExample = Timer.New()
 ```
 
 **Control names with decimals** (v9.12+): escape the dot — e.g. `comp["31\\.5Hz.gain"]`.

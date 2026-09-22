@@ -10,13 +10,13 @@
 
 -------------------[ Configuration ]-------------------
 
-local compType = {
+compType = {
     nv32 = "streamer_hdmi_switcher",
     roomControls = "device_controller_script",
     uciController = "device_controller_script",
 }
 
-local compName = {
+compName = {
     roomControls = "^compRoomControls",
     uciController = "^uciController",
 }
