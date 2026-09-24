@@ -95,7 +95,7 @@ function setCompValid(componentType)
     checkStatus()
 end
 
-function setComp(ctl, componentType, expectedType)
+function setComp(ctl, componentType)
     if not ctl then setCompInvalid(componentType); return nil end
 
     local name = ctl.String
@@ -120,14 +120,6 @@ function setComp(ctl, componentType, expectedType)
         ctl.Color = "pink"
         setCompInvalid(componentType)
         debugMsg("Invalid " .. componentType .. ": " .. name)
-        return nil
-    end
-
-    if expectedType and comp.Type ~= expectedType then
-        ctl.String = "[Wrong Component Type]"
-        ctl.Color = "pink"
-        setCompInvalid(componentType)
-        debugMsg(componentType .. " wrong type. Expected " .. tostring(expectedType) .. ", got " .. tostring(comp.Type))
         return nil
     end
 
@@ -235,7 +227,7 @@ end
 
 function setcompExtronDXP()
     cleanupExtronHandlers()
-    compExtronMatrix = setComp(Controls.compExtronDXP, "Extron DXP Matrix", compType.extronMatrix)
+    compExtronMatrix = setComp(Controls.compExtronDXP, "Extron DXP Matrix")
     if not compExtronMatrix then return end
 
     for _, cfg in ipairs(outputConfigs) do

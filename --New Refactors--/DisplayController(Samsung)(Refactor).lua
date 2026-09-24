@@ -7,7 +7,7 @@
 
   Samsung displays plugin v1.5 — power management and input switching.
   Integrates with SystemAutomationController.
-  Per-row On/Off booleans follow reported PowerStatus (setPowerOnOffRowFeedback).
+  Per-row On/Off booleans follow reported PowerStatus (setPowerRowState).
 
 ]]--
 
@@ -72,7 +72,7 @@ function debugMsg(str)
   print("[" .. roomName .. "] " .. str)
 end
 
-function normalizeDisplayArrays()
+function normalizeArrays()
   for _, name in ipairs({"devDisplay", "btnPowerOn", "btnPowerOff", "btnPowerToggle"}) do
     local ctrl = Controls[name]
     if ctrl and type(ctrl) == "table" and ctrl[1] == nil then
@@ -160,7 +160,7 @@ end
 
 -------------------[ Discovery ]-------------------
 
-function getComponentNames()
+function getCompNames()
   debugMsg("Discovering components...")
   local names = { DisplayNames = {}, RoomControlsNames = {} }
 
@@ -192,7 +192,7 @@ end
 
 -------------------[ Power ]-------------------
 
-function setInputOnDisplay(index, input)
+function setDisplayOnInput(index, input)
   local display = compDisplays[index]
   local btn = inputButtonMap[input:gsub("USB%-C", "USB_C")]
   if not display or not btn then return end
@@ -220,7 +220,7 @@ function updateTimerConfig()
   debugMsg("Timer config - Warmup: " .. warmupTime .. "s, Cooldown: " .. cooldownTime .. "s")
 end
 
-function setPowerOnOffRowFeedback(index, poweredOn)
+function setPowerRowState(index, poweredOn)
   if Controls.btnPowerOn and Controls.btnPowerOn[index] then
     Controls.btnPowerOn[index].Boolean = poweredOn
   end
@@ -235,7 +235,7 @@ function powerAll(onState)
   for idx, display in pairs(compDisplays) do
     if display then
       safeDisplayAccess(display, ctrl, "trigger")
-      if onState then setInputOnDisplay(idx, defaultInput) end
+      if onState then setDisplayOnInput(idx, defaultInput) end
     end
   end
   powerState = onState
@@ -248,14 +248,14 @@ function powerSingle(index, onState)
   local ctrl = onState and displayControls.powerOn or displayControls.powerOff
   if display then
     safeDisplayAccess(display, ctrl, "trigger")
-    if onState then setInputOnDisplay(index, defaultInput) end
+    if onState then setDisplayOnInput(index, defaultInput) end
   end
 end
 
 function setInputAll(input)
   debugMsg("Setting all displays to input: " .. input .. " (Source: Input All)")
   for idx, display in pairs(compDisplays) do
-    if display then setInputOnDisplay(idx, input) end
+    if display then setDisplayOnInput(idx, input) end
   end
   lastInput = input
 end
@@ -280,13 +280,13 @@ function enablePowerControlIndex(index, enabled)
   end
 end
 
-function updatePowerFeedback()
+function getPowerFB()
   local allOn, count = true, 0
   for idx, display in pairs(compDisplays) do
     if display then
       count = count + 1
       local status = safeDisplayAccess(display, displayControls.powerStatus, "get")
-      setPowerOnOffRowFeedback(idx, status)
+      setPowerRowState(idx, status)
       if Controls.btnPowerToggle and Controls.btnPowerToggle[idx] then
         Controls.btnPowerToggle[idx].Boolean = status
       end
@@ -300,7 +300,7 @@ function updatePowerFeedback()
   end
 end
 
-function setOppositePowerButtonLegend(index, poweringOn)
+function setPowerWaitLegend(index, poweringOn)
   local target = poweringOn and Controls.btnPowerOff or Controls.btnPowerOn
   if target and target[index] then target[index].Legend = "Please\nwait" end
 end
@@ -320,7 +320,7 @@ function powerOnDisplay(index)
   pendingVolumeMute[index] = true
   powerSingle(index, true)
   enablePowerControlIndex(index, false)
-  setOppositePowerButtonLegend(index, true)
+  setPowerWaitLegend(index, true)
   isWarming = true
   if Controls.ledDisplayWarming then Controls.ledDisplayWarming.Boolean = true end
   timerWarmup:Start(warmupTime)
@@ -330,7 +330,7 @@ function powerOffDisplay(index)
   debugMsg("Powering off display " .. index .. " (Source: Power Off Button)")
   powerSingle(index, false)
   enablePowerControlIndex(index, false)
-  setOppositePowerButtonLegend(index, false)
+  setPowerWaitLegend(index, false)
   isCooling = true
   if Controls.ledDisplayCooling then Controls.ledDisplayCooling.Boolean = true end
   timerCooldown:Start(cooldownTime)
@@ -360,7 +360,7 @@ function setupDisplayEvents(index)
   local display = compDisplays[index]
   if not display or not display[displayControls.powerStatus] then return end
   display[displayControls.powerStatus].EventHandler = function()
-    updatePowerFeedback()
+    getPowerFB()
   end
   debugMsg("Registered: power status handler for display " .. index)
 end
@@ -371,7 +371,7 @@ function setcompDisplay(index)
   if compDisplays[index] then
     debugMsg("Successfully set up display component " .. index)
     setupDisplayEvents(index)
-    updatePowerFeedback()
+    getPowerFB()
   else
     debugMsg("Failed to set up display component " .. index)
   end
@@ -441,7 +441,7 @@ for idx = 1, maxDisplays do
   end
 end
 
-normalizeDisplayArrays()
+normalizeArrays()
 
 if Controls.compRoomControls then
   Controls.compRoomControls.EventHandler = setcompRoomControls
@@ -501,14 +501,14 @@ function funcInit()
     return
   end
 
-  getComponentNames()
+  getCompNames()
   setcompRoomControls()
   if Controls.devDisplay then
     for idx = 1, #Controls.devDisplay do
       setcompDisplay(idx)
     end
   end
-  updatePowerFeedback()
+  getPowerFB()
 
   debugMsg("=== Initialization Complete ===")
   debugMsg("Ready for operation - " .. getDisplayCount() .. " displays")

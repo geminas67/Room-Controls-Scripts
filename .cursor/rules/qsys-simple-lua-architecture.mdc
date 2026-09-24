@@ -102,6 +102,12 @@ end
 
 Use a small helper (e.g. `fillChoices`) inside discovery when many combo boxes share the same sort/clear/auto-select logic.
 
+### Component type validation (Q-SYS API)
+
+- **`comp.Type` is valid on items from `Component.GetComponents()`** — use it in `getComponentNames()` (and optional name filters) so each component combo only lists the right blocks.
+- **Do not use `Component.New(name).Type` for validation** — it is not reliable (typically `nil`).
+- **`setComp(ctl, componentType)`** should only confirm the selection resolves: `Component.New(name)` plus `Component.GetControls(comp)` with at least one control. Do not pass `expectedType` or re-scan `GetComponents()` in `setComp` unless you have a special case (e.g. free-typed component names without filtered choices).
+
 ## Skeleton
 
 ```lua
@@ -169,7 +175,7 @@ funcInit()
 
 - **Direct `Controls.*`** in functions and handlers is fine; a `local controls = {}` map is optional.
 - **Global `function Name()`** is the default for this style; `local function` is fine for small inner helpers only.
-- **Component glue** — central helpers keep feature code short: `getComponentNames`, `setComp`, `getStatus`, `setCompValid` / `setCompInvalid`. Mirror the reference scripts, not necessarily the full-rule `setComponent` template.
+- **Component glue** — central helpers keep feature code short: `getComponentNames`, `setComp`, `getStatus`, `setCompValid` / `setCompInvalid`. Mirror the reference scripts, not necessarily the full-rule `setComponent` template. See [Component type validation](#component-type-validation-q-sys-api).
 - **Debug** — single gated `debugMsg` when `stateDebug` is true; optional room-prefixed console output is fine.
 - **Init mirrors handlers** — `funcInit()` calls the same `setcomp*` paths that combo-box `.EventHandler` assignments use, plus `getComponentNames()` and any one-time sync (e.g. `syncLEDStates()`).
 - **Guard optional controls** — wrap indexed or optional UI controls with `if Controls.compMicBox then ... end` before binding.
