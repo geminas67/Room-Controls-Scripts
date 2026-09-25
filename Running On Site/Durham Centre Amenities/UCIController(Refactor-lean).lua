@@ -140,6 +140,10 @@ function setProp(ctrl, prop, val)
     ctrl[prop] = val
 end
 
+function boolOf(ctrl)
+    return ctrl and ctrl.Boolean or false
+end
+
 function stopTimer(timer)
     if timer then pcall(function() timer:Stop() end) end
     return nil
@@ -219,7 +223,7 @@ end
 
 function applyHelpOverlay(desired, transitions, layerName, helpKey, onShow)
     local hc = helpControls[helpKey]
-    local helpVis = hc and hc.open and hc.open.Boolean or false
+    local helpVis = boolOf(hc and hc.open)
     want(desired, transitions, layerName, helpVis, helpVis and "fade" or "none")
     if helpVis and onShow then onShow() end
 end
@@ -249,7 +253,7 @@ function applySourceOverlay(desired, transitions, sourceKey)
         if def.conf then want(desired, transitions, def.conf, true, "fade") end
 
         local usbPin = def.usbKey and Controls[def.usbKey]
-        local usb = usbPin and usbPin.Boolean or false
+        local usb = boolOf(usbPin)
         if usb then
             want(desired, transitions, usbConnectLayers, false)
         elseif def.usb then
@@ -259,8 +263,8 @@ function applySourceOverlay(desired, transitions, sourceKey)
     end
 
     if not acprConfig.disableACPRShow then
-        local bypass = Controls.ledACPRBypassActive and Controls.ledACPRBypassActive.Boolean or false
-        local offHook = Controls.ledOffHook and Controls.ledOffHook.Boolean or false
+        local bypass = boolOf(Controls.ledACPRBypassActive)
+        local offHook = boolOf(Controls.ledOffHook)
         if not bypass and offHook then
             want(desired, transitions, "J03-ACPRActive", true, "fade")
         else
@@ -299,10 +303,10 @@ function buildDesired()
         want(desired, transitions, cfg.hide, false)
     end
 
-    local callActive = Controls.ledCallActive and Controls.ledCallActive.Boolean or false
+    local callActive = boolOf(Controls.ledCallActive)
     want(desired, transitions, "I01-CallActive", callActive, callActive and "fade" or "none")
 
-    local preset = Controls.ledPresetSaved and Controls.ledPresetSaved.Boolean or false
+    local preset = boolOf(Controls.ledPresetSaved)
     want(desired, transitions, "J04-CamPresetSaved", preset, preset and "fade" or "none")
 
     want(desired, transitions, "D01-ShutdownConfirm", state.shutdownConfirm, state.shutdownConfirm and "fade" or "none")
