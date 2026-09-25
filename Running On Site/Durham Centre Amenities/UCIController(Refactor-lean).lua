@@ -62,10 +62,6 @@ configSource = {
 
 layerToSourceKey = { [kLayer.PC] ="PC", [kLayer.Laptop]="Laptop" }
 configHelpPairKeys = {"Laptop","PC"}
-layerHelpToKey = {
-    ["I02-HelpLaptop"]="Laptop", ["I03-HelpPC"]="PC",
-}
-
 helpControls = {
     Laptop = { open = Controls.btnOpenHelpLaptop, close = Controls.btnCloseHelpLaptop },
     PC     = { open = Controls.btnOpenHelpPC,     close = Controls.btnCloseHelpPC },
@@ -133,7 +129,7 @@ labelCount = 0
 -------------------[ Constants ]-------------------
 
 stateDebug = true
-defaultLayer = tonumber(Uci.Variables.numDefaultActiveLayer and Uci.Variables.numDefaultActiveLayer.Value) or 8
+defaultLayer = tonumber(Uci.Variables.numDefaultActiveLayer and Uci.Variables.numDefaultActiveLayer.Value) or 7
 
 -------------------[ Functions ]-------------------
 
@@ -221,6 +217,13 @@ function applyDesired(desired, transitions)
     end
 end
 
+function applyHelpOverlay(desired, transitions, layerName, helpKey, onShow)
+    local hc = helpControls[helpKey]
+    local helpVis = hc and hc.open and hc.open.Boolean or false
+    want(desired, transitions, layerName, helpVis, helpVis and "fade" or "none")
+    if helpVis and onShow then onShow() end
+end
+
 function applySourceOverlay(desired, transitions, sourceKey)
     local def = configSource[sourceKey]
     if not def then return end
@@ -267,13 +270,10 @@ function applySourceOverlay(desired, transitions, sourceKey)
         want(desired, transitions, "J03-ACPRActive", false)
     end
 
-    local hc = helpControls[sourceKey]
-    if def.help and hc and hc.open then
-        local helpVis = hc.open.Boolean or false
-        want(desired, transitions, def.help, helpVis, helpVis and "fade" or "none")
-        if helpVis then
+    if def.help then
+        applyHelpOverlay(desired, transitions, def.help, sourceKey, function()
             want(desired, transitions, usbConnectLayers, false)
-        end
+        end)
     end
 end
 
@@ -316,9 +316,8 @@ function buildDesired()
 end
 
 function syncHelpButtons()
-    for _, key in pairs(layerHelpToKey) do
-        local hc = helpControls[key]
-        if hc and hc.close then setProp(hc.close, "Boolean", false) end
+    for _, hc in pairs(helpControls) do
+        if hc.close then setProp(hc.close, "Boolean", false) end
     end
 end
 
@@ -647,15 +646,15 @@ end
 for _, def in pairs(configSource) do
     local hdmiCtrl = Controls[def.hdmiKey]
     if hdmiCtrl then hdmiCtrl.EventHandler = function() refreshLayers() end end
+    -- USB: refresh only (show/hide J01/J02 connect overlays via applySourceOverlay).
+    -- Removed auto-wake / source layer on plug-in — restore on other sites with:
+    --   ctl.EventHandler = function(pin)
+    --       if pin.Boolean then ensureSystemIsOn(srcDef.layer) else refreshLayers() end
+    --   end
+    -- (use IIFE to capture srcDef, ctl: ;(function(srcDef, ctl) ... end)(def, usbCtrl))
     if def.usbKey then
         local usbCtrl = Controls[def.usbKey]
-        if usbCtrl then
-            ;(function(srcDef, ctl)
-                ctl.EventHandler = function(pin)
-                    if pin.Boolean then ensureSystemIsOn(srcDef.layer) else refreshLayers() end
-                end
-            end)(def, usbCtrl)
-        end
+        if usbCtrl then usbCtrl.EventHandler = function() refreshLayers() end end
     end
 end
 

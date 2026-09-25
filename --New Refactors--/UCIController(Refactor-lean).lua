@@ -265,6 +265,13 @@ function applyDesired(desired, transitions)
     end
 end
 
+function applyHelpOverlay(desired, transitions, layerName, helpKey, onShow)
+    local hc = helpControls[helpKey]
+    local helpVis = hc and hc.open and hc.open.Boolean or false
+    want(desired, transitions, layerName, helpVis, helpVis and "fade" or "none")
+    if helpVis and onShow then onShow() end
+end
+
 function applySourceOverlay(desired, transitions, sourceKey)
     local def = configSource[sourceKey]
     if not def then return end
@@ -311,22 +318,17 @@ function applySourceOverlay(desired, transitions, sourceKey)
         want(desired, transitions, "J03-ACPRActive", false)
     end
 
-    local hc = helpControls[sourceKey]
-    if def.help and hc and hc.open then
-        local helpVis = hc.open.Boolean or false
-        want(desired, transitions, def.help, helpVis, helpVis and "fade" or "none")
-        if helpVis then
+    if def.help then
+        applyHelpOverlay(desired, transitions, def.help, sourceKey, function()
             want(desired, transitions, usbConnectLayers, false)
-        end
+        end)
     end
 end
 
 function applyOverlayHelp(desired, transitions)
     local cfg = overlayConfigs[state.activeLayer]
     if not cfg then return end
-    local hc = helpControls[cfg.helpKey]
-    local helpVis = hc and hc.open and hc.open.Boolean or false
-    want(desired, transitions, cfg.layer, helpVis and "fade" or "none")
+    applyHelpOverlay(desired, transitions, cfg.layer, cfg.helpKey)
 end
 
 function setHelpOpen(key, isOpen)
@@ -377,12 +379,7 @@ function buildDesired()
         if state.activeLayer == kLayer.PC or state.activeLayer == kLayer.Laptop then
             applySourceOverlay(desired, transitions, sourceKey)
         elseif state.activeLayer == kLayer.Wireless then
-            local def = configSource.Wireless
-            local hc = helpControls.Wireless
-            if def.help and hc and hc.open then
-                local helpVis = hc.open.Boolean or false
-                want(desired, transitions, def.help, helpVis, helpVis and "fade" or "none")
-            end
+            applyHelpOverlay(desired, transitions, configSource.Wireless.help, "Wireless")
         end
     end
 

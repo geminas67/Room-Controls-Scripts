@@ -7,7 +7,7 @@
 ]]
 
 -------------------[ Configuration ]-------------------
-const = {
+cfg = {
     componentTypes = {
     callSync = "call_sync",
     videoBridge = "usb_uvc",
@@ -466,12 +466,12 @@ end
 function getComponentNames()
     local names = { callSync = {}, videoBridge = {}, camACPR = {}, displays = {}, gains = {}, systemMute = {} }
     for _, comp in pairs(Component.GetComponents()) do
-        if comp.Type == const.componentTypes.callSync then table.insert(names.callSync, comp.Name)
-        elseif comp.Type == const.componentTypes.videoBridge then table.insert(names.videoBridge, comp.Name)
-        elseif comp.Type == const.componentTypes.displays then table.insert(names.displays, comp.Name)
-        elseif comp.Type == const.componentTypes.gains then table.insert(names.gains, comp.Name)
-        elseif comp.Type == const.componentTypes.systemMute then table.insert(names.systemMute, comp.Name)
-        elseif comp.Type == const.componentTypes.camACPR then table.insert(names.camACPR, comp.Name) end
+        if comp.Type == cfg.componentTypes.callSync then table.insert(names.callSync, comp.Name)
+        elseif comp.Type == cfg.componentTypes.videoBridge then table.insert(names.videoBridge, comp.Name)
+        elseif comp.Type == cfg.componentTypes.displays then table.insert(names.displays, comp.Name)
+        elseif comp.Type == cfg.componentTypes.gains then table.insert(names.gains, comp.Name)
+        elseif comp.Type == cfg.componentTypes.systemMute then table.insert(names.systemMute, comp.Name)
+        elseif comp.Type == cfg.componentTypes.camACPR then table.insert(names.camACPR, comp.Name) end
     end
     for _, list in pairs(names) do table.sort(list); table.insert(list, clearString) end
     if controls.compCallSync then controls.compCallSync.Choices = names.callSync end
@@ -540,7 +540,7 @@ end
 
 function setGainTypeAssignments(roomType)
     roomType = roomType or (controls.selDefaultConfigs and controls.selDefaultConfigs.String) or "Default"
-    local assign = const.gainTypeAssignments[roomType] or const.gainTypeAssignments["Default"]
+    local assign = cfg.gainTypeAssignments[roomType] or cfg.gainTypeAssignments["Default"]
     for idx, gainType in ipairs(assign) do
         if controls.typeGain and controls.typeGain[idx] then
             controls.typeGain[idx].String = idx == 1 and "Program" or gainType

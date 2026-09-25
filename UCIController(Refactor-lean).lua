@@ -1,8 +1,8 @@
 --[[
   UCI Controller (Lean) - Q-SYS Control Script
   Author: Nikolas Smith, Q-SYS
-  Version: 5.0 | Date: 2026-07-04
-  Firmware Req: 10.4
+  Version: 5.1 | Date: 2026-09-02
+  Firmware Req: pre-10.4 compatible (no GetUciPages / GetUciPageLayers / GetLayerVisibility)
 
   Flat single-room UCI: configSource, declarative visibility (buildDesired/applyDesired),
   event-driven power sync. Two engines — visibility, room sync.
@@ -163,6 +163,7 @@ state = {
 }
 components = {
     roomControls = nil,
+    videoSwitcher = nil, switcherType = nil, uciToInputMapping = {},
     passcode = nil, passcodeRoom = nil, passcodeEnabled = false,
 }
 timers = { progress = nil, inactivity = Timer.New() }
@@ -205,40 +206,17 @@ end
 
 -------------------[ Discovery ]-------------------
 
-function resolvePageName(hint)
-    local pages = Uci.GetUciPages()
-    if not pages or #pages == 0 then return nil end
-    if hint == nil or hint == "" then return pages[1].Name end
-    local hintLower = hint:lower()
-    for _, page in ipairs(pages) do
-        local nameLower = page.Name:lower()
-        if nameLower == hintLower or nameLower:find(hintLower, 1, true) or hintLower:find(nameLower, 1, true) then
-            return page.Name
-        end
-    end
-    return pages[1].Name
-end
-
-function validateLayersAtInit(pageName)
-    local inDesign = {}
-    for _, layer in ipairs(Uci.GetUciPageLayers(pageName)) do
-        inDesign[layer.Name] = true
-    end
-    local missing = {}
-    local function check(name)
-        if name and name ~= "" and not inDesign[name] then table.insert(missing, name) end
-    end
-    for _, name in ipairs(layersBase) do check(name) end
-    for _, name in ipairs(layersToHide) do check(name) end
-    for _, name in ipairs(routingLayers) do check(name) end
-    for _, def in pairs(configSource) do
-        check(def.base); check(def.disc); check(def.usb); check(def.conf); check(def.help)
-    end
-    check("H10-RoomControls")
-    if #missing > 0 then
-        print("WARNING ["..pageName.."]: configured layers not found in UCI design:")
-        for _, name in ipairs(missing) do print("  - "..name) end
-    end
+function buildPageNameCandidates(hint)
+    local pageName = (hint and hint ~= "") and hint or "UCI"
+    return {
+        pageName,
+        pageName:gsub("%s+", " "),
+        pageName:gsub("%s+", ""),
+        pageName:gsub("%(", ""):gsub("%)", ""),
+        pageName:gsub("%s+", "-"):gsub("%(", ""):gsub("%)", ""),
+        "UCI "..pageName,
+        pageName:match("^(.-)%s*%(") or pageName,
+    }
 end
 
 function validateControls()
@@ -266,17 +244,6 @@ end
 
 -------------------[ Visibility ]-------------------
 
-function loadLayerStatesFromUci()
-    state.layerStates = {}
-    for _, pages in pairs(Uci.GetLayerVisibility()) do
-        for page, layers in pairs(pages) do
-            if page == pageUCI then
-                for name, vis in pairs(layers) do state.layerStates[name] = vis end
-            end
-        end
-    end
-end
-
 function want(desired, transitions, names, visible, transition)
     if type(names) ~= "table" then names = {names} end
     for _, name in ipairs(names) do
@@ -296,13 +263,6 @@ function applyDesired(desired, transitions)
             else debugPrint("Layer '"..name.."' error: "..tostring(err)) end
         end
     end
-end
-
-function applyHelpOverlay(desired, transitions, layerName, helpKey, onShow)
-    local hc = helpControls[helpKey]
-    local helpVis = hc and hc.open and hc.open.Boolean or false
-    want(desired, transitions, layerName, helpVis, helpVis and "fade" or "none")
-    if helpVis and onShow then onShow() end
 end
 
 function applySourceOverlay(desired, transitions, sourceKey)
@@ -351,17 +311,22 @@ function applySourceOverlay(desired, transitions, sourceKey)
         want(desired, transitions, "J03-ACPRActive", false)
     end
 
-    if def.help then
-        applyHelpOverlay(desired, transitions, def.help, sourceKey, function()
+    local hc = helpControls[sourceKey]
+    if def.help and hc and hc.open then
+        local helpVis = hc.open.Boolean or false
+        want(desired, transitions, def.help, helpVis, helpVis and "fade" or "none")
+        if helpVis then
             want(desired, transitions, usbConnectLayers, false)
-        end)
+        end
     end
 end
 
 function applyOverlayHelp(desired, transitions)
     local cfg = overlayConfigs[state.activeLayer]
     if not cfg then return end
-    applyHelpOverlay(desired, transitions, cfg.layer, cfg.helpKey)
+    local hc = helpControls[cfg.helpKey]
+    local helpVis = hc and hc.open and hc.open.Boolean or false
+    want(desired, transitions, cfg.layer, helpVis and "fade" or "none")
 end
 
 function setHelpOpen(key, isOpen)
@@ -412,7 +377,12 @@ function buildDesired()
         if state.activeLayer == kLayer.PC or state.activeLayer == kLayer.Laptop then
             applySourceOverlay(desired, transitions, sourceKey)
         elseif state.activeLayer == kLayer.Wireless then
-            applyHelpOverlay(desired, transitions, configSource.Wireless.help, "Wireless")
+            local def = configSource.Wireless
+            local hc = helpControls.Wireless
+            if def.help and hc and hc.open then
+                local helpVis = hc.open.Boolean or false
+                want(desired, transitions, def.help, helpVis, helpVis and "fade" or "none")
+            end
         end
     end
 
@@ -794,7 +764,7 @@ end
 function funcInit()
     debugPrint("=== Initialization Started ===")
 
-    loadLayerStatesFromUci()
+    state.layerStates = {}
     state.activeLayer = kLayer.Start
     initLabelArrays()
     if not initRoomControls() then
@@ -841,17 +811,21 @@ myUCI = {
     end,
 }
 
-local ok, err = pcall(function()
-    if not validateControls() then error("Control validation failed") end
-    local hint = Uci.Variables.txtUCIPageName and Uci.Variables.txtUCIPageName.String or ""
-    pageUCI = resolvePageName(hint)
-    if not pageUCI then error("Uci.GetUciPages returned no pages") end
-    validateLayersAtInit(pageUCI)
-    funcInit()
-end)
+hint = Uci.Variables.txtUCIPageName and Uci.Variables.txtUCIPageName.String or ""
+local ok, err
+for _, pageName in ipairs(buildPageNameCandidates(hint)) do
+    pageUCI = pageName
+    ok, err = pcall(function()
+        if not validateControls() then error("Control validation failed") end
+        funcInit()
+    end)
+    if ok then
+        print("✓ UCIController initialized for "..pageName)
+        break
+    end
+    print("UCI attempt for '"..pageName.."': "..tostring(err))
+end
 
-if ok then
-    print("✓ UCIController initialized for "..pageUCI)
-else
+if not ok then
     print("✗ ERROR: UCIController initialization failed: "..tostring(err))
 end
