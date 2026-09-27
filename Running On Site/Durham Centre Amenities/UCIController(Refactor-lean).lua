@@ -1,7 +1,7 @@
 --[[
   UCI Controller (Lean) - Q-SYS Control Script
   Author: Nikolas Smith, Q-SYS
-  Version: 5.1 | Date: 2026-09-06
+  Version: 5.2 | Date: 2026-09-26
   Firmware Req: pre-10.4 compatible (no GetUciPages / GetUciPageLayers / GetLayerVisibility)
 
   Flat single-room UCI: configSource, declarative visibility (buildDesired/applyDesired),
@@ -46,7 +46,8 @@ configSource = {
         disc    = "P01-HDMIDisc",
         usb     = "J02-ConnectUSBPC",
         conf    = "J10-ConferencePC",
-        help    = "I03-HelpPC"
+        help    = "I03-HelpPC",
+        acpr    = true,
     },
     Laptop = {
         layer   = kLayer.Laptop,
@@ -56,7 +57,8 @@ configSource = {
         disc    = "L01-HDMIDisc",
         usb     = "J01-ConnectUSBLaptop",
         conf    = "J09-ConferenceLaptop",
-        help    = "I02-HelpLaptop"
+        help    = "I02-HelpLaptop",
+        acpr    = true,
     },
 }
 
@@ -212,8 +214,9 @@ end
 
 function applyDesired(desired, transitions)
     for name, wantVis in pairs(desired) do
-        if state.layerStates[name] ~= wantVis then
-            local trans = (transitions and transitions[name]) or (wantVis and "fade" or "none")
+        local changed = state.layerStates[name] ~= wantVis
+        if wantVis == false or changed then
+            local trans = wantVis and ((transitions and transitions[name]) or "fade") or "none"
             local ok, err = pcall(Uci.SetLayerVisibility, pageUCI, name, wantVis, trans)
             if ok then state.layerStates[name] = wantVis
             else debugPrint("Layer '"..name.."' error: "..tostring(err)) end
@@ -262,7 +265,7 @@ function applySourceOverlay(desired, transitions, sourceKey)
         end
     end
 
-    if not acprConfig.disableACPRShow then
+    if def.acpr and not acprConfig.disableACPRShow then
         local bypass = boolOf(Controls.ledACPRBypassActive)
         local offHook = boolOf(Controls.ledOffHook)
         if not bypass and offHook then
@@ -326,7 +329,8 @@ function syncHelpButtons()
 end
 
 function refreshLayers()
-    applyDesired(buildDesired())
+    local desired, transitions = buildDesired()
+    applyDesired(desired, transitions)
     syncHelpButtons()
 end
 
@@ -612,7 +616,7 @@ end
 
 -------------------[ Event Handlers ]-------------------
 
-bindButtons(btnNav, function(i) goToLayer(i, "User Button") end)
+bindButtons(btnNav, function(i) goToLayer(i, "btnNav") end)
 
 Controls.btnStartSystem.EventHandler = function()
     ensureSystemIsOn(defaultLayer)
@@ -666,7 +670,7 @@ Controls.ledACPRBypassActive.EventHandler = function() refreshLayers() end
 Controls.ledPresetSaved.EventHandler = function() refreshLayers() end
 Controls.ledCallActive.EventHandler = function() refreshLayers() end
 Controls.ledOffHook.EventHandler = function() refreshLayers() end
-
+-- Only needed if WebView misses commands before other events fire
 if Controls.ledTouchActivity then
     Controls.ledTouchActivity.EventHandler = function()
         resetTouchInactivityTimer()

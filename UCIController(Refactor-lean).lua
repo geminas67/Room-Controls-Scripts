@@ -53,7 +53,8 @@ configSource = {
         disc    = "P01-HDMIDisc",
         usb     = "J02-ConnectUSBPC",
         conf    = "J10-ConferencePC",
-        help    = "I03-HelpPC"
+        help    = "I03-HelpPC",
+        acpr    = true,
     },
     Laptop = {
         layer   = kLayer.Laptop,
@@ -63,7 +64,8 @@ configSource = {
         disc    = "L01-HDMIDisc",
         usb     = "J01-ConnectUSBLaptop",
         conf    = "J09-ConferenceLaptop",
-        help    = "I02-HelpLaptop"
+        help    = "I02-HelpLaptop",
+        acpr    = true,
     },
     Wireless = {
         layer   = kLayer.Wireless,
@@ -73,7 +75,8 @@ configSource = {
         disc    = "W01-HDMIDisc",
         usb     = nil,
         conf    = nil,
-        help    = "I04-HelpWireless"
+        help    = "I04-HelpWireless",
+        acpr    = false,  -- no camera preset recall overlay on wireless casting
     },
 }
 
@@ -187,6 +190,10 @@ function setProp(ctrl, prop, val)
     ctrl[prop] = val
 end
 
+function boolOf(ctrl)
+    return ctrl and ctrl.Boolean or false
+end
+
 function stopTimer(timer)
     if timer then pcall(function() timer:Stop() end) end
     return nil
@@ -255,14 +262,23 @@ function want(desired, transitions, names, visible, transition)
 end
 
 function applyDesired(desired, transitions)
+    -- Hides always republish (Q-SYS clients can paint stale layers); shows skip if unchanged.
     for name, wantVis in pairs(desired) do
-        if state.layerStates[name] ~= wantVis then
-            local trans = (transitions and transitions[name]) or (wantVis and "fade" or "none")
+        local changed = state.layerStates[name] ~= wantVis
+        if wantVis == false or changed then
+            local trans = wantVis and ((transitions and transitions[name]) or "fade") or "none"
             local ok, err = pcall(Uci.SetLayerVisibility, pageUCI, name, wantVis, trans)
             if ok then state.layerStates[name] = wantVis
             else debugPrint("Layer '"..name.."' error: "..tostring(err)) end
         end
     end
+end
+
+function applyHelpOverlay(desired, transitions, layerName, helpKey, onShow)
+    local hc = helpControls[helpKey]
+    local helpVis = boolOf(hc and hc.open)
+    want(desired, transitions, layerName, helpVis, helpVis and "fade" or "none")
+    if helpVis and onShow then onShow() end
 end
 
 function applySourceOverlay(desired, transitions, sourceKey)
@@ -290,7 +306,7 @@ function applySourceOverlay(desired, transitions, sourceKey)
         if def.conf then want(desired, transitions, def.conf, true, "fade") end
 
         local usbPin = def.usbKey and Controls[def.usbKey]
-        local usb = usbPin and usbPin.Boolean or false
+        local usb = boolOf(usbPin)
         if usb then
             want(desired, transitions, usbConnectLayers, false)
         elseif def.usb then
@@ -299,9 +315,9 @@ function applySourceOverlay(desired, transitions, sourceKey)
         end
     end
 
-    if not acprConfig.disableACPRShow then
-        local bypass = Controls.ledACPRBypassActive and Controls.ledACPRBypassActive.Boolean or false
-        local offHook = Controls.ledOffHook and Controls.ledOffHook.Boolean or false
+    if def.acpr and not acprConfig.disableACPRShow then
+        local bypass = boolOf(Controls.ledACPRBypassActive)
+        local offHook = boolOf(Controls.ledOffHook)
         if not bypass and offHook then
             want(desired, transitions, "J03-ACPRActive", true, "fade")
         else
@@ -311,22 +327,17 @@ function applySourceOverlay(desired, transitions, sourceKey)
         want(desired, transitions, "J03-ACPRActive", false)
     end
 
-    local hc = helpControls[sourceKey]
-    if def.help and hc and hc.open then
-        local helpVis = hc.open.Boolean or false
-        want(desired, transitions, def.help, helpVis, helpVis and "fade" or "none")
-        if helpVis then
+    if def.help then
+        applyHelpOverlay(desired, transitions, def.help, sourceKey, function()
             want(desired, transitions, usbConnectLayers, false)
-        end
+        end)
     end
 end
 
 function applyOverlayHelp(desired, transitions)
     local cfg = overlayConfigs[state.activeLayer]
     if not cfg then return end
-    local hc = helpControls[cfg.helpKey]
-    local helpVis = hc and hc.open and hc.open.Boolean or false
-    want(desired, transitions, cfg.layer, helpVis and "fade" or "none")
+    applyHelpOverlay(desired, transitions, cfg.layer, cfg.helpKey)
 end
 
 function setHelpOpen(key, isOpen)
@@ -351,10 +362,10 @@ function buildDesired()
         want(desired, transitions, cfg.hide, false)
     end
 
-    local callActive = Controls.ledCallActive and Controls.ledCallActive.Boolean or false
+    local callActive = boolOf(Controls.ledCallActive)
     want(desired, transitions, "I01-CallActive", callActive, callActive and "fade" or "none")
 
-    local preset = Controls.ledPresetSaved and Controls.ledPresetSaved.Boolean or false
+    local preset = boolOf(Controls.ledPresetSaved)
     want(desired, transitions, "J04-CamPresetSaved", preset, preset and "fade" or "none")
 
     want(desired, transitions, "D01-ShutdownConfirm", state.shutdownConfirm, state.shutdownConfirm and "fade" or "none")
@@ -374,25 +385,15 @@ function buildDesired()
 
     local sourceKey = layerToSourceKey[state.activeLayer]
     if sourceKey then
-        if state.activeLayer == kLayer.PC or state.activeLayer == kLayer.Laptop then
-            applySourceOverlay(desired, transitions, sourceKey)
-        elseif state.activeLayer == kLayer.Wireless then
-            local def = configSource.Wireless
-            local hc = helpControls.Wireless
-            if def.help and hc and hc.open then
-                local helpVis = hc.open.Boolean or false
-                want(desired, transitions, def.help, helpVis, helpVis and "fade" or "none")
-            end
-        end
+        applySourceOverlay(desired, transitions, sourceKey)
     end
 
     return desired, transitions
 end
 
 function syncHelpButtons()
-    for _, key in pairs(layerHelpToKey) do
-        local hc = helpControls[key]
-        if hc and hc.close then setProp(hc.close, "Boolean", false) end
+    for _, hc in pairs(helpControls) do
+        if hc.close then setProp(hc.close, "Boolean", false) end
     end
 end
 
@@ -697,7 +698,7 @@ end
 
 -------------------[ Event Handlers ]-------------------
 
-bindButtons(btnNav, function(i) goToLayer(i, "User Button") end)
+bindButtons(btnNav, function(i) goToLayer(i, "btnNav") end)
 bindButtons(btnRouting, function(i) routingButtonHandler(i) end)
 
 Controls.btnStartSystem.EventHandler = function()

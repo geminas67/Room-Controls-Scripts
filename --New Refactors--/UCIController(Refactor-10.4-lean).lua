@@ -293,8 +293,9 @@ end
 
 function applyDesired(desired, transitions)
     for name, wantVis in pairs(desired) do
-        if state.layerStates[name] ~= wantVis then
-            local trans = (transitions and transitions[name]) or (wantVis and "fade" or "none")
+        local changed = state.layerStates[name] ~= wantVis
+        if wantVis == false or changed then
+            local trans = wantVis and ((transitions and transitions[name]) or "fade") or "none"
             local ok, err = pcall(Uci.SetLayerVisibility, pageUCI, name, wantVis, trans)
             if ok then state.layerStates[name] = wantVis
             else debugPrint("Layer '"..name.."' error: "..tostring(err)) end

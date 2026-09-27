@@ -83,7 +83,6 @@ layerHelpToKey = {
     ["I02-HelpLaptop"]="Laptop", ["I03-HelpPC"]="PC", ["I04-HelpWireless"]="Wireless",
     ["I05-HelpRouting"]="Routing", ["I07-HelpStreamMusic"]="StreamMusic",
 }
-
 helpControls = {
     Laptop      = { open = Controls.btnOpenHelpLaptop,      close = Controls.btnCloseHelpLaptop },
     PC          = { open = Controls.btnOpenHelpPC,          close = Controls.btnCloseHelpPC },
@@ -260,8 +259,9 @@ end
 
 function applyDesired(desired, transitions)
     for name, wantVis in pairs(desired) do
-        if state.layerStates[name] ~= wantVis then
-            local trans = (transitions and transitions[name]) or (wantVis and "fade" or "none")
+        local changed = state.layerStates[name] ~= wantVis
+        if wantVis == false or changed then
+            local trans = wantVis and ((transitions and transitions[name]) or "fade") or "none"
             local ok, err = pcall(Uci.SetLayerVisibility, pageUCI, name, wantVis, trans)
             if ok then state.layerStates[name] = wantVis
             else debugPrint("Layer '"..name.."' error: "..tostring(err)) end

@@ -40,7 +40,7 @@ layersToHide = {
     "J01-ConnectUSBLaptopA","J02-ConnectUSBLaptopB","J03-ConnectUSBPCA","J04-ConnectUSBPCB",
     "J06-ACPRActiveCombined","J07-ACPRActiveSeparated","J08-CamPresetSaved",
     "J09-ACPRBtnCombined","J10-ACPRBtnSeparated",
-    "J11-CameraSelectionLaptopA","J12-CameraSelectionLaptopB","J13-CameraSelectionPCA","J14-CameraSelectionPCB",
+    "J11-CameraSelectLaptopA","J12-CameraSelectLaptopB","J13-CameraSelectPCA","J14-CameraSelectPCB",
     "J17-VideoPrivacySeparatedA","J18-VideoPrivacySeparatedB","J19-VideoPrivacyCombinedA","J20-VideoPrivacyCombinedB",
     "J21-ConferenceControlsLaptopA","J22-ConferenceControlsLaptopB","J23-ConferenceControlsPCA","J24-ConferenceControlsPCB",
     "L01-HDMIDisc","L01-LaptopA","L02-HDMIDisc","L02-LaptopB",
@@ -48,32 +48,32 @@ layersToHide = {
     "W01-WirelessA","W02-WirelessB","W05-Wireless","R10-Routing","S10-StreamMusic","V05-Dialer",
 }
 
-acprLayers = { combined = "J06-ACPRActiveCombined", separated = "J07-ACPRActiveSeparated" }
-acprBtnLayers = { combined = "J09-ACPRBtnCombined", separated = "J10-ACPRBtnSeparated" }
+acprLayer = { combined = "J06-ACPRActiveCombined", separated = "J07-ACPRActiveSeparated" }
+acprBtnLayer = { combined = "J09-ACPRBtnCombined", separated = "J10-ACPRBtnSeparated" }
 
 configSource = {
     LaptopA = {
-        layer = kLayer.LaptopA, hdmiKey = "ledHDMIConnectLaptopA", usbKey = "ledUSBLaptopA",
+        layer = kLayer.LaptopA, hdmiKey = "ledHDMILaptopA", usbKey = "ledUSBLaptopA",
         base = "L01-LaptopA", disc = "L01-HDMIDisc", usb = "J01-ConnectUSBLaptopA",
-        conf = "J21-ConferenceControlsLaptopA", camera = "J11-CameraSelectionLaptopA",
+        conf = "J21-ConferenceControlsLaptopA", camera = "J11-CameraSelectLaptopA",
         help = "I02-HelpLaptopA",
     },
     LaptopB = {
-        layer = kLayer.LaptopB, hdmiKey = "ledHDMIConnectLaptopB", usbKey = "ledUSBLaptopB",
+        layer = kLayer.LaptopB, hdmiKey = "ledHDMILaptopB", usbKey = "ledUSBLaptopB",
         base = "L02-LaptopB", disc = "L02-HDMIDisc", usb = "J02-ConnectUSBLaptopB",
-        conf = "J22-ConferenceControlsLaptopB", camera = "J12-CameraSelectionLaptopB",
+        conf = "J22-ConferenceControlsLaptopB", camera = "J12-CameraSelectLaptopB",
         help = "I03-HelpLaptopB",
     },
     PCA = {
-        layer = kLayer.PCA, hdmiKey = "ledHDMIConnectPCA", usbKey = "ledUSBPCA",
+        layer = kLayer.PCA, hdmiKey = "ledHDMIPCA", usbKey = "ledUSBPCA",
         base = "P01-PCA", disc = "P01-HDMIDisc", usb = "J03-ConnectUSBPCA",
-        conf = "J23-ConferenceControlsPCA", camera = "J13-CameraSelectionPCA",
+        conf = "J23-ConferenceControlsPCA", camera = "J13-CameraSelectPCA",
         help = "I04-HelpPCA", vidPrivSep = "J17-VideoPrivacySeparatedA", vidPrivComb = "J19-VideoPrivacyCombinedA",
     },
     PCB = {
-        layer = kLayer.PCB, hdmiKey = "ledHDMIConnectPCB", usbKey = "ledUSBPCB",
+        layer = kLayer.PCB, hdmiKey = "ledHDMIPCB", usbKey = "ledUSBPCB",
         base = "P02-PCB", disc = "P02-HDMIDisc", usb = "J04-ConnectUSBPCB",
-        conf = "J24-ConferenceControlsPCB", camera = "J14-CameraSelectionPCB",
+        conf = "J24-ConferenceControlsPCB", camera = "J14-CameraSelectPCB",
         help = "I05-HelpPCB", vidPrivSep = "J18-VideoPrivacySeparatedB", vidPrivComb = "J20-VideoPrivacyCombinedB",
     },
 }
@@ -81,7 +81,7 @@ configSource = {
 layerToSourceKey = {}
 for key, def in pairs(configSource) do layerToSourceKey[def.layer] = key end
 
-overlayConfigs = {
+overlayConfig = {
     [kLayer.Wireless] = {
         { layer = "I06-HelpWirelessA", helpKey = "WirelessA" },
         { layer = "I07-HelpWirelessB", helpKey = "WirelessB" },
@@ -90,9 +90,9 @@ overlayConfigs = {
     [kLayer.StreamMusic] = { { layer = "I10-HelpStreamMusic", helpKey = "StreamMusic" } },
 }
 
-configHelpPairKeys = {"LaptopA","LaptopB","PCA","PCB","WirelessA","WirelessB","Routing","StreamMusic"}
+configHelpPairKey = {"LaptopA","LaptopB","PCA","PCB","WirelessA","WirelessB","Routing","StreamMusic"}
 
-helpControls = {
+helpControl = {
     LaptopA     = { open = Controls.btnOpenHelpLaptopA,     close = Controls.btnCloseHelpLaptopA },
     LaptopB     = { open = Controls.btnOpenHelpLaptopB,     close = Controls.btnCloseHelpLaptopB },
     PCA         = { open = Controls.btnOpenHelpPCA,         close = Controls.btnCloseHelpPCA },
@@ -103,7 +103,7 @@ helpControls = {
     StreamMusic = { open = Controls.btnOpenHelpStreamMusic, close = Controls.btnCloseHelpStreamMusic },
 }
 
-layerConfigs = {
+layerConfig = {
     [kLayer.Alarm]        = { show = {"A01-Alarm"}, hideBase = true },
     [kLayer.IncomingCall] = { show = {"B01-IncomingCall"} },
     [kLayer.Start]        = { show = {"C05-Start"}, hideBase = true },
@@ -139,10 +139,10 @@ btnNav = {
     Controls.btnNav11, Controls.btnNav12, Controls.btnNav13, Controls.btnNav14, Controls.btnNav15,
 }
 
-usbConnectLayers, confLayers = {}, {}
+usbConnectLayer, confLayer = {}, {}
 for _, def in pairs(configSource) do
-    if def.usb then table.insert(usbConnectLayers, def.usb) end
-    if def.conf then table.insert(confLayers, def.conf) end
+    if def.usb then table.insert(usbConnectLayer, def.usb) end
+    if def.conf then table.insert(confLayer, def.conf) end
 end
 
 -------------------[ Constant Tables ]-------------------
@@ -155,11 +155,11 @@ state = {
     isAnimating = false,
     isInitialized = false,
 }
-components = {
+component = {
     roomControls = nil, prevPowerState = nil,
     divisibleSpace = nil, btnRoomState = nil, roomIdentity = nil,
 }
-timers = { loading = nil, timeout = nil, inactivity = Timer.New() }
+timer = { loading = nil, timeout = nil, inactivity = Timer.New() }
 arrUCILegends, arrUCIUserLabels = {}, {}
 labelCount = 0
 
@@ -221,8 +221,8 @@ function validateControls()
     }
     local optional = {
         ledTouchActivity = true,
-        ledHDMIConnectPCA = true, ledHDMIConnectPCB = true,
-        ledHDMIConnectLaptopA = true, ledHDMIConnectLaptopB = true,
+        ledHDMIPCA = true, ledHDMIPCB = true,
+        ledHDMILaptopA = true, ledHDMILaptopB = true,
     }
     local missing = {}
     for _, name in ipairs(required) do
@@ -242,17 +242,17 @@ end
 -------------------[ Divisible Space ]-------------------
 
 function getRoomState()
-    if not components.divisibleSpace or not components.btnRoomState then return "separated" end
-    local btns = components.btnRoomState
+    if not component.divisibleSpace or not component.btnRoomState then return "separated" end
+    local btns = component.btnRoomState
     if btns[1] and btns[1].Boolean then return "separated"
     elseif btns[2] and btns[2].Boolean then return "combinedA"
     elseif btns[3] and btns[3].Boolean then return "combinedB" end
     return "separated"
 end
 
-function getDefaultLayerAfterWarming()
+function getPostWarmingLayer()
     local roomState = getRoomState()
-    local roomId = components.roomIdentity or "TrainingA"
+    local roomId = component.roomIdentity or "TrainingA"
     if roomState == "separated" then
         return (roomId == "TrainingB") and kLayer.PCB or kLayer.PCA
     elseif roomState == "combinedA" then return kLayer.PCA
@@ -260,14 +260,14 @@ function getDefaultLayerAfterWarming()
     return kLayer.Routing
 end
 
-function getRoomControlsLayerName(roomState)
+function getRoomControlsLayer(roomState)
     roomState = roomState or getRoomState()
     return (roomState == "separated") and "H09-RoomControlsSeparated" or "H08-RoomControlsCombined"
 end
 
-function shouldShowLayer(layerIndex, roomState)
+function showLayer(layerIndex, roomState)
     roomState = roomState or getRoomState()
-    local roomId = components.roomIdentity
+    local roomId = component.roomIdentity
     local avail = {
         TrainingA = { [kLayer.PCA] = true, [kLayer.LaptopA] = true },
         TrainingB = { [kLayer.PCB] = true, [kLayer.LaptopB] = true },
@@ -280,9 +280,9 @@ function shouldShowLayer(layerIndex, roomState)
     return true
 end
 
-function updateNavigationVisibility(roomState)
+function updateNavVisibility(roomState)
     roomState = roomState or getRoomState()
-    local roomId = components.roomIdentity
+    local roomId = component.roomIdentity
     local isSep = (roomState == "separated")
     local navConfig = {
         TrainingA = {{num = "08"}, {num = "10"}},
@@ -342,13 +342,13 @@ function activeSourceKey()
 end
 
 function applyHelpOverlay(desired, transitions, layerName, helpKey, onShow)
-    local hc = helpControls[helpKey]
+    local hc = helpControl[helpKey]
     local helpVis = boolOf(hc and hc.open)
     want(desired, transitions, layerName, helpVis, helpVis and "fade" or "none")
     if helpVis and onShow then onShow() end
 end
 
-function applyDivisibleSourceOverlay(desired, transitions, sourceKey)
+function applySourceOverlay(desired, transitions, sourceKey)
     local def = configSource[sourceKey]
     if not def then return end
 
@@ -370,8 +370,8 @@ function applyDivisibleSourceOverlay(desired, transitions, sourceKey)
 
     if def.help then
         applyHelpOverlay(desired, transitions, def.help, sourceKey, function()
-            want(desired, transitions, confLayers, false)
-            want(desired, transitions, usbConnectLayers, false)
+            want(desired, transitions, confLayer, false)
+            want(desired, transitions, usbConnectLayer, false)
         end)
     end
 end
@@ -395,7 +395,7 @@ function getSourceLayerVisibility(def, isActive, usbConnected, isCombined, desir
     return confActive
 end
 
-function applyConferenceControlsDesired(desired, transitions, roomState)
+function applyConferenceControls(desired, transitions, roomState)
     local sourceKey = activeSourceKey()
     if not sourceKey or not hdmiConnected(sourceKey) then return end
     roomState = roomState or getRoomState()
@@ -409,7 +409,7 @@ function applyConferenceControlsDesired(desired, transitions, roomState)
         end
     end
     if not acprConfig.disableACPRShow and anyConfActive then
-        want(desired, transitions, isCombined and acprBtnLayers.combined or acprBtnLayers.separated, true, "fade")
+        want(desired, transitions, isCombined and acprBtnLayer.combined or acprBtnLayer.separated, true, "fade")
     end
 end
 
@@ -421,7 +421,7 @@ function applyACPRDesired(desired, transitions, roomState)
     roomState = roomState or getRoomState()
     local isSep = (roomState == "separated")
     local bypassCtl = isSep and Controls.ledACPRBypassSeparated or Controls.ledACPRBypassCombined
-    local acprOn = isSep and acprLayers.separated or acprLayers.combined
+    local acprOn = isSep and acprLayer.separated or acprLayer.combined
     local bypass = boolOf(bypassCtl)
     if not bypass then
         want(desired, transitions, acprOn, true, "fade")
@@ -432,7 +432,7 @@ function applyACPRDesired(desired, transitions, roomState)
 end
 
 function applyOverlayHelp(desired, transitions)
-    local entries = overlayConfigs[state.activeLayer]
+    local entries = overlayConfig[state.activeLayer]
     if not entries then return end
     for _, entry in ipairs(entries) do
         applyHelpOverlay(desired, transitions, entry.layer, entry.helpKey)
@@ -447,16 +447,16 @@ function buildDesired(roomState)
     local desired, transitions = {}, {}
     want(desired, transitions, layersToHide, false)
 
-    local cfg = layerConfigs[state.activeLayer]
+    local cfg = layerConfig[state.activeLayer]
     if cfg then
         local baseVis = not cfg.hideBase
         for _, name in ipairs(layersBase) do
             want(desired, transitions, name, baseVis, baseVis and "fade" or "none")
         end
         if cfg.roomControlsLayer then
-            want(desired, transitions, getRoomControlsLayerName(roomState), true, "fade")
+            want(desired, transitions, getRoomControlsLayer(roomState), true, "fade")
         elseif cfg.sourceKey then
-            if not shouldShowLayer(state.activeLayer, roomState) then
+            if not showLayer(state.activeLayer, roomState) then
                 debugPrint("Layer "..state.activeLayer.." hidden by divisible-space")
             end
         elseif cfg.show then
@@ -476,10 +476,10 @@ function buildDesired(roomState)
     applyOverlayHelp(desired, transitions)
 
     local sourceKey = activeSourceKey()
-    if sourceKey and shouldShowLayer(state.activeLayer, roomState) then
-        applyDivisibleSourceOverlay(desired, transitions, sourceKey)
+    if sourceKey and showLayer(state.activeLayer, roomState) then
+        applySourceOverlay(desired, transitions, sourceKey)
         if hdmiConnected(sourceKey) then
-            applyConferenceControlsDesired(desired, transitions, roomState)
+            applyConferenceControls(desired, transitions, roomState)
             applyACPRDesired(desired, transitions, roomState)
         end
     end
@@ -488,7 +488,7 @@ function buildDesired(roomState)
 end
 
 function syncHelpButtons()
-    for _, hc in pairs(helpControls) do
+    for _, hc in pairs(helpControl) do
         if hc.close then setProp(hc.close, "Boolean", false) end
     end
 end
@@ -498,12 +498,12 @@ function refreshLayers()
     local desired, transitions = buildDesired(roomState)
     applyDesired(desired, transitions)
     syncHelpButtons()
-    updateNavigationVisibility(roomState)
+    updateNavVisibility(roomState)
     updateStartSystemLegend(roomState)
 end
 
 function setHelpOpen(key, isOpen)
-    local hc = helpControls[key]
+    local hc = helpControl[key]
     if not hc then return end
     if hc.open then setProp(hc.open, "Boolean", isOpen) end
     if hc.close then setProp(hc.close, "Boolean", false) end
@@ -545,14 +545,14 @@ function initRoomControls()
         debugPrint("Room Controls not found: "..compName)
         return false
     end
-    components.roomControls = comp
-    components.prevPowerState = comp["ledSystemPower"] and comp["ledSystemPower"].Boolean
+    component.roomControls = comp
+    component.prevPowerState = comp["ledSystemPower"] and comp["ledSystemPower"].Boolean
     if comp["ledSystemPower"] then
         comp["ledSystemPower"].EventHandler = function(ctl)
             local cur = ctl.Boolean
-            if cur == components.prevPowerState then return end
+            if cur == component.prevPowerState then return end
             debugPrint("Power → "..(cur and "ON" or "OFF").." (Source: Room Controls)")
-            components.prevPowerState = cur
+            component.prevPowerState = cur
             reflectPowerState(cur, cur and "Room Automation Power On" or "Room Automation Power Off")
         end
         debugPrint("Registered: ledSystemPower (event-driven)")
@@ -563,21 +563,21 @@ end
 function initDivisibleSpace()
     local roomName = Uci.Variables.compRoomControls and Uci.Variables.compRoomControls.String or ""
     if roomName:find("TrainingA") then
-        components.roomIdentity = "TrainingA"
+        component.roomIdentity = "TrainingA"
         debugPrint("Room identity: Collab A")
     elseif roomName:find("TrainingB") then
-        components.roomIdentity = "TrainingB"
+        component.roomIdentity = "TrainingB"
         debugPrint("Room identity: Collab B")
     else
         debugPrint("Room identity: could not determine from "..roomName)
     end
     local ok, comp = pcall(function() return Component.New("compDivisibleSpaceControls") end)
     if ok and comp then
-        components.divisibleSpace = comp
-        components.btnRoomState = {
+        component.divisibleSpace = comp
+        component.btnRoomState = {
             comp["btnRoomState 1"], comp["btnRoomState 2"], comp["btnRoomState 3"],
         }
-        for _, btn in ipairs(components.btnRoomState) do
+        for _, btn in ipairs(component.btnRoomState) do
             if btn then
                 btn.EventHandler = function(ctl)
                     if not ctl.Boolean then return end
@@ -589,19 +589,19 @@ function initDivisibleSpace()
     else
         debugPrint("DivisibleSpace: component not found (feature disabled)")
     end
-    return components.divisibleSpace ~= nil
+    return component.divisibleSpace ~= nil
 end
 
 function powerOn()
-    if not components.roomControls or not components.roomControls["btnSystemOnOff"] then return false end
-    components.roomControls["btnSystemOnOff"].Boolean = true
+    if not component.roomControls or not component.roomControls["btnSystemOnOff"] then return false end
+    component.roomControls["btnSystemOnOff"].Boolean = true
     debugPrint("Room → ON")
     return true
 end
 
 function powerOff()
-    if not components.roomControls or not components.roomControls["btnSystemOnOff"] then return false end
-    components.roomControls["btnSystemOnOff"].Boolean = false
+    if not component.roomControls or not component.roomControls["btnSystemOnOff"] then return false end
+    component.roomControls["btnSystemOnOff"].Boolean = false
     debugPrint("Room → OFF")
     return true
 end
@@ -611,14 +611,14 @@ end
 function startLoadingBar(isPoweringOn)
     if state.isAnimating then return end
     state.isAnimating = true
-    timers.loading = stopTimer(timers.loading)
-    timers.timeout = stopTimer(timers.timeout)
+    timer.loading = stopTimer(timer.loading)
+    timer.timeout = stopTimer(timer.timeout)
     local duration = 10
-    if components.roomControls then
-        if isPoweringOn and components.roomControls["warmupTime"] then
-            duration = components.roomControls["warmupTime"].Value
-        elseif not isPoweringOn and components.roomControls["cooldownTime"] then
-            duration = components.roomControls["cooldownTime"].Value
+    if component.roomControls then
+        if isPoweringOn and component.roomControls["warmupTime"] then
+            duration = component.roomControls["warmupTime"].Value
+        elseif not isPoweringOn and component.roomControls["cooldownTime"] then
+            duration = component.roomControls["cooldownTime"].Value
         end
     else
         duration = isPoweringOn and (tonumber(Uci.Variables.timeProgressWarming) or 10)
@@ -627,30 +627,30 @@ function startLoadingBar(isPoweringOn)
     local steps, interval, currentStep = 100, duration / 100, 0
     setProp(Controls.knbProgressBar, "Value", isPoweringOn and 0 or 100)
     setProp(Controls.txtProgressBar, "String", (isPoweringOn and 0 or 100).."%")
-    timers.loading = Timer.New()
-    timers.timeout = Timer.New()
-    timers.timeout.EventHandler = function()
+    timer.loading = Timer.New()
+    timer.timeout = Timer.New()
+    timer.timeout.EventHandler = function()
         state.isAnimating = false
-        timers.loading = stopTimer(timers.loading)
-        goToLayer(isPoweringOn and getDefaultLayerAfterWarming() or kLayer.Start, "Loading Timeout")
+        timer.loading = stopTimer(timer.loading)
+        goToLayer(isPoweringOn and getPostWarmingLayer() or kLayer.Start, "Loading Timeout")
     end
-    timers.timeout:Start(300)
-    timers.loading.EventHandler = function()
+    timer.timeout:Start(300)
+    timer.loading.EventHandler = function()
         currentStep = currentStep + 1
         local prog = isPoweringOn and currentStep or (100 - currentStep)
         setProp(Controls.knbProgressBar, "Value", prog)
         setProp(Controls.txtProgressBar, "String", prog.."%")
         if currentStep >= steps then
-            timers.loading = stopTimer(timers.loading)
-            timers.timeout = stopTimer(timers.timeout)
+            timer.loading = stopTimer(timer.loading)
+            timer.timeout = stopTimer(timer.timeout)
             state.isAnimating = false
-            goToLayer(isPoweringOn and getDefaultLayerAfterWarming() or kLayer.Start,
+            goToLayer(isPoweringOn and getPostWarmingLayer() or kLayer.Start,
                 isPoweringOn and "Warmup Complete" or "Cooldown Complete")
         else
-            timers.loading:Start(interval)
+            timer.loading:Start(interval)
         end
     end
-    timers.loading:Start(interval)
+    timer.loading:Start(interval)
     debugPrint("Loading bar started ("..duration.."s)")
 end
 
@@ -670,19 +670,19 @@ function onTouchInactivityTimeout()
 end
 
 function resetTouchInactivityTimer()
-    if not timers.inactivity then return end
-    timers.inactivity:Stop()
+    if not timer.inactivity then return end
+    timer.inactivity:Stop()
     if not isOnRoomCombiningLayer() then return end
     local timeout = tonumber(Uci.Variables.numTouchInactivityTimer and Uci.Variables.numTouchInactivityTimer.Value) or 60
     if timeout <= 0 then timeout = 60 end
-    timers.inactivity:Start(timeout)
+    timer.inactivity:Start(timeout)
 end
 
 function syncRoomControlsState()
-    if not components.roomControls or not components.roomControls["ledSystemPower"] then return end
-    local cur = components.roomControls["ledSystemPower"].Boolean
-    if cur == components.prevPowerState then return end
-    components.prevPowerState = cur
+    if not component.roomControls or not component.roomControls["ledSystemPower"] then return end
+    local cur = component.roomControls["ledSystemPower"].Boolean
+    if cur == component.prevPowerState then return end
+    component.prevPowerState = cur
     reflectPowerState(cur, "Room Automation Sync")
 end
 
@@ -694,8 +694,8 @@ end
 
 function ensureSystemIsOn(targetLayer)
     targetLayer = targetLayer or defaultLayer
-    if components.roomControls and components.roomControls["ledSystemPower"]
-        and components.roomControls["ledSystemPower"].Boolean then
+    if component.roomControls and component.roomControls["ledSystemPower"]
+        and component.roomControls["ledSystemPower"].Boolean then
         goToLayer(targetLayer, "Source Active")
         return
     end
@@ -710,15 +710,15 @@ function shutdownSystem()
 end
 
 function initSyncFromSystemController()
-    if not mySystemController or not mySystemController.state or not components.roomControls then return end
-    local led = components.roomControls["ledSystemPower"]
+    if not mySystemController or not mySystemController.state or not component.roomControls then return end
+    local led = component.roomControls["ledSystemPower"]
     if not led or not led.Boolean then return end
     if mySystemController.state.isWarming then
         state.activeLayer = kLayer.Warming
         startLoadingBar(true)
         debugPrint("Synced: WARMING")
     else
-        state.activeLayer = getDefaultLayerAfterWarming()
+        state.activeLayer = getPostWarmingLayer()
         debugPrint("Synced: READY")
     end
 end
@@ -784,8 +784,8 @@ Controls.btnShutdownConfirm.EventHandler = function()
     shutdownSystem()
 end
 
-for _, key in ipairs(configHelpPairKeys) do
-    local hc = helpControls[key]
+for _, key in ipairs(configHelpPairKey) do
+    local hc = helpControl[key]
     if hc then
         ;(function(k, c)
             if c.open then c.open.EventHandler = function() setHelpOpen(k, true) end end
@@ -834,8 +834,8 @@ end
 if Controls.pinCallActive then
     Controls.pinCallActive.EventHandler = function() refreshLayers() end
 end
-if timers.inactivity then
-    timers.inactivity.EventHandler = onTouchInactivityTimeout
+if timer.inactivity then
+    timer.inactivity.EventHandler = onTouchInactivityTimeout
 end
 if Controls.ledTouchActivity then
     Controls.ledTouchActivity.EventHandler = function() resetTouchInactivityTimer() end
@@ -874,18 +874,18 @@ myUCI = {
     btnNavEventHandler = goToLayer,
     syncRoomControlsState = syncRoomControlsState,
     cleanup = function()
-        timers.loading = stopTimer(timers.loading)
-        timers.timeout = stopTimer(timers.timeout)
-        if timers.inactivity then timers.inactivity:Stop() end
-        if components.roomControls and components.roomControls["ledSystemPower"] then
-            components.roomControls["ledSystemPower"].EventHandler = nil
+        timer.loading = stopTimer(timer.loading)
+        timer.timeout = stopTimer(timer.timeout)
+        if timer.inactivity then timer.inactivity:Stop() end
+        if component.roomControls and component.roomControls["ledSystemPower"] then
+            component.roomControls["ledSystemPower"].EventHandler = nil
         end
         for i = 1, labelCount do
             local label = arrUCIUserLabels[i]
             if label then label.EventHandler = nil end
         end
-        if components.btnRoomState then
-            for _, btn in ipairs(components.btnRoomState) do
+        if component.btnRoomState then
+            for _, btn in ipairs(component.btnRoomState) do
                 if btn then btn.EventHandler = nil end
             end
         end

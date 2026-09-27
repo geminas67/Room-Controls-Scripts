@@ -180,6 +180,15 @@ funcInit()
 - **Init mirrors handlers** — `funcInit()` calls the same `setcomp*` paths that combo-box `.EventHandler` assignments use, plus `getComponentNames()` and any one-time sync (e.g. `syncLEDStates()`).
 - **Guard optional controls** — wrap indexed or optional UI controls with `if Controls.compMicBox then ... end` before binding.
 
+## UCI layer visibility (root cause, not bolt-ons)
+
+Scripts that drive `Uci.SetLayerVisibility` with a local cache (`layerStates`, etc.) must **not** assume the client always matches the cache (MTR WebView, soft clients, reconnect). Fix it in **one place**:
+
+- In `applyDesired`, republish **every hide** on each pass: `if wantVis == false or changed then` — use `transition = "none"` for hides.
+- Only **shows** may skip when unchanged (avoid redundant fades).
+
+Do **not** add parallel “resync” paths (burst timers, cache wipes, `republishHides()`, force refresh) unless a single event truly fires before any `refreshLayers()` and the one-line `applyDesired` rule is insufficient. Prefer `refreshLayers()` on that one edge event instead.
+
 ## Minimal code-quality rules
 
 - **No OOP** — no `setmetatable`, `__index`, `.new()`, or `self` for controllers; one script context, one `Controls` surface.
