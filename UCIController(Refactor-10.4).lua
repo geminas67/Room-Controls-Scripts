@@ -4,7 +4,7 @@
   Version: 4.2 | Date: 2026-06-22
   Firmware Req: 10.4
 
-  Layer visibility: buildFullDesired + reconcileLayers via GetLayerVisibility.
+  Layer visibility: buildFullDesired + reconcileLayers; applyDesired reads Uci.GetLayerVisibility(page, name).
   GetUciPages / GetUciPageLayers for init. Event-driven power sync, video switcher auto-detect.
 ]]
 
@@ -249,7 +249,6 @@ end
 local btnNavEventHandler
 local state = {
     activeLayer = kLayer.Start,
-    layerStates = {},
     activeRoutingLayer = config.defaultRouting,
     callActive = false,
     isAnimating = false,
@@ -290,17 +289,6 @@ local function debugPrint(str)
 end
 
 -------------------[ Layer Visibility ]-------------------
-local function loadLayerStatesFromUci()
-    state.layerStates = {}
-    for _, pages in pairs(Uci.GetLayerVisibility()) do
-        for page, layers in pairs(pages) do
-            if page == config.pageUCI then
-                for name, vis in pairs(layers) do state.layerStates[name] = vis end
-            end
-        end
-    end
-end
-
 local function want(desired, transitions, names, visible, transition)
     if type(names) ~= "table" then names = {names} end
     for _, name in ipairs(names) do
@@ -312,13 +300,12 @@ local function want(desired, transitions, names, visible, transition)
 end
 
 local function reconcileLayers(desired, transitions)
-    loadLayerStatesFromUci()
     for name, wantVis in pairs(desired) do
-        if state.layerStates[name] ~= wantVis then
+        local current = Uci.GetLayerVisibility(config.pageUCI, name)
+        if current ~= wantVis then
             local trans = (transitions and transitions[name]) or (wantVis and "fade" or "none")
             local ok, err = pcall(Uci.SetLayerVisibility, config.pageUCI, name, wantVis, trans)
-            if ok then state.layerStates[name] = wantVis
-            else debugPrint("Layer '"..name.."' error: "..tostring(err)) end
+            if not ok then debugPrint("Layer '"..name.."' error: "..tostring(err)) end
         end
     end
 end
@@ -336,7 +323,7 @@ end
 
 local function syncAllHelpButtons()
     for helpLayer, map in pairs(helpLayerButtonMap or {}) do
-        local vis = state.layerStates[helpLayer] == true
+        local vis = Uci.GetLayerVisibility(config.pageUCI, helpLayer) == true
         setProp(map.open, "Boolean", vis)
         setProp(map.close, "Boolean", false)
     end
@@ -856,7 +843,6 @@ local function init()
     debugPrint("=== Initialization Started ===")
     debugPrint("Configuration: pageUCI="..config.pageUCI..", debug="..tostring(config.debug))
 
-    loadLayerStatesFromUci()
     state.activeLayer = kLayer.Start
     buildSources()
     buildLayerConfigs()

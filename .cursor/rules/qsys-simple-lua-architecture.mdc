@@ -180,14 +180,13 @@ funcInit()
 - **Init mirrors handlers** — `funcInit()` calls the same `setcomp*` paths that combo-box `.EventHandler` assignments use, plus `getComponentNames()` and any one-time sync (e.g. `syncLEDStates()`).
 - **Guard optional controls** — wrap indexed or optional UI controls with `if Controls.compMicBox then ... end` before binding.
 
-## UCI layer visibility (root cause, not bolt-ons)
+## UCI layer visibility
 
-Scripts that drive `Uci.SetLayerVisibility` with a local cache (`layerStates`, etc.) must **not** assume the client always matches the cache (MTR WebView, soft clients, reconnect). Fix it in **one place**:
+**Firmware 10.4+** — do not mirror visibility in `layerStates`. In `applyDesired` / `reconcileLayers`, read `Uci.GetLayerVisibility(pageUCI, layerName)` and call `SetLayerVisibility` only when `current ~= wantVis`. Use `transition = "none"` for hides, `"fade"` (or per-layer transitions) for shows. Reference: site `UCIController(Refactor-lean).lua` (Durham) and `--New Refactors--/UCIController(Refactor-10.4-lean).lua`.
 
-- In `applyDesired`, republish **every hide** on each pass: `if wantVis == false or changed then` — use `transition = "none"` for hides.
-- Only **shows** may skip when unchanged (avoid redundant fades).
+**Pre-10.4** (no per-layer get) — a local cache is required; republish every hide each pass (`wantVis == false or changed`) if soft clients drift from Lua’s cache.
 
-Do **not** add parallel “resync” paths (burst timers, cache wipes, `republishHides()`, force refresh) unless a single event truly fires before any `refreshLayers()` and the one-line `applyDesired` rule is insufficient. Prefer `refreshLayers()` on that one edge event instead.
+Do **not** add parallel resync paths (burst timers, cache wipes, `republishHides()`) unless a single edge event fires before `refreshLayers()` and the standard `applyDesired` path is insufficient.
 
 ## Minimal code-quality rules
 

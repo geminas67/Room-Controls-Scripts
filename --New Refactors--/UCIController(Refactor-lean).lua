@@ -24,9 +24,9 @@ layersToHide = {
     "R01-Routing01","R02-Routing02","R03-Routing03","R04-Routing04","R05-Routing05","R10-Routing",
     "S05-StreamMusic","V05-Dialer"
 }
-routingLayers = {"R01-Routing01","R02-Routing02","R03-Routing03","R04-Routing04","R05-Routing05"}
-usbConnectLayers = {"J01-ConnectUSBLaptop","J02-ConnectUSBPC"}
-confLayers = {"J09-ConferenceLaptop","J10-ConferencePC"}
+routingLayer = {"R01-Routing01","R02-Routing02","R03-Routing03","R04-Routing04","R05-Routing05"}
+usbConnectLayer = {"J01-ConnectUSBLaptop","J02-ConnectUSBPC"}
+confLayer = {"J09-ConferenceLaptop","J10-ConferencePC"}
 
 kLayer = {
     Alarm           = 1,
@@ -53,7 +53,8 @@ configSource = {
         disc    = "P01-HDMIDisc",
         usb     = "J02-ConnectUSBPC",
         conf    = "J10-ConferencePC",
-        help    = "I03-HelpPC"
+        help    = "I03-HelpPC",
+        acpr    = true,
     },
     Laptop = {
         layer   = kLayer.Laptop,
@@ -63,7 +64,8 @@ configSource = {
         disc    = "L01-HDMIDisc",
         usb     = "J01-ConnectUSBLaptop",
         conf    = "J09-ConferenceLaptop",
-        help    = "I02-HelpLaptop"
+        help    = "I02-HelpLaptop",
+        acpr    = true,
     },
     Wireless = {
         layer   = kLayer.Wireless,
@@ -78,12 +80,9 @@ configSource = {
 }
 
 layerToSourceKey = { [kLayer.PC] ="PC", [kLayer.Laptop]="Laptop", [kLayer.Wireless]="Wireless" }
-configHelpPairKeys = {"Laptop","PC","Wireless","Routing","StreamMusic"}
-layerHelpToKey = {
-    ["I02-HelpLaptop"]="Laptop", ["I03-HelpPC"]="PC", ["I04-HelpWireless"]="Wireless",
-    ["I05-HelpRouting"]="Routing", ["I07-HelpStreamMusic"]="StreamMusic",
-}
-helpControls = {
+configHelpPairKey = {"Laptop","PC","Wireless","Routing","StreamMusic"}
+
+helpControl = {
     Laptop      = { open = Controls.btnOpenHelpLaptop,      close = Controls.btnCloseHelpLaptop },
     PC          = { open = Controls.btnOpenHelpPC,          close = Controls.btnCloseHelpPC },
     Wireless    = { open = Controls.btnOpenHelpWireless,    close = Controls.btnCloseHelpWireless },
@@ -104,7 +103,7 @@ powerProgressConfig = {
     },
 }
 
-layerConfigs = {
+layerConfig = {
     [kLayer.Alarm]        = { show = {"A01-Alarm"}, hideBase = true },
     [kLayer.IncomingCall] = { show = {"B01-IncomingCall"} },
     [kLayer.Start]        = { show = {"C05-Start"}, hideBase = true },
@@ -121,7 +120,7 @@ layerConfigs = {
 }
 
 -- Optional help overlays tied to active base layer + open-button state
-overlayConfigs = {
+overlayConfig = {
     [kLayer.Routing]     = { layer = "I05-HelpRouting",     helpKey = "Routing" },
     [kLayer.StreamMusic] = { layer = "I07-HelpStreamMusic", helpKey = "StreamMusic" },
 }
@@ -159,15 +158,16 @@ state = {
     powerProgress = nil,
     shutdownConfirm = false,
     isInitialized = false,
+    helpOpen = {},
 }
-components = {
+component = {
     roomControls = nil,
     videoSwitcher = nil, switcherType = nil, uciToInputMapping = {},
     passcode = nil, passcodeRoom = nil, passcodeEnabled = false,
 }
-timers = { progress = nil, inactivity = Timer.New() }
-arrUCIStringLabels = {}
-arrUCIStringVariables = {}
+timer = { progress = nil, inactivity = Timer.New() }
+uciLabels = {}
+uciVariables = {}
 labelCount = 0
 
 -------------------[ Constants ]-------------------
@@ -259,6 +259,9 @@ end
 
 function applyDesired(desired, transitions)
     for name, wantVis in pairs(desired) do
+        -- Force-resend hides even if state.layerStates matches: rendered UCI on
+        -- TeamsRooms PC has been observed drifting out of sync with tracked layer state,
+        -- leaving stale layers visible. Shows still use the diff-only path.
         local changed = state.layerStates[name] ~= wantVis
         if wantVis == false or changed then
             local trans = wantVis and ((transitions and transitions[name]) or "fade") or "none"
@@ -270,76 +273,62 @@ function applyDesired(desired, transitions)
 end
 
 function applyHelpOverlay(desired, transitions, layerName, helpKey, onShow)
-    local hc = helpControls[helpKey]
-    local helpVis = boolOf(hc and hc.open)
+    local helpVis = state.helpOpen[helpKey] or false
     want(desired, transitions, layerName, helpVis, helpVis and "fade" or "none")
     if helpVis and onShow then onShow() end
+end
+
+function hdmiConnected(sourceKey)
+    local def = configSource[sourceKey]
+    if not def or not def.hdmiKey then return true end
+    local pin = Controls[def.hdmiKey]
+    return not pin or pin.Boolean
 end
 
 function applySourceOverlay(desired, transitions, sourceKey)
     local def = configSource[sourceKey]
     if not def then return end
 
-    local hdmiPin = Controls[def.hdmiKey]
-    local hdmiOk = not hdmiPin or hdmiPin.Boolean
-
-    if hdmiOk then
-        want(desired, transitions, def.base, true, "fade")
-        want(desired, transitions, def.disc, false)
-    else
+    if not hdmiConnected(sourceKey) then
         want(desired, transitions, def.disc, true, "fade")
         want(desired, transitions, def.base, false)
-        want(desired, transitions, "J03-ACPRActive", false)
-        if def.conf then want(desired, transitions, def.conf, false) end
-        want(desired, transitions, usbConnectLayers, false)
-        want(desired, transitions, confLayers, false)
-        if def.help then want(desired, transitions, def.help, false) end
         return
     end
 
-    if not conferenceStateConfig.skip[def.layer] then
-        if def.conf then want(desired, transitions, def.conf, true, "fade") end
+    want(desired, transitions, def.base, true, "fade")
 
-        local usbPin = def.usbKey and Controls[def.usbKey]
-        local usb = boolOf(usbPin)
-        if usb then
-            want(desired, transitions, usbConnectLayers, false)
-        elseif def.usb then
+    if not conferenceStateConfig.skip[def.layer] then
+        want(desired, transitions, def.conf, true, "fade")
+        local usb = boolOf(def.usbKey and Controls[def.usbKey])
+        if not usb and def.usb then
             want(desired, transitions, def.usb, true, "fade")
-            if def.help then want(desired, transitions, def.help, false) end
         end
     end
 
-    if not acprConfig.disableACPRShow then
+    if def.acpr and not acprConfig.disableACPRShow then
         local bypass = boolOf(Controls.ledACPRBypassActive)
         local offHook = boolOf(Controls.ledOffHook)
         if not bypass and offHook then
             want(desired, transitions, "J03-ACPRActive", true, "fade")
-        else
-            want(desired, transitions, "J03-ACPRActive", false)
         end
-    else
-        want(desired, transitions, "J03-ACPRActive", false)
     end
 
     if def.help then
         applyHelpOverlay(desired, transitions, def.help, sourceKey, function()
-            want(desired, transitions, usbConnectLayers, false)
+            want(desired, transitions, confLayer, false)
+            want(desired, transitions, usbConnectLayer, false)
         end)
     end
 end
 
 function applyOverlayHelp(desired, transitions)
-    local cfg = overlayConfigs[state.activeLayer]
+    local cfg = overlayConfig[state.activeLayer]
     if not cfg then return end
     applyHelpOverlay(desired, transitions, cfg.layer, cfg.helpKey)
 end
 
 function setHelpOpen(key, isOpen)
-    local hc = helpControls[key]
-    if not hc then return end
-    if hc.open then setProp(hc.open, "Boolean", isOpen) end
-    if hc.close then setProp(hc.close, "Boolean", false) end
+    state.helpOpen[key] = isOpen
     refreshLayers()
 end
 
@@ -347,7 +336,7 @@ function buildDesired()
     local desired, transitions = {}, {}
     want(desired, transitions, layersToHide, false)
 
-    local cfg = layerConfigs[state.activeLayer]
+    local cfg = layerConfig[state.activeLayer]
     if cfg then
         local baseVis = not cfg.hideBase
         for _, name in ipairs(layersBase) do
@@ -366,11 +355,11 @@ function buildDesired()
     want(desired, transitions, "D01-ShutdownConfirm", state.shutdownConfirm, state.shutdownConfirm and "fade" or "none")
 
     if state.activeLayer == kLayer.Routing then
-        if state.activeRoutingLayer < 1 or state.activeRoutingLayer > #routingLayers then
+        if state.activeRoutingLayer < 1 or state.activeRoutingLayer > #routingLayer then
             state.activeRoutingLayer = 1
         end
         want(desired, transitions, "X01-ProgramVolume", false)
-        for i, name in ipairs(routingLayers) do
+        for i, name in ipairs(routingLayer) do
             local show = i == state.activeRoutingLayer
             want(desired, transitions, name, show, show and "fade" or "none")
         end
@@ -390,16 +379,8 @@ function buildDesired()
     return desired, transitions
 end
 
-function syncHelpButtons()
-    for _, key in pairs(layerHelpToKey) do
-        local hc = helpControls[key]
-        if hc and hc.close then setProp(hc.close, "Boolean", false) end
-    end
-end
-
 function refreshLayers()
     applyDesired(buildDesired())
-    syncHelpButtons()
 end
 
 function interlockNav()
@@ -427,12 +408,12 @@ function goToLayer(layerIndex, source)
     debugPrint("Layer "..prev.." → "..layerIndex.." (Source: "..source..")")
 end
 
-function routingButtonHandler(buttonIndex)
-    if buttonIndex < 1 or buttonIndex > #routingLayers then return end
+function btnRoutingHandler(buttonIndex)
+    if buttonIndex < 1 or buttonIndex > #routingLayer then return end
     state.activeRoutingLayer = buttonIndex
     refreshLayers()
     interlockRouting()
-    debugPrint("Routing → "..routingLayers[buttonIndex])
+    debugPrint("Routing → "..routingLayer[buttonIndex])
 end
 
 -------------------[ Room Sync ]-------------------
@@ -441,32 +422,32 @@ function extractRoomFromPageName()
     local room = pageUCI:match("^uci%s*(.+)$")
     if room then
         room = room:match("^%s*(.-)%s*$")
-        components.passcodeRoom = room
+        component.passcodeRoom = room
         return room
     end
     return nil
 end
 
 function isPasscodeCorrect()
-    if not components.passcodeEnabled or not components.passcode then return true end
-    if components.passcode["PasscodeCorrect"] then return components.passcode["PasscodeCorrect"].Boolean end
+    if not component.passcodeEnabled or not component.passcode then return true end
+    if component.passcode["PasscodeCorrect"] then return component.passcode["PasscodeCorrect"].Boolean end
     return true
 end
 
 function initPasscode()
     if not extractRoomFromPageName() then return false end
-    local compName = "passcode"..components.passcodeRoom
+    local compName = "passcode"..component.passcodeRoom
     local ok, comp = pcall(function() return Component.New(compName) end)
     if not ok or not comp then
         debugPrint("Passcode not found: "..compName.." (disabled)")
         return false
     end
-    components.passcode = comp
-    components.passcodeEnabled = true
+    component.passcode = comp
+    component.passcodeEnabled = true
     if comp["PasscodeCorrect"] then
         comp["PasscodeCorrect"].EventHandler = function(ctl)
             if not ctl.Boolean then return end
-            debugPrint("Passcode correct → "..components.passcodeRoom.." (Source: PasscodeCorrect)")
+            debugPrint("Passcode correct → "..component.passcodeRoom.." (Source: PasscodeCorrect)")
             requestPowerOn("Passcode Correct")
         end
         debugPrint("Passcode handler registered")
@@ -491,7 +472,7 @@ function initRoomControls()
         debugPrint("Room Controls not found: "..compName)
         return false
     end
-    components.roomControls = comp
+    component.roomControls = comp
     for _, cfg in ipairs(powerProgressConfig) do
         if comp[cfg.key] then
             comp[cfg.key].EventHandler = function(ctl)
@@ -504,15 +485,15 @@ function initRoomControls()
 end
 
 function powerOn()
-    if not components.roomControls or not components.roomControls["btnSystemOnOff"] then return false end
-    components.roomControls["btnSystemOnOff"].Boolean = true
+    if not component.roomControls or not component.roomControls["btnSystemOnOff"] then return false end
+    component.roomControls["btnSystemOnOff"].Boolean = true
     debugPrint("Room → ON")
     return true
 end
 
 function powerOff()
-    if not components.roomControls or not components.roomControls["btnSystemOnOff"] then return false end
-    components.roomControls["btnSystemOnOff"].Boolean = false
+    if not component.roomControls or not component.roomControls["btnSystemOnOff"] then return false end
+    component.roomControls["btnSystemOnOff"].Boolean = false
     debugPrint("Room → OFF")
     return true
 end
@@ -526,7 +507,7 @@ end
 
 function onPowerProgress(cfg, active, source)
     local mode = cfg.mode
-    timers.progress = stopTimer(timers.progress)
+    timer.progress = stopTimer(timer.progress)
     if not active then
         if state.powerProgress ~= mode then return end
         state.powerProgress = nil
@@ -540,27 +521,27 @@ function onPowerProgress(cfg, active, source)
     goToLayer(mode == "warming" and kLayer.Warming or kLayer.Cooling, source)
     local default = mode == "warming" and 10 or 5
     local timeKey = mode == "warming" and "warmupTime" or "cooldownTime"
-    local ctrl = components.roomControls and components.roomControls[timeKey]
+    local ctrl = component.roomControls and component.roomControls[timeKey]
     local duration = tonumber(ctrl and ctrl.Value) or default
     if duration < 1 then duration = 1 elseif duration > 120 then duration = 120 end
     local steps, interval, currentStep = 100, duration / 100, 0
-    timers.progress = Timer.New()
-    timers.progress.EventHandler = function()
+    timer.progress = Timer.New()
+    timer.progress.EventHandler = function()
         currentStep = currentStep + 1
         updateProgressBar(mode == "warming" and currentStep or (100 - currentStep))
         if currentStep >= steps then
-            timers.progress = stopTimer(timers.progress)
+            timer.progress = stopTimer(timer.progress)
         else
-            timers.progress:Start(interval)
+            timer.progress:Start(interval)
         end
     end
-    timers.progress:Start(interval)
+    timer.progress:Start(interval)
     debugPrint("Power progress started ("..mode..", "..duration.."s visual)")
 end
 
 function requestPowerOn(source)
     source = source or "System Start"
-    if not components.roomControls then
+    if not component.roomControls then
         print("ERROR: Power on refused — room controls not connected")
         return
     end
@@ -573,7 +554,7 @@ end
 
 function requestPowerOff(source)
     source = source or "System Shutdown"
-    if not components.roomControls then
+    if not component.roomControls then
         print("ERROR: Power off refused — room controls not connected")
         return
     end
@@ -585,27 +566,27 @@ function requestPowerOff(source)
 end
 
 function resetTouchInactivityTimer()
-    if not timers.inactivity then return end
-    timers.inactivity:Stop()
+    if not timer.inactivity then return end
+    timer.inactivity:Stop()
     if state.activeLayer ~= kLayer.Passcode then return end
     local timeout = tonumber(Uci.Variables.numTouchInactivityTimer and Uci.Variables.numTouchInactivityTimer.Value) or 60
     if timeout <= 0 then timeout = 60 end
-    timers.inactivity.EventHandler = function()
+    timer.inactivity.EventHandler = function()
         debugPrint("Touch inactivity → Start (Source: Inactivity Timer)")
         goToLayer(kLayer.Start, "Inactivity Timeout")
     end
-    timers.inactivity:Start(timeout)
+    timer.inactivity:Start(timeout)
     debugPrint("Touch inactivity timer reset ("..timeout.."s)")
 end
 
 function ensureSystemIsOn(targetLayer)
     targetLayer = targetLayer or defaultLayer
-    if components.roomControls and components.roomControls["ledSystemPower"] and components.roomControls["ledSystemPower"].Boolean then
+    if component.roomControls and component.roomControls["ledSystemPower"] and component.roomControls["ledSystemPower"].Boolean then
         debugPrint("System already ON → layer "..targetLayer)
         goToLayer(targetLayer, "Source Active")
         return
     end
-    if components.passcodeEnabled and not isPasscodeCorrect() then
+    if component.passcodeEnabled and not isPasscodeCorrect() then
         debugPrint("Passcode required")
         goToLayer(kLayer.Passcode, "Passcode Required")
         return
@@ -614,16 +595,16 @@ function ensureSystemIsOn(targetLayer)
 end
 
 function initSyncFromSystemController()
-    if not components.roomControls then return end
+    if not component.roomControls then return end
     for _, cfg in ipairs(powerProgressConfig) do
-        local led = components.roomControls[cfg.key]
+        local led = component.roomControls[cfg.key]
         if led and led.Boolean then
             onPowerProgress(cfg, true, "Init Sync")
             debugPrint("Synced: "..string.upper(cfg.mode))
             return
         end
     end
-    local power = components.roomControls["ledSystemPower"]
+    local power = component.roomControls["ledSystemPower"]
     if power and power.Boolean then
         goToLayer(defaultLayer, "Init Sync Ready")
         debugPrint("Synced: READY")
@@ -634,9 +615,9 @@ end
 
 function syncLabels()
     for i = 1, labelCount do
-        local lbl = arrUCIStringLabels[i]
-        if lbl and arrUCIStringVariables[i] then
-            setProp(lbl, "String", arrUCIStringVariables[i].String or "")
+        local lbl = uciLabels[i]
+        if lbl and uciVariables[i] then
+            setProp(lbl, "String", uciVariables[i].String or "")
         end
     end
 end
@@ -651,8 +632,8 @@ function initLabelArrays()
         local varName = "txtLabel"..name
         local ctrl = Controls[ctrlName]
         local var = Uci.Variables[varName]
-        arrUCIStringLabels[idx] = ctrl
-        arrUCIStringVariables[idx] = var
+        uciLabels[idx] = ctrl
+        uciVariables[idx] = var
         if not ctrl then
             if required then
                 missingRequired = missingRequired + 1
@@ -688,7 +669,7 @@ function initLabelArrays()
     end
     labelCount = idx
     for i = 1, labelCount do
-        local label = arrUCIStringLabels[i]
+        local label = uciLabels[i]
         if label then label.EventHandler = function() syncLabels() end end
     end
     debugPrint("String Labels: "..labelCount.." slots configured")
@@ -699,7 +680,7 @@ end
 -------------------[ Event Handlers ]-------------------
 
 bindButtons(btnNav, function(i) goToLayer(i, "User Button") end)
-bindButtons(btnRouting, function(i) routingButtonHandler(i) end)
+bindButtons(btnRouting, function(i) btnRoutingHandler(i) end)
 
 Controls.btnStartSystem.EventHandler = function()
     ensureSystemIsOn(defaultLayer)
@@ -720,17 +701,11 @@ Controls.btnShutdownConfirm.EventHandler = function()
     requestPowerOff("System Shutdown")
 end
 
-for _, key in ipairs(configHelpPairKeys) do
-    local hc = helpControls[key]
+for _, key in ipairs(configHelpPairKey) do
+    local hc = helpControl[key]
     if hc then
-        ;(function(k, controls)
-            if controls.open then
-                controls.open.EventHandler = function() setHelpOpen(k, true) end
-            end
-            if controls.close then
-                controls.close.EventHandler = function() setHelpOpen(k, false) end
-            end
-        end)(key, hc)
+        if hc.open then hc.open.EventHandler = function() setHelpOpen(key, true) end end
+        if hc.close then hc.close.EventHandler = function() setHelpOpen(key, false) end end
     end
 end
 
@@ -792,20 +767,20 @@ end
 
 myUCI = {
     cleanup = function()
-        timers.progress = stopTimer(timers.progress)
-        if timers.inactivity then timers.inactivity:Stop() end
-        if components.roomControls then
+        timer.progress = stopTimer(timer.progress)
+        if timer.inactivity then timer.inactivity:Stop() end
+        if component.roomControls then
             for _, cfg in ipairs(powerProgressConfig) do
-                if components.roomControls[cfg.key] then
-                    components.roomControls[cfg.key].EventHandler = nil
+                if component.roomControls[cfg.key] then
+                    component.roomControls[cfg.key].EventHandler = nil
                 end
             end
         end
-        if components.passcode and components.passcode["PasscodeCorrect"] then
-            components.passcode["PasscodeCorrect"].EventHandler = nil
+        if component.passcode and component.passcode["PasscodeCorrect"] then
+            component.passcode["PasscodeCorrect"].EventHandler = nil
         end
         for i = 1, labelCount do
-            local label = arrUCIStringLabels[i]
+            local label = uciLabels[i]
             if label then label.EventHandler = nil end
         end
         debugPrint("Cleanup complete")

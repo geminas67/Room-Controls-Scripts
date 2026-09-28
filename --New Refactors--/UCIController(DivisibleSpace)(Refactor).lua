@@ -160,7 +160,7 @@ component = {
     divisibleSpace = nil, btnRoomState = nil, roomIdentity = nil,
 }
 timer = { loading = nil, timeout = nil, inactivity = Timer.New() }
-arrUCILegends, arrUCIUserLabels = {}, {}
+uciLegends, uciUserLabels = {}, {}
 labelCount = 0
 
 -------------------[ Constants ]-------------------
@@ -364,6 +364,7 @@ function applySourceOverlay(desired, transitions, sourceKey)
         if usb then
             want(desired, transitions, def.conf, true, "fade")
         elseif def.usb then
+            want(desired, transitions, def.conf, true, "fade")
             want(desired, transitions, def.usb, true, "fade")
         end
     end
@@ -425,7 +426,7 @@ function applyACPRDesired(desired, transitions, roomState)
     local bypass = boolOf(bypassCtl)
     if not bypass then
         want(desired, transitions, acprOn, true, "fade")
-        want(desired, transitions, def.conf, false)
+        want(desired, transitions, def.conf, true, "fade")
     else
         want(desired, transitions, def.conf, true, "fade")
     end
@@ -727,8 +728,8 @@ end
 
 function syncLabels()
     for i = 1, labelCount do
-        local lbl = arrUCILegends[i]
-        if lbl and arrUCIUserLabels[i] then
+        local lbl = uciLegends[i]
+        if lbl and uciUserLabels[i] then
             setProp(lbl, "Legend", arrUCIUserLabels[i].String or "")
         end
     end
@@ -741,8 +742,8 @@ function initLabelArrays()
     end
     local function registerLegend(name)
         idx = idx + 1
-        arrUCILegends[idx] = Controls["txt"..name]
-        arrUCIUserLabels[idx] = Uci.Variables[labelVarName("txt"..name)]
+        uciLegends[idx] = Controls["txt"..name]
+        uciUserLabels[idx] = Uci.Variables[labelVarName("txt"..name)]
     end
     for _, cfg in ipairs(labelConfig) do
         if cfg.suffix then
@@ -756,7 +757,7 @@ function initLabelArrays()
     end
     labelCount = idx
     for i = 1, labelCount do
-        local label = arrUCIUserLabels[i]
+        local label = uciUserLabels[i]
         if label then label.EventHandler = function() syncLabels() end end
     end
     debugPrint("Legends: "..labelCount.." controls")
@@ -764,7 +765,7 @@ end
 
 -------------------[ Event Handlers ]-------------------
 
-bindButtons(btnNav, function(i) goToLayer(i, "User Button") end)
+bindButtons(btnNav, function(i) goToLayer(i, "btnNav") end)
 
 Controls.btnStartSystem.EventHandler = function()
     ensureSystemIsOn(defaultLayer)
@@ -881,7 +882,7 @@ myUCI = {
             component.roomControls["ledSystemPower"].EventHandler = nil
         end
         for i = 1, labelCount do
-            local label = arrUCIUserLabels[i]
+            local label = uciUserLabels[i]
             if label then label.EventHandler = nil end
         end
         if component.btnRoomState then

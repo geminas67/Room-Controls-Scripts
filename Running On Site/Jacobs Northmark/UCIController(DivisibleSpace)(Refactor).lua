@@ -40,9 +40,9 @@ layersToHide = {
     "J01-ConnectUSBLaptopA","J02-ConnectUSBLaptopB","J03-ConnectUSBPCA","J04-ConnectUSBPCB",
     "J06-ACPRActiveCombined","J07-ACPRActiveSeparated","J08-CamPresetSaved",
     "J09-ACPRBtnCombined","J10-ACPRBtnSeparated",
-    "J11-CameraSelectionLaptopA","J12-CameraSelectionLaptopB","J13-CameraSelectionPCA","J14-CameraSelectionPCB",
+    "J11-CamSelectLaptopA","J12-CamSelectLaptopB","J13-CamSelectPCA","J14-CamSelectPCB",
     "J17-VideoPrivacySeparatedA","J18-VideoPrivacySeparatedB","J19-VideoPrivacyCombinedA","J20-VideoPrivacyCombinedB",
-    "J21-ConferenceControlsLaptopA","J22-ConferenceControlsLaptopB","J23-ConferenceControlsPCA","J24-ConferenceControlsPCB",
+    "J21-ConferenceLaptopA","J22-ConferenceLaptopB","J23-ConferencePCA","J24-ConferencePCB",
     "L01-HDMIDisc","L01-LaptopA","L02-HDMIDisc","L02-LaptopB",
     "P01-HDMIDisc","P01-PCA","P02-HDMIDisc","P02-PCB",
     "W01-WirelessA","W02-WirelessB","W05-Wireless","R10-Routing","S10-StreamMusic","V05-Dialer",
@@ -55,25 +55,25 @@ configSource = {
     LaptopA = {
         layer = kLayer.LaptopA, hdmiKey = "ledHDMIConnectLaptopA", usbKey = "ledUSBLaptopA",
         base = "L01-LaptopA", disc = "L01-HDMIDisc", usb = "J01-ConnectUSBLaptopA",
-        conf = "J21-ConferenceControlsLaptopA", camera = "J11-CameraSelectionLaptopA",
+        conf = "J21-ConferenceLaptopA", camera = "J11-CamSelectLaptopA",
         help = "I02-HelpLaptopA",
     },
     LaptopB = {
         layer = kLayer.LaptopB, hdmiKey = "ledHDMIConnectLaptopB", usbKey = "ledUSBLaptopB",
         base = "L02-LaptopB", disc = "L02-HDMIDisc", usb = "J02-ConnectUSBLaptopB",
-        conf = "J22-ConferenceControlsLaptopB", camera = "J12-CameraSelectionLaptopB",
+        conf = "J22-ConferenceLaptopB", camera = "J12-CamSelectLaptopB",
         help = "I03-HelpLaptopB",
     },
     PCA = {
         layer = kLayer.PCA, hdmiKey = "ledHDMIConnectPCA", usbKey = "ledUSBPCA",
         base = "P01-PCA", disc = "P01-HDMIDisc", usb = "J03-ConnectUSBPCA",
-        conf = "J23-ConferenceControlsPCA", camera = "J13-CameraSelectionPCA",
+        conf = "J23-ConferencePCA", camera = "J13-CamSelectPCA",
         help = "I04-HelpPCA", vidPrivSep = "J17-VideoPrivacySeparatedA", vidPrivComb = "J19-VideoPrivacyCombinedA",
     },
     PCB = {
         layer = kLayer.PCB, hdmiKey = "ledHDMIConnectPCB", usbKey = "ledUSBPCB",
         base = "P02-PCB", disc = "P02-HDMIDisc", usb = "J04-ConnectUSBPCB",
-        conf = "J24-ConferenceControlsPCB", camera = "J14-CameraSelectionPCB",
+        conf = "J24-ConferencePCB", camera = "J14-CamSelectPCB",
         help = "I05-HelpPCB", vidPrivSep = "J18-VideoPrivacySeparatedB", vidPrivComb = "J20-VideoPrivacyCombinedB",
     },
 }
@@ -160,7 +160,7 @@ components = {
     divisibleSpace = nil, btnRoomState = nil, roomIdentity = nil,
 }
 timers = { loading = nil, timeout = nil, inactivity = Timer.New() }
-arrUCILegends, arrUCIUserLabels = {}, {}
+uciLegends, uciUserLabels = {}, {}
 labelCount = 0
 
 -------------------[ Constants ]-------------------
@@ -348,7 +348,7 @@ function applyHelpOverlay(desired, transitions, layerName, helpKey, onShow)
     if helpVis and onShow then onShow() end
 end
 
-function applyDivisibleSourceOverlay(desired, transitions, sourceKey)
+function applySourceOverlay(desired, transitions, sourceKey)
     local def = configSource[sourceKey]
     if not def then return end
 
@@ -364,6 +364,7 @@ function applyDivisibleSourceOverlay(desired, transitions, sourceKey)
         if usb then
             want(desired, transitions, def.conf, true, "fade")
         elseif def.usb then
+            want(desired, transitions, def.conf, true, "fade")
             want(desired, transitions, def.usb, true, "fade")
         end
     end
@@ -425,7 +426,7 @@ function applyACPRDesired(desired, transitions, roomState)
     local bypass = boolOf(bypassCtl)
     if not bypass then
         want(desired, transitions, acprOn, true, "fade")
-        want(desired, transitions, def.conf, false)
+        want(desired, transitions, def.conf, true, "fade")
     else
         want(desired, transitions, def.conf, true, "fade")
     end
@@ -477,7 +478,7 @@ function buildDesired(roomState)
 
     local sourceKey = activeSourceKey()
     if sourceKey and shouldShowLayer(state.activeLayer, roomState) then
-        applyDivisibleSourceOverlay(desired, transitions, sourceKey)
+        applySourceOverlay(desired, transitions, sourceKey)
         if hdmiConnected(sourceKey) then
             applyConferenceControlsDesired(desired, transitions, roomState)
             applyACPRDesired(desired, transitions, roomState)
@@ -727,9 +728,9 @@ end
 
 function syncLabels()
     for i = 1, labelCount do
-        local lbl = arrUCILegends[i]
-        if lbl and arrUCIUserLabels[i] then
-            setProp(lbl, "Legend", arrUCIUserLabels[i].String or "")
+        local lbl = uciLegends[i]
+        if lbl and uciUserLabels[i] then
+            setProp(lbl, "Legend", uciUserLabels[i].String or "")
         end
     end
 end
@@ -741,8 +742,8 @@ function initLabelArrays()
     end
     local function registerLegend(name)
         idx = idx + 1
-        arrUCILegends[idx] = Controls["txt"..name]
-        arrUCIUserLabels[idx] = Uci.Variables[labelVarName("txt"..name)]
+        uciLegends[idx] = Controls["txt"..name]
+        uciUserLabels[idx] = Uci.Variables[labelVarName("txt"..name)]
     end
     for _, cfg in ipairs(labelConfig) do
         if cfg.suffix then
@@ -756,7 +757,7 @@ function initLabelArrays()
     end
     labelCount = idx
     for i = 1, labelCount do
-        local label = arrUCIUserLabels[i]
+        local label = uciUserLabels[i]
         if label then label.EventHandler = function() syncLabels() end end
     end
     debugPrint("Legends: "..labelCount.." controls")
@@ -764,7 +765,7 @@ end
 
 -------------------[ Event Handlers ]-------------------
 
-bindButtons(btnNav, function(i) goToLayer(i, "User Button") end)
+bindButtons(btnNav, function(i) goToLayer(i, "btnNav") end)
 
 Controls.btnStartSystem.EventHandler = function()
     ensureSystemIsOn(defaultLayer)
@@ -881,7 +882,7 @@ myUCI = {
             components.roomControls["ledSystemPower"].EventHandler = nil
         end
         for i = 1, labelCount do
-            local label = arrUCIUserLabels[i]
+            local label = uciUserLabels[i]
             if label then label.EventHandler = nil end
         end
         if components.btnRoomState then
