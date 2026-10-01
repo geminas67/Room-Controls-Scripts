@@ -21,7 +21,8 @@
     "Lua.diagnostics.disable": [
         "duplicate-set-field",
         "lowercase-global",
-        "undefined-global"
+        "undefined-global",
+        "undefined-field"
     ],
     "files.associations": {
         "*.qplug": "lua"

@@ -1,7 +1,7 @@
 --[[
   UCI Controller (Lean) - Q-SYS Control Script
   Author: Nikolas Smith, Q-SYS
-  Version: 5.2 | Date: 2026-09-26
+  Version: 5.3 | Date: 2026-09-28
   Firmware Req: 10.4 compatible (GetUciPages / GetUciPageLayers / GetLayerVisibility)
 
   Flat single-room UCI: configSource, declarative visibility (buildDesired/applyDesired),
@@ -64,7 +64,9 @@ configSource = {
     },
 }
 
-layerToSourceKey = { [kLayer.PC] ="PC", [kLayer.Laptop]="Laptop" }
+layerToSourceKey = {}
+for key, def in pairs(configSource) do layerToSourceKey[def.layer] = key end
+
 configHelpPairKey = {"Laptop","PC"}
 helpControl = {
     Laptop = { open = Controls.btnHelpOpenLaptop, close = Controls.btnHelpCloseLaptop },
@@ -98,18 +100,14 @@ layerConfig = {
 
 labelConfig = {
     {suffix = "Nav",     count = 9},
-    --{suffix = "VidSrc",  count = 12},
     {suffix = "GainPGM"},
     {suffix = "Gain",    count = 10},
     {suffix = "Display", count = 4},
     {single = {"NavShutdown","RoomNameNav","RoomNameStart", "NavTeams"}},
 }
 
-btnNav = {
-    Controls.btnNav01, Controls.btnNav02, Controls.btnNav03, Controls.btnNav04,
-    Controls.btnNav05, Controls.btnNav06, Controls.btnNav07, Controls.btnNav08,
-    Controls.btnNav09,
-}
+btnNav = {}
+for i = 1, 9 do btnNav[i] = Controls["btnNav" .. string.format("%02d", i)] end
 
 -------------------[ Constant Tables ]-------------------
 
@@ -125,6 +123,9 @@ component = {
     roomControls = nil,
     passcode = nil, passcodeRoom = nil, passcodeEnabled = false,
 }
+statusMTR = Component.New("statusMTR")
+delayMTR = 3
+
 timer = { progress = nil, inactivity = Timer.New() }
 uciLabels = {}
 uciVariables = {}
@@ -159,9 +160,7 @@ end
 
 function bindButtons(buttons, handler)
     for i, btn in ipairs(buttons) do
-        if btn then
-            btn.EventHandler = function() handler(i, btn) end
-        end
+        if btn then btn.EventHandler = function() handler(i, btn) end end
     end
 end
 
@@ -181,13 +180,11 @@ end
 
 function validateControls()
     local required = {
-        "btnNav01","btnNav02","btnNav03","btnNav04","btnNav05","btnNav06","btnNav07",
-        "btnNav08","btnNav09",
+        "btnNav01","btnNav02","btnNav03","btnNav04","btnNav05","btnNav06","btnNav07","btnNav08","btnNav09",
         "btnStartSystem","btnNavShutdown","btnShutdownCancel","btnShutdownConfirm",
         "knbProgressBar","txtProgressBar","txtPowerProgress",
-        "ledCallActive","ledOffHook","ledUSBLaptop","ledUSBPC",
-        "ledPresetSaved","ledHDMI01Connect","ledHDMI02Connect",
-        "ledACPRBypassActive",
+        "ledOffHook","ledUSBLaptop","ledUSBPC",
+        "ledPresetSaved","ledHDMI01Connect","ledHDMI02Connect", "ledACPRBypassActive",
     }
     local missing = {}
     for _, name in ipairs(required) do
@@ -207,16 +204,16 @@ function validateLayers(pageName)
         print("ERROR: Could not retrieve layers for page '"..pageName.."'")
         return false
     end
-    local inDesign = {}
+
+    local inDesign, missing, seen = {}, {}, {}
     for _, layer in ipairs(pageLayers) do inDesign[layer.Name] = true end
 
-    local missing = {}
-    local seen = {}
     local function check(name)
         if not name or name == "" or seen[name] then return end
         seen[name] = true
         if not inDesign[name] then table.insert(missing, name) end
     end
+
     local function checkList(list)
         if not list then return end
         if type(list) == "string" then check(list); return end
@@ -225,16 +222,17 @@ function validateLayers(pageName)
 
     checkList(layersBase)
     checkList(layersToHide)
-    checkList(routingLayer)
+    -- checkList(routingLayer)
     checkList(usbConnectLayer)
     checkList(confLayer)
+
     for _, cfg in pairs(layerConfig) do
         checkList(cfg.show)
         checkList(cfg.hide)
     end
-    if overlayConfig then
-        for _, cfg in pairs(overlayConfig) do check(cfg.layer) end
-    end
+    -- if overlayConfig then
+    --     for _, cfg in pairs(overlayConfig) do check(cfg.layer) end
+    -- end
     for _, def in pairs(configSource) do
         check(def.base); check(def.disc); check(def.usb); check(def.conf); check(def.help)
     end
@@ -246,7 +244,6 @@ function validateLayers(pageName)
     end
     return true
 end
-
 
 -------------------[ Visibility ]-------------------
 
@@ -260,10 +257,10 @@ function want(desired, transitions, names, visible, transition)
     end
 end
 
-function applyDesired(desired, transitions)
+function applyDesired(desired, transitions, force)
     for name, wantVis in pairs(desired) do
-        local current = Uci.GetLayerVisibility(pageUCI, name)
-        if current ~= wantVis then
+        local current = not force and Uci.GetLayerVisibility(pageUCI, name)
+        if force or current ~= wantVis then
             local trans = wantVis and ((transitions and transitions[name]) or "fade") or "none"
             local ok, err = pcall(Uci.SetLayerVisibility, pageUCI, name, wantVis, trans)
             if ok then debugPrint("Layer '"..name.."' set to "..tostring(wantVis))
@@ -299,18 +296,13 @@ function applySourceOverlay(desired, transitions, sourceKey)
 
     if not conferenceStateConfig.skip[def.layer] then
         want(desired, transitions, def.conf, true, "fade")
-        local usb = boolOf(def.usbKey and Controls[def.usbKey])
-        if not usb and def.usb then
+        if not boolOf(def.usbKey and Controls[def.usbKey]) and def.usb then
             want(desired, transitions, def.usb, true, "fade")
         end
     end
     
-    if def.acpr and not acprConfig.disableACPRShow then
-        local bypass = boolOf(Controls.ledACPRBypassActive)
-        local offHook = boolOf(Controls.ledOffHook)
-        if not bypass and offHook then
-            want(desired, transitions, "J03-ACPRActive", true, "fade")
-        end
+    if def.acpr and not acprConfig.disableACPRShow and not boolOf(Controls.ledACPRBypassActive) and boolOf(Controls.ledOffHook) then
+        want(desired, transitions, "J03-ACPRActive", true, "fade")
     end
 
     if def.help then
@@ -340,8 +332,8 @@ function buildDesired()
         want(desired, transitions, cfg.hide, false)
     end
 
-    local callActive = boolOf(Controls.ledCallActive)
-    want(desired, transitions, "I01-CallActive", callActive, callActive and "fade" or "none")
+    local offHook = boolOf(Controls.ledOffHook)
+    want(desired, transitions, "I01-CallActive", offHook, offHook and "fade" or "none")
 
     local preset = boolOf(Controls.ledPresetSaved)
     want(desired, transitions, "J04-CamPresetSaved", preset, preset and "fade" or "none")
@@ -349,16 +341,14 @@ function buildDesired()
     want(desired, transitions, "D01-ShutdownConfirm", state.shutdownConfirm, state.shutdownConfirm and "fade" or "none")
 
     local sourceKey = layerToSourceKey[state.activeLayer]
-    if sourceKey then
-        applySourceOverlay(desired, transitions, sourceKey)
-    end
+    if sourceKey then applySourceOverlay(desired, transitions, sourceKey) end
 
     return desired, transitions
 end
 
-function refreshLayers()
+function refreshLayers(force)
     local desired, transitions = buildDesired()
-    applyDesired(desired, transitions)
+    applyDesired(desired, transitions, force)
 end
 
 function interlockNav()
@@ -375,10 +365,15 @@ function goToLayer(layerIndex, source)
     state.activeLayer = layerIndex
     state.shutdownConfirm = false
     if layerIndex == kLayer.Passcode then resetTouchInactivityTimer() end
-    refreshLayers()
+
+    local force = layerIndex == kLayer.Cooling or layerIndex == kLayer.Warming
+        or (layerIndex == kLayer.Start and source == "Cooldown Complete")
+
+    refreshLayers(force and true)
     interlockNav()
     debugPrint("Layer "..(kLayerName[prev] or prev).." → "..(kLayerName[layerIndex] or layerIndex).." (Source: "..source..")")
 end
+
 -------------------[ Room Sync ]-------------------
 
 function extractRoomFromPageName()
@@ -407,6 +402,7 @@ function initPasscode()
     end
     component.passcode = comp
     component.passcodeEnabled = true
+
     if comp["PasscodeCorrect"] then
         comp["PasscodeCorrect"].EventHandler = function(ctl)
             if not ctl.Boolean then return end
@@ -429,12 +425,14 @@ function initRoomControls()
         debugPrint("Room Controls: could not determine component")
         return false
     end
+
     local ok, comp = pcall(function() return Component.New(compName) end)
     if not ok or not comp then
         print("ERROR: Room Controls not found: "..compName)
         debugPrint("Room Controls not found: "..compName)
         return false
     end
+
     component.roomControls = comp
     for _, cfg in ipairs(powerProgressConfig) do
         if comp[cfg.key] then
@@ -471,6 +469,7 @@ end
 function onPowerProgress(cfg, active, source)
     local mode = cfg.mode
     timer.progress = stopTimer(timer.progress)
+
     if not active then
         if state.powerProgress ~= mode then return end
         state.powerProgress = nil
@@ -478,15 +477,19 @@ function onPowerProgress(cfg, active, source)
         goToLayer(mode == "warming" and defaultLayer or kLayer.Start, source)
         return
     end
+
     state.powerProgress = mode
     setProp(Controls.txtPowerProgress, "String", cfg.text)
     updateProgressBar(mode == "warming" and 0 or 100)
     goToLayer(mode == "warming" and kLayer.Warming or kLayer.Cooling, source)
+
     local default = mode == "warming" and 10 or 5
     local timeKey = mode == "warming" and "warmupTime" or "cooldownTime"
     local ctrl = component.roomControls and component.roomControls[timeKey]
     local duration = tonumber(ctrl and ctrl.Value) or default
+    
     if duration < 1 then duration = 1 elseif duration > 120 then duration = 120 end
+    
     local steps, interval, currentStep = 100, duration / 100, 0
     timer.progress = Timer.New()
     timer.progress.EventHandler = function()
@@ -523,6 +526,7 @@ function requestPowerOff(source)
     end
     if powerOff() then
         debugPrint("Power off requested ("..source..")")
+        refreshLayers(true) -- Teams PC: GetLayerVisibility can read false while overlays still paint
     else
         print("ERROR: Power off failed — btnSystemOnOff unavailable")
     end
@@ -586,39 +590,34 @@ function syncLabels()
 end
 
 function initLabelArrays()
-    local idx = 0
-    local missingOptional, missingRequired = 0, 0
+    local idx, missingOptional, missingRequired = 0, 0, 0
 
     local function reportMissing(kind, name, required)
         if required then
             missingRequired = missingRequired + 1
-            print("ERROR: Required legend " .. kind .. " missing: " .. name)
+            print("ERROR: Required legend "..kind.." missing: "..name)
         else
             missingOptional = missingOptional + 1
-            debugPrint("Warning: Legend " .. kind .. " not found: " .. name)
+            debugPrint("Warning: Legend "..kind.." not found: "..name)
         end
     end
 
     local function registerLegend(name, required)
         idx = idx + 1
+        local key = "txt"..name
+        local ctrl, var = Controls[key], Uci.Variables[key]
 
-        local ctrlName = "txt" .. name
-        local varName  = "txtLabel" .. name
-        local ctrl     = Controls[ctrlName]
-        local var      = Uci.Variables[varName]
+        uciLabels[idx], uciVariables[idx] = ctrl, var
 
-        uciLabels[idx] = ctrl
-        uciVariables[idx] = var
-
-        if not ctrl then reportMissing("control", ctrlName, required) end
-        if not var then reportMissing("variable", varName, required) end
-
+        if not ctrl then reportMissing("control", key, required) end
+        if not var then reportMissing("variable", key, required) end
         if ctrl and var then
             var.EventHandler = function()
                 setProp(ctrl, "String", var.String or "")
             end
         end
     end
+
     for _, cfg in ipairs(labelConfig) do
         if cfg.suffix then
             if cfg.count then
@@ -629,16 +628,39 @@ function initLabelArrays()
                 registerLegend(cfg.suffix, false)
             end
         elseif cfg.single then
-            for _, name in ipairs(cfg.single) do
-                registerLegend(name, true)
-            end
+            for _, name in ipairs(cfg.single) do registerLegend(name, true) end
         end
     end
+
     labelCount = idx
     syncLabels()
-    debugPrint("String Labels: " .. labelCount .. " slots configured")
-    if missingOptional > 0 then debugPrint("String Labels: " .. missingOptional .. " optional control/variable reference(s) missing") end
-    if missingRequired > 0 then print("ERROR: String Labels: " .. missingRequired .. " required control/variable reference(s) missing") end
+    debugPrint("String Labels: "..labelCount.." slots configured")
+    if missingOptional > 0 then debugPrint("String Labels: "..missingOptional.." optional control/variable reference(s) missing") end
+    if missingRequired > 0 then print("ERROR: String Labels: "..missingRequired.." required control/variable reference(s) missing") end
+end
+
+function initMTRStatus()
+    local ok, comp = pcall(function() return statusMTR end)
+    if not ok or not comp then
+        debugPrint("MTR status component not found — skipping sync")
+        return false
+    end
+    component.mtrStatus = comp
+    if comp["status"] then
+        comp["status"].EventHandler = function(ctl)
+            if ctl.String == "OK" then
+                debugPrint("MTR ready — forcing full layer resync in "..delayMTR.."s")
+                Timer.CallAfter(function()
+                    local ok2, err = pcall(refreshLayers, true)
+                    if ok2 then debugPrint("MTR resync complete")
+                    else print("ERROR: MTR resync failed — "..tostring(err)) end
+                end, delayMTR)
+            end
+        end
+    else
+        debugPrint("MTR status control 'status' not found on statusMTR")
+    end
+    return true
 end
 
 -------------------[ Event Handlers ]-------------------
@@ -681,20 +703,25 @@ for _, def in pairs(configSource) do
     --       if pin.Boolean then ensureSystemIsOn(srcDef.layer) else refreshLayers() end
     --   end
     -- (use IIFE to capture srcDef, ctl: ;(function(srcDef, ctl) ... end)(def, usbCtrl))
-    if def.usbKey then
-        local usbCtrl = Controls[def.usbKey]
-        if usbCtrl then usbCtrl.EventHandler = function() refreshLayers() end end
+    local usbCtrl = def.usbKey and Controls[def.usbKey]
+    if usbCtrl then
+        ;(function(srcDef, ctl)
+            ctl.EventHandler = function(pin)
+                debugPrint("USB "..(pin.Boolean and "reasserted" or "disconnected").." for "..srcDef.layer)
+                refreshLayers()
+            end
+        end)(def, usbCtrl)
     end
 end
 
 Controls.ledACPRBypassActive.EventHandler = function() refreshLayers() end
 Controls.ledPresetSaved.EventHandler = function() refreshLayers() end
-Controls.ledCallActive.EventHandler = function() refreshLayers() end
-Controls.ledOffHook.EventHandler = function() refreshLayers() end
+Controls.ledOffHook.EventHandler = function() 
+    if boolOf(Controls.ledOffHook) then ensureSystemIsOn(defaultLayer) 
+    else refreshLayers() end
+end
 if Controls.ledTouchActivity then
-    Controls.ledTouchActivity.EventHandler = function()
-        resetTouchInactivityTimer()
-    end
+    Controls.ledTouchActivity.EventHandler = resetTouchInactivityTimer
 end
 
 -------------------[ Always Run ]-------------------
@@ -709,8 +736,9 @@ function funcInit()
     end
     initPasscode()
     initSyncFromSystemController()
+    initMTRStatus()
 
-    refreshLayers()
+    refreshLayers(true) -- force full push; GetLayerVisibility may be stale after a Core reboot
     interlockNav()
     syncLabels()
 
@@ -734,6 +762,9 @@ myUCI = {
         if component.passcode and component.passcode["PasscodeCorrect"] then
             component.passcode["PasscodeCorrect"].EventHandler = nil
         end
+        if component.mtrStatus and component.mtrStatus["status"] then
+            component.mtrStatus["status"].EventHandler = nil
+        end        
         for i = 1, labelCount do
             local label = uciVariables[i]
             if label then label.EventHandler = nil end

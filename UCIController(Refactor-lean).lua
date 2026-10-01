@@ -233,7 +233,7 @@ function validateControls()
         "btnStartSystem","btnNavShutdown","btnShutdownCancel","btnShutdownConfirm",
         "btnRouting01","btnRouting02","btnRouting03","btnRouting04","btnRouting05",
         "knbProgressBar","txtProgressBar","txtPowerProgress",
-        "ledCallActive","ledOffHook","ledUSBLaptop","ledUSBPC",
+        "ledOffHook","ledUSBLaptop","ledUSBPC",
         "ledPresetSaved","ledHDMI01Connect","ledHDMI02Connect","ledHDMI03Connect",
         "ledACPRBypassActive",
     }
@@ -355,8 +355,8 @@ function buildDesired()
         want(desired, transitions, cfg.hide, false)
     end
 
-    local callActive = boolOf(Controls.ledCallActive)
-    want(desired, transitions, "I01-CallActive", callActive, callActive and "fade" or "none")
+    local offHook = boolOf(Controls.ledOffHook)
+    want(desired, transitions, "I01-CallActive", offHook, offHook and "fade" or "none")
 
     local preset = boolOf(Controls.ledPresetSaved)
     want(desired, transitions, "J04-CamPresetSaved", preset, preset and "fade" or "none")
@@ -744,7 +744,6 @@ end
 
 Controls.ledACPRBypassActive.EventHandler = function() refreshLayers() end
 Controls.ledPresetSaved.EventHandler = function() refreshLayers() end
-Controls.ledCallActive.EventHandler = function() refreshLayers() end
 Controls.ledOffHook.EventHandler = function() refreshLayers() end
 
 if Controls.ledTouchActivity then

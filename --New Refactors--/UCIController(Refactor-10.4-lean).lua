@@ -82,7 +82,9 @@ configSource = {
     },
 }
 
-layerToSourceKey = { [kLayer.PC] ="PC", [kLayer.Laptop]="Laptop", [kLayer.Wireless]="Wireless" }
+layerToSourceKey = {}
+for key, def in pairs(configSource) do layerToSourceKey[def.layer] = key end
+
 configHelpPairKey = {"Laptop","PC","Wireless","Routing","StreamMusic"}
 
 helpControl = {
@@ -139,16 +141,10 @@ labelConfig = {
 
 navHidden = {}
 
-btnNav = {
-    Controls.btnNav01, Controls.btnNav02, Controls.btnNav03, Controls.btnNav04,
-    Controls.btnNav05, Controls.btnNav06, Controls.btnNav07, Controls.btnNav08,
-    Controls.btnNav09, Controls.btnNav10, Controls.btnNav11, Controls.btnNav12,
-    Controls.btnNav13,
-}
-btnRouting = {
-    Controls.btnRouting01, Controls.btnRouting02, Controls.btnRouting03,
-    Controls.btnRouting04, Controls.btnRouting05,
-}
+btnNav = {}
+for i = 1, 13 do btnNav[i] = Controls["btnNav" .. string.format("%02d", i)] end
+btnRouting = {}
+for i = 1, 5 do btnRouting[i] = Controls["btnRouting" .. string.format("%02d", i)] end
 
 -------------------[ Constant Tables ]-------------------
 
@@ -200,9 +196,7 @@ end
 
 function bindButtons(buttons, handler)
     for i, btn in ipairs(buttons) do
-        if btn then
-            btn.EventHandler = function() handler(i, btn) end
-        end
+        if btn then btn.EventHandler = function() handler(i, btn) end end
     end
 end
 
@@ -227,7 +221,7 @@ function validateControls()
         "btnStartSystem","btnNavShutdown","btnShutdownCancel","btnShutdownConfirm",
         "btnRouting01","btnRouting02","btnRouting03","btnRouting04","btnRouting05",
         "knbProgressBar","txtProgressBar","txtPowerProgress",
-        "ledCallActive","ledOffHook","ledUSBLaptop","ledUSBPC",
+        "ledOffHook","ledUSBLaptop","ledUSBPC",
         "ledPresetSaved","ledHDMI01Connect","ledHDMI02Connect","ledHDMI03Connect",
         "ledACPRBypassActive",
     }
@@ -249,16 +243,16 @@ function validateLayers(pageName)
         print("WARNING ["..pageName.."]: could not retrieve UCI page layers")
         return
     end
-    local inDesign = {}
+
+    local inDesign, missing, seen = {}, {}, {}
     for _, layer in ipairs(pageLayers) do inDesign[layer.Name] = true end
 
-    local missing = {}
-    local seen = {}
     local function check(name)
         if not name or name == "" or seen[name] then return end
         seen[name] = true
         if not inDesign[name] then table.insert(missing, name) end
     end
+
     local function checkList(list)
         if not list then return end
         if type(list) == "string" then check(list); return end
@@ -270,6 +264,7 @@ function validateLayers(pageName)
     checkList(routingLayer)
     checkList(usbConnectLayer)
     checkList(confLayer)
+
     for _, cfg in pairs(layerConfig) do
         checkList(cfg.show)
         checkList(cfg.hide)
@@ -285,6 +280,7 @@ function validateLayers(pageName)
         print("WARNING ["..pageName.."]: configured layers not found in UCI design:")
         for _, name in ipairs(missing) do print("  - "..name) end
     end
+    return true
 end
 
 -------------------[ Visibility ]-------------------
@@ -299,10 +295,10 @@ function want(desired, transitions, names, visible, transition)
     end
 end
 
-function applyDesired(desired, transitions)
+function applyDesired(desired, transitions, force)
     for name, wantVis in pairs(desired) do
-        local current = Uci.GetLayerVisibility(pageUCI, name)
-        if current ~= wantVis then
+        local current = not force and Uci.GetLayerVisibility(pageUCI, name)
+        if force or current ~= wantVis then
             local trans = wantVis and ((transitions and transitions[name]) or "fade") or "none"
             local ok, err = pcall(Uci.SetLayerVisibility, pageUCI, name, wantVis, trans)
             if ok then debugPrint("Layer '"..name.."' set to "..tostring(wantVis))
@@ -344,12 +340,8 @@ function applySourceOverlay(desired, transitions, sourceKey)
         end
     end
     
-    if not acprConfig.disableACPRShow then
-        local bypass = boolOf(Controls.ledACPRBypassActive)
-        local offHook = boolOf(Controls.ledOffHook)
-        if not bypass and offHook then
-            want(desired, transitions, "J03-ACPRActive", true, "fade")
-        end
+    if def.acpr and not acprConfig.disableACPRShow and not boolOf(Controls.ledACPRBypassActive) and boolOf(Controls.ledOffHook) then
+        want(desired, transitions, "J03-ACPRActive", true, "fade")
     end
 
     if def.help then
@@ -379,8 +371,8 @@ function buildDesired()
         want(desired, transitions, cfg.hide, false)
     end
 
-    local callActive = boolOf(Controls.ledCallActive)
-    want(desired, transitions, "I01-CallActive", callActive, callActive and "fade" or "none")
+    local offHook = boolOf(Controls.ledOffHook)
+    want(desired, transitions, "I01-CallActive", offHook, offHook and "fade" or "none")
 
     local preset = boolOf(Controls.ledPresetSaved)
     want(desired, transitions, "J04-CamPresetSaved", preset, preset and "fade" or "none")
@@ -412,9 +404,9 @@ function buildDesired()
     return desired, transitions
 end
 
-function refreshLayers()
+function refreshLayers(force)
     local desired, transitions = buildDesired()
-    applyDesired(desired, transitions)
+    applyDesired(desired, transitions, force)
 end
 
 function interlockNav()
@@ -542,6 +534,7 @@ end
 function onPowerProgress(cfg, active, source)
     local mode = cfg.mode
     timer.progress = stopTimer(timer.progress)
+
     if not active then
         if state.powerProgress ~= mode then return end
         state.powerProgress = nil
@@ -549,15 +542,19 @@ function onPowerProgress(cfg, active, source)
         goToLayer(mode == "warming" and defaultLayer or kLayer.Start, source)
         return
     end
+
     state.powerProgress = mode
     setProp(Controls.txtPowerProgress, "String", cfg.text)
     updateProgressBar(mode == "warming" and 0 or 100)
     goToLayer(mode == "warming" and kLayer.Warming or kLayer.Cooling, source)
+
     local default = mode == "warming" and 10 or 5
     local timeKey = mode == "warming" and "warmupTime" or "cooldownTime"
     local ctrl = component.roomControls and component.roomControls[timeKey]
     local duration = tonumber(ctrl and ctrl.Value) or default
+    
     if duration < 1 then duration = 1 elseif duration > 120 then duration = 120 end
+    
     local steps, interval, currentStep = 100, duration / 100, 0
     timer.progress = Timer.New()
     timer.progress.EventHandler = function()
@@ -673,16 +670,15 @@ function initLabelArrays()
     local function registerLegend(name, required)
         idx = idx + 1
 
-        local ctrlName = "txt" .. name
-        local varName  = "txtLabel" .. name
-        local ctrl     = Controls[ctrlName]
-        local var      = Uci.Variables[varName]
+        local key   = "txt" .. name
+        local ctrl  = Controls[key]
+        local var   = Uci.Variables[key]
 
         uciLabels[idx] = ctrl
         uciVariables[idx] = var
 
-        if not ctrl then reportMissing("control", ctrlName, required) end
-        if not var then reportMissing("variable", varName, required) end
+        if not ctrl then reportMissing("control", key, required) end
+        if not var then reportMissing("variable", key, required) end
 
         if ctrl and var then
             var.EventHandler = function()
@@ -761,12 +757,9 @@ end
 
 Controls.ledACPRBypassActive.EventHandler = function() refreshLayers() end
 Controls.ledPresetSaved.EventHandler = function() refreshLayers() end
-Controls.ledCallActive.EventHandler = function() refreshLayers() end
-Controls.ledOffHook.EventHandler = function() refreshLayers() end
+Controls.ledOffHook.EventHandler = function() ensureSystemIsOn(def.layer) refreshLayers() end
 if Controls.ledTouchActivity then
-    Controls.ledTouchActivity.EventHandler = function()
-        resetTouchInactivityTimer()
-    end
+    Controls.ledTouchActivity.EventHandler = function() resetTouchInactivityTimer() end
 end
 
 -------------------[ Always Run ]-------------------
@@ -787,7 +780,7 @@ function funcInit()
         if btn then btn.Visible = false; debugPrint("Hidden nav: "..idx) end
     end
 
-    refreshLayers()
+    refreshLayers(true) -- force full push; GetLayerVisibility may be stale after a Core reboot
     interlockNav()
     interlockRouting()
     syncLabels()
