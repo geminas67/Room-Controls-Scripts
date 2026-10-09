@@ -1,3 +1,4 @@
+---@diagnostic disable: inject-field
 --[[
     Time of Day Shutdown (System Reset)
     Author: Nikolas Smith, Q-SYS
@@ -6,39 +7,40 @@
     Description: Responds to Time of Day Active change and triggers Power Off commands.
 ]]
 
---------** Constant Tables **--------
+-------------------[ Configuration ]-------------------
 
-local roomConfig = {
-    { roomControlName = 'roomControlsSalonA', componentName = 'compRoomControlsSalonA', roomName = 'Salon A' },
-    { roomControlName = 'roomControlsSalonB', componentName = 'compRoomControlsSalonB', roomName = 'Salon B' },
-    { roomControlName = 'roomControlsSalonC', componentName = 'compRoomControlsSalonC', roomName = 'Salon C' },
-    { roomControlName = 'roomControlsSalonD', componentName = 'compRoomControlsSalonD', roomName = 'Salon D' },
-    { roomControlName = 'roomControlsSalonE', componentName = 'compRoomControlsSalonE', roomName = 'Salon E' },
-    { roomControlName = 'roomControlsSalonF', componentName = 'compRoomControlsSalonF', roomName = 'Salon F' },
-    { roomControlName = 'roomControlsSalonG', componentName = 'compRoomControlsSalonG', roomName = 'Salon G' },
-    { roomControlName = 'roomControlsSalonH', componentName = 'compRoomControlsSalonH', roomName = 'Salon H' }
+enableTime = {
+  hour = 7,
+  min = 0,
 }
 
-local components = {
+roomConfig = {
+  { componentName = "compRoomControlsSalonA", roomName = "Salon A" },
+  { componentName = "compRoomControlsSalonB", roomName = "Salon B" },
+  { componentName = "compRoomControlsSalonC", roomName = "Salon C" },
+  { componentName = "compRoomControlsSalonD", roomName = "Salon D" },
+  { componentName = "compRoomControlsSalonE", roomName = "Salon E" },
+  { componentName = "compRoomControlsSalonF", roomName = "Salon F" },
+  { componentName = "compRoomControlsSalonG", roomName = "Salon G" },
+  { componentName = "compRoomControlsSalonH", roomName = "Salon H" },
+}
+
+-------------------[ Constant Tables ]-------------------
+
+component = {
     todShutdown = Component.New('todShutdown')
 }
 
 for _, config in ipairs(roomConfig) do
-    components[config.roomControlName] = Component.New(config.componentName)
+    component[config.componentName] = Component.New(config.componentName)
 end
 
---------** Constants **--------
-
-local enableTime = {
-    hour = 7,
-    min = 0
-}
+-------------------[ Constants ]-------------------
 
 stateDebug = false
-
 timerEnableCheck = Timer.New()
 
---------** Functions **--------
+-------------------[ Functions ]-------------------
 
 function debugMsg(str)
     if stateDebug then
@@ -47,13 +49,13 @@ function debugMsg(str)
 end
 
 function syncEnableToComponent(enabled)
-    local enableCtrl = components.todShutdown and components.todShutdown['enable']
+    local enableCtrl = component.todShutdown and component.todShutdown['enable']
     if enableCtrl then
         enableCtrl.Boolean = enabled
     end
 end
 
---------## Time of Day Shutdown ##--------
+-------------------[ Time of Day Shutdown ]-------------------
 
 function handleTimeOfDayShutdown()
     if not Controls.btnResetEnabled.Boolean then
@@ -61,7 +63,7 @@ function handleTimeOfDayShutdown()
         return
     end
 
-    local activeCtrl = components.todShutdown['active']
+    local activeCtrl = component.todShutdown['active']
     if not activeCtrl or not activeCtrl.Boolean then
         debugMsg("Active is false, returning early")
         return
@@ -70,7 +72,7 @@ function handleTimeOfDayShutdown()
     print("Time of Day Shutdown triggered - powering off all rooms")
 
     for _, config in ipairs(roomConfig) do
-        local roomControl = components[config.roomControlName]
+        local roomControl = component[config.componentName]
         if roomControl and roomControl['btnSystemOff'] then
             print("  Triggering power off for " .. config.roomName)
             local success, err = pcall(function()
@@ -114,15 +116,15 @@ function checkAndEnableAtTimeConfig()
     end
 end
 
---------** Event Handlers **--------
+-------------------[ Event Handlers ]-------------------
 
-components.todShutdown['active'].EventHandler = handleTimeOfDayShutdown
+component.todShutdown['active'].EventHandler = handleTimeOfDayShutdown
 Controls.btnResetEnabled.EventHandler = handleEnableChange
 
---------** Always Run **--------
+-------------------[ Always Run ]-------------------
 
 function funcInit()
-    if not components.todShutdown['active'] or not components.todShutdown['enable'] then
+    if not component.todShutdown['active'] or not component.todShutdown['enable'] then
         print("ERROR: TimeOfDayShutdown - todShutdown active/enable controls missing")
         return
     end

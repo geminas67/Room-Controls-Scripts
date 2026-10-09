@@ -78,7 +78,8 @@ configSource = {
         disc    = "W01-HDMIDisc",
         usb     = nil,
         conf    = nil,
-        help    = "I04-HelpWireless"
+        help    = "I04-HelpWireless",
+        acpr    = false,
     },
 }
 
@@ -139,7 +140,7 @@ labelConfig = {
     {single = {"NavShutdown","RoomNameNav","RoomNameStart","RoutingRooms","RoutingSources"}},
 }
 
-navHidden = {}
+navHidden = {} -- static "this design never uses these slots" hook
 
 btnNav = {}
 for i = 1, 13 do btnNav[i] = Controls["btnNav" .. string.format("%02d", i)] end
@@ -147,7 +148,7 @@ btnRouting = {}
 for i = 1, 5 do btnRouting[i] = Controls["btnRouting" .. string.format("%02d", i)] end
 
 -------------------[ Constant Tables ]-------------------
-
+-- Runtime nav/power UI state. Defaults apply at script load; funcInit sync may call goToLayer(defaultLayer).
 pageUCI = nil
 state = {
     activeLayer = kLayer.Start,
@@ -202,15 +203,9 @@ end
 
 -------------------[ Discovery ]-------------------
 
-function resolvePageName(hint)
+function resolvePageName()
     local pages = Uci.GetUciPages()
     if not pages or #pages == 0 then return nil end
-    if hint and hint ~= "" then
-        local h = hint:lower()
-        for _, page in ipairs(pages) do
-            if page.Name:lower() == h then return page.Name end
-        end
-    end
     return pages[1].Name
 end
 
@@ -359,14 +354,14 @@ end
 
 function buildDesired()
     local desired, transitions = {}, {}
+    local cfg = layerConfig[state.activeLayer]
+
     want(desired, transitions, layersToHide, false)
 
-    local cfg = layerConfig[state.activeLayer]
+    local hideBase = cfg and cfg.hideBase or false
+    want(desired, transitions, layersBase, not hideBase, hideBase and "none" or "fade")
+
     if cfg then
-        local baseVis = not cfg.hideBase
-        for _, name in ipairs(layersBase) do
-            want(desired, transitions, name, baseVis, baseVis and "fade" or "none")
-        end
         want(desired, transitions, cfg.show, true, "fade")
         want(desired, transitions, cfg.hide, false)
     end
@@ -390,15 +385,9 @@ function buildDesired()
         end
     end
 
-    applyOverlayHelp(desired, transitions)
-
     local sourceKey = layerToSourceKey[state.activeLayer]
     if sourceKey then
-        if state.activeLayer == kLayer.PC or state.activeLayer == kLayer.Laptop then
-            applySourceOverlay(desired, transitions, sourceKey)
-        elseif state.activeLayer == kLayer.Wireless then
-            applyHelpOverlay(desired, transitions, configSource.Wireless.help, "Wireless")
-        end
+        applySourceOverlay(desired, transitions, sourceKey)
     end
 
     return desired, transitions
@@ -766,8 +755,6 @@ end
 
 function funcInit()
     debugPrint("=== Initialization Started ===")
-
-    state.activeLayer = kLayer.Start
     initLabelArrays()
     if not initRoomControls() then
         print("ERROR: Room controls unavailable — power actions disabled")
@@ -815,8 +802,7 @@ myUCI = {
 
 local ok, err = pcall(function()
     if not validateControls() then error("Control validation failed") end
-    local hint = Uci.Variables.txtUCIPageName and Uci.Variables.txtUCIPageName.String or ""
-    pageUCI = resolvePageName(hint)
+    pageUCI = resolvePageName()
     if not pageUCI then error("Uci.GetUciPages returned no pages") end
     validateLayers(pageUCI)
     funcInit()

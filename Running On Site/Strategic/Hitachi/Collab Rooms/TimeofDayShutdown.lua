@@ -14,8 +14,8 @@ local enableTime = {
 }
 
 local roomConfig = {
-    { roomControlName = 'roomControlsCollabA', componentName = 'compRoomControlsCollabA', roomName = 'Collab A' },
-    { roomControlName = 'roomControlsCollabB', componentName = 'compRoomControlsCollabB', roomName = 'Collab B' }
+    { componentName = 'compRoomControlsCollabA', roomName = 'Collab A' },
+    { componentName = 'compRoomControlsCollabB', roomName = 'Collab B' }
 }
 
 -------------------[ Component References ]-------------------
@@ -25,7 +25,7 @@ local components = {
 
 -- Build room control components from configuration
 for _, config in ipairs(roomConfig) do
-    components[config.roomControlName] = Component.New(config.componentName)
+    components[config.componentName] = Component.New(config.componentName)
 end
 
 -------------------[ Control References ]-------------------
@@ -80,17 +80,17 @@ local function validateComponentControl(component, controlName, missing, display
     return true
 end
 
-local function validateRoomControl(roomControlName, missing)
-    local roomControl = components[roomControlName]
+local function validateRoomControl(componentName, missing)
+    local roomControl = components[componentName]
     if not roomControl then
-        table.insert(missing, roomControlName .. " component")
+        table.insert(missing, componentName .. " component")
         return
     end
     
     local requiredControls = {'btnSystemOff'}
     for _, controlName in ipairs(requiredControls) do
         if not roomControl[controlName] then
-            table.insert(missing, roomControlName .. " " .. controlName .. " control")
+            table.insert(missing, componentName .. " " .. controlName .. " control")
         end
     end
 end
@@ -109,7 +109,7 @@ local function validateControls()
     
     -- Validate configured room controls
     for _, config in ipairs(roomConfig) do
-        validateRoomControl(config.roomControlName, missing)
+        validateRoomControl(config.componentName, missing)
     end
     
     if #missing > 0 then
@@ -147,7 +147,7 @@ local function handleTimeOfDayShutdown()
     
     -- Loop through all room controls and trigger power off
     for _, config in ipairs(roomConfig) do
-        local roomControl = components[config.roomControlName]
+        local roomControl = components[config.componentName]
         if roomControl and roomControl['btnSystemOff'] then
             print("  Triggering power off for " .. config.roomName)
             local success, err = pcall(function()

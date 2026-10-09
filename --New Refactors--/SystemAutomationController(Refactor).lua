@@ -14,7 +14,7 @@ cfg = {
     displays = "%PLUGIN%_bd0a5e74-c1bf-48ee-8574-e42e1e7b2bb9_%FP%_31e2e2d7be2243768d2bd9c853a6295c",
     gains = "gain",
     systemMute = "system_mute",
-    camACPR = "%PLUGIN%_6ddbd63b-ebb6-43ed-9c5a-9a7d6dac6f37_%FP%_e114a64149fd1bfd9a7fa61aa51085bd" --NEW
+    camACPR = "%PLUGIN%_6ddbd63b-ebb6-43ed-9c5a-9a7d6dac6f37_%FP%_22bcd2049cd1e9c1f02a4e76655c2db4" --NEW
     },
 
     gainTypeAssignment = {

@@ -5,7 +5,7 @@
   Firmware Req: 10.4 compatible (GetUciPages / GetUciPageLayers / GetLayerVisibility)
 
   Flat single-room UCI: configSource, declarative visibility (buildDesired/applyDesired),
-  event-driven power sync, switcher auto-detect. Three engines — visibility, room sync, switcher.
+  event-driven power sync. All layer writes go through refreshLayers().
 ]]--
 
 -------------------[ Configuration ]-------------------
@@ -68,6 +68,7 @@ layerToSourceKey = {}
 for key, def in pairs(configSource) do layerToSourceKey[def.layer] = key end
 
 configHelpPairKey = {"Laptop","PC"}
+
 helpControl = {
     Laptop = { open = Controls.btnHelpOpenLaptop, close = Controls.btnHelpCloseLaptop },
     PC     = { open = Controls.btnHelpOpenPC,     close = Controls.btnHelpClosePC },
@@ -110,7 +111,7 @@ btnNav = {}
 for i = 1, 9 do btnNav[i] = Controls["btnNav" .. string.format("%02d", i)] end
 
 -------------------[ Constant Tables ]-------------------
-
+-- Runtime nav/power UI state. Defaults apply at script load; funcInit sync may call goToLayer(defaultLayer).
 pageUCI = nil
 state = {
     activeLayer = kLayer.Start,
@@ -123,8 +124,6 @@ component = {
     roomControls = nil,
     passcode = nil, passcodeRoom = nil, passcodeEnabled = false,
 }
-statusMTR = Component.New("statusMTR")
-delayMTR = 3
 
 timer = { progress = nil, inactivity = Timer.New() }
 uciLabels = {}
@@ -160,21 +159,17 @@ end
 
 function bindButtons(buttons, handler)
     for i, btn in ipairs(buttons) do
-        if btn then btn.EventHandler = function() handler(i, btn) end end
+        if btn then 
+            btn.EventHandler = function() handler(i, btn) end 
+        end
     end
 end
 
 -------------------[ Discovery ]-------------------
 
-function resolvePageName(hint)
+function resolvePageName()
     local pages = Uci.GetUciPages()
     if not pages or #pages == 0 then return nil end
-    if hint and hint ~= "" then
-        local h = hint:lower()
-        for _, page in ipairs(pages) do
-            if page.Name:lower() == h then return page.Name end
-        end
-    end
     return pages[1].Name
 end
 
@@ -320,14 +315,14 @@ end
 
 function buildDesired()
     local desired, transitions = {}, {}
+    local cfg = layerConfig[state.activeLayer]
+
     want(desired, transitions, layersToHide, false)
 
-    local cfg = layerConfig[state.activeLayer]
+    local hideBase = cfg and cfg.hideBase or false
+    want(desired, transitions, layersBase, not hideBase, hideBase and "none" or "fade")
+
     if cfg then
-        local baseVis = not cfg.hideBase
-        for _, name in ipairs(layersBase) do
-            want(desired, transitions, name, baseVis, baseVis and "fade" or "none")
-        end
         want(desired, transitions, cfg.show, true, "fade")
         want(desired, transitions, cfg.hide, false)
     end
@@ -341,7 +336,9 @@ function buildDesired()
     want(desired, transitions, "D01-ShutdownConfirm", state.shutdownConfirm, state.shutdownConfirm and "fade" or "none")
 
     local sourceKey = layerToSourceKey[state.activeLayer]
-    if sourceKey then applySourceOverlay(desired, transitions, sourceKey) end
+    if sourceKey then
+        applySourceOverlay(desired, transitions, sourceKey)
+    end
 
     return desired, transitions
 end
@@ -365,11 +362,7 @@ function goToLayer(layerIndex, source)
     state.activeLayer = layerIndex
     state.shutdownConfirm = false
     if layerIndex == kLayer.Passcode then resetTouchInactivityTimer() end
-
-    local force = layerIndex == kLayer.Cooling or layerIndex == kLayer.Warming
-        or (layerIndex == kLayer.Start and source == "Cooldown Complete")
-
-    refreshLayers(force and true)
+    refreshLayers()
     interlockNav()
     debugPrint("Layer "..(kLayerName[prev] or prev).." → "..(kLayerName[layerIndex] or layerIndex).." (Source: "..source..")")
 end
@@ -526,7 +519,6 @@ function requestPowerOff(source)
     end
     if powerOff() then
         debugPrint("Power off requested ("..source..")")
-        refreshLayers(true) -- Teams PC: GetLayerVisibility can read false while overlays still paint
     else
         print("ERROR: Power off failed — btnSystemOnOff unavailable")
     end
@@ -561,7 +553,7 @@ function ensureSystemIsOn(targetLayer)
     requestPowerOn()
 end
 
-function initSyncFromSystemController()
+function initSyncFromRoomControls()
     if not component.roomControls then return end
     for _, cfg in ipairs(powerProgressConfig) do
         local led = component.roomControls[cfg.key]
@@ -639,30 +631,6 @@ function initLabelArrays()
     if missingRequired > 0 then print("ERROR: String Labels: "..missingRequired.." required control/variable reference(s) missing") end
 end
 
-function initMTRStatus()
-    local ok, comp = pcall(function() return statusMTR end)
-    if not ok or not comp then
-        debugPrint("MTR status component not found — skipping sync")
-        return false
-    end
-    component.mtrStatus = comp
-    if comp["status"] then
-        comp["status"].EventHandler = function(ctl)
-            if ctl.String == "OK" then
-                debugPrint("MTR ready — forcing full layer resync in "..delayMTR.."s")
-                Timer.CallAfter(function()
-                    local ok2, err = pcall(refreshLayers, true)
-                    if ok2 then debugPrint("MTR resync complete")
-                    else print("ERROR: MTR resync failed — "..tostring(err)) end
-                end, delayMTR)
-            end
-        end
-    else
-        debugPrint("MTR status control 'status' not found on statusMTR")
-    end
-    return true
-end
-
 -------------------[ Event Handlers ]-------------------
 
 bindButtons(btnNav, function(i) goToLayer(i, "btnNav") end)
@@ -697,12 +665,6 @@ end
 for _, def in pairs(configSource) do
     local hdmiCtrl = Controls[def.hdmiKey]
     if hdmiCtrl then hdmiCtrl.EventHandler = function() refreshLayers() end end
-    -- USB: refresh only (show/hide J01/J02 connect overlays via applySourceOverlay).
-    -- Removed auto-wake / source layer on plug-in — restore on other sites with:
-    --   ctl.EventHandler = function(pin)
-    --       if pin.Boolean then ensureSystemIsOn(srcDef.layer) else refreshLayers() end
-    --   end
-    -- (use IIFE to capture srcDef, ctl: ;(function(srcDef, ctl) ... end)(def, usbCtrl))
     local usbCtrl = def.usbKey and Controls[def.usbKey]
     if usbCtrl then
         ;(function(srcDef, ctl)
@@ -728,17 +690,13 @@ end
 
 function funcInit()
     debugPrint("=== Initialization Started ===")
-
-    state.activeLayer = kLayer.Start
     initLabelArrays()
     if not initRoomControls() then
         print("ERROR: Room controls unavailable — power actions disabled")
     end
     initPasscode()
-    initSyncFromSystemController()
-    initMTRStatus()
-
-    refreshLayers(true) -- force full push; GetLayerVisibility may be stale after a Core reboot
+    initSyncFromRoomControls()
+    refreshLayers(true)
     interlockNav()
     syncLabels()
 
@@ -762,9 +720,6 @@ myUCI = {
         if component.passcode and component.passcode["PasscodeCorrect"] then
             component.passcode["PasscodeCorrect"].EventHandler = nil
         end
-        if component.mtrStatus and component.mtrStatus["status"] then
-            component.mtrStatus["status"].EventHandler = nil
-        end        
         for i = 1, labelCount do
             local label = uciVariables[i]
             if label then label.EventHandler = nil end
@@ -773,20 +728,16 @@ myUCI = {
     end,
 }
 
-hint = Uci.Variables.txtUCIPageName and Uci.Variables.txtUCIPageName.String or ""
-pageUCI = resolvePageName(hint)
+local ok, err = pcall(function()
+    if not validateControls() then error("Control validation failed") end
+    pageUCI = resolvePageName()
+    if not pageUCI then error("Uci.GetUciPages returned no pages") end
+    validateLayers(pageUCI)
+    funcInit()
+end)
 
-if not pageUCI then
-    print("ERROR: UCIController could not discover any UCI pages")
+if ok then
+    print("✓ UCIController initialized for "..pageUCI)
 else
-    local ok, err = pcall(function()
-        if not validateControls() then error("Control validation failed") end
-        if not validateLayers(pageUCI) then error("Layer validation failed") end
-        funcInit()
-    end)
-    if ok then
-        print("✓ UCIController initialized for "..pageUCI)
-    else
-        print("✗ ERROR: UCIController initialization failed: "..tostring(err))
-    end
+    print("✗ ERROR: UCIController initialization failed: "..tostring(err))
 end

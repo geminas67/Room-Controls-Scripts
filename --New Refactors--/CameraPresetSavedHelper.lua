@@ -8,36 +8,36 @@
 ]]
 
 -------------------[ Control References ]-------------------
-camPresets = Component.New('camPresetsControls')
-uciRoomA = Component.New('uciControllerRoomA')
-uciRoomB = Component.New('uciControllerRoomB')
-divSpace   = Component.New('compDivisibleSpaceControls')
+local camPresets = Component.New('camPresetsControls')
+local uciA = Component.New('uciControllerRmA')
+local uciB = Component.New('uciControllerRmB')
+local divSpace = Component.New('compDivisibleSpaceControls')
 
-numPresets = 6
+local numPresets = 6
 
-function anyLedSaved(comp, namePrefix)
+local function anyLedSaved(comp, namePrefix)
   for i = 1, numPresets do
     if comp[namePrefix .. i].Boolean then return true end
   end
   return false
 end
 
-function pinLEDPresetSavedRoomA()
-  uciRoomA['pinLEDPresetSaved'].Boolean = anyLedSaved(camPresets, 'ledPresetSaved1 ')
+function ledPresetSavedRmA()
+  uciA['ledPresetSaved'].Boolean = anyLedSaved(camPresets, 'ledPresetSaved1 ')
 end
 
-function pinLEDPresetSavedRoomB()
+function ledPresetSavedRmB()
   local saved = anyLedSaved(camPresets, 'ledPresetSaved2 ')
-  uciRoomB['pinLEDPresetSaved'].Boolean = false
+  uciB['ledPresetSaved'].Boolean = false
   if not divSpace['btnRoomState 1'].Boolean then
-    uciRoomA['pinLEDPresetSaved'].Boolean = saved
-    uciRoomB['pinLEDPresetSaved'].Boolean = saved
+    uciA['ledPresetSaved'].Boolean = saved
+    uciB['ledPresetSaved'].Boolean = saved
   else
-    uciRoomB['pinLEDPresetSaved'].Boolean = saved
+    uciB['ledPresetSaved'].Boolean = saved
   end
 end
 
 for i = 1, numPresets do
-  camPresets['ledPresetSaved1 ' .. i].EventHandler = function() pinLEDPresetSavedRoomA() end
-  camPresets['ledPresetSaved2 ' .. i].EventHandler = function() pinLEDPresetSavedRoomB() end
+  camPresets['ledPresetSaved1 ' .. i].EventHandler = function() ledPresetSavedRmA() end
+  camPresets['ledPresetSaved2 ' .. i].EventHandler = function() ledPresetSavedRmB() end
 end

@@ -1,20 +1,20 @@
 --[[
     Call Sync Helper
     Author: Nikolas Smith, Q-SYS
-    Version: 1.0 | Date: 2026-06-23
-    Firmware Req: 10.1.0
+    Version: 1.0 | Date: 2026-10-04
+    Firmware Req: 10.0.0+
     Notes:
-    - This script is used to help the Call Sync in single room and divisible spaces.
+    - This script is used to update the Blinking LED in each room when the Call Sync "off.hook" is active.
 ]]
 
 -------------------[ Control References ]-------------------
 ledRoomA    = Component.New('ledBlinkingRmA')
 ledRoomB    = Component.New('ledBlinkingRmB')
-callSyncRmA = Component.New('callSyncCollabA')
-callSyncRmB = Component.New('callSyncCollabB')
-compDivSpace    = Component.New('compDivisibleSpaceControls')
+callSyncRmA = Component.New('callSyncRmA')
+callSyncRmB = Component.New('callSyncRmB')
+compDivSpace = Component.New('compDivisibleSpaceControls')
 
-function updateLedCallSync()
+function updateBlinkingLED()
   if compDivSpace['btnRoomState 1'].Boolean then
     ledRoomA['enable'].Boolean = callSyncRmA['off.hook'].Boolean
     ledRoomB['enable'].Boolean = callSyncRmB['off.hook'].Boolean
@@ -25,8 +25,8 @@ function updateLedCallSync()
   end
 end
 
-callSyncRmA['off.hook'].EventHandler = updateLedCallSync
-callSyncRmB['off.hook'].EventHandler = updateLedCallSync
-compDivSpace['btnRoomState 1'].EventHandler = updateLedCallSync
+callSyncRmA['off.hook'].EventHandler = updateBlinkingLED
+callSyncRmB['off.hook'].EventHandler = updateBlinkingLED
+compDivSpace['btnRoomState 1'].EventHandler = updateBlinkingLED
 
-updateLedCallSync()
+updateBlinkingLED()
