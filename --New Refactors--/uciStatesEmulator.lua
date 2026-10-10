@@ -34,7 +34,7 @@ btnIndexToUCIControl = {
 }
 
 for i = 1, #Controls.lblToggle do
-  local controlName = btnIndexToUCIControl[i]
+  controlName = btnIndexToUCIControl[i]
   if controlName then
     Controls.lblToggle[i].String = controlName
   end
@@ -50,16 +50,16 @@ function uciStateToggle(btnIndex)
   uciController[controlName].Boolean = isOn
 
   if isOn then
-    print(string.format("UCI Control %s was activated.", controlName))
+    print(string.format("-- %s -- is On.", controlName))
   else
-    print(string.format("UCI Control %s was deactivated.", controlName))
+    print(string.format("-- %s -- is Off.", controlName))
   end
 end
 
 for i = 1, #Controls.toggle do
   Controls.toggle[i].EventHandler = function()
     print("--------------------------------")
-    print(string.format("Btn%02d was pressed.", i))
+    print(string.format("Btn%02d pressed.", i))
     uciStateToggle(i)
   end
 end

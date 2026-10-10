@@ -119,7 +119,7 @@ layerConfig = {
     [kLayer.Laptop]       = { show = {"L05-Laptop"} },
     [kLayer.PC]           = { show = {"P05-PC"} },
     [kLayer.Wireless]     = { show = {"W05-Wireless"} },
-    [kLayer.Routing]      = { show = {"R10-Routing"} },
+    [kLayer.Routing]      = { show = {"R10-Routing"}, hide = {"X01-ProgramVolume"}},
     [kLayer.Dialer]       = { show = {"V05-Dialer"} },
     [kLayer.StreamMusic]  = { show = {"S05-StreamMusic"} },
     [kLayer.Passcode]     = { show = {"H01-PasscodeEntry"}, hideBase = true },
@@ -156,6 +156,7 @@ state = {
     powerProgress = nil,
     shutdownConfirm = false,
     isInitialized = false,
+    helpOpen = {},
 }
 component = {
     roomControls = nil,
@@ -378,7 +379,6 @@ function buildDesired()
         if state.activeRoutingLayer < 1 or state.activeRoutingLayer > #routingLayer then
             state.activeRoutingLayer = 1
         end
-        want(desired, transitions, "X01-ProgramVolume", false)
         for i, name in ipairs(routingLayer) do
             local show = i == state.activeRoutingLayer
             want(desired, transitions, name, show, show and "fade" or "none")
@@ -388,6 +388,11 @@ function buildDesired()
     local sourceKey = layerToSourceKey[state.activeLayer]
     if sourceKey then
         applySourceOverlay(desired, transitions, sourceKey)
+    end
+
+    local oc = overlayConfig[state.activeLayer]
+    if oc then
+        applyHelpOverlay(desired, transitions, oc.layer, oc.helpKey)
     end
 
     return desired, transitions
@@ -746,7 +751,10 @@ end
 
 Controls.ledACPRBypassActive.EventHandler = function() refreshLayers() end
 Controls.ledPresetSaved.EventHandler = function() refreshLayers() end
-Controls.ledOffHook.EventHandler = function() ensureSystemIsOn(def.layer) refreshLayers() end
+Controls.ledOffHook.EventHandler = function() 
+    if boolOf(Controls.ledOffHook) then ensureSystemIsOn(defaultLayer) 
+    else refreshLayers() end
+end
 if Controls.ledTouchActivity then
     Controls.ledTouchActivity.EventHandler = function() resetTouchInactivityTimer() end
 end

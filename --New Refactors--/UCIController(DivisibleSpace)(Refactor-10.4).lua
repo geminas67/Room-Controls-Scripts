@@ -6,7 +6,7 @@
 
   Divisible-space UCI. buildDesired → applyDesired; event-driven power progress from room controls.
 
-  UCI design: shared layers I02-Help (txtLayerHelp) and L00-HDMIDisc (txtLayerHDMIDisc).
+  Popup copy in Lua: helpText, discText, btnStartSystem legend. Shared layers I02-Help (txtLayerHelp), L00-HDMIDisc (txtLayerHDMIDisc).
 ]]--
 
 -------------------[ Configuration ]-------------------
@@ -52,7 +52,7 @@ layersToHide = {
     "J11-CamSelectLaptopA","J12-CamSelectLaptopB","J13-CamSelectPCA","J14-CamSelectPCB",
     "J17-HIDPrivacyRoomA","J18-HIDPrivacyRoomB","J19-HIDPrivacyCombineA","J20-HIDPrivacyCombineB",
     "J21-ConferenceLaptopA","J22-ConferenceLaptopB","J23-ConferencePCA","J24-ConferencePCB",
-    hdmiDiscLayer, "L01-LaptopA", "L02-LaptopB",
+    "L00-HDMIDisc", "L01-LaptopA", "L02-LaptopB",
     "P01-PCA", "P02-PCB",
     "W01-WirelessA","W02-WirelessB","W05-Wireless","R10-Routing","S10-StreamMusic","V05-Dialer",
 }
@@ -212,13 +212,14 @@ for _, def in pairs(configSource) do
 end
 
 -------------------[ Constant Tables ]-------------------
-
+-- Runtime nav/power UI state. Defaults apply at script load; funcInit sync may call goToLayer(defaultLayer).
 pageUCI = nil
 state = {
     activeLayer = kLayer.Start,
     powerProgress = nil,
     shutdownConfirm = false,
     isInitialized = false,
+    helpOpen = {},
 }
 component = {
     roomControls = nil,
@@ -282,8 +283,7 @@ function validateControls()
         "ledACPRBypassSeparated","ledACPRBypassCombined",
     }
     local optional = {
-        ledTouchActivity = true,
-        txtLayerHelp = true, txtLayerHDMIDisc = true,
+        ledTouchActivity = true, txtLayerHelp = true, txtLayerHDMIDisc = true,
     }
     local missing = {}
     for _, name in ipairs(required) do
@@ -454,8 +454,7 @@ end
 
 function resolveOpenHelpKey()
     for _, key in ipairs(configHelpPairKey) do
-        local hc = helpControl[key]
-        if boolOf(hc and hc.open) then return key end
+        if state.helpOpen[key] then return key end
     end
     return nil
 end
@@ -613,17 +612,9 @@ function buildDesired(roomState)
     return desired, transitions
 end
 
-function closeAllHelp(skipRefresh)
-    for _, hc in pairs(helpControl) do
-        if hc.open then setProp(hc.open, "Boolean", false) end
-        if hc.close then setProp(hc.close, "Boolean", false) end
-    end
-    if not skipRefresh then refreshLayers() end
-end
-
-function syncHelpButtons()
-    for _, hc in pairs(helpControl) do
-        if hc.close then setProp(hc.close, "Boolean", false) end
+function clearHelpState()
+    for _, key in ipairs(configHelpPairKey) do
+        state.helpOpen[key] = false
     end
 end
 
@@ -631,17 +622,19 @@ function refreshLayers(force)
     local roomState = getRoomState()
     local desired, transitions = buildDesired(roomState)
     applyDesired(desired, transitions, force)
-    syncHelpButtons()
     updateNavVisibility(roomState)
     updateStartSystemLegend(roomState)
 end
 
 function setHelpOpen(key, isOpen)
-    local hc = helpControl[key]
-    if not hc then return end
-    if isOpen then closeAllHelp(true) end
-    if hc.open then setProp(hc.open, "Boolean", isOpen) end
-    if hc.close then setProp(hc.close, "Boolean", false) end
+    if not helpControl[key] then return end
+    if isOpen then
+        for _, k in ipairs(configHelpPairKey) do
+            state.helpOpen[k] = (k == key)
+        end
+    else
+        state.helpOpen[key] = false
+    end
     refreshLayers()
 end
 
@@ -658,7 +651,7 @@ function goToLayer(layerIndex, source)
     local prev = state.activeLayer
     state.activeLayer = layerIndex
     state.shutdownConfirm = false
-    closeAllHelp(true)
+    clearHelpState()
     if layerIndex == kLayer.RoomCombining then resetTouchInactivityTimer() end
     refreshLayers()
     interlockNav()
@@ -965,20 +958,16 @@ end
 
 function funcInit()
     debugPrint("=== Initialization Started ===")
-
-    state.activeLayer = kLayer.Start
     initLabelArrays()
     if not initRoomControls() then
         print("ERROR: Room controls unavailable — power actions disabled")
     end
     initDivisibleSpace()
     initSyncFromRoomControls()
-
     for _, idx in ipairs(navHidden) do
         local btn = btnNav[idx]
         if btn then btn.Visible = false end
     end
-
     refreshLayers(true) -- force full push; GetLayerVisibility may be stale after a Core reboot
     interlockNav()
     syncLabels()
