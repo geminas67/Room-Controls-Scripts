@@ -6,7 +6,7 @@
 
   Divisible-space UCI. buildDesired → applyDesired; event-driven power progress from room controls.
 
-  Popup copy in Lua: helpText, discText, btnStartSystem legend. Shared layers I02-Help (txtLayerHelp), L00-HDMIDisc (txtLayerHDMIDisc).
+  Popup copy in Lua: helpCopy (title/heading/body per source), discText, btnStartSystem legend. I02-Help (txtLayerHelpTitle, txtLayerHelpHeading, txtLayerHelpBody), L00-HDMIDisc (txtLayerHDMIDisc).
 ]]--
 
 -------------------[ Configuration ]-------------------
@@ -45,7 +45,7 @@ layersToHide = {
     "A01-Alarm","B01-IncomingCall","C05-Start","D01-ShutdownConfirm",
     "E05-PowerProgress",
     "H04-RoomCombining","H08-RoomControlsCombine","H09-RoomControlsDivide","H10-RoomControls",
-    "I01-CallActive", helpLayer,
+    "I01-CallActive", "I02-Help",
     "J01-ConnectUSBLaptopA","J02-ConnectUSBLaptopB","J03-ConnectUSBPCA","J04-ConnectUSBPCB",
     "J06-ACPRActiveCombine","J07-ACPRActiveDivide","J08-CamPresetSaved",
     "J09-ACPRBtnCombine","J10-ACPRBtnDivide",
@@ -57,15 +57,47 @@ layersToHide = {
     "W01-WirelessA","W02-WirelessB","W05-Wireless","R10-Routing","S10-StreamMusic","V05-Dialer",
 }
 
-helpText = {
-    LaptopA     = "Help: Laptop A",
-    LaptopB     = "Help: Laptop B",
-    PCA         = "Help: PC A",
-    PCB         = "Help: PC B",
-    WirelessA   = "Help: Wireless A",
-    WirelessB   = "Help: Wireless B",
-    Routing     = "Help: Routing",
-    StreamMusic = "Help: Stream Music",
+helpCopy = {
+    LaptopA = {
+        title   = "Help",
+        heading = "Laptop A",
+        body    = "",
+    },
+    LaptopB = {
+        title   = "Help",
+        heading = "Laptop B",
+        body    = "",
+    },
+    PCA = {
+        title   = "Help",
+        heading = "PC A",
+        body    = "",
+    },
+    PCB = {
+        title   = "Help",
+        heading = "PC B",
+        body    = "",
+    },
+    WirelessA = {
+        title   = "Help",
+        heading = "Wireless A",
+        body    = "",
+    },
+    WirelessB = {
+        title   = "Help",
+        heading = "Wireless B",
+        body    = "",
+    },
+    Routing = {
+        title   = "Help",
+        heading = "Routing",
+        body    = "",
+    },
+    StreamMusic = {
+        title   = "Help",
+        heading = "Stream Music",
+        body    = "",
+    },
 }
 
 discText = {
@@ -219,7 +251,7 @@ state = {
     powerProgress = nil,
     shutdownConfirm = false,
     isInitialized = false,
-    helpOpen = {},
+    helpOpenKey = nil,
 }
 component = {
     roomControls = nil,
@@ -283,7 +315,9 @@ function validateControls()
         "ledACPRBypassSeparated","ledACPRBypassCombined",
     }
     local optional = {
-        ledTouchActivity = true, txtLayerHelp = true, txtLayerHDMIDisc = true,
+        ledTouchActivity = true,
+        txtLayerHelpTitle = true, txtLayerHelpHeading = true, txtLayerHelpBody = true,
+        txtLayerHDMIDisc = true,
     }
     local missing = {}
     for _, name in ipairs(required) do
@@ -324,27 +358,6 @@ function validateLayers(pageName)
 
     checkList(layersBase)
     checkList(layersToHide)
-    checkList(usbConnectLayer)
-    checkList(confLayer)
-    check(acprLayer.combined)
-    check(acprLayer.separated)
-    check(acprBtnLayer.combined)
-    check(acprBtnLayer.separated)
-    check(helpLayer)
-    check(hdmiDiscLayer)
-
-    for _, cfg in pairs(layerConfig) do
-        checkList(cfg.show)
-        checkList(cfg.hide)
-    end
-    for _, def in pairs(configSource) do
-        check(def.base)
-        check(def.usb)
-        check(def.conf)
-        check(def.camera)
-        check(def.hidPrivDiv)
-        check(def.hidPrivComb)
-    end
 
     if #missing > 0 then
         print("WARNING ["..pageName.."]: configured layers not found in UCI design:")
@@ -446,22 +459,16 @@ function activeSourceKey()
     return layerToSourceKey[state.activeLayer]
 end
 
-function helpKeysForLayer(layerIndex)
-    local cfg = layerConfig[layerIndex]
-    if cfg and cfg.sourceKey then return { cfg.sourceKey } end
-    return overlayConfig[layerIndex] or {}
-end
-
-function resolveOpenHelpKey()
-    for _, key in ipairs(configHelpPairKey) do
-        if state.helpOpen[key] then return key end
-    end
-    return nil
-end
-
 function helpKeyAllowedOnPage(openKey, roomState)
     if not openKey then return false end
-    for _, key in ipairs(helpKeysForLayer(state.activeLayer)) do
+    local cfg = layerConfig[state.activeLayer]
+    local keysOnPage
+    if cfg and cfg.sourceKey then
+        keysOnPage = { cfg.sourceKey }
+    else
+        keysOnPage = overlayConfig[state.activeLayer] or {}
+    end
+    for _, key in ipairs(keysOnPage) do
         if key == openKey then
             local sourceKey = activeSourceKey()
             if sourceKey then
@@ -474,13 +481,21 @@ function helpKeyAllowedOnPage(openKey, roomState)
     return false
 end
 
+function setHelpLayerCopy(openKey)
+    local copy = openKey and helpCopy[openKey]
+    local title = copy and copy.title or ""
+    local heading = copy and copy.heading or ""
+    local body = copy and copy.body or ""
+    if Controls.txtLayerHelpTitle then setProp(Controls.txtLayerHelpTitle, "String", title) end
+    if Controls.txtLayerHelpHeading then setProp(Controls.txtLayerHelpHeading, "String", heading) end
+    if Controls.txtLayerHelpBody then setProp(Controls.txtLayerHelpBody, "String", body) end
+end
+
 function applyUnifiedHelp(desired, transitions, roomState)
-    local openKey = resolveOpenHelpKey()
+    local openKey = state.helpOpenKey
     local helpVis = helpKeyAllowedOnPage(openKey, roomState)
     want(desired, transitions, helpLayer, helpVis, helpVis and "fade" or "none")
-    if helpVis and Controls.txtLayerHelp then
-        setProp(Controls.txtLayerHelp, "String", helpText[openKey] or "")
-    end
+    if helpVis then setHelpLayerCopy(openKey) end
     if helpVis and configSource[openKey] then
         want(desired, transitions, confLayer, false)
         want(desired, transitions, usbConnectLayer, false)
@@ -613,9 +628,7 @@ function buildDesired(roomState)
 end
 
 function clearHelpState()
-    for _, key in ipairs(configHelpPairKey) do
-        state.helpOpen[key] = false
-    end
+    state.helpOpenKey = nil
 end
 
 function refreshLayers(force)
@@ -629,11 +642,9 @@ end
 function setHelpOpen(key, isOpen)
     if not helpControl[key] then return end
     if isOpen then
-        for _, k in ipairs(configHelpPairKey) do
-            state.helpOpen[k] = (k == key)
-        end
-    else
-        state.helpOpen[key] = false
+        state.helpOpenKey = key
+    elseif state.helpOpenKey == key then
+        state.helpOpenKey = nil
     end
     refreshLayers()
 end

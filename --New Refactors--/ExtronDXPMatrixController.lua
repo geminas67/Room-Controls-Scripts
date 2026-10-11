@@ -170,25 +170,23 @@ end
 function setRoute(input, outputNum, source, skipFeedback)
     source = source or "External"
 
+    if input < 0 or input > numInputs or outputNum < 1 or outputNum > numOutputs then
+        debugMsg("Invalid route: input=" .. tostring(input) .. ", output=" .. tostring(outputNum))
+        return false
+    end
+
     local outCtl = getOutputControl(outputNum)
     if not outCtl then
         debugMsg("No output control " .. tostring(outputNum) .. " (" .. source .. ")")
         return false
     end
 
-    if input < 0 or input > numInputs or outputNum < 1 or outputNum > numOutputs then
-        debugMsg("Invalid route: input=" .. tostring(input) .. ", output=" .. tostring(outputNum))
-        return false
-    end
-
     local strVal = tostring(input)
-    if outCtl.String == strVal then
-        if not skipFeedback then updateOutputButtons(outputNum, input) end
-        return true
+    if outCtl.String ~= strVal then
+        outCtl.String = strVal
+        debugMsg("Output " .. outputNum .. " -> Input " .. input .. " (" .. source .. ")")
     end
 
-    outCtl.String = strVal
-    debugMsg("Output " .. outputNum .. " -> Input " .. input .. " (" .. source .. ")")
     if not skipFeedback then updateOutputButtons(outputNum, input) end
     return true
 end
@@ -282,12 +280,12 @@ end
 
 -------------------[ Public API ]-------------------
 
-DXP84RouterController = {
+DXPMatrixController = {
     setRoute = setRoute,
     syncRmBtoRmA = syncRmBtoRmA,
 }
 
-MatrixController = DXP84RouterController
+MatrixController = DXPMatrixController
 
 -------------------[ Event Handlers ]-------------------
 

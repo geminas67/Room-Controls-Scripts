@@ -6,7 +6,8 @@
 
   Divisible-space UCI. buildDesired → applyDesired; event-driven power progress from room controls.
 
-  Popup copy in Lua: helpText, discText, btnStartSystem legend. Shared layers I02-Help (txtLayerHelp), L00-HDMIDisc (txtLayerHDMIDisc).
+  Popup copy in Lua: helpText, discText, btnStartSystem legend. Shared layers 
+  I02-Help (txtLayerHelp), L00-HDMIDisc (txtLayerHDMIDisc).
 ]]--
 
 -------------------[ Configuration ]-------------------
@@ -52,9 +53,9 @@ layersToHide = {
     "J11-CamSelectLaptopA","J12-CamSelectLaptopB","J13-CamSelectPCA","J14-CamSelectPCB",
     "J17-HIDPrivacyRoomA","J18-HIDPrivacyRoomB","J19-HIDPrivacyCombineA","J20-HIDPrivacyCombineB",
     "J21-ConferenceLaptopA","J22-ConferenceLaptopB","J23-ConferencePCA","J24-ConferencePCB",
-    "L00-HDMIDisc", "L01-LaptopA", "L02-LaptopB",
-    "P01-PCA", "P02-PCB",
-    "W01-WirelessA","W02-WirelessB","W05-Wireless","R10-Routing","S10-StreamMusic","V05-Dialer",
+    "L00-HDMIDisc", "L01-LaptopA", "L02-LaptopB","P01-PCA", "P02-PCB",
+    "W01-WirelessA","W02-WirelessB","W05-Wireless",
+    "R10-Routing","S10-StreamMusic","V05-Dialer",
 }
 
 helpText = {
@@ -69,10 +70,10 @@ helpText = {
 }
 
 discText = {
-    LaptopA = "Connect the HDMI cable to Laptop A.",
-    LaptopB = "Connect the HDMI cable to Laptop B.",
-    PCA     = "Connect the HDMI cable to PC A.",
-    PCB     = "Connect the HDMI cable to PC B.",
+    LaptopA = "Please connect the HDMI cable to your laptop to present content.",
+    LaptopB = "Please connect the HDMI cable to your laptop to present content.",
+    PCA     = "Please connect the HDMI cable to your PC to present content.",
+    PCB     = "Please connect the HDMI cable to your PC to present content.",
 }
 
 acprLayer = { combined = "J06-ACPRActiveCombine", separated = "J07-ACPRActiveDivide" }
@@ -142,14 +143,10 @@ helpControl = {
 }
 
 powerProgressConfig = {
-    {
-        mode = "warming", key = "ledSystemWarming",
-        text = "Starting the AV system, please wait as the system powers on.",
+    {   mode = "warming", key = "ledSystemWarming", text = "Starting the AV system, please wait as the system powers on.",
         startSource = "Room Automation Warming", endSource = "Warmup Complete",
     },
-    {
-        mode = "cooling", key = "ledSystemCooling",
-        text = "Shutting down the AV system, please wait as the system powers off.",
+    {   mode = "cooling", key = "ledSystemCooling", text = "Shutting down the AV system, please wait as the system powers off.",
         startSource = "Room Automation Cooling", endSource = "Cooldown Complete",
     },
 }
