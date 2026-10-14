@@ -6,8 +6,7 @@
 
   Divisible-space UCI. buildDesired → applyDesired; event-driven power progress from room controls.
 
-  Popup copy in Lua: helpText, discText, btnStartSystem legend. Shared layers 
-  I02-Help (txtLayerHelp), L00-HDMIDisc (txtLayerHDMIDisc).
+  Popup copy in Lua: helpCopy (title/heading/body per source), discText, btnStartSystem legend. I02-Help (txtHelpTitle, txtHelpHeading, txtHelpBody), L00-HDMIDisc (txtHDMIDisc).
 ]]--
 
 -------------------[ Configuration ]-------------------
@@ -53,31 +52,63 @@ layersToHide = {
     "J11-CamSelectLaptopA","J12-CamSelectLaptopB","J13-CamSelectPCA","J14-CamSelectPCB",
     "J17-HIDPrivacyRoomA","J18-HIDPrivacyRoomB","J19-HIDPrivacyCombineA","J20-HIDPrivacyCombineB",
     "J21-ConferenceLaptopA","J22-ConferenceLaptopB","J23-ConferencePCA","J24-ConferencePCB",
-    "L00-HDMIDisc", "L01-LaptopA", "L02-LaptopB","P01-PCA", "P02-PCB",
-    "W01-WirelessA","W02-WirelessB","W05-Wireless",
-    "R10-Routing","S10-StreamMusic","V05-Dialer",
+    "L00-HDMIDisc", "L01-LaptopA", "L02-LaptopB",
+    "P01-PCA", "P02-PCB",
+    "W01-WirelessA","W02-WirelessB","W05-Wireless","R10-Routing","S10-StreamMusic","V05-Dialer",
 }
 
-helpText = {
-    LaptopA     = "Help: Laptop A",
-    LaptopB     = "Help: Laptop B",
-    PCA         = "Help: PC A",
-    PCB         = "Help: PC B",
-    WirelessA   = "Help: Wireless A",
-    WirelessB   = "Help: Wireless B",
-    Routing     = "Help: Routing",
-    StreamMusic = "Help: Stream Music",
+helpCopy = {
+    LaptopA = {
+        title   = "Help",
+        heading = "Laptop A",
+        body    = "",
+    },
+    LaptopB = {
+        title   = "Help",
+        heading = "Laptop B",
+        body    = "",
+    },
+    PCA = {
+        title   = "Help",
+        heading = "PC A",
+        body    = "",
+    },
+    PCB = {
+        title   = "Help",
+        heading = "PC B",
+        body    = "",
+    },
+    WirelessA = {
+        title   = "Help",
+        heading = "Wireless A",
+        body    = "",
+    },
+    WirelessB = {
+        title   = "Help",
+        heading = "Wireless B",
+        body    = "",
+    },
+    Routing = {
+        title   = "Help",
+        heading = "Routing",
+        body    = "",
+    },
+    StreamMusic = {
+        title   = "Help",
+        heading = "Stream Music",
+        body    = "",
+    },
 }
 
 discText = {
-    LaptopA = "Please connect the HDMI cable to your laptop to present content.",
-    LaptopB = "Please connect the HDMI cable to your laptop to present content.",
-    PCA     = "Please connect the HDMI cable to your PC to present content.",
-    PCB     = "Please connect the HDMI cable to your PC to present content.",
+    LaptopA = "Connect the HDMI cable to Laptop A.",
+    LaptopB = "Connect the HDMI cable to Laptop B.",
+    PCA     = "Connect the HDMI cable to PC A.",
+    PCB     = "Connect the HDMI cable to PC B.",
 }
 
-acprLayer = { combined = "J06-ACPRActiveCombine", separated = "J07-ACPRActiveDivide" }
-acprBtnLayer = { combined = "J09-ACPRBtnCombine", separated = "J10-ACPRBtnDivide" }
+layerACPR = { combined = "J06-ACPRActiveCombine", separated = "J07-ACPRActiveDivide" }
+layerACPRBtn = { combined = "J09-ACPRBtnCombine", separated = "J10-ACPRBtnDivide" }
 
 configSource = {
     LaptopA = {
@@ -106,7 +137,7 @@ configSource = {
         usb = "J03-ConnectUSBPCA",
         conf = "J23-ConferencePCA",
         camera = "J13-CamSelectPCA",
-        vidPrivSep = "J17-HIDPrivacyRoomA", vidPrivComb = "J19-HIDPrivacyCombineA",
+        hidPrivDiv = "J17-HIDPrivacyRoomA", hidPrivComb = "J19-HIDPrivacyCombineA",
     },
     PCB = {
         layer = kLayer.PCB,
@@ -116,7 +147,7 @@ configSource = {
         usb = "J04-ConnectUSBPCB",
         conf = "J24-ConferencePCB",
         camera = "J14-CamSelectPCB",
-        vidPrivSep = "J18-HIDPrivacyRoomB", vidPrivComb = "J20-HIDPrivacyCombineB",
+        hidPrivDiv = "J18-HIDPrivacyRoomB", hidPrivComb = "J20-HIDPrivacyCombineB",
     },
 }
 
@@ -143,10 +174,12 @@ helpControl = {
 }
 
 powerProgressConfig = {
-    {   mode = "warming", key = "ledSystemWarming", text = "Starting the AV system, please wait as the system powers on.",
+    {
+        mode = "warming", key = "ledSystemWarming", text = "Starting the AV system, please wait as the system powers on.",
         startSource = "Room Automation Warming", endSource = "Warmup Complete",
     },
-    {   mode = "cooling", key = "ledSystemCooling", text = "Shutting down the AV system, please wait as the system powers off.",
+    {
+        mode = "cooling", key = "ledSystemCooling", text = "Shutting down the AV system, please wait as the system powers off.",
         startSource = "Room Automation Cooling", endSource = "Cooldown Complete",
     },
 }
@@ -163,10 +196,10 @@ layerConfig = {
     [kLayer.Dialer]       = { show = {"V05-Dialer"} },
     [kLayer.StreamMusic]  = { show = {"S10-StreamMusic"} },
     [kLayer.RoomCombining]= { show = {"H04-RoomCombining"}, hideBase = true },
-    [kLayer.LaptopA]      = { show = {"L01-LaptopA"} },
-    [kLayer.LaptopB]      = { show = {"L02-LaptopB"} },
-    [kLayer.PCA]          = { show = {"P01-PCA"} },
-    [kLayer.PCB]          = { show = {"P02-PCB"} },
+    [kLayer.LaptopA]      = { sourceKey = "LaptopA" },
+    [kLayer.LaptopB]      = { sourceKey = "LaptopB" },
+    [kLayer.PCA]          = { sourceKey = "PCA" },
+    [kLayer.PCB]          = { sourceKey = "PCB" },
 }
 
 kRoom = { RoomA = "RoomA", RoomB = "RoomB" }
@@ -197,15 +230,15 @@ labelConfig = {
     {suffix = "Display", count = 12},
 }
 
-navHidden = {}
+navHidden = {} -- static "this design never uses these slots" hook
 
 btnNav = {}
 for i = 1, 15 do btnNav[i] = Controls["btnNav" .. string.format("%02d", i)] end
 
-usbConnectLayer, confLayer = {}, {}
+layerUSBConnect, layerConf = {}, {}
 for _, def in pairs(configSource) do
-    if def.usb then table.insert(usbConnectLayer, def.usb) end
-    if def.conf then table.insert(confLayer, def.conf) end
+    if def.usb then table.insert(layerUSBConnect, def.usb) end
+    if def.conf then table.insert(layerConf, def.conf) end
 end
 
 -------------------[ Constant Tables ]-------------------
@@ -216,11 +249,11 @@ state = {
     powerProgress = nil,
     shutdownConfirm = false,
     isInitialized = false,
-    helpOpen = {},
+    helpOpenKey = nil,
 }
 component = {
     roomControls = nil,
-    divisibleSpace = nil, btnRoomState = nil,
+    divisibleSpace = nil, btnRoomMode = nil,
     roomIdentity = nil,
 }
 timer = { progress = nil, inactivity = Timer.New() }
@@ -230,7 +263,7 @@ labelCount = 0
 -------------------[ Constants ]-------------------
 
 stateDebug = true
-defaultLayer = tonumber(Uci.Variables.numDefaultActiveLayer and Uci.Variables.numDefaultActiveLayer.Value) or 10
+defaultLayer = tonumber(Uci.Variables.defaultActiveLayer and Uci.Variables.defaultActiveLayer.Value) or 10
 
 -------------------[ Functions ]-------------------
 
@@ -277,10 +310,11 @@ function validateControls()
         "ledOffHook","ledPresetSaved",
         "ledUSBLaptopA","ledUSBLaptopB","ledUSBPCA","ledUSBPCB",
         "ledHDMILaptopA","ledHDMILaptopB","ledHDMIPCA","ledHDMIPCB",
-        "ledACPRBypassSeparated","ledACPRBypassCombined",
+        "ledACPRBypassDivide","ledACPRBypassCombine",
+        "txtHelpTitle","txtHelpHeading","txtHelpBody","txtHDMIDisc",
     }
     local optional = {
-        ledTouchActivity = true, txtLayerHelp = true, txtLayerHDMIDisc = true,
+        ledTouchActivity = true,
     }
     local missing = {}
     for _, name in ipairs(required) do
@@ -295,6 +329,16 @@ function validateControls()
         return false
     end
     return true
+end
+
+function validateUciVariables()
+    for _, entry in ipairs(uciVarConfig) do
+        if not Uci.Variables[entry.name] then
+            local msg = "UCI variable missing: " .. entry.name
+            if entry.required then print("ERROR: " .. msg)
+            else print("WARNING: " .. msg) end
+        end
+    end
 end
 
 function validateLayers(pageName)
@@ -321,25 +365,6 @@ function validateLayers(pageName)
 
     checkList(layersBase)
     checkList(layersToHide)
-    checkList(usbConnectLayer)
-    checkList(confLayer)
-    check(acprLayer.combined)
-    check(acprLayer.separated)
-    check(acprBtnLayer.combined)
-    check(acprBtnLayer.separated)
-
-    for _, cfg in pairs(layerConfig) do
-        checkList(cfg.show)
-        checkList(cfg.hide)
-    end
-    for _, def in pairs(configSource) do
-        check(def.base)
-        check(def.usb)
-        check(def.conf)
-        check(def.camera)
-        check(def.vidPrivSep)
-        check(def.vidPrivComb)
-    end
 
     if #missing > 0 then
         print("WARNING ["..pageName.."]: configured layers not found in UCI design:")
@@ -351,11 +376,11 @@ end
 -------------------[ Divisible Space ]-------------------
 
 function getRoomState()
-    if not component.divisibleSpace or not component.btnRoomState then return "separated" end
-    local btnState = component.btnRoomState
-    if btnState[1] and btnState[1].Boolean then return "separated"
-    elseif btnState[2] and btnState[2].Boolean then return "combinedA"
-    elseif btnState[3] and btnState[3].Boolean then return "combinedB" end
+    if not component.divisibleSpace or not component.btnRoomMode then return "separated" end
+    local btnMode = component.btnRoomMode
+    if btnMode[1] and btnMode[1].Boolean then return "separated"
+    elseif btnMode[2] and btnMode[2].Boolean then return "combinedA"
+    elseif btnMode[3] and btnMode[3].Boolean then return "combinedB" end
     return "separated"
 end
 
@@ -402,7 +427,7 @@ end
 
 function updateStartSystemLegend(roomState)
     roomState = roomState or getRoomState()
-    local legend = (roomState == "separated") and "Start Room" or "Start Rooms"
+    local legend = (roomState == "separated") and "Start Room" or "Start Combined"
     setProp(Controls.btnStartSystem, "Legend", legend)
 end
 
@@ -441,22 +466,16 @@ function activeSourceKey()
     return layerToSourceKey[state.activeLayer]
 end
 
-function helpKeysForLayer(layerIndex)
-    local cfg = layerConfig[layerIndex]
-    if cfg and cfg.sourceKey then return { cfg.sourceKey } end
-    return overlayConfig[layerIndex] or {}
-end
-
-function resolveOpenHelpKey()
-    for _, key in ipairs(configHelpPairKey) do
-        if state.helpOpen[key] then return key end
-    end
-    return nil
-end
-
 function helpKeyAllowedOnPage(openKey, roomState)
     if not openKey then return false end
-    for _, key in ipairs(helpKeysForLayer(state.activeLayer)) do
+    local cfg = layerConfig[state.activeLayer]
+    local keysOnPage
+    if cfg and cfg.sourceKey then
+        keysOnPage = { cfg.sourceKey }
+    else
+        keysOnPage = overlayConfig[state.activeLayer] or {}
+    end
+    for _, key in ipairs(keysOnPage) do
         if key == openKey then
             local sourceKey = activeSourceKey()
             if sourceKey then
@@ -469,16 +488,24 @@ function helpKeyAllowedOnPage(openKey, roomState)
     return false
 end
 
+function setHelpLayerCopy(openKey)
+    local copy = openKey and helpCopy[openKey]
+    local title = copy and copy.title or ""
+    local heading = copy and copy.heading or ""
+    local body = copy and copy.body or ""
+    if Controls.txtHelpTitle then setProp(Controls.txtHelpTitle, "String", title) end
+    if Controls.txtHelpHeading then setProp(Controls.txtHelpHeading, "String", heading) end
+    if Controls.txtHelpBody then setProp(Controls.txtHelpBody, "String", body) end
+end
+
 function applyUnifiedHelp(desired, transitions, roomState)
-    local openKey = resolveOpenHelpKey()
+    local openKey = state.helpOpenKey
     local helpVis = helpKeyAllowedOnPage(openKey, roomState)
     want(desired, transitions, helpLayer, helpVis, helpVis and "fade" or "none")
-    if helpVis and Controls.txtLayerHelp then
-        setProp(Controls.txtLayerHelp, "String", helpText[openKey] or "")
-    end
+    if helpVis then setHelpLayerCopy(openKey) end
     if helpVis and configSource[openKey] then
-        want(desired, transitions, confLayer, false)
-        want(desired, transitions, usbConnectLayer, false)
+        want(desired, transitions, layerConf, false)
+        want(desired, transitions, layerUSBConnect, false)
     end
 end
 
@@ -488,8 +515,8 @@ function applySourceOverlay(desired, transitions, sourceKey)
 
     if not hdmiConnected(sourceKey) then
         want(desired, transitions, hdmiDiscLayer, true, "fade")
-        if Controls.txtLayerHDMIDisc then
-            setProp(Controls.txtLayerHDMIDisc, "String", discText[sourceKey] or "")
+        if Controls.txtHDMIDisc then
+            setProp(Controls.txtHDMIDisc, "String", discText[sourceKey] or "")
         end
         return
     end
@@ -516,11 +543,11 @@ function getSourceLayerVisibility(def, isActive, usbConnected, isCombined, desir
         want(desired, transitions, def.conf, true, "fade")
         confActive = true
     end
-    if def.vidPrivSep and def.vidPrivComb and isActive and usbConnected then
+    if def.hidPrivDiv and def.hidPrivComb and isActive and usbConnected then
         if isCombined then
-            want(desired, transitions, def.vidPrivComb, true, "fade")
+            want(desired, transitions, def.hidPrivComb, true, "fade")
         else
-            want(desired, transitions, def.vidPrivSep, true, "fade")
+            want(desired, transitions, def.hidPrivDiv, true, "fade")
         end
     end
     return confActive
@@ -540,7 +567,7 @@ function applyConferenceControls(desired, transitions, roomState)
         end
     end
     if not acprConfig.disableACPRShow and anyConfActive then
-        want(desired, transitions, isCombined and acprBtnLayer.combined or acprBtnLayer.separated, true, "fade")
+        want(desired, transitions, isCombined and layerACPRBtn.combined or layerACPRBtn.separated, true, "fade")
     end
 end
 
@@ -551,8 +578,8 @@ function applyACPRDesired(desired, transitions, roomState)
     local def = configSource[sourceKey]
     roomState = roomState or getRoomState()
     local isSep = (roomState == "separated")
-    local bypassCtl = isSep and Controls.ledACPRBypassSeparated or Controls.ledACPRBypassCombined
-    local acprOn = isSep and acprLayer.separated or acprLayer.combined
+    local bypassCtl = isSep and Controls.ledACPRBypassDivide or Controls.ledACPRBypassCombine
+    local acprOn = isSep and layerACPR.separated or layerACPR.combined
     local bypass = boolOf(bypassCtl)
     if not bypass then
         want(desired, transitions, acprOn, true, "fade")
@@ -608,9 +635,7 @@ function buildDesired(roomState)
 end
 
 function clearHelpState()
-    for _, key in ipairs(configHelpPairKey) do
-        state.helpOpen[key] = false
-    end
+    state.helpOpenKey = nil
 end
 
 function refreshLayers(force)
@@ -624,11 +649,9 @@ end
 function setHelpOpen(key, isOpen)
     if not helpControl[key] then return end
     if isOpen then
-        for _, k in ipairs(configHelpPairKey) do
-            state.helpOpen[k] = (k == key)
-        end
-    else
-        state.helpOpen[key] = false
+        state.helpOpenKey = key
+    elseif state.helpOpenKey == key then
+        state.helpOpenKey = nil
     end
     refreshLayers()
 end
@@ -689,10 +712,10 @@ function initDivisibleSpace()
     local ok, comp = pcall(function() return Component.New(divisibleSpaceCompName) end)
     if ok and comp then
         component.divisibleSpace = comp
-        component.btnRoomState = {
-            comp["btnRoomState 1"], comp["btnRoomState 2"], comp["btnRoomState 3"],
+        component.btnRoomMode = {
+            comp["btnRoomMode 1"], comp["btnRoomMode 2"], comp["btnRoomMode 3"],
         }
-        for _, btn in ipairs(component.btnRoomState) do
+        for _, btn in ipairs(component.btnRoomMode) do
             if btn then
                 btn.EventHandler = function(ctl)
                     if not ctl.Boolean then return end
@@ -930,11 +953,11 @@ for name, def in pairs(configSource) do
     end
 end
 
-if Controls.ledACPRBypassSeparated then
-    Controls.ledACPRBypassSeparated.EventHandler = function() refreshLayers() end
+if Controls.ledACPRBypassDivide then
+    Controls.ledACPRBypassDivide.EventHandler = function() refreshLayers() end
 end
-if Controls.ledACPRBypassCombined then
-    Controls.ledACPRBypassCombined.EventHandler = function() refreshLayers() end
+if Controls.ledACPRBypassCombine then
+    Controls.ledACPRBypassCombine.EventHandler = function() refreshLayers() end
 end
 if Controls.ledPresetSaved then
     Controls.ledPresetSaved.EventHandler = function() refreshLayers() end
@@ -989,8 +1012,8 @@ myUCI = {
             local label = uciVariables[i]
             if label then label.EventHandler = nil end
         end
-        if component.btnRoomState then
-            for _, btn in ipairs(component.btnRoomState) do
+        if component.btnRoomMode then
+            for _, btn in ipairs(component.btnRoomMode) do
                 if btn then btn.EventHandler = nil end
             end
         end
@@ -1000,6 +1023,7 @@ myUCI = {
 
 local ok, err = pcall(function()
     if not validateControls() then error("Control validation failed") end
+    validateUciVariables()
     pageUCI = resolvePageName()
     if not pageUCI then error("Uci.GetUciPages returned no pages") end
     validateLayers(pageUCI)

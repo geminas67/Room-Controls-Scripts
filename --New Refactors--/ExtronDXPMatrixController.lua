@@ -10,12 +10,10 @@
 
 -------------------[ Configuration ]-------------------
 
-compType = {
-    extronMatrix = "%PLUGIN%_qsysc.extron.matrix.0.0.0.0-master_%FP%_bf09cd55c73845eb6fc31e4b896516ff",
-}
-
+pluginDXP = "%PLUGIN%_qsysc.extron.matrix.0.0.0.0-master_%FP%_bf09cd55c73845eb6fc31e4b896516ff"
+-- Set the number of inputs and outputs for the Extron DXP Matrix
 numInputs = 4
-numOutputs = 2
+numOutputs = 4
 
 outputConfigs = {
     { output = 1, controlName = "output.1", buttons = Controls.btnOut01, label = "Output 1" },
@@ -144,15 +142,15 @@ function getComponentNames()
     local extronNames = {}
 
     for _, comp in ipairs(Component.GetComponents()) do
-        if comp.Type == compType.extronMatrix then
+        if comp.Type == pluginDXP then
             table.insert(extronNames, comp.Name)
-            debugMsg("Found Extron DXP: " .. comp.Name)
+            debugMsg("Found Extron DXP plugin: " .. comp.Name)
         end
     end
 
     table.sort(extronNames)
     fillChoices(Controls.compExtronDXP, extronNames, "compExtronDXP")
-    debugMsg("Discovery complete - " .. #extronNames .. " Extron DXP device(s) found")
+    debugMsg("Discovery complete - " .. #extronNames .. " Extron DXP plugin(s) found")
 end
 
 -------------------[ Routing ]-------------------

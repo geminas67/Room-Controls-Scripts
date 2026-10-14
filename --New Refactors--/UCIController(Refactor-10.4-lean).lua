@@ -17,7 +17,7 @@ layersBase = {"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}
 layersToHide = {
     "A01-Alarm","B01-IncomingCall","C05-Start","D01-ShutdownConfirm",
     "E05-PowerProgress",
-    "H01-PasscodeEntry","H10-RoomControls",
+    "H01-PasscodeEntry","H10-Utilities",
     "I01-CallActive","I02-HelpLaptop","I03-HelpPC","I04-HelpWireless","I05-HelpRouting","I07-HelpStreamMusic",
     "J01-ConnectUSBLaptop","J02-ConnectUSBPC","J03-ACPRActive","J04-CamPresetSaved","J09-ConferenceLaptop","J10-ConferencePC",
     "L01-HDMIDisc","L05-Laptop","P01-HDMIDisc","P05-PC","W01-HDMIDisc","W05-Wireless",
@@ -115,7 +115,7 @@ layerConfig = {
     [kLayer.Start]        = { show = {"C05-Start"}, hideBase = true },
     [kLayer.Warming]      = { show = {"E05-PowerProgress"}, hideBase = true },
     [kLayer.Cooling]      = { show = {"E05-PowerProgress"}, hideBase = true },
-    [kLayer.RoomControls] = { show = {"H10-RoomControls"}, hide = {"X01-ProgramVolume"} },
+    [kLayer.RoomControls] = { show = {"H10-Utilities"}, hide = {"X01-ProgramVolume"} },
     [kLayer.Laptop]       = { show = {"L05-Laptop"} },
     [kLayer.PC]           = { show = {"P05-PC"} },
     [kLayer.Wireless]     = { show = {"W05-Wireless"} },
@@ -140,7 +140,14 @@ labelConfig = {
     {single = {"NavShutdown","RoomNameNav","RoomNameStart","RoutingRooms","RoutingSources"}},
 }
 
-navHidden = {} -- static "this design never uses these slots" hook
+uciVarConfig = {
+    { name = "timeTouchInactive", required = false },
+    { name = "defaultActiveLayer", required = true },
+    { name = "defaultRoutingLayer", required = false },
+    { name = "compRoomControls", required = true },
+}
+
+navHidden = {} -- static, always hidden "this design never uses these slots" hook
 
 btnNav = {}
 for i = 1, 13 do btnNav[i] = Controls["btnNav" .. string.format("%02d", i)] end
@@ -170,8 +177,8 @@ labelCount = 0
 -------------------[ Constants ]-------------------
 
 stateDebug = true
-defaultLayer = math.floor(tonumber(Uci.Variables.numDefaultActiveLayer and Uci.Variables.numDefaultActiveLayer.Value) or 8)
-defaultRouting = math.floor(tonumber(Uci.Variables.numDefaultRoutingLayer and Uci.Variables.numDefaultRoutingLayer.Value) or 4)
+defaultLayer = math.floor(tonumber(Uci.Variables.defaultActiveLayer and Uci.Variables.defaultActiveLayer.Value) or 8)
+defaultRouting = math.floor(tonumber(Uci.Variables.defaultRoutingLayer and Uci.Variables.defaultRoutingLayer.Value) or 4)
 state.activeRoutingLayer = defaultRouting
 
 -------------------[ Functions ]-------------------
@@ -233,6 +240,14 @@ function validateControls()
     return true
 end
 
+function validateUciVariables()
+    for _, entry in ipairs(uciVarConfig) do
+        if not Uci.Variables[entry.name] then
+            local msg = "UCI variable missing: " .. entry.name
+            if entry.required then print("ERROR: " .. msg) else debugPrint("Warning: " .. msg) end
+        end
+    end
+end
 function validateLayers(pageName)
     local pageLayers = Uci.GetUciPageLayers(pageName)
     if not pageLayers then
@@ -696,7 +711,6 @@ function initLabelArrays()
         end
     end
     labelCount = idx
-    syncLabels()
     debugPrint("String Labels: " .. labelCount .. " slots configured")
     if missingOptional > 0 then debugPrint("String Labels: " .. missingOptional .. " optional control/variable reference(s) missing") end
     if missingRequired > 0 then print("ERROR: String Labels: " .. missingRequired .. " required control/variable reference(s) missing") end
@@ -810,6 +824,7 @@ myUCI = {
 
 local ok, err = pcall(function()
     if not validateControls() then error("Control validation failed") end
+    validateUciVariables()
     pageUCI = resolvePageName()
     if not pageUCI then error("Uci.GetUciPages returned no pages") end
     validateLayers(pageUCI)

@@ -6,7 +6,7 @@
 
   Divisible-space UCI. buildDesired → applyDesired; event-driven power progress from room controls.
 
-  Popup copy in Lua: helpCopy (title/heading/body per source), discText, btnStartSystem legend. I02-Help (txtLayerHelpTitle, txtLayerHelpHeading, txtLayerHelpBody), L00-HDMIDisc (txtLayerHDMIDisc).
+  Popup copy in Lua: helpCopy (title/heading/body per source), discText, btnStartSystem legend. I02-Help (txtHelpTitle, txtHelpHeading, txtHelpBody), L00-HDMIDisc (txtHDMIDisc).
 ]]--
 
 -------------------[ Configuration ]-------------------
@@ -107,8 +107,8 @@ discText = {
     PCB     = "Connect the HDMI cable to PC B.",
 }
 
-acprLayer = { combined = "J06-ACPRActiveCombine", separated = "J07-ACPRActiveDivide" }
-acprBtnLayer = { combined = "J09-ACPRBtnCombine", separated = "J10-ACPRBtnDivide" }
+layerACPR = { combined = "J06-ACPRActiveCombine", separated = "J07-ACPRActiveDivide" }
+layerACPRBtn = { combined = "J09-ACPRBtnCombine", separated = "J10-ACPRBtnDivide" }
 
 configSource = {
     LaptopA = {
@@ -175,13 +175,11 @@ helpControl = {
 
 powerProgressConfig = {
     {
-        mode = "warming", key = "ledSystemWarming",
-        text = "Starting the AV system, please wait as the system powers on.",
+        mode = "warming", key = "ledSystemWarming", text = "Starting the AV system, please wait as the system powers on.",
         startSource = "Room Automation Warming", endSource = "Warmup Complete",
     },
     {
-        mode = "cooling", key = "ledSystemCooling",
-        text = "Shutting down the AV system, please wait as the system powers off.",
+        mode = "cooling", key = "ledSystemCooling", text = "Shutting down the AV system, please wait as the system powers off.",
         startSource = "Room Automation Cooling", endSource = "Cooldown Complete",
     },
 }
@@ -237,10 +235,10 @@ navHidden = {} -- static "this design never uses these slots" hook
 btnNav = {}
 for i = 1, 15 do btnNav[i] = Controls["btnNav" .. string.format("%02d", i)] end
 
-usbConnectLayer, confLayer = {}, {}
+layerUSBConnect, layerConf = {}, {}
 for _, def in pairs(configSource) do
-    if def.usb then table.insert(usbConnectLayer, def.usb) end
-    if def.conf then table.insert(confLayer, def.conf) end
+    if def.usb then table.insert(layerUSBConnect, def.usb) end
+    if def.conf then table.insert(layerConf, def.conf) end
 end
 
 -------------------[ Constant Tables ]-------------------
@@ -255,7 +253,7 @@ state = {
 }
 component = {
     roomControls = nil,
-    divisibleSpace = nil, btnRoomState = nil,
+    divisibleSpace = nil, btnRoomMode = nil,
     roomIdentity = nil,
 }
 timer = { progress = nil, inactivity = Timer.New() }
@@ -265,7 +263,7 @@ labelCount = 0
 -------------------[ Constants ]-------------------
 
 stateDebug = true
-defaultLayer = tonumber(Uci.Variables.numDefaultActiveLayer and Uci.Variables.numDefaultActiveLayer.Value) or 10
+defaultLayer = tonumber(Uci.Variables.defaultActiveLayer and Uci.Variables.defaultActiveLayer.Value) or 10
 
 -------------------[ Functions ]-------------------
 
@@ -313,11 +311,10 @@ function validateControls()
         "ledUSBLaptopA","ledUSBLaptopB","ledUSBPCA","ledUSBPCB",
         "ledHDMILaptopA","ledHDMILaptopB","ledHDMIPCA","ledHDMIPCB",
         "ledACPRBypassSeparated","ledACPRBypassCombined",
+        "txtHelpTitle","txtHelpHeading","txtHelpBody","txtHDMIDisc",
     }
     local optional = {
         ledTouchActivity = true,
-        txtLayerHelpTitle = true, txtLayerHelpHeading = true, txtLayerHelpBody = true,
-        txtLayerHDMIDisc = true,
     }
     local missing = {}
     for _, name in ipairs(required) do
@@ -332,6 +329,16 @@ function validateControls()
         return false
     end
     return true
+end
+
+function validateUciVariables()
+    for _, entry in ipairs(uciVarConfig) do
+        if not Uci.Variables[entry.name] then
+            local msg = "UCI variable missing: " .. entry.name
+            if entry.required then print("ERROR: " .. msg)
+            else print("WARNING: " .. msg) end
+        end
+    end
 end
 
 function validateLayers(pageName)
@@ -369,11 +376,11 @@ end
 -------------------[ Divisible Space ]-------------------
 
 function getRoomState()
-    if not component.divisibleSpace or not component.btnRoomState then return "separated" end
-    local btnState = component.btnRoomState
-    if btnState[1] and btnState[1].Boolean then return "separated"
-    elseif btnState[2] and btnState[2].Boolean then return "combinedA"
-    elseif btnState[3] and btnState[3].Boolean then return "combinedB" end
+    if not component.divisibleSpace or not component.btnRoomMode then return "separated" end
+    local btnMode = component.btnRoomMode
+    if btnMode[1] and btnMode[1].Boolean then return "separated"
+    elseif btnMode[2] and btnMode[2].Boolean then return "combinedA"
+    elseif btnMode[3] and btnMode[3].Boolean then return "combinedB" end
     return "separated"
 end
 
@@ -486,9 +493,9 @@ function setHelpLayerCopy(openKey)
     local title = copy and copy.title or ""
     local heading = copy and copy.heading or ""
     local body = copy and copy.body or ""
-    if Controls.txtLayerHelpTitle then setProp(Controls.txtLayerHelpTitle, "String", title) end
-    if Controls.txtLayerHelpHeading then setProp(Controls.txtLayerHelpHeading, "String", heading) end
-    if Controls.txtLayerHelpBody then setProp(Controls.txtLayerHelpBody, "String", body) end
+    if Controls.txtHelpTitle then setProp(Controls.txtHelpTitle, "String", title) end
+    if Controls.txtHelpHeading then setProp(Controls.txtHelpHeading, "String", heading) end
+    if Controls.txtHelpBody then setProp(Controls.txtHelpBody, "String", body) end
 end
 
 function applyUnifiedHelp(desired, transitions, roomState)
@@ -497,8 +504,8 @@ function applyUnifiedHelp(desired, transitions, roomState)
     want(desired, transitions, helpLayer, helpVis, helpVis and "fade" or "none")
     if helpVis then setHelpLayerCopy(openKey) end
     if helpVis and configSource[openKey] then
-        want(desired, transitions, confLayer, false)
-        want(desired, transitions, usbConnectLayer, false)
+        want(desired, transitions, layerConf, false)
+        want(desired, transitions, layerUSBConnect, false)
     end
 end
 
@@ -508,8 +515,8 @@ function applySourceOverlay(desired, transitions, sourceKey)
 
     if not hdmiConnected(sourceKey) then
         want(desired, transitions, hdmiDiscLayer, true, "fade")
-        if Controls.txtLayerHDMIDisc then
-            setProp(Controls.txtLayerHDMIDisc, "String", discText[sourceKey] or "")
+        if Controls.txtHDMIDisc then
+            setProp(Controls.txtHDMIDisc, "String", discText[sourceKey] or "")
         end
         return
     end
@@ -560,7 +567,7 @@ function applyConferenceControls(desired, transitions, roomState)
         end
     end
     if not acprConfig.disableACPRShow and anyConfActive then
-        want(desired, transitions, isCombined and acprBtnLayer.combined or acprBtnLayer.separated, true, "fade")
+        want(desired, transitions, isCombined and layerACPRBtn.combined or layerACPRBtn.separated, true, "fade")
     end
 end
 
@@ -572,7 +579,7 @@ function applyACPRDesired(desired, transitions, roomState)
     roomState = roomState or getRoomState()
     local isSep = (roomState == "separated")
     local bypassCtl = isSep and Controls.ledACPRBypassSeparated or Controls.ledACPRBypassCombined
-    local acprOn = isSep and acprLayer.separated or acprLayer.combined
+    local acprOn = isSep and layerACPR.separated or layerACPR.combined
     local bypass = boolOf(bypassCtl)
     if not bypass then
         want(desired, transitions, acprOn, true, "fade")
@@ -705,10 +712,10 @@ function initDivisibleSpace()
     local ok, comp = pcall(function() return Component.New(divisibleSpaceCompName) end)
     if ok and comp then
         component.divisibleSpace = comp
-        component.btnRoomState = {
-            comp["btnRoomState 1"], comp["btnRoomState 2"], comp["btnRoomState 3"],
+        component.btnRoomMode = {
+            comp["btnRoomMode 1"], comp["btnRoomMode 2"], comp["btnRoomMode 3"],
         }
-        for _, btn in ipairs(component.btnRoomState) do
+        for _, btn in ipairs(component.btnRoomMode) do
             if btn then
                 btn.EventHandler = function(ctl)
                     if not ctl.Boolean then return end
@@ -1005,8 +1012,8 @@ myUCI = {
             local label = uciVariables[i]
             if label then label.EventHandler = nil end
         end
-        if component.btnRoomState then
-            for _, btn in ipairs(component.btnRoomState) do
+        if component.btnRoomMode then
+            for _, btn in ipairs(component.btnRoomMode) do
                 if btn then btn.EventHandler = nil end
             end
         end
@@ -1016,6 +1023,7 @@ myUCI = {
 
 local ok, err = pcall(function()
     if not validateControls() then error("Control validation failed") end
+    validateUciVariables()
     pageUCI = resolvePageName()
     if not pageUCI then error("Uci.GetUciPages returned no pages") end
     validateLayers(pageUCI)
