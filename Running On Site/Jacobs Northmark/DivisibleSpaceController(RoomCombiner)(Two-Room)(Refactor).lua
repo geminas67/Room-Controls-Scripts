@@ -54,7 +54,7 @@ config.routingRules = {
       targetControl = "compGains 1",
       componentKey = "roomControls",
       getName = "Gain routing",
-      separated = function(idx) return config.component.gains[idx] end,
+      divided = function(idx) return config.component.gains[idx] end,
       combined = function(priorityIdx) return config.component.gains[priorityIdx] end
     },
     acpr = {
@@ -62,7 +62,7 @@ config.routingRules = {
       targetControl = "compACPR",
       componentKey = "roomControls",
       getName = "ACPR assignment",
-      separated = function(idx) return config.component.acpr[idx] end,
+      divided = function(idx) return config.component.acpr[idx] end,
       combined = function() return config.component.acpr.combined end
     }
   },
@@ -72,8 +72,8 @@ config.routingRules = {
       componentKey = "mxaControls",
       getName = "MXA controls routing",
       controls = {
-        {name = "compCallSync", separated = function(idx) return config.component.callSync[idx] end, combined = function(pIdx) return config.component.callSync[pIdx] end},
-        {name = "compRoomControls", separated = function(idx) return config.component.roomControls[idx] end, combined = function(pIdx) return config.component.roomControls[pIdx] end}
+        {name = "compCallSync", divided = function(idx) return config.component.callSync[idx] end, combined = function(pIdx) return config.component.callSync[pIdx] end},
+        {name = "compRoomControls", divided = function(idx) return config.component.roomControls[idx] end, combined = function(pIdx) return config.component.roomControls[pIdx] end}
       }
     }
   }
@@ -108,16 +108,6 @@ function debugMsg(str)
   if stateDebug then print("[" .. strRoomLabel .. "] " .. str) end
 end
 
-function isArr(t)
-  return type(t) == "table" and t[1] ~= nil
-end
-
-function normalizebtnRoomMode()
-  if Controls.btnRoomMode and not isArr(Controls.btnRoomMode) then
-    Controls.btnRoomMode = {Controls.btnRoomMode}
-  end
-end
-
 function printOperationResult(operation, success, total, errors)
   debugMsg(operation .. " complete: " .. success .. "/" .. total .. " successful")
   if errors and #errors > 0 then
@@ -135,22 +125,22 @@ function getRoomIndex(roomName)
 end
 
 function getRoomStateFromIndex(index)
-  local states = {"Separated", "RoomA_Combined", "RoomB_Combined"}
+  local states = {"Divided", "RoomA_Combined", "RoomB_Combined"}
   return states[index] or "Unknown"
 end
 
 function getRoomState()
-  if not Controls.btnRoomMode then return "Separated" end
+  if not Controls.btnRoomMode then return "Divided" end
   for i = 1, #Controls.btnRoomMode do
     if Controls.btnRoomMode[i] and Controls.btnRoomMode[i].Boolean then
       return getRoomStateFromIndex(i)
     end
   end
-  return "Separated"
+  return "Divided"
 end
 
-function isRoomsSeparated()
-  return getRoomState() == "Separated"
+function isRoomsDivided()
+  return getRoomState() == "Divided"
 end
 
 function getRoomControlComponent(roomName)
@@ -179,7 +169,7 @@ function checkAnyRoomState(checkFunc)
 end
 
 function getPriorityRoom()
-  if isRoomsSeparated() then return nil end
+  if isRoomsDivided() then return nil end
   if component.uciController then
     for _, btn in ipairs(config.uciButtons) do
       local button = component.uciController[btn.name]
@@ -205,7 +195,7 @@ function canChangeWallState()
   return true
 end
 
-function applybtnRoomModeInterlock(activeIndex)
+function interlockBtnRoomMode(activeIndex)
   if not Controls.btnRoomMode then return end
   for i = 1, #Controls.btnRoomMode do
     if i ~= activeIndex and Controls.btnRoomMode[i] and Controls.btnRoomMode[i].Boolean then
@@ -218,7 +208,7 @@ end
 function updateWallState()
   if not component.roomCombiner then return end
   local roomState = getRoomState()
-  local wallShouldBeOpen = (roomState ~= "Separated")
+  local wallShouldBeOpen = (roomState ~= "Divided")
   local wallControl = component.roomCombiner["wall.1.open"]
   if wallControl then
     wallControl.Boolean = wallShouldBeOpen
@@ -253,7 +243,7 @@ function applyRouting(rule)
   if not enabled then debugMsg(rule.getName .. " disabled"); return end
   local priorityIdx = getPriorityRoomIndex()
   local ruleControls = rule.targetControl and
-    {{ name = rule.targetControl, separated = rule.separated, combined = rule.combined }} or
+    {{ name = rule.targetControl, divided = rule.divided, combined = rule.combined }} or
     rule.controls
   local success, errors = 0, {}
   local total = #config.rooms * #ruleControls
@@ -261,7 +251,7 @@ function applyRouting(rule)
     local comp = component[rule.componentKey][i]
     for _, ctrl in ipairs(ruleControls) do
       if comp and comp[ctrl.name] then
-        local value = isRoomsSeparated() and ctrl.separated(i) or ctrl.combined(priorityIdx)
+        local value = isRoomsDivided() and ctrl.divided(i) or ctrl.combined(priorityIdx)
         if value and value ~= "" then
           comp[ctrl.name].String = value
           success = success + 1
@@ -292,7 +282,7 @@ function syncPowerToRooms(roomsToSync, powerState, source)
 end
 
 function applyGainRouting()
-  if not isRoomsSeparated() then
+  if not isRoomsDivided() then
     local priorityIdx = getPriorityRoomIndex()
     if priorityIdx then
       local nonPriorityIdx = 3 - priorityIdx
@@ -313,7 +303,7 @@ end
 
 function applyMatrixMixerMutes()
   if not component.matrixMixer then debugMsg("WARNING: Matrix mixer not found"); return end
-  local muteState = isRoomsSeparated()
+  local muteState = isRoomsDivided()
   local success, errors = 0, {}
   for _, muteName in ipairs(config.component.matrixAudioMixer) do
     local mute = component.matrixMixer[muteName]
@@ -328,7 +318,7 @@ end
 
 function applyUCIStatusRouting()
   if not component.uciStatus then debugMsg("WARNING: UCI status not found"); return end
-  local uciValue = isRoomsSeparated() and config.component.uciNames[1] or
+  local uciValue = isRoomsDivided() and config.component.uciNames[1] or
     (isRoomPoweredOn("RoomB") and config.component.uciNames[2] or config.component.uciNames[1])
   local currentUCI = component.uciStatus["current.uci"]
   if currentUCI then
@@ -339,10 +329,10 @@ end
 
 function applyACPRComponentRouting()
   if config.features.disableACPRRouting then debugMsg("ACPR component routing disabled"); return end
-  local isSeparated = isRoomsSeparated()
+  local isDivided = isRoomsDivided()
   local priorityIdx = getPriorityRoomIndex()
   local success, errors = 0, {}
-  local bypassSettings = isSeparated and {{idx = 3, desc = "Combined"}} or {{idx = 1, desc = "1"}, {idx = 2, desc = "2"}}
+  local bypassSettings = isDivided and {{idx = 3, desc = "Combined"}} or {{idx = 1, desc = "1"}, {idx = 2, desc = "2"}}
   for _, setting in ipairs(bypassSettings) do
     local acprComp = component.acprComponents[setting.idx]
     if acprComp and acprComp["TrackingBypass"] then
@@ -351,7 +341,7 @@ function applyACPRComponentRouting()
       debugMsg("ACPR[" .. setting.desc .. "] -> TrackingBypass: true (Source: Room Combiner)")
     else table.insert(errors, "ACPR[" .. setting.desc .. "]: TrackingBypass not found") end
   end
-  if not isSeparated and priorityIdx then
+  if not isDivided and priorityIdx then
     local acprComp3 = component.acprComponents[3]
     if acprComp3 and acprComp3["CameraRouterOutput"] then
       local outputValue = config.component.acprOutputs[priorityIdx or 2]
@@ -365,17 +355,17 @@ end
 
 function applyCamRouterRouting()
   if not component.camRouter then debugMsg("WARNING: Cam router not found"); return end
-  local isSeparated = isRoomsSeparated()
+  local isDivided = isRoomsDivided()
   local priorityIdx = getPriorityRoomIndex()
   local success, errors = 0, {}
   local routes = {
-    {control = "select.1", separated = 1, combined = {1, 2}},
-    {control = "select.2", separated = 2, combined = {1, 2}}
+    {control = "select.1", divided = 1, combined = {1, 2}},
+    {control = "select.2", divided = 2, combined = {1, 2}}
   }
   for _, route in ipairs(routes) do
     local ctrl = component.camRouter[route.control]
     if ctrl then
-      local value = isSeparated and route.separated or route.combined[priorityIdx or 2]
+      local value = isDivided and route.divided or route.combined[priorityIdx or 2]
       ctrl.Value = value
       success = success + 1
       debugMsg("Cam Router " .. route.control .. " -> " .. value .. " (Source: Room Combiner)")
@@ -398,7 +388,7 @@ function applyRoomMode()
   debugMsg("Current state: " .. roomState)
   if not canChangeWallState() then
     debugMsg("BLOCKED: Cannot change state - rooms are powered on (Source: Room Combiner)")
-    applybtnRoomModeInterlock(1)
+    interlockBtnRoomMode(1)
     if Controls.btnRoomMode and Controls.btnRoomMode[1] then Controls.btnRoomMode[1].Boolean = true end
     checkStatus()
     return
@@ -412,7 +402,7 @@ function applyRoomMode()
     applyUCIStatusRouting()
     applyACPRComponentRouting()
     applyCamRouterRouting()
-    if roomState ~= "Separated" then
+    if roomState ~= "Divided" then
       if checkAnyRoomState(isRoomPoweredOn) then
         debugMsg("Syncing power (ON) to all rooms (Source: Room Combiner)")
         syncPowerToRooms(config.rooms, true, "Room Combiner")
@@ -427,7 +417,7 @@ end
 function setRoomStateIndex(index)
   if not Controls.btnRoomMode or not Controls.btnRoomMode[index] then return end
   Controls.btnRoomMode[index].Boolean = true
-  applybtnRoomModeInterlock(index)
+  interlockBtnRoomMode(index)
   applyRoomMode()
 end
 
@@ -568,7 +558,7 @@ function onRoomPowerChange(roomName)
   end
   debugMsg("=== Power State Changed: " .. roomName .. " (Source: Room Controls) ===")
   updateBtnRoomModeDisabled()
-  if isRoomsSeparated() then debugMsg(roomName .. " is separated - no sync needed"); return end
+  if isRoomsDivided() then debugMsg(roomName .. " is divided - no sync needed"); return end
   local newPowerState = isRoomPoweredOn(roomName)
   debugMsg(roomName .. " power: " .. (newPowerState and "ON" or "OFF"))
   if not newPowerState and not checkAnyRoomState(isRoomPoweredOn) then
@@ -591,7 +581,7 @@ function onRoomPowerChange(roomName)
 end
 
 function uciSelectionChange()
-  if isRoomsSeparated() then return end
+  if isRoomsDivided() then return end
   if not checkAnyRoomState(isRoomPoweredOn) then
     debugMsg("UCI button changed but system OFF - routing will apply on power on (Source: UCI Button)")
     return
@@ -603,13 +593,12 @@ function uciSelectionChange()
   end
 end
 
-normalizebtnRoomMode()
 if Controls.btnRoomMode then
   for i, btn in ipairs(Controls.btnRoomMode) do
     btn.EventHandler = function(ctl)
       if ctl.Boolean then
         debugMsg("btnRoomMode[" .. i .. "] pressed: " .. getRoomStateFromIndex(i) .. " (Source: Wall Button)")
-        applybtnRoomModeInterlock(i)
+        interlockBtnRoomMode(i)
         applyRoomMode()
       end
     end
@@ -628,7 +617,6 @@ function funcInit()
     end
     return
   end
-  normalizebtnRoomMode()
   discoverComponents()
   validateComponents()
   cacheGainComponents()

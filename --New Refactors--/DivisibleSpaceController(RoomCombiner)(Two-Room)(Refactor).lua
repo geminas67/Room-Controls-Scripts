@@ -1,7 +1,7 @@
 --[[
-  Divisible Space Controller - Two Room (Hitachi Training)
+  Divisible Space Controller - Two Room (Template)
   Author: Nikolas Smith, Q-SYS
-  Version: 3.5 | Date: 2026-04-03
+  Version: 3.7 | Date: 2026-10-14
   Firmware Req: 10.0.1+
 
   Two-room divisible space: btnRoomState interlock, discovery, and data-driven routing.
@@ -38,7 +38,7 @@ config = {
     acprComponents = "^compACPRRm",
     camRouter = "^compCamRouter"
   },
-
+  -- UCI buttons set Priority room for routing
   uciButtons = {
     {name = "btnNav07", room = "RoomA", desc = "RoomA-PC"},
     {name = "btnNav09", room = "RoomA", desc = "RoomA-Laptop"},
@@ -81,7 +81,7 @@ config.routingRules = {
 
 -------------------[ Constant Tables ]-------------------
 
-component = {
+comps = {
   roomCombiner = nil,
   matrixMixer = nil,
   roomControls = {},
@@ -95,7 +95,7 @@ component = {
 
 -------------------[ Constants ]-------------------
 
-stateDebug = true
+stateDebug = false
 strRoomLabel = "Two Room Divisible Space"
 syncInProgress = false
 legendCombineBlocked = "Room is On.\nTurn the room Off to Combine"
@@ -108,20 +108,28 @@ function debugMsg(str)
   if stateDebug then print("[" .. strRoomLabel .. "] " .. str) end
 end
 
-function isArr(t)
-  return type(t) == "table" and t[1] ~= nil
-end
-
-function normalizeBtnRoomState()
-  if Controls.btnRoomState and not isArr(Controls.btnRoomState) then
-    Controls.btnRoomState = {Controls.btnRoomState}
-  end
-end
-
 function printOperationResult(operation, success, total, errors)
   debugMsg(operation .. " complete: " .. success .. "/" .. total .. " successful")
   if errors and #errors > 0 then
     for _, err in ipairs(errors) do debugMsg("  ERROR: " .. err) end
+  end
+end
+
+-------------------[ Status ]-------------------
+
+function checkStatus()
+  local msg = "OK"
+  local val = 0
+  if not comps.roomCombiner then msg = "Room Combiner Missing"; val = 1 end
+  local connected = 0
+  for idx = 1, #config.rooms do
+    if comps.roomControls[idx] then connected = connected + 1 end
+  end
+  if connected < #config.rooms then msg = msg .. " (Rooms: " .. connected .. "/" .. #config.rooms .. ")"; val = 1 end
+  msg = msg .. " | State: " .. getRoomState()
+  if Controls.txtStatus then
+    Controls.txtStatus.String = msg
+    Controls.txtStatus.Value = val
   end
 end
 
@@ -155,7 +163,7 @@ end
 
 function getRoomControlComponent(roomName)
   local idx = getRoomIndex(roomName)
-  return idx and component.roomControls[idx]
+  return idx and comps.roomControls[idx]
 end
 
 function getRoomControlBoolean(roomName, controlName)
@@ -180,9 +188,9 @@ end
 
 function getPriorityRoom()
   if isRoomsSeparated() then return nil end
-  if component.uciController then
+  if comps.uciController then
     for _, btn in ipairs(config.uciButtons) do
-      local button = component.uciController[btn.name]
+      local button = comps.uciController[btn.name]
       if button and button.Boolean then return btn.room end
     end
   end
@@ -216,17 +224,17 @@ function applyBtnRoomStateInterlock(activeIndex)
 end
 
 function updateWallState()
-  if not component.roomCombiner then return end
+  if not comps.roomCombiner then return end
   local roomState = getRoomState()
   local wallShouldBeOpen = (roomState ~= "Separated")
-  local wallControl = component.roomCombiner["wall.1.open"]
+  local wallControl = comps.roomCombiner["wall.1.open"]
   if wallControl then
     wallControl.Boolean = wallShouldBeOpen
     debugMsg("Wall: " .. (wallShouldBeOpen and "OPEN" or "CLOSED") .. " (Source: Room Combiner)")
   else debugMsg("ERROR: Wall control not found") end
 end
 
-function updateBtnRoomStateDisabledStates()
+function updateBtnRoomStateDisabled()
   local states = {}
   local anyActive = false
   for _, room in ipairs(config.rooms) do
@@ -258,7 +266,7 @@ function applyRouting(rule)
   local success, errors = 0, {}
   local total = #config.rooms * #ruleControls
   for i, room in ipairs(config.rooms) do
-    local comp = component[rule.componentKey][i]
+    local comp = comps[rule.componentKey][i]
     for _, ctrl in ipairs(ruleControls) do
       if comp and comp[ctrl.name] then
         local value = isRoomsSeparated() and ctrl.separated(i) or ctrl.combined(priorityIdx)
@@ -296,8 +304,8 @@ function applyGainRouting()
     local priorityIdx = getPriorityRoomIndex()
     if priorityIdx then
       local nonPriorityIdx = 3 - priorityIdx
-      local nonPriorityGain = component.gainComponents[nonPriorityIdx]
-      local priorityGain = component.gainComponents[priorityIdx]
+      local nonPriorityGain = comps.gainComponents[nonPriorityIdx]
+      local priorityGain = comps.gainComponents[priorityIdx]
       if nonPriorityGain and nonPriorityGain["mute"] then
         nonPriorityGain["mute"].Boolean = true
         debugMsg("Muted gain[" .. nonPriorityIdx .. "] (Source: Room Combiner)")
@@ -312,11 +320,11 @@ function applyGainRouting()
 end
 
 function applyMatrixMixerMutes()
-  if not component.matrixMixer then debugMsg("WARNING: Matrix mixer not found"); return end
+  if not comps.matrixMixer then debugMsg("WARNING: Matrix mixer not found"); return end
   local muteState = isRoomsSeparated()
   local success, errors = 0, {}
   for _, muteName in ipairs(config.component.matrixAudioMixer) do
-    local mute = component.matrixMixer[muteName]
+    local mute = comps.matrixMixer[muteName]
     if mute then
       mute.Boolean = muteState
       success = success + 1
@@ -327,10 +335,10 @@ function applyMatrixMixerMutes()
 end
 
 function applyUCIStatusRouting()
-  if not component.uciStatus then debugMsg("WARNING: UCI status not found"); return end
+  if not comps.uciStatus then debugMsg("WARNING: UCI status not found"); return end
   local uciValue = isRoomsSeparated() and config.component.uciNames[1] or
     (isRoomPoweredOn("RoomB") and config.component.uciNames[2] or config.component.uciNames[1])
-  local currentUCI = component.uciStatus["current.uci"]
+  local currentUCI = comps.uciStatus["current.uci"]
   if currentUCI then
     currentUCI.String = uciValue
     debugMsg("UCI status: " .. uciValue .. " (Source: Room Combiner)")
@@ -344,7 +352,7 @@ function applyACPRComponentRouting()
   local success, errors = 0, {}
   local bypassSettings = isSeparated and {{idx = 3, desc = "Combined"}} or {{idx = 1, desc = "1"}, {idx = 2, desc = "2"}}
   for _, setting in ipairs(bypassSettings) do
-    local acprComp = component.acprComponents[setting.idx]
+    local acprComp = comps.acprComponents[setting.idx]
     if acprComp and acprComp["TrackingBypass"] then
       acprComp["TrackingBypass"].Boolean = true
       success = success + 1
@@ -352,7 +360,7 @@ function applyACPRComponentRouting()
     else table.insert(errors, "ACPR[" .. setting.desc .. "]: TrackingBypass not found") end
   end
   if not isSeparated and priorityIdx then
-    local acprComp3 = component.acprComponents[3]
+    local acprComp3 = comps.acprComponents[3]
     if acprComp3 and acprComp3["CameraRouterOutput"] then
       local outputValue = config.component.acprOutputs[priorityIdx or 2]
       acprComp3["CameraRouterOutput"].String = outputValue
@@ -364,7 +372,7 @@ function applyACPRComponentRouting()
 end
 
 function applyCamRouterRouting()
-  if not component.camRouter then debugMsg("WARNING: Cam router not found"); return end
+  if not comps.camRouter then debugMsg("WARNING: Cam router not found"); return end
   local isSeparated = isRoomsSeparated()
   local priorityIdx = getPriorityRoomIndex()
   local success, errors = 0, {}
@@ -373,7 +381,7 @@ function applyCamRouterRouting()
     {control = "select.2", separated = 2, combined = {1, 2}}
   }
   for _, route in ipairs(routes) do
-    local ctrl = component.camRouter[route.control]
+    local ctrl = comps.camRouter[route.control]
     if ctrl then
       local value = isSeparated and route.separated or route.combined[priorityIdx or 2]
       ctrl.Value = value
@@ -431,24 +439,6 @@ function setRoomStateIndex(index)
   applyRoomState()
 end
 
--------------------[ Status ]-------------------
-
-function checkStatus()
-  local msg = "OK"
-  local val = 0
-  if not component.roomCombiner then msg = "Room Combiner Missing"; val = 1 end
-  local connected = 0
-  for idx = 1, #config.rooms do
-    if component.roomControls[idx] then connected = connected + 1 end
-  end
-  if connected < #config.rooms then msg = msg .. " (Rooms: " .. connected .. "/" .. #config.rooms .. ")"; val = 1 end
-  msg = msg .. " | State: " .. getRoomState()
-  if Controls.txtStatus then
-    Controls.txtStatus.String = msg
-    Controls.txtStatus.Value = val
-  end
-end
-
 -------------------[ Discovery ]-------------------
 
 function discoverComponents()
@@ -476,13 +466,13 @@ function discoverComponents()
         local compRef = Component.New(comp.Name)
         if compRef then
           if map.single then
-            component[map.key] = compRef
+            comps[map.key] = compRef
             debugMsg("  Found " .. map.key .. ": " .. comp.Name)
             foundCount = foundCount + 1
           elseif map.indexed then
             local idx = getIndexFromName(comp.Name, map.hasCombined)
             if idx then
-              component[map.key][idx] = compRef
+              comps[map.key][idx] = compRef
               debugMsg("  Found " .. map.key .. "[" .. idx .. "]: " .. comp.Name)
               foundCount = foundCount + 1
             end
@@ -498,7 +488,7 @@ function cacheGainComponents()
   for i, gainName in ipairs(config.component.gains) do
     local gainComp = Component.New(gainName)
     if gainComp then
-      component.gainComponents[i] = gainComp
+      comps.gainComponents[i] = gainComp
       debugMsg("Cached gain: " .. gainName)
     else debugMsg("WARNING: Failed to cache gain: " .. gainName) end
   end
@@ -507,67 +497,32 @@ end
 function validateComponents()
   local warnings = {}
   for _, comp in ipairs({{key = "roomCombiner", desc = "Room combiner"}, {key = "matrixMixer", desc = "Matrix mixer"}, {key = "uciStatus", desc = "UCI status"}, {key = "camRouter", desc = "Cam router"}}) do
-    if not component[comp.key] then table.insert(warnings, comp.desc) end
+    if not comps[comp.key] then table.insert(warnings, comp.desc) end
   end
   for i, room in ipairs(config.rooms) do
     for _, comp in ipairs({{key = "roomControls", desc = "controls"}, {key = "mxaControls", desc = "MXA"}, {key = "acprComponents", desc = "ACPR"}}) do
-      if not component[comp.key][i] then table.insert(warnings, room .. " " .. comp.desc) end
+      if not comps[comp.key][i] then table.insert(warnings, room .. " " .. comp.desc) end
     end
   end
-  if not component.acprComponents[3] then table.insert(warnings, "Combined ACPR") end
+  if not comps.acprComponents[3] then table.insert(warnings, "Combined ACPR") end
   if #warnings > 0 then debugMsg("WARNING: Missing components: " .. table.concat(warnings, ", ")) end
   return #warnings
 end
 
-function bindRoomControlHandlers()
-  local handlerMap = {
-    ledSystemPower = onRoomPowerChanged,
-    ledSystemCooling = onRoomCoolingChanged
-  }
-  local handlerCount = 0
-  for i, room in ipairs(config.rooms) do
-    local comp = component.roomControls[i]
-    if comp then
-      for controlName, handler in pairs(handlerMap) do
-        if comp[controlName] then
-          comp[controlName].EventHandler = function() handler(room) end
-          handlerCount = handlerCount + 1
-        end
-      end
-    end
-  end
-  debugMsg("Registered " .. handlerCount .. " power/cooling handlers")
-end
+-------------------[ Components ]-------------------
 
-function bindUciButtonHandlers()
-  local uciCount = 0
-  if component.uciController then
-    for _, btn in ipairs(config.uciButtons) do
-      local button = component.uciController[btn.name]
-      if button then
-        button.EventHandler = onUCIInputSelectionChanged
-        debugMsg("Registered UCI button: " .. btn.name .. " (" .. btn.desc .. ")")
-        uciCount = uciCount + 1
-      end
-    end
-    debugMsg("Registered " .. uciCount .. "/" .. #config.uciButtons .. " UCI button handlers")
-  else debugMsg("WARNING: UCI controller not found - skipping UCI button handlers") end
-end
-
--------------------[ Event Handlers ]-------------------
-
-function onRoomCoolingChanged(roomName)
+function onRoomCoolingChange(roomName)
   debugMsg("Cooling state changed: " .. roomName .. " (Source: Room Controls)")
-  updateBtnRoomStateDisabledStates()
+  updateBtnRoomStateDisabled()
 end
 
-function onRoomPowerChanged(roomName)
+function onRoomPowerChange(roomName)
   if syncInProgress then
     debugMsg("Sync in progress - ignoring power change for " .. roomName)
     return
   end
   debugMsg("=== Power State Changed: " .. roomName .. " (Source: Room Controls) ===")
-  updateBtnRoomStateDisabledStates()
+  updateBtnRoomStateDisabled()
   if isRoomsSeparated() then debugMsg(roomName .. " is separated - no sync needed"); return end
   local newPowerState = isRoomPoweredOn(roomName)
   debugMsg(roomName .. " power: " .. (newPowerState and "ON" or "OFF"))
@@ -575,7 +530,7 @@ function onRoomPowerChanged(roomName)
     debugMsg("All rooms OFF - auto-separating (Source: Room Controls)")
     syncPowerToRooms(config.rooms, false, "Auto-Separation")
     setRoomStateIndex(1)
-    updateBtnRoomStateDisabledStates()
+    updateBtnRoomStateDisabled()
     debugMsg("=== Auto-Separation Complete ===")
     return
   end
@@ -590,7 +545,7 @@ function onRoomPowerChanged(roomName)
   end
 end
 
-function onUCIInputSelectionChanged()
+function onUciSelectionChanged()
   if isRoomsSeparated() then return end
   if not checkAnyRoomState(isRoomPoweredOn) then
     debugMsg("UCI button changed but system OFF - routing will apply on power on (Source: UCI Button)")
@@ -603,7 +558,43 @@ function onUCIInputSelectionChanged()
   end
 end
 
-normalizeBtnRoomState()
+function bindRoomControlHandlers()
+  local handlerMap = {
+    ledSystemPower = onRoomPowerChange,
+    ledSystemCooling = onRoomCoolingChange
+  }
+  local handlerCount = 0
+  for i, room in ipairs(config.rooms) do
+    local comp = comps.roomControls[i]
+    if comp then
+      for controlName, handler in pairs(handlerMap) do
+        if comp[controlName] then
+          comp[controlName].EventHandler = function() handler(room) end
+          handlerCount = handlerCount + 1
+        end
+      end
+    end
+  end
+  debugMsg("Registered " .. handlerCount .. " power/cooling handlers")
+end
+
+function bindUciButtonHandlers()
+  local uciCount = 0
+  if comps.uciController then
+    for _, btn in ipairs(config.uciButtons) do
+      local button = comps.uciController[btn.name]
+      if button then
+        button.EventHandler = onUciSelectionChanged
+        debugMsg("Registered UCI button: " .. btn.name .. " (" .. btn.desc .. ")")
+        uciCount = uciCount + 1
+      end
+    end
+    debugMsg("Registered " .. uciCount .. "/" .. #config.uciButtons .. " UCI button handlers")
+  else debugMsg("WARNING: UCI controller not found - skipping UCI button handlers") end
+end
+
+-------------------[ Event Handlers ]-------------------
+
 if Controls.btnRoomState then
   for i, btn in ipairs(Controls.btnRoomState) do
     btn.EventHandler = function(ctl)
@@ -628,14 +619,13 @@ function funcInit()
     end
     return
   end
-  normalizeBtnRoomState()
   discoverComponents()
   validateComponents()
   cacheGainComponents()
   bindRoomControlHandlers()
   bindUciButtonHandlers()
   applyRoomState()
-  updateBtnRoomStateDisabledStates()
+  updateBtnRoomStateDisabled()
   checkStatus()
   debugMsg("=== Initialization Complete ===")
   debugMsg("Ready for operation")

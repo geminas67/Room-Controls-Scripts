@@ -14,7 +14,7 @@
 conferenceStateConfig = { skip = { [9]=false, [10]=false } }
 acprConfig = { disableACPRShow = false }
 
-divisibleSpaceCompName = "compDivisibleSpaceControls"
+compDivSpace = "compDivisibleSpaceControls"
 
 kLayer = {
     Alarm           = 1,
@@ -37,8 +37,8 @@ kLayer = {
 kLayerName = {}
 for name, idx in pairs(kLayer) do kLayerName[idx] = name end
 
-helpLayer = "I02-Help"
-hdmiDiscLayer = "L00-HDMIDisc"
+layerHelp = "I02-Help"
+layerHDMIDisc = "L00-HDMIDisc"
 
 layersBase = {"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}
 layersToHide = {
@@ -501,7 +501,7 @@ end
 function applyUnifiedHelp(desired, transitions, roomState)
     local openKey = state.helpOpenKey
     local helpVis = helpKeyAllowedOnPage(openKey, roomState)
-    want(desired, transitions, helpLayer, helpVis, helpVis and "fade" or "none")
+    want(desired, transitions, layerHelp, helpVis, helpVis and "fade" or "none")
     if helpVis then setHelpLayerCopy(openKey) end
     if helpVis and configSource[openKey] then
         want(desired, transitions, layerConf, false)
@@ -514,7 +514,7 @@ function applySourceOverlay(desired, transitions, sourceKey)
     if not def then return end
 
     if not hdmiConnected(sourceKey) then
-        want(desired, transitions, hdmiDiscLayer, true, "fade")
+        want(desired, transitions, layerHDMIDisc, true, "fade")
         if Controls.txtHDMIDisc then
             setProp(Controls.txtHDMIDisc, "String", discText[sourceKey] or "")
         end
@@ -709,7 +709,7 @@ function initRoomControls()
 end
 
 function initDivisibleSpace()
-    local ok, comp = pcall(function() return Component.New(divisibleSpaceCompName) end)
+    local ok, comp = pcall(function() return Component.New(compDivSpace) end)
     if ok and comp then
         component.divisibleSpace = comp
         component.btnRoomMode = {

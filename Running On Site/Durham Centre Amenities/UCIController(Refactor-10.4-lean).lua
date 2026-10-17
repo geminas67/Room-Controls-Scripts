@@ -22,8 +22,8 @@ layersToHide = {
     "J01-ConnectUSBLaptop","J02-ConnectUSBPC","J03-ACPRActive","J04-CamPresetSaved","J09-ConferenceLaptop","J10-ConferencePC",
     "L01-HDMIDisc","L05-Laptop","P01-HDMIDisc","P05-PC",
 }
-usbConnectLayer = {"J01-ConnectUSBLaptop","J02-ConnectUSBPC"}
-confLayer = {"J09-ConferenceLaptop","J10-ConferencePC"}
+layerUSBConnect = {"J01-ConnectUSBLaptop","J02-ConnectUSBPC"}
+layerConf = {"J09-ConferenceLaptop","J10-ConferencePC"}
 
 kLayer = {
     Alarm           = 1,
@@ -218,8 +218,8 @@ function validateLayers(pageName)
     checkList(layersBase)
     checkList(layersToHide)
     -- checkList(routingLayer)
-    checkList(usbConnectLayer)
-    checkList(confLayer)
+    checkList(layerUSBConnect)
+    checkList(layerConf)
 
     for _, cfg in pairs(layerConfig) do
         checkList(cfg.show)
@@ -252,10 +252,10 @@ function want(desired, transitions, names, visible, transition)
     end
 end
 
-function applyDesired(desired, transitions, force)
+function applyDesired(desired, transitions)
     for name, wantVis in pairs(desired) do
-        local current = not force and Uci.GetLayerVisibility(pageUCI, name)
-        if force or current ~= wantVis then
+        local current = Uci.GetLayerVisibility(pageUCI, name)
+        if current ~= wantVis then
             local trans = wantVis and ((transitions and transitions[name]) or "fade") or "none"
             local ok, err = pcall(Uci.SetLayerVisibility, pageUCI, name, wantVis, trans)
             if ok then debugPrint("Layer '"..name.."' set to "..tostring(wantVis))
@@ -302,8 +302,8 @@ function applySourceOverlay(desired, transitions, sourceKey)
 
     if def.help then
         applyHelpOverlay(desired, transitions, def.help, sourceKey, function()
-            want(desired, transitions, confLayer, false)
-            want(desired, transitions, usbConnectLayer, false)
+            want(desired, transitions, layerConf, false)
+            want(desired, transitions, layerUSBConnect, false)
         end)
     end
 end
@@ -343,9 +343,9 @@ function buildDesired()
     return desired, transitions
 end
 
-function refreshLayers(force)
+function refreshLayers()
     local desired, transitions = buildDesired()
-    applyDesired(desired, transitions, force)
+    applyDesired(desired, transitions)
 end
 
 function interlockNav()
@@ -696,7 +696,7 @@ function funcInit()
     end
     initPasscode()
     initSyncFromRoomControls()
-    refreshLayers(true)
+    refreshLayers()
     interlockNav()
     syncLabels()
 

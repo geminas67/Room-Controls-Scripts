@@ -306,10 +306,10 @@ function want(desired, transitions, names, visible, transition)
     end
 end
 
-function applyDesired(desired, transitions, force)
+function applyDesired(desired, transitions)
     for name, wantVis in pairs(desired) do
-        local current = not force and Uci.GetLayerVisibility(pageUCI, name)
-        if force or current ~= wantVis then
+        local current = Uci.GetLayerVisibility(pageUCI, name)
+        if current ~= wantVis then
             local trans = wantVis and ((transitions and transitions[name]) or "fade") or "none"
             local ok, err = pcall(Uci.SetLayerVisibility, pageUCI, name, wantVis, trans)
             if ok then debugPrint("Layer '"..name.."' set to "..tostring(wantVis))
@@ -413,9 +413,9 @@ function buildDesired()
     return desired, transitions
 end
 
-function refreshLayers(force)
+function refreshLayers()
     local desired, transitions = buildDesired()
-    applyDesired(desired, transitions, force)
+    applyDesired(desired, transitions)
 end
 
 function interlockNav()
@@ -789,7 +789,7 @@ function funcInit()
         if btn then btn.Visible = false; debugPrint("Hidden nav: "..idx) end
     end
 
-    refreshLayers(true) -- force full push; GetLayerVisibility may be stale after a Core reboot
+    refreshLayers()
     interlockNav()
     interlockRouting()
     syncLabels()
