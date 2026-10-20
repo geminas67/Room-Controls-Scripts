@@ -133,7 +133,7 @@ labelCount = 0
 -------------------[ Constants ]-------------------
 
 stateDebug = true
-defaultLayer = math.floor(tonumber(Uci.Variables.numDefaultActiveLayer and Uci.Variables.numDefaultActiveLayer.Value) or 7)
+defaultLayer = tonumber(Uci.Variables.defaultActiveLayer and Uci.Variables.defaultActiveLayer.Value) or 7
 
 -------------------[ Functions ]-------------------
 
@@ -143,20 +143,16 @@ function setProp(ctrl, prop, val)
     if not ctrl or ctrl[prop] == val then return end
     ctrl[prop] = val
 end
-
 function boolOf(ctrl)
     return ctrl and ctrl.Boolean or false
 end
-
 function stopTimer(timer)
     if timer then pcall(function() timer:Stop() end) end
     return nil
 end
-
 function debugPrint(str)
     if stateDebug and pageUCI then print("["..pageUCI.."] "..str) end
 end
-
 function bindButtons(buttons, handler)
     for i, btn in ipairs(buttons) do
         if btn then 
@@ -180,10 +176,16 @@ function validateControls()
         "knbProgressBar","txtProgressBar","txtPowerProgress",
         "ledOffHook","ledUSBLaptop","ledUSBPC",
         "ledPresetSaved","ledHDMI01Connect","ledHDMI02Connect", "ledACPRBypassActive",
+        "ledAlarm","ledIncomingCall",
+        "compRoomControls","defaultActiveLayer",
     }
+    local optional = { "ledTouchActivity", "PasscodeCorrect", "timeTouchInactivity" }
     local missing = {}
     for _, name in ipairs(required) do
         if not Controls[name] then table.insert(missing, name) end
+    end
+    for _, name in ipairs(optional) do
+        if not Controls[name] then debugPrint("Warning: Optional control missing: "..name) end
     end
     if #missing > 0 then
         print("ERROR: UCIController validation failed - Missing required controls:")
@@ -510,7 +512,6 @@ function requestPowerOn(source)
         print("ERROR: Power on failed — btnSystemOnOff unavailable")
     end
 end
-
 function requestPowerOff(source)
     source = source or "System Shutdown"
     if not component.roomControls then
@@ -528,7 +529,7 @@ function resetTouchInactivityTimer()
     if not timer.inactivity then return end
     timer.inactivity:Stop()
     if state.activeLayer ~= kLayer.Passcode then return end
-    local timeout = tonumber(Uci.Variables.numTouchInactivityTimer and Uci.Variables.numTouchInactivityTimer.Value) or 60
+    local timeout = tonumber(Uci.Variables.timeTouchInactivity and Uci.Variables.timeTouchInactivity.Value) or 60
     if timeout <= 0 then timeout = 60 end
     timer.inactivity.EventHandler = function()
         debugPrint("Touch inactivity → Start (Source: Inactivity Timer)")
@@ -572,7 +573,7 @@ end
 
 -------------------[ Legends ]-------------------
 
-function syncLabels()
+function syncLabels() -- set string labels to the value of the corresponding UCI variable
     for i = 1, labelCount do
         local lbl = uciLabels[i]
         if lbl and uciVariables[i] then
@@ -604,9 +605,7 @@ function initLabelArrays()
         if not ctrl then reportMissing("control", key, required) end
         if not var then reportMissing("variable", key, required) end
         if ctrl and var then
-            var.EventHandler = function()
-                setProp(ctrl, "String", var.String or "")
-            end
+            var.EventHandler = function() syncLabels() end
         end
     end
 
@@ -623,7 +622,6 @@ function initLabelArrays()
             for _, name in ipairs(cfg.single) do registerLegend(name, true) end
         end
     end
-
     labelCount = idx
     syncLabels()
     debugPrint("String Labels: "..labelCount.." slots configured")
@@ -638,20 +636,17 @@ bindButtons(btnNav, function(i) goToLayer(i, "btnNav") end)
 Controls.btnStartSystem.EventHandler = function()
     ensureSystemIsOn(defaultLayer)
 end
-
 Controls.btnNavShutdown.EventHandler = function()
     state.shutdownConfirm = true
     refreshLayers()
 end
-
 Controls.btnShutdownCancel.EventHandler = function()
     state.shutdownConfirm = false
     refreshLayers()
 end
-
 Controls.btnShutdownConfirm.EventHandler = function()
     state.shutdownConfirm = false
-    requestPowerOff("System Shutdown")
+    requestPowerOff("Shutdown Confirm button")
 end
 
 for _, key in ipairs(configHelpPairKey) do
@@ -685,6 +680,8 @@ end
 if Controls.ledTouchActivity then
     Controls.ledTouchActivity.EventHandler = resetTouchInactivityTimer
 end
+Controls.ledAlarm.EventHandler = function() refreshLayers() end
+Controls.ledIncomingCall.EventHandler = function() refreshLayers() end
 
 -------------------[ Always Run ]-------------------
 

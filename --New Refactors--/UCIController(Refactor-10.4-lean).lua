@@ -24,9 +24,9 @@ layersToHide = {
     "R01-Routing01","R02-Routing02","R03-Routing03","R04-Routing04","R05-Routing05","R10-Routing",
     "S05-StreamMusic","V05-Dialer"
 }
-routingLayer = {"R01-Routing01","R02-Routing02","R03-Routing03","R04-Routing04","R05-Routing05"}
-usbConnectLayer = {"J01-ConnectUSBLaptop","J02-ConnectUSBPC"}
-confLayer = {"J09-ConferenceLaptop","J10-ConferencePC"}
+layerRouting = {"R01-Routing01","R02-Routing02","R03-Routing03","R04-Routing04","R05-Routing05"}
+layerConnectUSB = {"J01-ConnectUSBLaptop","J02-ConnectUSBPC"}
+layerConf = {"J09-ConferenceLaptop","J10-ConferencePC"}
 
 kLayer = {
     Alarm           = 1,
@@ -140,13 +140,6 @@ labelConfig = {
     {single = {"NavShutdown","RoomNameNav","RoomNameStart","RoutingRooms","RoutingSources"}},
 }
 
-uciVarConfig = {
-    { name = "timeTouchInactive", required = false },
-    { name = "defaultActiveLayer", required = true },
-    { name = "defaultRoutingLayer", required = false },
-    { name = "compRoomControls", required = true },
-}
-
 navHidden = {} -- static, always hidden "this design never uses these slots" hook
 
 btnNav = {}
@@ -189,20 +182,16 @@ function setProp(ctrl, prop, val)
     if not ctrl or ctrl[prop] == val then return end
     ctrl[prop] = val
 end
-
 function boolOf(ctrl)
     return ctrl and ctrl.Boolean or false
 end
-
 function stopTimer(timer)
     if timer then pcall(function() timer:Stop() end) end
     return nil
 end
-
 function debugPrint(str)
     if stateDebug and pageUCI then print("["..pageUCI.."] "..str) end
 end
-
 function bindButtons(buttons, handler)
     for i, btn in ipairs(buttons) do
         if btn then btn.EventHandler = function() handler(i, btn) end end
@@ -226,11 +215,16 @@ function validateControls()
         "knbProgressBar","txtProgressBar","txtPowerProgress",
         "ledOffHook","ledUSBLaptop","ledUSBPC",
         "ledPresetSaved","ledHDMI01Connect","ledHDMI02Connect","ledHDMI03Connect",
-        "ledACPRBypassActive",
+        "ledACPRBypassActive","ledAlarm","ledIncomingCall",
+        "compRoomControls","defaultActiveLayer","defaultRoutingLayer"
     }
+    local optional = { "ledTouchActivity", "PasscodeCorrect", "timeTouchInactivity" }
     local missing = {}
     for _, name in ipairs(required) do
         if not Controls[name] then table.insert(missing, name) end
+    end
+    for _, name in ipairs(optional) do
+        if not Controls[name] then debugPrint("Warning: Optional control missing: "..name) end
     end
     if #missing > 0 then
         print("ERROR: UCIController validation failed - Missing required controls:")
@@ -240,14 +234,6 @@ function validateControls()
     return true
 end
 
-function validateUciVariables()
-    for _, entry in ipairs(uciVarConfig) do
-        if not Uci.Variables[entry.name] then
-            local msg = "UCI variable missing: " .. entry.name
-            if entry.required then print("ERROR: " .. msg) else debugPrint("Warning: " .. msg) end
-        end
-    end
-end
 function validateLayers(pageName)
     local pageLayers = Uci.GetUciPageLayers(pageName)
     if not pageLayers then
@@ -272,9 +258,9 @@ function validateLayers(pageName)
 
     checkList(layersBase)
     checkList(layersToHide)
-    checkList(routingLayer)
-    checkList(usbConnectLayer)
-    checkList(confLayer)
+    checkList(layerRouting)
+    checkList(layerConnectUSB)
+    checkList(layerConf)
 
     for _, cfg in pairs(layerConfig) do
         checkList(cfg.show)
@@ -357,8 +343,8 @@ function applySourceOverlay(desired, transitions, sourceKey)
 
     if def.help then
         applyHelpOverlay(desired, transitions, def.help, sourceKey, function()
-            want(desired, transitions, confLayer, false)
-            want(desired, transitions, usbConnectLayer, false)
+            want(desired, transitions, layerConf, false)
+            want(desired, transitions, layerConnectUSB, false)
         end)
     end
 end
@@ -391,10 +377,10 @@ function buildDesired()
     want(desired, transitions, "D01-ShutdownConfirm", state.shutdownConfirm, state.shutdownConfirm and "fade" or "none")
 
     if state.activeLayer == kLayer.Routing then
-        if state.activeRoutingLayer < 1 or state.activeRoutingLayer > #routingLayer then
+        if state.activeRoutingLayer < 1 or state.activeRoutingLayer > #layerRouting then
             state.activeRoutingLayer = 1
         end
-        for i, name in ipairs(routingLayer) do
+        for i, name in ipairs(layerRouting) do
             local show = i == state.activeRoutingLayer
             want(desired, transitions, name, show, show and "fade" or "none")
         end
@@ -444,11 +430,11 @@ function goToLayer(layerIndex, source)
 end
 
 function btnRoutingHandler(buttonIndex)
-    if buttonIndex < 1 or buttonIndex > #routingLayer then return end
+    if buttonIndex < 1 or buttonIndex > #layerRouting then return end
     state.activeRoutingLayer = buttonIndex
     refreshLayers()
     interlockRouting()
-    debugPrint("Routing → "..(kLayerName[routingLayer[buttonIndex]] or routingLayer[buttonIndex]))
+    debugPrint("Routing → "..(kLayerName[layerRouting[buttonIndex]] or layerRouting[buttonIndex]))
 end
 
 -------------------[ Room Sync ]-------------------
@@ -540,7 +526,7 @@ function updateProgressBar(percent)
     setProp(Controls.txtProgressBar, "String", percent.."%")
 end
 
-function onPowerProgress(cfg, active, source)
+function onPowerProgress(cfg, active, source) 
     local mode = cfg.mode
     timer.progress = stopTimer(timer.progress)
 
@@ -591,7 +577,6 @@ function requestPowerOn(source)
         print("ERROR: Power on failed — btnSystemOnOff unavailable")
     end
 end
-
 function requestPowerOff(source)
     source = source or "System Shutdown"
     if not component.roomControls then
@@ -609,7 +594,7 @@ function resetTouchInactivityTimer()
     if not timer.inactivity then return end
     timer.inactivity:Stop()
     if state.activeLayer ~= kLayer.Passcode then return end
-    local timeout = tonumber(Uci.Variables.numTouchInactivityTimer and Uci.Variables.numTouchInactivityTimer.Value) or 60
+    local timeout = tonumber(Uci.Variables.timeTouchInactivity and Uci.Variables.timeTouchInactivity.Value) or 60
     if timeout <= 0 then timeout = 60 end
     timer.inactivity.EventHandler = function()
         debugPrint("Touch inactivity → Start (Source: Inactivity Timer)")
@@ -653,7 +638,7 @@ end
 
 -------------------[ Legends ]-------------------
 
-function syncLabels()
+function syncLabels() -- set string labels to the value of the corresponding UCI variable
     for i = 1, labelCount do
         local lbl = uciLabels[i]
         if lbl and uciVariables[i] then
@@ -688,11 +673,8 @@ function initLabelArrays()
 
         if not ctrl then reportMissing("control", key, required) end
         if not var then reportMissing("variable", key, required) end
-
         if ctrl and var then
-            var.EventHandler = function()
-                setProp(ctrl, "String", var.String or "")
-            end
+            var.EventHandler = function() syncLabels() end
         end
     end
     for _, cfg in ipairs(labelConfig) do
@@ -724,20 +706,17 @@ bindButtons(btnRouting, function(i) btnRoutingHandler(i) end)
 Controls.btnStartSystem.EventHandler = function()
     ensureSystemIsOn(defaultLayer)
 end
-
 Controls.btnNavShutdown.EventHandler = function()
     state.shutdownConfirm = true
     refreshLayers()
 end
-
 Controls.btnShutdownCancel.EventHandler = function()
     state.shutdownConfirm = false
     refreshLayers()
 end
-
 Controls.btnShutdownConfirm.EventHandler = function()
     state.shutdownConfirm = false
-    requestPowerOff("System Shutdown")
+    requestPowerOff("Shutdown Confirm button")
 end
 
 for _, key in ipairs(configHelpPairKey) do
@@ -769,6 +748,8 @@ Controls.ledOffHook.EventHandler = function()
     if boolOf(Controls.ledOffHook) then ensureSystemIsOn(defaultLayer) 
     else refreshLayers() end
 end
+Controls.ledAlarm.EventHandler = function() refreshLayers() end
+Controls.ledIncomingCall.EventHandler = function() refreshLayers() end
 if Controls.ledTouchActivity then
     Controls.ledTouchActivity.EventHandler = function() resetTouchInactivityTimer() end
 end
@@ -824,7 +805,6 @@ myUCI = {
 
 local ok, err = pcall(function()
     if not validateControls() then error("Control validation failed") end
-    validateUciVariables()
     pageUCI = resolvePageName()
     if not pageUCI then error("Uci.GetUciPages returned no pages") end
     validateLayers(pageUCI)

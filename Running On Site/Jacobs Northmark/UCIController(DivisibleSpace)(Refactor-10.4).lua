@@ -313,15 +313,13 @@ function validateControls()
         "ledACPRBypassDivide","ledACPRBypassCombine",
         "txtHelpTitle","txtHelpHeading","txtHelpBody","txtHDMIDisc",
     }
-    local optional = {
-        ledTouchActivity = true,
-    }
+    local optional = { "ledTouchActivity" }
     local missing = {}
     for _, name in ipairs(required) do
         if not Controls[name] then table.insert(missing, name) end
     end
-    for name in pairs(optional) do
-        if not Controls[name] then debugPrint("Optional control missing: "..name) end
+    for _, name in ipairs(optional) do
+        if not Controls[name] then debugPrint("Warning: Optional control missing: "..name) end
     end
     if #missing > 0 then
         print("ERROR: UCIController validation failed - Missing required controls:")
@@ -329,16 +327,6 @@ function validateControls()
         return false
     end
     return true
-end
-
-function validateUciVariables()
-    for _, entry in ipairs(uciVarConfig) do
-        if not Uci.Variables[entry.name] then
-            local msg = "UCI variable missing: " .. entry.name
-            if entry.required then print("ERROR: " .. msg)
-            else print("WARNING: " .. msg) end
-        end
-    end
 end
 
 function validateLayers(pageName)
@@ -864,11 +852,11 @@ end
 
 -------------------[ Legends ]-------------------
 
-function syncLabels()
+function syncLabels() -- set string labels to the value of the corresponding UCI variable
     for i = 1, labelCount do
         local lbl = uciLabels[i]
         if lbl and uciVariables[i] then
-            setProp(lbl, "Legend", uciVariables[i].String or "")
+            setProp(lbl, "String", uciVariables[i].String or "")
         end
     end
 end
@@ -1023,7 +1011,6 @@ myUCI = {
 
 local ok, err = pcall(function()
     if not validateControls() then error("Control validation failed") end
-    validateUciVariables()
     pageUCI = resolvePageName()
     if not pageUCI then error("Uci.GetUciPages returned no pages") end
     validateLayers(pageUCI)

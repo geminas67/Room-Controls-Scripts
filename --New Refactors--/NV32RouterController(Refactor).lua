@@ -133,7 +133,6 @@ function setComp(ctl, componentType)
         setCompValid(componentType)
         return nil
     end
-
     if name == strClear then
         ctl.String = ""
         ctl.Color = "white"
@@ -151,7 +150,6 @@ function setComp(ctl, componentType)
         debugMsg("Invalid " .. componentType .. ": " .. name)
         return nil
     end
-
     ctl.Color = "white"
     setCompValid(componentType)
     debugMsg("Connected " .. componentType .. ": " .. name)
@@ -181,11 +179,9 @@ function getComponentNames()
             table.insert(uciNames, comp.Name)
         end
     end
-
     table.sort(nv32Names)
     table.sort(roomNames)
     table.sort(uciNames)
-
     fillChoices(Controls.devNV32, nv32Names, "devNV32")
     fillChoices(Controls.compRoomControls, roomNames, "compRoomControls")
     fillChoices(Controls.compUCIController, uciNames, "compUCIController")
@@ -203,7 +199,6 @@ function setRoute(input, outputNum, source)
         debugMsg("Missing output control " .. tostring(outputNum) .. " (" .. source .. ")")
         return false
     end
-
     if outputControl.Value == input then return false end
     outputControl.Value = input
     debugMsg("Output " .. tostring(outputNum) .. " -> Input " .. tostring(input) .. " (" .. source .. ")")
@@ -263,7 +258,6 @@ function setcompNV32()
     forEachOutput(function(cfg)
         bindOutputFeedback(compNV32[cfg.controlName], cfg.buttons)
     end)
-
     syncOutputFeedback()
 end
 
@@ -305,7 +299,6 @@ function setcompRmCtls()
             setRouteAllOutputs(targetInput, "Room Controls: System Power")
         end
     end
-
     if fireAlarmLED then
         fireAlarmLED.EventHandler = function(ctl)
             if ctl.Boolean and not fireAlarmActive then
@@ -357,11 +350,9 @@ end
 -------------------[ Event Handlers ]-------------------
 
 Controls.devNV32.EventHandler = setcompNV32
-
 if Controls.compRoomControls then
     Controls.compRoomControls.EventHandler = setcompRmCtls
 end
-
 if Controls.compUCIController then
     Controls.compUCIController.EventHandler = setcompUCICtls
 end
@@ -381,17 +372,14 @@ end)
 
 function funcInit()
     debugMsg("=== Initialization Started ===")
-
     getComponentNames()
     setcompNV32()
     setcompRmCtls()
     setcompUCICtls()
-
     if compNV32 then
         setRouteAllOutputs(uciInputs[1], "Init")
         syncOutputFeedback()
     end
-
     debugMsg("=== Initialization Complete ===")
 end
 
