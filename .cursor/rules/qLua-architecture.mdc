@@ -1,85 +1,213 @@
 ---
-description: Q-SYS Lua full layout — large UCI and orchestration scripts. Use setProp/bind surgically, not by default. Prefer qsys-simple-lua-architecture for room and device scripts.
-globs: "**/*UCI*.lua"
+description: Q-SYS Lua architecture — flat Text Controller layout (Configuration → Constant Tables → Constants → Functions → Event Handlers → Always Run) with bracket banners, grouped functions, file-scope handlers, and a bottom funcInit. Scripts that outgrow this belong in a plugin.
+globs: "**/*.lua"
 alwaysApply: false
 ---
 
-# Q-SYS Lua — full architecture
+# Q-SYS Lua — architecture
 
-Use for **large UCI controllers and orchestration scripts** — many layers, nav buttons, dynamic component rebinding, paired open/close controls, or cross-script APIs.
+One flat, readable layout for room, device, router, mic/camera, and UCI control scripts. Direct `Controls.*` and component writes over shared utilities or wrapper ceremony.
 
-**Default elsewhere:** [qsys-simple-lua-architecture](.cursor/rules/qsys-simple-lua-architecture.mdc) for room controls, device plugins, routers, and mic/camera scripts.
+**Reference scripts** (same section order and banner style):
 
-**Reference scripts:**
+- [`Funtional code (Archive)/-- Room Controls (Hope Roth (Original)).lua`](Funtional%20code%20(Archive)/--%20Room%20Controls%20(Hope%20Roth%20(Original)).lua)
+- [`Running On Site/GFL/ClockAudioController(Refactor).lua`](Running%20On%20Site/GFL/ClockAudioController(Refactor).lua)
 
-- [`UCIController(Refactor).lua`](UCIController(Refactor).lua)
-- [`UCIController(DivisibleSpace)(Refactor).lua`](UCIController(DivisibleSpace)(Refactor).lua)
+```mermaid
+flowchart LR
+    Header[Header comment]
+    Config[Configuration]
+    Tables[Constant Tables]
+    Const[Constants]
+    Funcs[Functions by domain banner]
+    EH[Event Handlers]
+    Init[Always Run / funcInit]
+    Header --> Config --> Tables --> Const --> Funcs --> EH --> Init
+```
 
-## When this rule applies
+## Section order
 
-| Use full architecture | Use simple architecture |
-|----------------------|-------------------------|
-| UCI layer/nav orchestration | Single-room or single-device control |
-| Dozens of controls and paired toggles | Bounded component set, linear event flow |
-| Real feedback-loop risk (A sets B, B sets A) | One-way handler → component writes |
-| Cross-script public API | Self-contained Text Controller |
+1. **Header comment** — script name, author/org, date, firmware requirement, version, one-line purpose.
+2. **Configuration** — **first editable block after the header.** Site- and design-specific values that change when plugins, hardware, or naming change. See [Configuration block](#configuration-block).
+3. **Constant tables** — runtime collections and component refs initialized empty or `nil` (e.g. `compMicBoxes = {}`, `compInvalid = {}`, `compCallSync = nil`).
+4. **Constants** — toggles, UI strings, state flags, timer instances (`Timer.New()`).
+5. **Functions** — one block opened by a top banner; **domain sub-banners** inside (Setup, Status, Discovery, feature areas, Components). Order callees before callers where practical.
+6. **Event handlers** — assign `.EventHandler` on `Controls.*`, timers, and indexed control arrays **at file scope** (no required `registerEvents()` wrapper).
+7. **Always run** — single `funcInit()` that fills choices, binds components, syncs feedback, then `funcInit()` called once at the bottom.
 
-**Do not** copy the full toolkit into every script because a UCI file uses it. UCI complexity often drove `setProp`/`bind` everywhere; that is **indirection**, not a universal requirement. Ask: *“Does removing the wrapper change behavior, or only remove ceremony?”*
+## Comment banners
 
-## Toolkit — surgical, not universal
-
-| Utility | Use when | Skip when |
-|---------|----------|-----------|
-| `setProp(ctrl, prop, val)` | Control echoes back and retriggers its handler | One-shot or guarded assignment |
-| `bind` / `bindArray` | Many indexed handlers; isolate handler errors with `pcall` | Small handler; fail loud in console |
-| `cleanupComponentHandlers` | Stale component ref may still fire before rebind | Reassigning `.EventHandler` on new component is enough |
-| `local controls = {}` | Large control surface, repeated names | Handful of `Controls.*` |
+Use the **bracket style** consistently:
 
 ```lua
-local function setProp(ctrl, prop, val)
-  if not ctrl or ctrl[prop] == val then return end
-  ctrl[prop] = val
+-------------------[ Configuration ]-------------------
+-------------------[ Constant Tables ]-------------------
+-------------------[ Constants ]-------------------
+-------------------[ Functions ]-------------------
+-------------------[ Setup ]-------------------
+-------------------[ Status ]-------------------
+-------------------[ Event Handlers ]-------------------
+-------------------[ Always Run ]-------------------
+```
+
+- **Top-level sections** use the full bracket banner above.
+- **Function sub-areas** use the same style with a domain label (Setup, Status, Discovery, Motion, Volume, Components, etc.) so jumps in a long file stay obvious.
+
+## Configuration block
+
+Put everything a technician might edit when deploying to a new room **immediately after the header**, before constant tables:
+
+```lua
+-------------------[ Configuration ]-------------------
+
+componentTypes = {
+  callSync     = "call_sync",
+  micBoxes     = "%PLUGIN%_91b57fdec7bd41fb9b9741210ad2a1f3_%FP%_6bb184f66fd3a12efe1844e433fc11c3",
+  micMixer     = "mixer",
+  roomControls = "device_controller_script",
+}
+
+-- optional name filter when type alone is not enough (inline in getComponentNames is also fine)
+-- roomControlsNameMatch = "^compRoomControls"
+
+-- site/hardware maps (button indices, channel maps, timeouts, etc.)
+micButtonConfigs = {
+  {box = 1, buttons = {{6,1,1}, {8,2,2}, {10,3,3}}},
+  -- ...
+}
+```
+
+**Belongs in Configuration:**
+
+- `componentTypes` — Q-SYS `comp.Type` strings and plugin fingerprints; discovery loops reference `componentTypes.*` instead of repeating type strings.
+- Per-site tables (button maps, I/O indices, channel routes, combo choice lists such as `MotionChoices`).
+- UCI variables and layer lists.
+- Optional name-filter patterns when type alone is not enough.
+
+**Does not belong in Configuration** (keep below):
+
+- Runtime component refs (`compMicBoxes`, `compCallSync`) → **Constant tables**
+- Debug toggles, `strClear`, timers, mutable state flags → **Constants**
+
+In `getComponentNames()` (or equivalent):
+
+```lua
+if comp.Type == componentTypes.callSync then
+  -- ...
+elseif comp.Type == componentTypes.micBoxes then
+  -- ...
+elseif comp.Type == componentTypes.roomControls and string.match(comp.Name, "^compRoomControls") then
+  -- ...
 end
 ```
 
-Apply `setProp` to the **few controls that actually loop**, not every `String`/`Boolean` write in the file.
+Use a small helper (e.g. `fillChoices`) inside discovery when many combo boxes share the same sort/clear/auto-select logic.
 
-## Layout (UCI-scale scripts)
+### Component type validation (Q-SYS API)
 
-Same top-level sections as the simple rule (Configuration → Constant Tables → Constants → Functions → Event Handlers → Always Run), plus optional blocks when warranted:
+- **`comp.Type` is valid on items from `Component.GetComponents()`** — use it in `getComponentNames()` (and optional name filters) so each component combo only lists the right blocks.
+- **Do not use `Component.New(name).Type` for validation** — it is not reliable (typically `nil`).
+- **`setComp(ctl, componentType)`** should only confirm the selection resolves: `Component.New(name)` plus `Component.GetControls(comp)` with at least one control. Do not pass `expectedType` or re-scan `GetComponents()` in `setComp` unless you have a special case (e.g. free-typed component names without filtered choices).
 
-- **`local controls = {}`** — map large `Controls` surface (nav arrays, paired help buttons, etc.).
-- **Utilities** — `setProp`, `bind`, `bindArray`, and domain helpers (`bindPairedControls`, `collectLayers`, …) grouped once at the top of Functions or in a Utilities sub-banner.
-- **Script-global tables** (`state`, `components`, …) — when the script tracks layer animation, routing, or switcher type the schematic does not expose on one control; prefer file scope **without** `local` so handlers retain them (see [Local vs global scoping](#local-vs-global-scoping-qlua)).
+## Skeleton
 
-Keep **Configuration** as the first editable block (`componentTypes`, layer lists, routing maps, UCI variables).
+```lua
+--[[
+  ScriptName - Q-SYS Control Script
+  Author: ...
+  Date: ...
+  Version: ...
+  Firmware Req: ...
+
+  One-line purpose.
+
+]]--
+
+-------------------[ Configuration ]-------------------
+
+componentTypes = { ... }
+-- site-specific tables here
+
+-------------------[ Constant Tables ]-------------------
+
+compInvalid = {}
+-- compX = nil refs
+
+-------------------[ Constants ]-------------------
+
+stateDebug = false
+strClear = "[Clear]"
+timerExample = Timer.New()
+
+-------------------[ Functions ]-------------------
+
+-------------------[ Setup ]-------------------
+
+function debugMsg(str) ... end
+
+-------------------[ Status ]-------------------
+
+function getStatus() ... end
+function setComp(ctl, componentType) ... end
+
+-------------------[ Discovery ]-------------------
+
+function getComponentNames() ... end
+
+-------------------[ Components ]-------------------
+
+function setcompExample() ... end
+
+-------------------[ Event Handlers ]-------------------
+
+Controls.compExample.EventHandler = setcompExample
+
+-------------------[ Always Run ]-------------------
+
+function funcInit()
+  getComponentNames()
+  setcompExample()
+end
+
+funcInit()
+```
 
 ## Local vs global scoping (qLua)
 
-Each control script is **sandboxed**: it runs in its own qLua context. Names without `local` are **global only inside that script**—nothing leaks to other Text Controllers or blocks in the design. Prefer globals for script-lifetime data because of qLua rules below, **not** to share state across the schematic (use an explicit `GlobalName = { ... }` API when another script must call in).
+Each control script is **sandboxed**: it runs in its own qLua context. Names without `local` are **global only inside that script** — nothing leaks to other Text Controllers or blocks in the design. Prefer globals for script-lifetime data because of the qLua rules below, **not** to share state across the schematic. If blocks need to share state or call each other, that is a [plugin territory](#plugin-territory) signal.
 
-`local` vs global affects **garbage collection** and which **Q-SYS extension APIs** are valid:
+`local` vs global is not generic Lua "encapsulation" — it affects **garbage collection** and which **Q-SYS extension APIs** are valid:
 
 1. Declaring **`local`** explicitly marks a variable as eligible for **garbage collection** when it goes out of scope.
 2. **Ephemeral** variables (loop indices, short-lived temps inside a function) may be declared **`local`**, if desired.
-3. **Persistent** variables—component refs, layer/nav state used across handlers, tables populated at init, functions referenced by `.EventHandler`, public API tables—should be left **global** (file scope without `local`).
+3. **Persistent** variables — configuration tables, component refs, state flags, layer/nav state, tables populated at init and used from event handlers, functions referenced by `.EventHandler` — stay **global** (file scope without `local`).
 4. The Q-SYS Help documentation **forbids** `local` with many Q-SYS extensions to Lua (e.g. **named timers**, **TcpSockets**, and similar). Create and retain those at **global** scope.
 
-Utility closures (`setProp`, `bind`, …) may be `local function` at file top. Do **not** wrap Q-SYS extension objects in `local`. Timers, sockets, component refs, and anything event handlers need for the life of the script stay **global**; avoid `local state` / `local components` for that lifetime data (see Layout note above).
+Do **not** declare `Timer.New()`, sockets, component refs, or other extension objects as `local`, and avoid `local state` / `local components` for script-lifetime data. Use `local function` only for small inner helpers that are not stored on controls or passed as persistent callbacks.
 
-## Patterns
+## Patterns to follow
 
-- **Init mirrors handlers** — `funcInit()` calls the same paths combo-box and nav handlers use.
-- **One setup function per component selector** — no parallel init vs `registerEvents()` duplicates.
+- **Direct `Controls.*`** in functions and handlers; no `local controls = {}` map.
+- **Global `function Name()`** is the default for top-level functions.
+- **Component glue** — central helpers keep feature code short: `getComponentNames`, `setComp`, `getStatus`, `setCompValid` / `setCompInvalid`. Mirror the reference scripts. See [Component type validation](#component-type-validation-q-sys-api).
+- **One setup function per component selector** — `funcInit()` and the combo-box `.EventHandler` call the same `setcomp*` path; no parallel init vs `registerEvents()` duplicates.
+- **Init mirrors handlers** — `funcInit()` calls the same paths that combo-box and nav handlers use, plus `getComponentNames()` and any one-time sync (e.g. `syncLEDStates()`).
 - **State** — store only what you cannot read from a component or control at event time; do not mirror `mute.Boolean` in a table if `compCallSync["mute"]` is already bound.
-- **Public API** (`GlobalName = { ... }`) — only when another script calls in; omit otherwise.
+- **Debug** — single gated `debugMsg` when `stateDebug` is true; optional room-prefixed console output is fine.
+- **Guard optional controls** — wrap indexed or optional UI controls with `if Controls.compMicBox then ... end` before binding.
 
-## Refactoring
+## Direct assignment over ceremony
 
-- **Toward simple:** room/device scripts with unused wrappers, duplicate setup, or debug-only handlers → flatten per simple rule.
-- **Toward full:** script acquires many rebinding selectors, paired UI, or feedback loops → add utilities selectively, not wholesale.
-- **Preserve semantics when shortening** — overloaded parameters (e.g. one function serving hook state and timer blink) need explicit branch order or split functions; collapsed guards are a common regression source.
+- Assign **`Controls.*` and component properties directly** unless a control is known to feedback-loop.
+- Do **not** wrap writes in `setProp` or handlers in `bind` / `bindArray`. If one control genuinely echoes back and retriggers its handler, guard that write inline:
 
-## Relationship to simple rule
+```lua
+if Controls.btnExample.Boolean ~= val then Controls.btnExample.Boolean = val end
+```
 
-Most scripts in this repo should stay on [qsys-simple-lua-architecture](.cursor/rules/qsys-simple-lua-architecture.mdc). This rule is the **escape hatch** when simple layout is genuinely stretched — not the default style for new work.
+- Avoid **`registerEvents()` wrappers**, duplicate init/handler paths, and **state that mirrors** a component property you can read when needed.
+- **Required `pcall` startup** is not a default — add only to surface init failures to `txtStatus` or the console.
+
+## UCI layer visibility
+
+**Firmware 10.4+** — do not mirror visibility in `layerStates`. In `applyDesired` / `reconcileLayers`, read `Uci.GetLayerVisibility(pageUCI, layerName)` and call `SetLayerVisibility` only when `current ~= wantVis`. Use `transition = "none"` for hides, `"fade"` (or per-layer transitions) for shows. Reference: site

@@ -15,7 +15,7 @@ config = {
 
   component = {
     gains = {"lvlPGMRmA", "lvlPGMRmB"},
-    acpr = {"compACPRRmA", "compACPRRmB", combined = "compACPRRmCombined"},
+    acpr = {"compACPRRmA", "compACPRRmB", combined = "compACPRCombined"},
     acprOutputs = {"01", "02"},
     callSync = {"callSyncRmA", "callSyncRmB"},
     roomControls = {"compRoomControlsRmA", "compRoomControlsRmB"},
@@ -32,10 +32,10 @@ config = {
     roomCombiner = "^compRoomCombiner",
     matrixMixer = "^compMatrixAudio",
     roomControls = "^compRoomControls",
-    mxaControls = "^compMXAControlsRm",
-    uciStatus = "^statusMTRRm",
-    uciController = "^uciControllerRm$",
-    acprComponents = "^compACPRRm",
+    mxaControls = "^compMXAControls",
+    uciStatus = "^statusMTR",
+    uciController = "^uciControllerRmA$", -- must be exact match
+    acprComponents = "^compACPR",
     camRouter = "^compCamRouter"
   },
   -- UCI buttons set Priority room for routing
@@ -98,7 +98,7 @@ component = {
 stateDebug = true
 strRoomLabel = "Two Room Divisible Space"
 syncInProgress = false
-legendCombineBlocked = "Room is On.\nTurn the room Off to Combine"
+legendCombineBlocked = "Room is in use.\nTurn the room Off and open the wall to Combine"
 
 -------------------[ Functions ]-------------------
 

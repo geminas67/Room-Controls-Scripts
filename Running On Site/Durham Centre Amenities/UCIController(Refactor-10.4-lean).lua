@@ -583,50 +583,36 @@ function syncLabels() -- set string labels to the value of the corresponding UCI
 end
 
 function initLabelArrays()
-    local idx, missingOptional, missingRequired = 0, 0, 0
-
-    local function reportMissing(kind, name, required)
-        if required then
-            missingRequired = missingRequired + 1
-            print("ERROR: Required legend "..kind.." missing: "..name)
-        else
-            missingOptional = missingOptional + 1
-            debugPrint("Warning: Legend "..kind.." not found: "..name)
-        end
-    end
+    local idx, missing = 0, 0
 
     local function registerLegend(name, required)
         idx = idx + 1
         local key = "txt"..name
         local ctrl, var = Controls[key], Uci.Variables[key]
-
         uciLabels[idx], uciVariables[idx] = ctrl, var
 
-        if not ctrl then reportMissing("control", key, required) end
-        if not var then reportMissing("variable", key, required) end
         if ctrl and var then
-            var.EventHandler = function() syncLabels() end
+            var.EventHandler = function() ctrl.String = var.String or "" end
+        elseif required then
+            print("ERROR: Required legend "..(ctrl and "variable" or "control").." missing: "..key)
+        else
+            missing = missing + 1
         end
     end
 
     for _, cfg in ipairs(labelConfig) do
         if cfg.suffix then
-            if cfg.count then
-                for i = 1, cfg.count do
-                    registerLegend(cfg.suffix .. string.format("%02d", i), false)
-                end
-            else
-                registerLegend(cfg.suffix, false)
+            for i = 1, (cfg.count or 1) do
+                registerLegend(cfg.count and cfg.suffix..string.format("%02d", i) or cfg.suffix, false)
             end
         elseif cfg.single then
             for _, name in ipairs(cfg.single) do registerLegend(name, true) end
         end
     end
+
     labelCount = idx
     syncLabels()
-    debugPrint("String Labels: "..labelCount.." slots configured")
-    if missingOptional > 0 then debugPrint("String Labels: "..missingOptional.." optional control/variable reference(s) missing") end
-    if missingRequired > 0 then print("ERROR: String Labels: "..missingRequired.." required control/variable reference(s) missing") end
+    debugPrint("Legends: "..labelCount.." slots, "..missing.." optional missing")
 end
 
 -------------------[ Event Handlers ]-------------------

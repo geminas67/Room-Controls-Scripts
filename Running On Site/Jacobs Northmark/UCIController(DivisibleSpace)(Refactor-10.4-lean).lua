@@ -22,7 +22,7 @@ kLayer = {
     Start           = 3,
     Warming         = 4,
     Cooling         = 5,
-    RoomControls    = 6,
+    Utilities       = 6,
     PCA             = 7,
     PCB             = 8,
     LaptopA         = 9,
@@ -44,7 +44,7 @@ layersBase = {"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}
 layersToHide = {
     "A01-Alarm","B01-IncomingCall","C05-Start","D01-ShutdownConfirm",
     "E05-PowerProgress",
-    "H04-RoomCombining","H08-RoomControlsCombine","H09-RoomControlsDivide","H10-RoomControls",
+    "H04-RoomCombining","H08-UtilitiesCombine","H09-UtilitiesDivide",
     "I01-CallActive", "I02-Help",
     "J01-ConnectUSBLaptopA","J02-ConnectUSBLaptopB","J03-ConnectUSBPCA","J04-ConnectUSBPCB",
     "J06-ACPRActiveCombine","J07-ACPRActiveDivide","J08-CamPresetSaved",
@@ -107,8 +107,8 @@ discText = {
     PCB     = "Connect the HDMI cable to PC B.",
 }
 
-layerACPR = { combined = "J06-ACPRActiveCombine", separated = "J07-ACPRActiveDivide" }
-layerACPRBtn = { combined = "J09-ACPRBtnCombine", separated = "J10-ACPRBtnDivide" }
+layerACPR = { combined = "J06-ACPRActiveCombine", divided = "J07-ACPRActiveDivide" }
+layerACPRBtn = { combined = "J09-ACPRBtnCombine", divided = "J10-ACPRBtnDivide" }
 
 configSource = {
     LaptopA = {
@@ -190,7 +190,7 @@ layerConfig = {
     [kLayer.Start]        = { show = {"C05-Start"}, hideBase = true },
     [kLayer.Warming]      = { show = {"E05-PowerProgress"}, hideBase = true },
     [kLayer.Cooling]      = { show = {"E05-PowerProgress"}, hideBase = true },
-    [kLayer.RoomControls] = { roomControlsLayer = true, hide = {"X01-ProgramVolume"} },
+    [kLayer.Utilities]    = { layerUtilities = true, hide = {"X01-ProgramVolume"} },
     [kLayer.Wireless]     = { show = {"W05-Wireless"} },
     [kLayer.Routing]      = { show = {"R10-Routing"} },
     [kLayer.Dialer]       = { show = {"V05-Dialer"} },
@@ -205,24 +205,22 @@ layerConfig = {
 kRoom = { RoomA = "RoomA", RoomB = "RoomB" }
 
 -- Keys must match roomName.String on each System Automation block.
-roomNameToSide = {
+sideRoomNames = {
     ["Room A"] = kRoom.RoomA,
     ["Room B"] = kRoom.RoomB,
 }
-
-layerAvailabilityBySide = {
+sideLayers = {
     [kRoom.RoomA] = { [kLayer.PCA] = true, [kLayer.LaptopA] = true },
     [kRoom.RoomB] = { [kLayer.PCB] = true, [kLayer.LaptopB] = true },
 }
-
-navHiddenWhenSeparatedBySide = {
+sideHiddenNav = {
     [kRoom.RoomA] = {{num = "08"}, {num = "10"}},
     [kRoom.RoomB] = {{num = "07"}, {num = "09"}},
 }
 
 labelConfig = {
     {suffix = "Nav", count = 15},
-    {single = {"NavShutdown","RoomNameNav","RoomNameStart","RoutingRooms","RoutingSources"}},
+    {single = {"NavShutdown","RoomNameNav","RoomNameStart","RoutingRooms","RoutingSources","NavTeams"}},
     {suffix = "Routing", count = 12},
     {suffix = "VidSrc", count = 12},
     {suffix = "GainPGM"},
@@ -242,7 +240,7 @@ for _, def in pairs(configSource) do
 end
 
 -------------------[ Constant Tables ]-------------------
--- Runtime nav/power UI state. Defaults apply at script load; funcInit sync may call goToLayer(defaultLayer).
+-- Runtime nav/power UI state. Defaults apply at script load; funcInit sync may call goToLayer(layerDefault).
 pageUCI = nil
 state = {
     activeLayer = kLayer.Start,
@@ -263,7 +261,7 @@ labelCount = 0
 -------------------[ Constants ]-------------------
 
 stateDebug = true
-defaultLayer = tonumber(Uci.Variables.defaultActiveLayer and Uci.Variables.defaultActiveLayer.Value) or 10
+layerDefault = tonumber(Uci.Variables.layerDefault and Uci.Variables.layerDefault.Value) or 10
 
 -------------------[ Functions ]-------------------
 
@@ -313,7 +311,7 @@ function validateControls()
         "ledACPRBypassDivide","ledACPRBypassCombine",
         "txtHelpTitle","txtHelpHeading","txtHelpBody","txtHDMIDisc",
     }
-    local optional = { "ledTouchActivity" }
+    local optional = {"ledTouchActivity"}
     local missing = {}
     for _, name in ipairs(required) do
         if not Controls[name] then table.insert(missing, name) end
@@ -364,35 +362,35 @@ end
 -------------------[ Divisible Space ]-------------------
 
 function getRoomState()
-    if not component.divisibleSpace or not component.btnRoomMode then return "separated" end
+    if not component.divisibleSpace or not component.btnRoomMode then return "divided" end
     local btnMode = component.btnRoomMode
-    if btnMode[1] and btnMode[1].Boolean then return "separated"
+    if btnMode[1] and btnMode[1].Boolean then return "divided"
     elseif btnMode[2] and btnMode[2].Boolean then return "combinedA"
     elseif btnMode[3] and btnMode[3].Boolean then return "combinedB" end
-    return "separated"
+    return "divided"
 end
 
 function getPostWarmingLayer()
     local roomState = getRoomState()
     local side = component.roomIdentity or kRoom.RoomA
-    if roomState == "separated" then
+    if roomState == "divided" then
         return (side == kRoom.RoomB) and kLayer.PCB or kLayer.PCA
     elseif roomState == "combinedA" then return kLayer.PCA
     elseif roomState == "combinedB" then return kLayer.PCB end
     return kLayer.Routing
 end
 
-function getRoomControlsLayer(roomState)
+function getUtilitiesLayer(roomState)
     roomState = roomState or getRoomState()
-    return (roomState == "separated") and "H09-RoomControlsDivide" or "H08-RoomControlsCombine"
+    return (roomState == "divided") and "H09-UtilitiesDivide" or "H08-UtilitiesCombine"
 end
 
 function showLayer(layerIndex, roomState)
     roomState = roomState or getRoomState()
     local side = component.roomIdentity
     if roomState == "combinedA" or roomState == "combinedB" then return true end
-    if roomState == "separated" and side and layerAvailabilityBySide[side] then
-        local v = layerAvailabilityBySide[side][layerIndex]
+    if roomState == "divided" and side and sideLayers[side] then
+        local v = sideLayers[side][layerIndex]
         if v ~= nil then return v end
     end
     return true
@@ -401,8 +399,8 @@ end
 function updateNavVisibility(roomState)
     roomState = roomState or getRoomState()
     local side = component.roomIdentity
-    local isSep = (roomState == "separated")
-    local toUpdate = side and navHiddenWhenSeparatedBySide[side]
+    local isSep = (roomState == "divided")
+    local toUpdate = side and sideHiddenNav[side]
     if not toUpdate then return end
     for _, cfg in ipairs(toUpdate) do
         local btn = Controls["btnNav"..cfg.num]
@@ -415,7 +413,7 @@ end
 
 function updateStartSystemLegend(roomState)
     roomState = roomState or getRoomState()
-    local legend = (roomState == "separated") and "Start Room" or "Start Combined"
+    local legend = (roomState == "divided") and "Start Room" or "Start Combined"
     setProp(Controls.btnStartSystem, "Legend", legend)
 end
 
@@ -450,11 +448,11 @@ function hdmiConnected(sourceKey)
     return not pin or pin.Boolean
 end
 
-function activeSourceKey()
+function keyActiveSource()
     return layerToSourceKey[state.activeLayer]
 end
 
-function helpKeyAllowedOnPage(openKey, roomState)
+function canShowHelp(openKey, roomState)
     if not openKey then return false end
     local cfg = layerConfig[state.activeLayer]
     local keysOnPage
@@ -465,7 +463,7 @@ function helpKeyAllowedOnPage(openKey, roomState)
     end
     for _, key in ipairs(keysOnPage) do
         if key == openKey then
-            local sourceKey = activeSourceKey()
+            local sourceKey = keyActiveSource()
             if sourceKey then
                 if not showLayer(state.activeLayer, roomState) then return false end
                 if not hdmiConnected(sourceKey) then return false end
@@ -488,7 +486,7 @@ end
 
 function applyUnifiedHelp(desired, transitions, roomState)
     local openKey = state.helpOpenKey
-    local helpVis = helpKeyAllowedOnPage(openKey, roomState)
+    local helpVis = canShowHelp(openKey, roomState)
     want(desired, transitions, layerHelp, helpVis, helpVis and "fade" or "none")
     if helpVis then setHelpLayerCopy(openKey) end
     if helpVis and configSource[openKey] then
@@ -542,10 +540,10 @@ function getSourceLayerVisibility(def, isActive, usbConnected, isCombined, desir
 end
 
 function applyConferenceControls(desired, transitions, roomState)
-    local sourceKey = activeSourceKey()
+    local sourceKey = keyActiveSource()
     if not sourceKey or not hdmiConnected(sourceKey) then return end
     roomState = roomState or getRoomState()
-    local isCombined = (roomState ~= "separated")
+    local isCombined = (roomState ~= "divided")
     local anyConfActive = false
     for name, def in pairs(configSource) do
         local isActive = (state.activeLayer == def.layer)
@@ -555,19 +553,19 @@ function applyConferenceControls(desired, transitions, roomState)
         end
     end
     if not acprConfig.disableACPRShow and anyConfActive then
-        want(desired, transitions, isCombined and layerACPRBtn.combined or layerACPRBtn.separated, true, "fade")
+        want(desired, transitions, isCombined and layerACPRBtn.combined or layerACPRBtn.divided, true, "fade")
     end
 end
 
 function applyACPRDesired(desired, transitions, roomState)
     if acprConfig.disableACPRShow then return end
-    local sourceKey = activeSourceKey()
+    local sourceKey = keyActiveSource()
     if not sourceKey or not hdmiConnected(sourceKey) then return end
     local def = configSource[sourceKey]
     roomState = roomState or getRoomState()
-    local isSep = (roomState == "separated")
+    local isSep = (roomState == "divided")
     local bypassCtl = isSep and Controls.ledACPRBypassDivide or Controls.ledACPRBypassCombine
-    local acprOn = isSep and layerACPR.separated or layerACPR.combined
+    local acprOn = isSep and layerACPR.divided or layerACPR.combined
     local bypass = boolOf(bypassCtl)
     if not bypass then
         want(desired, transitions, acprOn, true, "fade")
@@ -588,8 +586,8 @@ function buildDesired(roomState)
         for _, name in ipairs(layersBase) do
             want(desired, transitions, name, baseVis, baseVis and "fade" or "none")
         end
-        if cfg.roomControlsLayer then
-            want(desired, transitions, getRoomControlsLayer(roomState), true, "fade")
+        if cfg.layerUtilities then
+            want(desired, transitions, getUtilitiesLayer(roomState), true, "fade")
         elseif cfg.sourceKey then
             if not showLayer(state.activeLayer, roomState) then
                 debugPrint("Layer "..state.activeLayer.." hidden by divisible-space")
@@ -608,7 +606,7 @@ function buildDesired(roomState)
 
     want(desired, transitions, "D01-ShutdownConfirm", state.shutdownConfirm, state.shutdownConfirm and "fade" or "none")
 
-    local sourceKey = activeSourceKey()
+    local sourceKey = keyActiveSource()
     if sourceKey and showLayer(state.activeLayer, roomState) then
         applySourceOverlay(desired, transitions, sourceKey)
         if hdmiConnected(sourceKey) then
@@ -683,7 +681,7 @@ function initRoomControls()
     end
     component.roomControls = comp
     local rn = comp["roomName"] and comp["roomName"].String
-    component.roomIdentity = rn and roomNameToSide[rn]
+    component.roomIdentity = rn and sideRoomNames[rn]
     if rn then debugPrint("Room identity: "..tostring(component.roomIdentity).." (roomName='"..rn.."')") end
     for _, cfg in ipairs(powerProgressConfig) do
         if comp[cfg.key] then
@@ -817,13 +815,13 @@ function resetTouchInactivityTimer()
     if not timer.inactivity then return end
     timer.inactivity:Stop()
     if not isOnRoomCombiningLayer() then return end
-    local timeout = tonumber(Uci.Variables.numTouchInactivityTimer and Uci.Variables.numTouchInactivityTimer.Value) or 60
+    local timeout = tonumber(Uci.Variables.timeTouchInactivity and Uci.Variables.timeTouchInactivity.Value) or 60
     if timeout <= 0 then timeout = 60 end
     timer.inactivity:Start(timeout)
 end
 
 function ensureSystemIsOn(targetLayer)
-    targetLayer = targetLayer or defaultLayer
+    targetLayer = targetLayer or layerDefault
     if component.roomControls and component.roomControls["ledSystemPower"]
         and component.roomControls["ledSystemPower"].Boolean then
         debugPrint("System already ON → layer "..(kLayerName[targetLayer] or targetLayer))
@@ -862,28 +860,36 @@ function syncLabels() -- set string labels to the value of the corresponding UCI
 end
 
 function initLabelArrays()
-    local idx = 0
-    local function registerLegend(name)
+    local idx, missing = 0, 0
+
+    local function registerLegend(name, required)
         idx = idx + 1
-        uciLabels[idx] = Controls["txt"..name]
-        uciVariables[idx] = Uci.Variables["txt"..name]
+        local key = "txt"..name
+        local ctrl, var = Controls[key], Uci.Variables[key]
+        uciLabels[idx], uciVariables[idx] = ctrl, var
+
+        if ctrl and var then
+            var.EventHandler = function() ctrl.String = var.String or "" end
+        elseif required then
+            print("ERROR: Required legend "..(ctrl and "variable" or "control").." missing: "..key)
+        else
+            missing = missing + 1
+        end
     end
+
     for _, cfg in ipairs(labelConfig) do
         if cfg.suffix then
             for i = 1, (cfg.count or 1) do
-                local name = cfg.count and (cfg.suffix..string.format("%02d", i)) or cfg.suffix
-                registerLegend(name)
+                registerLegend(cfg.count and cfg.suffix..string.format("%02d", i) or cfg.suffix, false)
             end
         elseif cfg.single then
-            for _, name in ipairs(cfg.single) do registerLegend(name) end
+            for _, name in ipairs(cfg.single) do registerLegend(name, true) end
         end
     end
+
     labelCount = idx
-    for i = 1, labelCount do
-        local label = uciVariables[i]
-        if label then label.EventHandler = function() syncLabels() end end
-    end
-    debugPrint("Legends: "..labelCount.." controls")
+    syncLabels()
+    debugPrint("Legends: "..labelCount.." slots, "..missing.." optional missing")
 end
 
 -------------------[ Event Handlers ]-------------------
@@ -891,7 +897,7 @@ end
 bindButtons(btnNav, function(i) goToLayer(i, "btnNav") end)
 
 Controls.btnStartSystem.EventHandler = function()
-    ensureSystemIsOn(defaultLayer)
+    ensureSystemIsOn(layerDefault)
 end
 
 Controls.btnNavShutdown.EventHandler = function()
