@@ -14,12 +14,16 @@ callSyncRmA = Component.New('callSyncRmA')
 callSyncRmB = Component.New('callSyncRmB')
 compDivSpace = Component.New('compDivisibleSpaceControls')
 
+local function isDivided()
+  return compDivSpace['btnRoomMode 1'].Boolean
+end
+
 function updateBlinkingLED()
-  if compDivSpace['btnRoomState 1'].Boolean then
+  if isDivided() then
     ledRoomA['enable'].Boolean = callSyncRmA['off.hook'].Boolean
     ledRoomB['enable'].Boolean = callSyncRmB['off.hook'].Boolean
   else
-    inCall = callSyncRmA['off.hook'].Boolean or callSyncRmB['off.hook'].Boolean
+    local inCall = callSyncRmA['off.hook'].Boolean or callSyncRmB['off.hook'].Boolean
     ledRoomA['enable'].Boolean = inCall
     ledRoomB['enable'].Boolean = inCall
   end
@@ -27,6 +31,6 @@ end
 
 callSyncRmA['off.hook'].EventHandler = updateBlinkingLED
 callSyncRmB['off.hook'].EventHandler = updateBlinkingLED
-compDivSpace['btnRoomState 1'].EventHandler = updateBlinkingLED
+compDivSpace['btnRoomMode 1'].EventHandler = updateBlinkingLED
 
 updateBlinkingLED()

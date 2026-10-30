@@ -1,43 +1,59 @@
 --[[
   UCI States Emulator
   Author: Nikolas Smith, Q-SYS
-  Version: 1.1 | Date: 2026-10-15
-  Firmware Req: 10.4
+  Version: 1.4 | Date: 2026-10-30
   Emulates the UCI states for the UCI Controller.
-  lblToggle[i].String = uciController control name; toggle[i] writes its .Boolean.
-  Schematic links on toggle[] bypass this script. Clear handlers: EventHandler = nil before assign.
+  lblToggle[i].String = uciController control name (Script Access required).
+  Controls.toggle[i].Boolean is authoritative; UCI controls follow (init/label change included).
+  Schematic links on toggle[] bypass this script.
 ]]
 
 -------------------[ Configuration ]-------------------
 uciController = Component.New("uciController")
 
+-------------------[ Constant Tables ]-------------------
+boundUci = {}  -- [i] = UCI control currently reconciled for index i
+
+-------------------[ Constants ]-------------------
+toggleCount = #Controls.toggle
+
 -------------------[ Functions ]-------------------
-function bind(ctrl, fn)
-  if not ctrl or not fn then return end
-  ctrl.EventHandler = nil
-  ctrl.EventHandler = fn
+function uciControlForIndex(i)
+  local name = Controls.lblToggle[i].String
+  if name == "" then return nil, name end
+  return uciController[name], name
 end
 
-function uciStateToggle(i)
-  local name = Controls.lblToggle[i] and Controls.lblToggle[i].String or ""
-  if name == "" then return end
-  local ctl = uciController[name]
+function syncToggleToUci(i, log)
+  local ctl, name = uciControlForIndex(i)
   if not ctl then return end
   local on = Controls.toggle[i].Boolean
   if ctl.Boolean ~= on then ctl.Boolean = on end
-  print(string.format("-- %s -- is %s.", name, on and "On" or "Off"))
+  if log then print(string.format("-- %s -- is %s.", name, on and "On" or "Off")) end
 end
 
-function bindToggle(i)
-  bind(Controls.toggle[i], function()
-    print("--------------------------------")
-    print(string.format("Btn%02d pressed.", i))
-    uciStateToggle(i)
-  end)
+function bindUciReconcile(i)
+  if boundUci[i] then boundUci[i].EventHandler = nil end
+  boundUci[i] = uciControlForIndex(i)
+  if boundUci[i] then
+    boundUci[i].EventHandler = function() syncToggleToUci(i) end
+  end
+  syncToggleToUci(i)
 end
 
 -------------------[ Event Handlers ]-------------------
-for i = 1, #Controls.toggle do bindToggle(i) end
-for i = 1, #Controls.lblToggle do
-  bind(Controls.lblToggle[i], function() bindToggle(i) end)
+for i = 1, toggleCount do
+  Controls.toggle[i].EventHandler = function()
+    print("--------------------------------")
+    print(string.format("Toggle%02d changed.", i))
+    syncToggleToUci(i, true)
+  end
+  Controls.lblToggle[i].EventHandler = function() bindUciReconcile(i) end
 end
+
+-------------------[ Always Run ]-------------------
+function funcInit()
+  for i = 1, toggleCount do bindUciReconcile(i) end
+end
+
+funcInit()

@@ -103,7 +103,7 @@ end
 
 function funcInit()
   buildLayerIndex()
-  reconcileMTRLayers()
+  Timer.CallAfter(reconcileMTRLayers, 3)
 end
 
 -------------------[ Event Handlers ]-------------------

@@ -5,7 +5,7 @@
   Firmware Req: 10.4 compatible (GetUciPages / GetUciPageLayers / GetLayerVisibility)
 
   Flat single-room UCI: configSource, declarative visibility (buildDesired/applyDesired),
-  event-driven power sync, switcher auto-detect. Three engines — visibility, room sync, switcher.
+  event-driven power sync. All layer writes go through refreshLayers().
 ]]--
 
 -------------------[ Configuration ]-------------------
@@ -22,8 +22,8 @@ layersToHide = {
     "J01-ConnectUSBLaptop","J02-ConnectUSBPC","J03-ACPRActive","J04-CamPresetSaved","J09-ConferenceLaptop","J10-ConferencePC",
     "L01-HDMIDisc","L05-Laptop","P01-HDMIDisc","P05-PC",
 }
-usbConnectLayer = {"J01-ConnectUSBLaptop","J02-ConnectUSBPC"}
-confLayer = {"J09-ConferenceLaptop","J10-ConferencePC"}
+layerUSBConnect = {"J01-ConnectUSBLaptop","J02-ConnectUSBPC"}
+layerConf = {"J09-ConferenceLaptop","J10-ConferencePC"}
 
 kLayer = {
     Alarm           = 1,
@@ -111,7 +111,7 @@ btnNav = {}
 for i = 1, 9 do btnNav[i] = Controls["btnNav" .. string.format("%02d", i)] end
 
 -------------------[ Constant Tables ]-------------------
-
+-- Runtime nav/power UI state. Defaults apply at script load; funcInit sync may call goToLayer(defaultLayer).
 pageUCI = nil
 state = {
     activeLayer = kLayer.Start,
@@ -218,8 +218,8 @@ function validateLayers(pageName)
     checkList(layersBase)
     checkList(layersToHide)
     -- checkList(routingLayer)
-    checkList(usbConnectLayer)
-    checkList(confLayer)
+    checkList(layerUSBConnect)
+    checkList(layerConf)
 
     for _, cfg in pairs(layerConfig) do
         checkList(cfg.show)
@@ -252,10 +252,10 @@ function want(desired, transitions, names, visible, transition)
     end
 end
 
-function applyDesired(desired, transitions, force)
+function applyDesired(desired, transitions)
     for name, wantVis in pairs(desired) do
-        local current = not force and Uci.GetLayerVisibility(pageUCI, name)
-        if force or current ~= wantVis then
+        local current = Uci.GetLayerVisibility(pageUCI, name)
+        if current ~= wantVis then
             local trans = wantVis and ((transitions and transitions[name]) or "fade") or "none"
             local ok, err = pcall(Uci.SetLayerVisibility, pageUCI, name, wantVis, trans)
             if ok then debugPrint("Layer '"..name.."' set to "..tostring(wantVis))
@@ -302,8 +302,8 @@ function applySourceOverlay(desired, transitions, sourceKey)
 
     if def.help then
         applyHelpOverlay(desired, transitions, def.help, sourceKey, function()
-            want(desired, transitions, confLayer, false)
-            want(desired, transitions, usbConnectLayer, false)
+            want(desired, transitions, layerConf, false)
+            want(desired, transitions, layerUSBConnect, false)
         end)
     end
 end
@@ -343,9 +343,9 @@ function buildDesired()
     return desired, transitions
 end
 
-function refreshLayers(force)
+function refreshLayers()
     local desired, transitions = buildDesired()
-    applyDesired(desired, transitions, force)
+    applyDesired(desired, transitions)
 end
 
 function interlockNav()
@@ -362,11 +362,7 @@ function goToLayer(layerIndex, source)
     state.activeLayer = layerIndex
     state.shutdownConfirm = false
     if layerIndex == kLayer.Passcode then resetTouchInactivityTimer() end
-
-    local force = layerIndex == kLayer.Cooling or layerIndex == kLayer.Warming
-        or (layerIndex == kLayer.Start and source == "Cooldown Complete")
-
-    refreshLayers(force and true)
+    refreshLayers()
     interlockNav()
     debugPrint("Layer "..(kLayerName[prev] or prev).." → "..(kLayerName[layerIndex] or layerIndex).." (Source: "..source..")")
 end
@@ -523,7 +519,6 @@ function requestPowerOff(source)
     end
     if powerOff() then
         debugPrint("Power off requested ("..source..")")
-        refreshLayers(true) -- Teams PC: GetLayerVisibility can read false while overlays still paint
     else
         print("ERROR: Power off failed — btnSystemOnOff unavailable")
     end
@@ -695,45 +690,19 @@ end
 
 function funcInit()
     debugPrint("=== Initialization Started ===")
-
-    state.activeLayer = kLayer.Start
     initLabelArrays()
     if not initRoomControls() then
         print("ERROR: Room controls unavailable — power actions disabled")
     end
     initPasscode()
     initSyncFromRoomControls()
-    refreshLayers(true) -- force full push; GetLayerVisibility may be stale after a Core reboot
+    refreshLayers()
     interlockNav()
     syncLabels()
 
     state.isInitialized = true
     debugPrint("=== Initialization Complete ===")
 end
-
--------------------[ Public API ]-------------------
-
-myUCI = {
-    cleanup = function()
-        timer.progress = stopTimer(timer.progress)
-        if timer.inactivity then timer.inactivity:Stop() end
-        if component.roomControls then
-            for _, cfg in ipairs(powerProgressConfig) do
-                if component.roomControls[cfg.key] then
-                    component.roomControls[cfg.key].EventHandler = nil
-                end
-            end
-        end
-        if component.passcode and component.passcode["PasscodeCorrect"] then
-            component.passcode["PasscodeCorrect"].EventHandler = nil
-        end
-        for i = 1, labelCount do
-            local label = uciVariables[i]
-            if label then label.EventHandler = nil end
-        end
-        debugPrint("Cleanup complete")
-    end,
-}
 
 local ok, err = pcall(function()
     if not validateControls() then error("Control validation failed") end

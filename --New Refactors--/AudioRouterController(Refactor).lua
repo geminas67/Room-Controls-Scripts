@@ -1,12 +1,11 @@
----@diagnostic disable: missing-fields
 --[[
   Audio Router Controller - Q-SYS Control Script
   Author: Nikolas Smith, Q-SYS
-  Date: 2025-03-24
-  Version: 3.1
+  Date: 2026-10-28
+  Version: 3.2
   Firmware Req: 10.0.0
 
-  Routes default program audio via router output 1; syncs source buttons and room power/fire alarm.
+  Routes program audio on one router output; syncs source buttons with room power and fire alarm.
 
 ]]--
 
@@ -17,73 +16,47 @@ componentTypes = {
   roomControls = "device_controller_script",
 }
 
-defaultOutput = 1
-
-inputRoutes = {
-  input01 = 1,
-  input02 = 2,
-  input03 = 3,
-  input04 = 4,
-  input05 = 5,
-  input06 = 6,
-  input07 = 7,
-  input08 = 8,
-  none    = 9,
-}
+routerOutput = 1
 
 inputLabels = {
   "Input 1", "Input 2", "Input 3", "Input 4",
   "Input 5", "Input 6", "Input 7", "Input 8", "None",
 }
 
+inputNone = 9  -- router input left unpatched (silent route)
+
 -------------------[ Constant Tables ]-------------------
 
 compInvalid = {}
 compAudioRouter = nil
 compRoomControls = nil
-lastRouteInput = {}
+
+-- Single control is userdata; a control array is a Lua table
+btnSource = type(Controls.btnSource) == "table" and Controls.btnSource or { Controls.btnSource }
 
 -------------------[ Constants ]-------------------
 
 stateDebug = true
 strClear = "[Clear]"
 roomName = "Audio Router"
+lastInput = nil  -- last real source; restored when the fire alarm clears
 
 -------------------[ Functions ]-------------------
 
 -------------------[ Setup ]-------------------
 
 function debugMsg(str)
-  if not stateDebug then return end
-  print("[" .. roomName .. "] " .. str)
+  if stateDebug then print("[" .. roomName .. "] " .. str) end
 end
 
 function validateControls()
-  local required = {
-    "compAudioRouter",
-    "btnSource",
-    "defaultInput",
-    "txtStatus",
-    "compRoomControls",
-  }
   local missing = {}
-  for _, name in ipairs(required) do
+  for _, name in ipairs({ "compAudioRouter", "compRoomControls", "btnSource", "defaultInput", "txtStatus" }) do
     if not Controls[name] then table.insert(missing, name) end
   end
   if #missing == 0 then return true end
-  print("ERROR: AudioRouterController missing required controls:")
-  for _, name in ipairs(missing) do print("  - " .. name) end
+  print("ERROR: AudioRouterController missing required controls: " .. table.concat(missing, ", "))
   return false
-end
-
-function normalizeSourceButtons()
-  if not Controls.btnSource then
-    Controls.btnSource = {}
-    return
-  end
-  if not Controls.btnSource[1] then
-    Controls.btnSource = { Controls.btnSource }
-  end
 end
 
 -------------------[ Status ]-------------------
@@ -111,18 +84,8 @@ function setCompValid(componentType)
 end
 
 function setComp(ctl, componentType)
-  if not ctl then
-    setCompInvalid(componentType)
-    return nil
-  end
   local componentName = ctl.String
-  if not componentName or componentName == "" then
-    ctl.Color = "white"
-    setCompValid(componentType)
-    debugMsg("No " .. componentType .. " component selected")
-    return nil
-  end
-  if componentName == strClear then
+  if componentName == "" or componentName == strClear then
     ctl.String = ""
     ctl.Color = "white"
     setCompValid(componentType)
@@ -147,68 +110,57 @@ end
 -------------------[ Routing ]-------------------
 
 function getDefaultInput()
-  local selection = Controls.defaultInput and Controls.defaultInput.Value or 0
-  return selection > 0 and selection or 1
-end
-
-function setRoute(input, output, source)
-  if not compAudioRouter then return end
-  local selectCtrl = compAudioRouter["select." .. tostring(output)]
-  if not selectCtrl then return end
-  if selectCtrl.Value == input then return end
-  selectCtrl.Value = input
-  if input ~= inputRoutes.none then
-    lastRouteInput[output] = input
+  local selected = Controls.defaultInput.String
+  for i, label in ipairs(inputLabels) do
+    if label == selected then return i end
   end
-  debugMsg(
-    "Route: Output " .. tostring(output) .. " → Input " .. tostring(input)
-      .. " (Source: " .. tostring(source) .. ")"
-  )
+  return 1
 end
 
 function initDefaultInputChoices()
   Controls.defaultInput.Choices = inputLabels
-  if Controls.defaultInput.Value == 0 then
-    Controls.defaultInput.Value = 1
-  end
-  debugMsg("Default input choices configured (" .. #inputLabels .. " options)")
-end
-
-function syncSourceButtons(inputValue)
-  if not Controls.btnSource then return end
-  for i, btn in ipairs(Controls.btnSource) do
-    if btn then
-      local on = (i == inputValue)
-      if btn.Boolean ~= on then btn.Boolean = on end
-    end
+  if Controls.defaultInput.String == "" then
+    Controls.defaultInput.String = inputLabels[1]
   end
 end
 
-function bindSourceButtons()
-  if not Controls.btnSource then return end
-  for i, btn in ipairs(Controls.btnSource) do
-    if btn then
-      btn.EventHandler = function()
-        setRoute(i, defaultOutput, "Audio Source Button " .. tostring(i))
-      end
-    end
+function isFireAlarm()
+  local led = compRoomControls and compRoomControls["ledFireAlarm"]
+  return led ~= nil and led.Boolean
+end
+
+function syncSourceButtons(input)
+  for i, btn in ipairs(btnSource) do
+    btn.Boolean = (i == input)
   end
+end
+
+function setRoute(input, source)
+  local selectCtrl = compAudioRouter and compAudioRouter["select." .. routerOutput]
+  if not selectCtrl then return end
+  if input ~= inputNone and isFireAlarm() then
+    syncSourceButtons(selectCtrl.Value)
+    debugMsg("Route blocked by fire alarm (Source: " .. source .. ")")
+    return
+  end
+  if input ~= inputNone then lastInput = input end
+  syncSourceButtons(input)  -- script writes do not fire the router's EventHandler
+  if selectCtrl.Value == input then return end
+  selectCtrl.Value = input
+  debugMsg("Route: Output " .. routerOutput .. " -> Input " .. input .. " (Source: " .. source .. ")")
 end
 
 -------------------[ Discovery ]-------------------
 
 function getComponentNames()
-  debugMsg("Discovering components...")
   local audioRouterNames = {}
   local roomControlsNames = {}
 
   for _, comp in pairs(Component.GetComponents()) do
     if comp.Type == componentTypes.audioRouter then
       table.insert(audioRouterNames, comp.Name)
-      debugMsg("  Found audio router: " .. comp.Name)
     elseif comp.Type == componentTypes.roomControls and string.match(comp.Name, "^compRoomControls") then
       table.insert(roomControlsNames, comp.Name)
-      debugMsg("  Found room controls: " .. comp.Name)
     end
   end
 
@@ -220,110 +172,65 @@ function getComponentNames()
   table.insert(roomControlsNames, strClear)
   Controls.compRoomControls.Choices = roomControlsNames
 
-  debugMsg(
-    "Discovery complete — audio routers: " .. (#audioRouterNames - 1)
-      .. ", room controls: " .. (#roomControlsNames - 1)
-  )
+  debugMsg("Discovery: " .. (#audioRouterNames - 1) .. " audio routers, " .. (#roomControlsNames - 1) .. " room controls")
 end
 
 -------------------[ Components ]-------------------
 
 function setcompAudioRouter()
-  if compAudioRouter and compAudioRouter["select.1"] then
-    compAudioRouter["select.1"].EventHandler = nil
-  end
+  local oldSelect = compAudioRouter and compAudioRouter["select." .. routerOutput]
+  if oldSelect then oldSelect.EventHandler = nil end
 
   compAudioRouter = setComp(Controls.compAudioRouter, "Audio Router")
-  if not compAudioRouter or not compAudioRouter["select.1"] then return end
+  local selectCtrl = compAudioRouter and compAudioRouter["select." .. routerOutput]
+  if not selectCtrl then return end
 
-  compAudioRouter["select.1"].EventHandler = function(ctl)
+  selectCtrl.EventHandler = function(ctl)
+    if ctl.Value ~= inputNone then lastInput = ctl.Value end
     syncSourceButtons(ctl.Value)
-    debugMsg("Router feedback: Output 1 → Input " .. ctl.Value .. " (Source: Audio Router)")
+    debugMsg("Router feedback: Output " .. routerOutput .. " -> Input " .. ctl.Value)
   end
-  debugMsg("Registered audio router output feedback handler")
+  syncSourceButtons(selectCtrl.Value)
 end
 
 function setcompRoomControls()
   if compRoomControls then
-    if compRoomControls["ledSystemPower"] then
-      compRoomControls["ledSystemPower"].EventHandler = nil
-    end
-    if compRoomControls["ledFireAlarm"] then
-      compRoomControls["ledFireAlarm"].EventHandler = nil
+    for _, name in ipairs({ "ledSystemPower", "ledFireAlarm" }) do
+      if compRoomControls[name] then compRoomControls[name].EventHandler = nil end
     end
   end
 
   compRoomControls = setComp(Controls.compRoomControls, "Room Controls")
   if not compRoomControls then return end
 
-  local ledPower = compRoomControls["ledSystemPower"]
-  if ledPower then
-    ledPower.EventHandler = function(ctl)
-      local route = ctl.Boolean and getDefaultInput() or inputRoutes.none
-      setRoute(route, defaultOutput, "Room Controls — System Power")
+  if compRoomControls["ledSystemPower"] then
+    compRoomControls["ledSystemPower"].EventHandler = function(ctl)
+      setRoute(ctl.Boolean and getDefaultInput() or inputNone, "System Power")
     end
-    debugMsg("Registered: ledSystemPower (Room Controls)")
   end
 
-  local ledFire = compRoomControls["ledFireAlarm"]
-  if ledFire then
-    ledFire.EventHandler = function(ctl)
+  if compRoomControls["ledFireAlarm"] then
+    compRoomControls["ledFireAlarm"].EventHandler = function(ctl)
+      local ledPower = compRoomControls["ledSystemPower"]
       if ctl.Boolean then
-        setRoute(inputRoutes.none, defaultOutput, "Room Controls — Fire Alarm (active)")
-      else
-        local powerLed = compRoomControls["ledSystemPower"]
-        if powerLed and powerLed.Boolean then
-          local defaultRoute = lastRouteInput[defaultOutput] or getDefaultInput()
-          setRoute(defaultRoute, defaultOutput, "Room Controls — Fire Alarm (cleared)")
-        end
+        setRoute(inputNone, "Fire Alarm (active)")
+      elseif ledPower and ledPower.Boolean then
+        setRoute(lastInput or getDefaultInput(), "Fire Alarm (cleared)")
       end
     end
-    debugMsg("Registered: ledFireAlarm (Room Controls)")
   end
-end
-
-function initAudioRouterController()
-  if compAudioRouter and compAudioRouter["select.1"] then
-    compAudioRouter["select.1"].EventHandler = nil
-  end
-  if compRoomControls then
-    if compRoomControls["ledSystemPower"] then
-      compRoomControls["ledSystemPower"].EventHandler = nil
-    end
-    if compRoomControls["ledFireAlarm"] then
-      compRoomControls["ledFireAlarm"].EventHandler = nil
-    end
-  end
-  debugMsg("Cleanup complete")
 end
 
 -------------------[ Event Handlers ]-------------------
 
-normalizeSourceButtons()
-bindSourceButtons()
-
-if Controls.compAudioRouter then
-  Controls.compAudioRouter.EventHandler = function()
-    debugMsg("Component selector changed (Source: Audio Router dropdown)")
-    setcompAudioRouter()
+for i, btn in ipairs(btnSource) do
+  btn.EventHandler = function()
+    setRoute(i, "Source Button " .. i)
   end
 end
 
-if Controls.compRoomControls then
-  Controls.compRoomControls.EventHandler = function()
-    debugMsg("Component selector changed (Source: Room Controls dropdown)")
-    setcompRoomControls()
-  end
-end
-
--------------------[ Public API ]-------------------
-
-AudioRouterController = {
-  setRoute = function(input, output)
-    setRoute(input, output or defaultOutput, "External API")
-  end,
-  cleanup = initAudioRouterController,
-}
+if Controls.compAudioRouter then Controls.compAudioRouter.EventHandler = setcompAudioRouter end
+if Controls.compRoomControls then Controls.compRoomControls.EventHandler = setcompRoomControls end
 
 -------------------[ Always Run ]-------------------
 
@@ -336,14 +243,11 @@ function funcInit()
     return
   end
 
-  debugMsg("=== Initialization Started ===")
-
   getComponentNames()
   initDefaultInputChoices()
   setcompAudioRouter()
   setcompRoomControls()
-
-  debugMsg("=== Initialization Complete ===")
+  debugMsg("Initialization complete")
 end
 
 funcInit()
