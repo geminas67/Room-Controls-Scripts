@@ -43,7 +43,7 @@ layersToHide = {
     "E05-PowerProgress",
     "H01-PasscodeEntry","H10-Utilities",
     "I01-CallActive","I02-Help","I02-HelpBtn","I03-HDMIDisc", "I04-USBDisc",
-    "J03-ACPRActive","J04-CamPresetSaved","J09-ConferenceLaptop","J10-ConferencePC",
+    "J03-ACPRActive","J04-CamPresetSaved","J11-Conference01","J12-Conference02",
     "L05-Laptop","P05-PC",
 }
 
@@ -73,11 +73,11 @@ discTextUSB = {
 configSource = {
     PC = {
         layer = kLayer.PC, keyHDMI = "ledHDMI01", keyUSB = "ledUSB01",
-        base = "P05-PC", conf = "J10-ConferencePC", acpr = true,
+        base = "P05-PC", conf = "J11-Conference01", acpr = true,
     },
     Laptop = {
         layer = kLayer.Laptop, keyHDMI = "ledHDMI02", keyUSB = "ledUSB02",
-        base = "L05-Laptop", conf = "J09-ConferenceLaptop", acpr = false,
+        base = "L05-Laptop", conf = "J12-Conference02", acpr = false,
     },
 }
 
@@ -197,51 +197,43 @@ end
 function validateLayers()
     local pageLayers = Uci.GetUciPageLayers(pageUCI)
     if not pageLayers then
-        print("WARNING ["..pageUCI.."]: could not retrieve UCI page layers")
-        return
+        print("ERROR ["..pageUCI.."]: could not retrieve UCI page layers")
+        return false
     end
-    local inDesign, missing, seen = {}, {}, {}
-
-    local function note(layerName, context)
-        if not layerName or layerName == "" or seen[layerName] then return end
-        seen[layerName] = true
-        if not inDesign[layerName] then
-            table.insert(missing, { name = layerName, context = context })
-        end
-    end
-
+    local inDesign, missing, order = {}, {}, {}
     for _, layer in ipairs(pageLayers) do inDesign[layer.Name] = true end
 
-    for _, name in ipairs(layersBase) do note(name, "layersBase") end
-    for _, name in ipairs(layersToHide) do note(name, "layersToHide") end
-    for _, name in ipairs(layerConf) do note(name, "layerConf (help hides all conference layers)") end
+    -- Accepts a layer name, a list of names, or nil; collects every location a missing layer is used
+    local function note(v, ctx)
+        if type(v) == "table" then
+            for _, name in ipairs(v) do note(name, ctx) end
+        elseif v and v ~= "" and not inDesign[v] then
+            if not missing[v] then missing[v] = {}; order[#order + 1] = v end
+            table.insert(missing[v], ctx)
+        end
+    end
 
+    note(layersBase,   "layersBase")
+    note(layersToHide, "layersToHide")
+    note(layerConf,    "layerConf (help hides all conference layers)")
     for key, def in pairs(configSource) do
-        local prefix = "configSource."..key
-        note(def.base, prefix..".base")
-        note(def.conf, prefix..".conf")
+        note(def.base, "configSource."..key..".base")
+        note(def.usb, "configSource."..key..".usb")
+        note(def.conf, "configSource."..key..".conf")
+    end
+    for idx, cfg in pairs(layerConfig) do
+        local ctx = "layerConfig."..(kLayerName[idx] or tostring(idx))
+        note(cfg.show, ctx..".show")
+        note(cfg.hide, ctx..".hide")
     end
 
-    for layerIdx, cfg in pairs(layerConfig) do
-        local ctx = "layerConfig."..(kLayerName[layerIdx] or tostring(layerIdx))
-        if cfg.show then
-            for _, name in ipairs(cfg.show) do note(name, ctx..".show") end
-        end
-        if cfg.hide then
-            if type(cfg.hide) == "table" then
-                for _, name in ipairs(cfg.hide) do note(name, ctx..".hide") end
-            else
-                note(cfg.hide, ctx..".hide")
-            end
-        end
-    end
-
-    if #missing == 0 then return end
-    print("WARNING ["..pageUCI.."]: configured layers not found in UCI design:")
-    for _, entry in ipairs(missing) do
-        print("  - "..entry.name.."  ←  "..entry.context)
+    if #order == 0 then return true end
+    print("ERROR ["..pageUCI.."]: configured layers not found in UCI design:")
+    for _, name in ipairs(order) do
+        print("  - "..name.."  ←  "..table.concat(missing[name], ", "))
     end
     print("  Fix: add the layer in Designer, or remove/nil that field (or whole configSource entry) in the script.")
+    return false
 end
 
 -------------------[ Visibility ]-------------------
@@ -258,11 +250,11 @@ function applyDesired(desired, force)
     for name, wantVis in pairs(desired) do
         local visOk, current = pcall(Uci.GetLayerVisibility, pageUCI, name)
         if not visOk then
-            debugPrint("Layer '"..name.."' not on page: "..tostring(current).." (see validateLayers at init)")
+            print("Layer '"..name.."' not on page: "..tostring(current).." (see validateLayers at init)")
         elseif force or current ~= wantVis then
             local ok, err = pcall(Uci.SetLayerVisibility, pageUCI, name, wantVis, wantVis and "fade" or "none")
             if ok then debugPrint("Layer '"..name.."' set to "..tostring(wantVis))
-            else debugPrint("Layer '"..name.."' error: "..tostring(err)) end
+            else print("Layer '"..name.."' error: "..tostring(err)) end
         end
     end
 end
@@ -321,6 +313,7 @@ function applySourceOverlay(desired, keySource)
         want(desired, "J03-ACPRActive", true)
     end
 
+    applyHelp(desired, keySource, true) -- last: open help hides conf/USB
 end
 
 function buildDesired()
@@ -595,7 +588,7 @@ function funcInit()
         return
     end
     debugPrint("=== Initialization Started ===")
-    validateLayers()
+    if not validateLayers() then error("UCIController: layer validation failed (see list above)") end
     initLabels()
     if not initRoomControls() then print("ERROR: Room controls unavailable — power actions disabled") end
     initPasscode()

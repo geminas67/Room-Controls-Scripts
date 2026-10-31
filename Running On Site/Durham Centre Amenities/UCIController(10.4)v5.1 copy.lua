@@ -8,7 +8,7 @@
 
   Popup copy in Lua: helpCopy (title/heading/body per help key), discTextHDMI.
   Help: one btnHelpOpen (I02-HelpBtn) + one btnHelpClose (I02-Help); copy chosen by the active page's help key
-  (layerConfig sourceKey or helpKey). I02-Help (txtHelpTitle, txtHelpHeading, txtHelpBody), I03-HDMIDisc (txtHDMIDisc).
+  (layerConfig keySource or helpKey). I02-Help (txtHelpTitle, txtHelpHeading, txtHelpBody), I03-HDMIDisc (txtHDMIDisc).
 ]]--
 
 -------------------[ Configuration ]-------------------
@@ -34,7 +34,7 @@ navLayers = {
     kLayer.Utilities, kLayer.PC, kLayer.Laptop, 
 }
 
--- Wireless: conference layers follow nav; J01/J02 overlay when USB disconnected on PC/Laptop
+-- J01/J02 overlay when USB disconnected on PC/Laptop
 configSkip = { skip = { } } -- [kLayer.Wireless] = true 
 configACPR = { disableACPRShow = false }
 
@@ -44,11 +44,11 @@ layersToHide = {
     "E05-PowerProgress",
     "H01-PasscodeEntry","H10-Utilities",
     "I01-CallActive","I02-Help","I02-HelpBtn","I03-HDMIDisc",
-    "J01-ConnectUSBLaptop","J02-ConnectUSBPC","J03-ACPRActive","J04-CamPresetSaved","J09-ConferenceLaptop","J10-ConferencePC",
+    "J01-USBDisc01","J02-USBDisc02","J03-ACPRActive","J04-CamPresetSaved","J11-Conference01","J12-Conference02",
     "L05-Laptop","P05-PC",
 }
 
--- Keyed by layerConfig sourceKey / helpKey. Pages without a key show no help button.
+-- Keyed by layerConfig keySource / helpKey. Pages without a key show no help button.
 helpCopy = {
     Laptop      = {
         title = "Help Laptop Conferencing",
@@ -68,12 +68,12 @@ discTextHDMI = {
 -- keyHDMI: connection LEDs + I03-HDMIDisc copy (discTextHDMI)
 configSource = {
     PC = {
-        layer = kLayer.PC, hdmiKey = "ledHDMI01", usbKey = "ledUSB01",
-        base = "P05-PC", usb = "J02-ConnectUSBPC", conf = "J10-ConferencePC", acpr = true,
+        layer = kLayer.PC, keyHDMI = "ledHDMI01", keyUSB = "ledUSB01",
+        base = "P05-PC", usb = "J01-USBDisc01", conf = "J11-Conference01", acpr = true,
     },
     Laptop = {
-        layer = kLayer.Laptop, hdmiKey = "ledHDMI02", usbKey = "ledUSB02",
-        base = "L05-Laptop", usb = "J01-ConnectUSBLaptop", conf = "J09-ConferenceLaptop", acpr = false,
+        layer = kLayer.Laptop, keyHDMI = "ledHDMI02", keyUSB = "ledUSB02",
+        base = "L05-Laptop", usb = "J02-USBDisc02", conf = "J12-Conference02", acpr = false,
     },
 }
 
@@ -97,8 +97,8 @@ layerConfig = {
     [kLayer.Warming]      = { show = {"E05-PowerProgress"}, hideBase = true },
     [kLayer.Cooling]      = { show = {"E05-PowerProgress"}, hideBase = true },
     [kLayer.Utilities]    = { show = {"H10-Utilities"}, hide = {"X01-ProgramVolume"} },
-    [kLayer.PC]           = { sourceKey = "PC" },
-    [kLayer.Laptop]       = { sourceKey = "Laptop" },
+    [kLayer.PC]           = { keySource = "PC" },
+    [kLayer.Laptop]       = { keySource = "Laptop" },
     [kLayer.Passcode]     = { show = {"H01-PasscodeEntry"}, hideBase = true },
 }
 
@@ -195,19 +195,43 @@ end
 function validateLayers()
     local pageLayers = Uci.GetUciPageLayers(pageUCI)
     if not pageLayers then
-        print("WARNING ["..pageUCI.."]: could not retrieve UCI page layers")
-        return
+        print("ERROR ["..pageUCI.."]: could not retrieve UCI page layers")
+        return false
     end
-    local inDesign, missing = {}, {}
+    local inDesign, missing, order = {}, {}, {}
     for _, layer in ipairs(pageLayers) do inDesign[layer.Name] = true end
-    for _, list in ipairs({layersBase, layersToHide}) do
-        for _, name in ipairs(list) do
-            if not inDesign[name] then table.insert(missing, name) end
+
+    -- Accepts a layer name, a list of names, or nil; collects every location a missing layer is used
+    local function note(v, ctx)
+        if type(v) == "table" then
+            for _, name in ipairs(v) do note(name, ctx) end
+        elseif v and v ~= "" and not inDesign[v] then
+            if not missing[v] then missing[v] = {}; order[#order + 1] = v end
+            table.insert(missing[v], ctx)
         end
     end
-    if #missing == 0 then return end
-    print("WARNING ["..pageUCI.."]: configured layers not found in UCI design:")
-    for _, name in ipairs(missing) do print("  - "..name) end
+
+    note(layersBase,   "layersBase")
+    note(layersToHide, "layersToHide")
+    note(layerConf,    "layerConf (help hides all conference layers)")
+    for key, def in pairs(configSource) do
+        note(def.base, "configSource."..key..".base")
+        note(def.usb, "configSource."..key..".usb")
+        note(def.conf, "configSource."..key..".conf")
+    end
+    for idx, cfg in pairs(layerConfig) do
+        local ctx = "layerConfig."..(kLayerName[idx] or tostring(idx))
+        note(cfg.show, ctx..".show")
+        note(cfg.hide, ctx..".hide")
+    end
+
+    if #order == 0 then return true end
+    print("ERROR ["..pageUCI.."]: configured layers not found in UCI design:")
+    for _, name in ipairs(order) do
+        print("  - "..name.."  ←  "..table.concat(missing[name], ", "))
+    end
+    print("  Fix: add the layer in Designer, or remove/nil that field (or whole configSource entry) in the script.")
+    return false
 end
 
 -------------------[ Visibility ]-------------------
@@ -222,21 +246,24 @@ end
 
 function applyDesired(desired, force)
     for name, wantVis in pairs(desired) do
-        if force or Uci.GetLayerVisibility(pageUCI, name) ~= wantVis then
+        local visOk, current = pcall(Uci.GetLayerVisibility, pageUCI, name)
+        if not visOk then
+            print("Layer '"..name.."' not on page: "..tostring(current).." (see validateLayers at init)")
+        elseif force or current ~= wantVis then
             local ok, err = pcall(Uci.SetLayerVisibility, pageUCI, name, wantVis, wantVis and "fade" or "none")
             if ok then debugPrint("Layer '"..name.."' set to "..tostring(wantVis))
-            else debugPrint("Layer '"..name.."' error: "..tostring(err)) end
+            else print("Layer '"..name.."' error: "..tostring(err)) end
         end
     end
 end
 
 function activeSourceKey()
     local cfg = layerConfig[state.activeLayer]
-    return cfg and cfg.sourceKey
+    return cfg and cfg.keySource
 end
 
-function hdmiConnected(sourceKey)
-    return Controls[configSource[sourceKey].hdmiKey].Boolean
+function hdmiConnected(keySource)
+    return Controls[configSource[keySource].keyHDMI].Boolean
 end
 
 -- Help is evaluated by the page that owns it: closed → I02-HelpBtn, open → I02-Help with that key's copy.
@@ -257,11 +284,11 @@ function applyHelp(desired, helpKey, isSource)
     end
 end
 
-function applySourceOverlay(desired, sourceKey)
-    local def = configSource[sourceKey]
-    if not hdmiConnected(sourceKey) then
+function applySourceOverlay(desired, keySource)
+    local def = configSource[keySource]
+    if not hdmiConnected(keySource) then
         want(desired, "I03-HDMIDisc", true)
-        Controls.txtHDMIDisc.String = discTextHDMI[sourceKey] or ""
+        Controls.txtHDMIDisc.String = discTextHDMI[keySource] or ""
         return
     end
 
@@ -270,7 +297,7 @@ function applySourceOverlay(desired, sourceKey)
     -- Conference layer + USB prompt when not connected
     if not configSkip.skip[def.layer] then
         want(desired, def.conf, true)
-        if def.usbKey and not Controls[def.usbKey].Boolean then want(desired, def.usb, true) end
+        if def.keyUSB and not Controls[def.keyUSB].Boolean then want(desired, def.usb, true) end
     end
 
     -- ACPR active: on a call and not bypassed
@@ -279,7 +306,7 @@ function applySourceOverlay(desired, sourceKey)
         want(desired, "J03-ACPRActive", true)
     end
 
-    applyHelp(desired, sourceKey, true) -- last: open help hides conf/USB
+    applyHelp(desired, keySource, true) -- last: open help hides conf/USB
 end
 
 function buildDesired()
@@ -297,9 +324,9 @@ function buildDesired()
     want(desired, "J04-CamPresetSaved", Controls.ledPresetSaved.Boolean)
     want(desired, "D01-ShutdownConfirm", state.shutdownConfirm)
 
-    local sourceKey = activeSourceKey()
-    if sourceKey then
-        applySourceOverlay(desired, sourceKey)
+    local keySource = activeSourceKey()
+    if keySource then
+        applySourceOverlay(desired, keySource)
     elseif cfg and cfg.helpKey then
         applyHelp(desired, cfg.helpKey, false)
     end

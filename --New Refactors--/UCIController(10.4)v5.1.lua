@@ -49,7 +49,7 @@ layersToHide = {
     "E05-PowerProgress",
     "H01-PasscodeEntry","H10-Utilities",
     "I01-CallActive","I02-Help","I02-HelpBtn","I03-HDMIDisc","I04-USBDisc",
-    "J01-ConnectUSBLaptop","J02-ConnectUSBPC","J03-ACPRActive","J04-CamPresetSaved","J09-ConferenceLaptop","J10-ConferencePC",
+    "J03-ACPRActive","J04-CamPresetSaved",
     "L05-Laptop","P05-PC","W05-Wireless",
     "R01-Routing01","R02-Routing02","R03-Routing03","R04-Routing04","R05-Routing05","R10-Routing",
     "S05-StreamMusic","V05-Dialer",
@@ -58,13 +58,13 @@ routingLayers = {"R01-Routing01","R02-Routing02","R03-Routing03","R04-Routing04"
 
 -- Keyed by layerConfig keySource / keyHelp. Pages without a key show no help button.
 helpCopy = {
-    Laptop      = {
-        title = "Help Laptop Conferencing",
-        heading = "Auto Camera Preset Recall (ACPR) is enabled by default when a call is active, keeping the cameras positioned automatically.\nDisable it using the ACPR toggle to manually pan, tilt, zoom, or save new presets.\n\nPlease make sure the following devices are selected in the Laptop's conference settings:\n\nCamera: Laptop USB\nSpeaker: Laptop USB\nMicrophone: Laptop USB",
-        body = "Use the Directional Pad and the Zoom ( + ) and Zoom ( - ) buttons to adjust the camera image.\n\nPress a Preset button to have the camera move to a preset location (Recall).\n\nPress and Hold a Preset button to (Save) a new location to the selected preset button" },
     PC          = {
         title = "Help PC Conferencing",
         heading = "Auto Camera Preset Recall (ACPR) is enabled by default when a call is active, keeping the cameras positioned automatically.\nDisable it using the ACPR toggle to manually pan, tilt, zoom, or save new presets.\n\nPlease make sure the following devices are selected in the PC's conference settings:\n\nCamera: PC USB\nSpeaker: PC USB\nMicrophone: PC USB",
+        body = "Use the Directional Pad and the Zoom ( + ) and Zoom ( - ) buttons to adjust the camera image.\n\nPress a Preset button to have the camera move to a preset location (Recall).\n\nPress and Hold a Preset button to (Save) a new location to the selected preset button" },
+    Laptop      = {
+        title = "Help Laptop Conferencing",
+        heading = "Auto Camera Preset Recall (ACPR) is enabled by default when a call is active, keeping the cameras positioned automatically.\nDisable it using the ACPR toggle to manually pan, tilt, zoom, or save new presets.\n\nPlease make sure the following devices are selected in the Laptop's conference settings:\n\nCamera: Laptop USB\nSpeaker: Laptop USB\nMicrophone: Laptop USB",
         body = "Use the Directional Pad and the Zoom ( + ) and Zoom ( - ) buttons to adjust the camera image.\n\nPress a Preset button to have the camera move to a preset location (Recall).\n\nPress and Hold a Preset button to (Save) a new location to the selected preset button" },
     Wireless    = {
         title = "Help Wireless",
@@ -94,14 +94,14 @@ discTextUSB = {
 configSource = {
     PC = {
         layer = kLayer.PC, keyHDMI = "ledHDMI01", keyUSB = "ledUSB01",
-        base = "P05-PC", usb = "J02-ConnectUSBPC", conf = "J10-ConferencePC", acpr = true,
+        base = "P05-PC", conf = "J11-Conference01", acpr = true,
     },
     Laptop = {
         layer = kLayer.Laptop, keyHDMI = "ledHDMI02", keyUSB = "ledUSB02",
-        base = "L05-Laptop", usb = "J01-ConnectUSBLaptop", conf = "J09-ConferenceLaptop", acpr = true,
+        base = "L05-Laptop", conf = "J12-Conference02", acpr = true,
     },
     Wireless = {
-        layer = kLayer.Wireless, keyHDMI = "ledHDMI03Connect",
+        layer = kLayer.Wireless, keyHDMI = "ledHDMI03",
         base = "W05-Wireless", acpr = false,
     },
 }
@@ -235,52 +235,42 @@ end
 function validateLayers()
     local pageLayers = Uci.GetUciPageLayers(pageUCI)
     if not pageLayers then
-        print("WARNING ["..pageUCI.."]: could not retrieve UCI page layers")
-        return
+        print("ERROR ["..pageUCI.."]: could not retrieve UCI page layers")
+        return false
     end
-    local inDesign, missing, seen = {}, {}, {}
-
-    local function note(layerName, context)
-        if not layerName or layerName == "" or seen[layerName] then return end
-        seen[layerName] = true
-        if not inDesign[layerName] then
-            table.insert(missing, { name = layerName, context = context })
-        end
-    end
-
+    local inDesign, missing, order = {}, {}, {}
     for _, layer in ipairs(pageLayers) do inDesign[layer.Name] = true end
 
-    for _, name in ipairs(layersBase) do note(name, "layersBase") end
-    for _, name in ipairs(layersToHide) do note(name, "layersToHide") end
-    for _, name in ipairs(layerConf) do note(name, "layerConf (help hides all conference layers)") end
-    for _, name in ipairs(routingLayers) do note(name, "routingLayers") end
+    -- Accepts a layer name, a list of names, or nil; collects every location a missing layer is used
+    local function note(v, ctx)
+        if type(v) == "table" then
+            for _, name in ipairs(v) do note(name, ctx) end
+        elseif v and v ~= "" and not inDesign[v] then
+            if not missing[v] then missing[v] = {}; order[#order + 1] = v end
+            table.insert(missing[v], ctx)
+        end
+    end
 
+    note(layersBase,   "layersBase")
+    note(layersToHide, "layersToHide")
+    note(layerConf,    "layerConf (help hides all conference layers)")
     for key, def in pairs(configSource) do
-        local prefix = "configSource."..key
-        note(def.base, prefix..".base")
-        note(def.conf, prefix..".conf")
+        note(def.base, "configSource."..key..".base")
+        note(def.conf, "configSource."..key..".conf")
+    end
+    for idx, cfg in pairs(layerConfig) do
+        local ctx = "layerConfig."..(kLayerName[idx] or tostring(idx))
+        note(cfg.show, ctx..".show")
+        note(cfg.hide, ctx..".hide")
     end
 
-    for layerIdx, cfg in pairs(layerConfig) do
-        local ctx = "layerConfig."..(kLayerName[layerIdx] or tostring(layerIdx))
-        if cfg.show then
-            for _, name in ipairs(cfg.show) do note(name, ctx..".show") end
-        end
-        if cfg.hide then
-            if type(cfg.hide) == "table" then
-                for _, name in ipairs(cfg.hide) do note(name, ctx..".hide") end
-            else
-                note(cfg.hide, ctx..".hide")
-            end
-        end
-    end
-
-    if #missing == 0 then return end
-    print("WARNING ["..pageUCI.."]: configured layers not found in UCI design:")
-    for _, entry in ipairs(missing) do
-        print("  - "..entry.name.."  ←  "..entry.context)
+    if #order == 0 then return true end
+    print("ERROR ["..pageUCI.."]: configured layers not found in UCI design:")
+    for _, name in ipairs(order) do
+        print("  - "..name.."  ←  "..table.concat(missing[name], ", "))
     end
     print("  Fix: add the layer in Designer, or remove/nil that field (or whole configSource entry) in the script.")
+    return false
 end
 
 -------------------[ Visibility ]-------------------
@@ -297,11 +287,11 @@ function applyDesired(desired, force)
     for name, wantVis in pairs(desired) do
         local visOk, current = pcall(Uci.GetLayerVisibility, pageUCI, name)
         if not visOk then
-            debugPrint("Layer '"..name.."' not on page: "..tostring(current).." (see validateLayers at init)")
+            print("Layer '"..name.."' not on page: "..tostring(current).." (see validateLayers at init)")
         elseif force or current ~= wantVis then
             local ok, err = pcall(Uci.SetLayerVisibility, pageUCI, name, wantVis, wantVis and "fade" or "none")
             if ok then debugPrint("Layer '"..name.."' set to "..tostring(wantVis))
-            else debugPrint("Layer '"..name.."' error: "..tostring(err)) end
+            else print("Layer '"..name.."' error: "..tostring(err)) end
         end
     end
 end
@@ -657,7 +647,7 @@ function funcInit()
         return
     end
     debugPrint("=== Initialization Started ===")
-    validateLayers()
+    if not validateLayers() then error("UCIController: layer validation failed (see list above)") end
     initLabels()
     if not initRoomControls() then print("ERROR: Room controls unavailable — power actions disabled") end
     initPasscode()

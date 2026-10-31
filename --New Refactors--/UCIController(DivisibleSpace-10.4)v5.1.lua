@@ -406,11 +406,11 @@ function applyDesired(desired, force)
     for name, wantVis in pairs(desired) do
         local visOk, current = pcall(Uci.GetLayerVisibility, pageUCI, name)
         if not visOk then
-            debugPrint("Layer '"..name.."' not on page: "..tostring(current).." (see validateLayers at init)")
+            print("Layer '"..name.."' not on page: "..tostring(current).." (see validateLayers at init)")
         elseif force or current ~= wantVis then
             local ok, err = pcall(Uci.SetLayerVisibility, pageUCI, name, wantVis, wantVis and "fade" or "none")
             if ok then debugPrint("Layer '"..name.."' set to "..tostring(wantVis))
-            else debugPrint("Layer '"..name.."' error: "..tostring(err)) end
+            else print("Layer '"..name.."' error: "..tostring(err)) end
         end
     end
 end

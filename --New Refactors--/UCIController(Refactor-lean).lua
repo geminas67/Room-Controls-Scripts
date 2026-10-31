@@ -762,30 +762,6 @@ function funcInit()
     debugPrint("=== Initialization Complete ===")
 end
 
--------------------[ Public API ]-------------------
-
-myUCI = {
-    cleanup = function()
-        timer.progress = stopTimer(timer.progress)
-        if timer.inactivity then timer.inactivity:Stop() end
-        if component.roomControls then
-            for _, cfg in ipairs(powerProgressConfig) do
-                if component.roomControls[cfg.key] then
-                    component.roomControls[cfg.key].EventHandler = nil
-                end
-            end
-        end
-        if component.passcode and component.passcode["PasscodeCorrect"] then
-            component.passcode["PasscodeCorrect"].EventHandler = nil
-        end
-        for i = 1, labelCount do
-            local label = uciLabels[i]
-            if label then label.EventHandler = nil end
-        end
-        debugPrint("Cleanup complete")
-    end,
-}
-
 hint = Uci.Variables.txtUCIPageName and Uci.Variables.txtUCIPageName.String or ""
 local ok, err
 for _, pageName in ipairs(buildPageNameCandidates(hint)) do

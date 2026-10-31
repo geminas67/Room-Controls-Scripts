@@ -515,12 +515,3 @@ function funcInit()
 end
 
 funcInit()
-
--------------------[ Public API ]-------------------
-
-DisplayController = {
-  powerOnAll = powerOnAll,
-  powerOffAll = powerOffAll,
-  setInputAll = setInputAll,
-  getDisplayCount = getDisplayCount,
-}
