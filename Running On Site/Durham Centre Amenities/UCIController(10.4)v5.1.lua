@@ -50,13 +50,13 @@ layersToHide = {
 -- Keyed by layerConfig keySource / keyHelp. Pages without a key show no help button.
 helpCopy = {
     PC          = {
-        title = "Help PC Conferencing",
-        heading = "Auto Camera Preset Recall (ACPR) is enabled by default when a call is active, keeping the cameras positioned automatically.\nDisable it using the ACPR toggle to manually pan, tilt, zoom, or save new presets.\n\nPlease make sure the following devices are selected in the Laptop's conference settings:\n\nCamera: Laptop USB\nSpeaker: Laptop USB\nMicrophone: Laptop USB",
-        body = "Use the Directional Pad and the Zoom ( + ) and Zoom ( - ) buttons to adjust the camera image.\n\nPress a Preset button to have the camera move to a preset location (Recall).\n\nPress and Hold a Preset button to (Save) a new location to the selected preset button" },
+        title   = "Help PC Conferencing",
+        heading = "Please make sure the following devices are selected in the PC's conference settings:\n\nCamera: Room PC USB\nSpeaker: Room PC USB\nMicrophone: Room PC USB",
+        body    = "Auto Camera Preset Recall (ACPR) is enabled by default when a call is active, keeping the cameras positioned automatically.\n\nDisable it using the ACPR toggle to manually pan, tilt, zoom, or save new presets.\n\n\nUse the Directional Pad and the Zoom ( + ) and Zoom ( - ) buttons to adjust the camera image.\n\nPress a Preset button to have the camera move to a preset location (Recall).\n\nPress and Hold a Preset button to (Save) a new location to the selected preset button" },
     Laptop      = {
-        title = "Help Laptop Conferencing",
+        title   = "Help Laptop Conferencing",
         heading = "Please make sure the following devices are selected in the Laptop's conference settings:\n\nCamera: Laptop USB\nSpeaker: Laptop USB\nMicrophone: Laptop USB",
-        body = "Use the Directional Pad and the Zoom ( + ) and Zoom ( - ) buttons to adjust the camera image.\n\nPress a Preset button to have the camera move to a preset location (Recall).\n\nPress and Hold a Preset button to (Save) a new location to the selected preset button" },
+        body    = "Use the Directional Pad and the Zoom ( + ) and Zoom ( - ) buttons to adjust the camera image.\n\nPress a Preset button to have the camera move to a preset location (Recall).\n\nPress and Hold a Preset button to (Save) a new location to the selected preset button" },
 }
 
 discTextHDMI = {
