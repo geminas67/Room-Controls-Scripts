@@ -296,24 +296,25 @@ end
 function validateLayers()
     local pageLayers = Uci.GetUciPageLayers(pageUCI)
     if not pageLayers then
-        print("WARNING ["..pageUCI.."]: could not retrieve UCI page layers")
-        return
+        print("ERROR ["..pageUCI.."]: could not retrieve UCI page layers")
+        return false
     end
-    local inDesign, missing, seen = {}, {}, {}
+    local inDesign, missing, order = {}, {}, {}
+    for _, layer in ipairs(pageLayers) do inDesign[layer.Name] = true end
 
-    local function note(layerName, context)
-        if not layerName or layerName == "" or seen[layerName] then return end
-        seen[layerName] = true
-        if not inDesign[layerName] then
-            table.insert(missing, { name = layerName, context = context })
+    -- Accepts a layer name, a list of names, or nil; collects every location a missing layer is used
+    local function note(v, ctx)
+        if type(v) == "table" then
+            for _, name in ipairs(v) do note(name, ctx) end
+        elseif v and v ~= "" and not inDesign[v] then
+            if not missing[v] then missing[v] = {}; order[#order + 1] = v end
+            table.insert(missing[v], ctx)
         end
     end
 
-    for _, layer in ipairs(pageLayers) do inDesign[layer.Name] = true end
-
-    for _, name in ipairs(layersBase) do note(name, "layersBase") end
-    for _, name in ipairs(layersToHide) do note(name, "layersToHide") end
-    for _, name in ipairs(layerConf) do note(name, "layerConf (help hides all conference layers)") end
+    note(layersBase,   "layersBase")
+    note(layersToHide, "layersToHide")
+    note(layerConf,    "layerConf (help hides all conference layers)")
 
     -- Table-backed layer refs (also listed in layersToHide); validate here so renames drift with a config path, not only "layersToHide"
     for tableName, tbl in pairs({
@@ -327,34 +328,25 @@ function validateLayers()
     end
 
     for key, def in pairs(configSource) do
-        local prefix = "configSource."..key
-        note(def.base, prefix..".base")
-        note(def.conf, prefix..".conf")
-        note(def.camera, prefix..".camera")
-        note(def.hidPrivDiv, prefix..".hidPrivDiv")
-        note(def.hidPrivComb, prefix..".hidPrivComb")
+        note(def.base,       "configSource."..key..".base")
+        note(def.conf,       "configSource."..key..".conf")
+        note(def.camera,     "configSource."..key..".camera")
+        note(def.hidPrivDiv, "configSource."..key..".hidPrivDiv")
+        note(def.hidPrivComb,"configSource."..key..".hidPrivComb")
+    end
+    for idx, cfg in pairs(layerConfig) do
+        local ctx = "layerConfig."..(kLayerName[idx] or tostring(idx))
+        note(cfg.show, ctx..".show")
+        note(cfg.hide, ctx..".hide")
     end
 
-    for layerIdx, cfg in pairs(layerConfig) do
-        local ctx = "layerConfig."..(kLayerName[layerIdx] or tostring(layerIdx))
-        if cfg.show then
-            for _, name in ipairs(cfg.show) do note(name, ctx..".show") end
-        end
-        if cfg.hide then
-            if type(cfg.hide) == "table" then
-                for _, name in ipairs(cfg.hide) do note(name, ctx..".hide") end
-            else
-                note(cfg.hide, ctx..".hide")
-            end
-        end
-    end
-
-    if #missing == 0 then return end
-    print("WARNING ["..pageUCI.."]: configured layers not found in UCI design:")
-    for _, entry in ipairs(missing) do
-        print("  - "..entry.name.."  ←  "..entry.context)
+    if #order == 0 then return true end
+    print("ERROR ["..pageUCI.."]: configured layers not found in UCI design:")
+    for _, name in ipairs(order) do
+        print("  - "..name.."  ←  "..table.concat(missing[name], ", "))
     end
     print("  Fix: add the layer in Designer, or remove/nil that field (or whole configSource entry) in the script.")
+    return false
 end
 
 -------------------[ Divisible Space ]-------------------
@@ -770,7 +762,7 @@ function funcInit()
         return
     end
     debugPrint("=== Initialization Started ===")
-    validateLayers()
+    if not validateLayers() then error("UCIController: layer validation failed (see list above)") end
     initLabels()
     if not initRoomControls() then print("ERROR: Room controls unavailable — power actions disabled") end
     initDivisibleSpace()
