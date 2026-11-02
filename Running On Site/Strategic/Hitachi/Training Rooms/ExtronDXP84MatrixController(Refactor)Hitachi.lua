@@ -40,8 +40,8 @@ sourceNames = {
 }
 
 routingConfig = {
-    outputsForRoomA = { 1 },
-    outputsForRoomB = { 2 },
+    outputsForRoomA = { 1, 2 },
+    outputsForRoomB = { 3, 4 },
 }
 
 outputInRoomA = {}
@@ -347,7 +347,7 @@ end
 
 function updateDestinationText()
     if not compExtronMatrix or not Controls.txtStatus then return end
-    local destNames = { [1] = "Room A", [2] = "Room B", [3] = "Out 3", [4] = "Out 4" }
+    local destNames = { [1] = "Room A PC", [2] = "Room A Display", [3] = "Room B PC", [4] = "Room B Display" }
     local routes, count = {}, 0
     for output = 1, 4 do
         local currentInput = tonumber(compExtronMatrix["output." .. output].String) or 0

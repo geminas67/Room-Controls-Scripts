@@ -141,14 +141,14 @@ configSource = {
         base = "P02-PCB", conf = "J24-ConferencePCB", camera = "J14-CamSelectPCB",
         hidPrivDiv = "J18-HIDPrivacyRoomB", hidPrivComb = "J20-HIDPrivacyCombineB",
     },
-    WirelessA = {
-        layer = kLayer.WirelessA, keyHDMI = "ledHDMIWirelessA", keyUSB = "ledUSBWirelessA",
-        base = "W01-WirelessA", conf = "J25-ConferenceWirelessA", camera = "J15-CamSelectWirelessA",
-    },
-    WirelessB = {
-        layer = kLayer.WirelessB, keyHDMI = "ledHDMIWirelessB", keyUSB = "ledUSBWirelessB",
-        base = "W02-WirelessB", conf = "J26-ConferenceWirelessB", camera = "J16-CamSelectWirelessB",
-    },
+    -- WirelessA = {
+    --     layer = kLayer.WirelessA, keyHDMI = "ledHDMIWirelessA", keyUSB = "ledUSBWirelessA",
+    --     base = "W01-WirelessA", conf = "J25-ConferenceWirelessA", camera = "J15-CamSelectWirelessA",
+    -- },
+    -- WirelessB = {
+    --     layer = kLayer.WirelessB, keyHDMI = "ledHDMIWirelessB", keyUSB = "ledUSBWirelessB",
+    --     base = "W02-WirelessB", conf = "J26-ConferenceWirelessB", camera = "J16-CamSelectWirelessB",
+    -- },
 }
 
 powerProgressConfig = {
@@ -171,17 +171,17 @@ layerConfig = {
     [kLayer.Warming]       = { show = {"E05-PowerProgress"}, hideBase = true },
     [kLayer.Cooling]       = { show = {"E05-PowerProgress"}, hideBase = true },
     [kLayer.Utilities]     = { layerUtilities = true, hide = {"X01-ProgramVolume"} },
+    [kLayer.RoomCombining] = { show = {"H04-RoomCombining"}, hideBase = true },
+    [kLayer.Passcode]      = { show = {"H01-PasscodeEntry"}, hideBase = true },
+    [kLayer.PCA]           = { keySource = "PCA" },
+    [kLayer.PCB]           = { keySource = "PCB" },
+    [kLayer.LaptopA]       = { keySource = "LaptopA" },
+    [kLayer.LaptopB]       = { keySource = "LaptopB" },
     [kLayer.WirelessA]     = { show = {"W01-WirelessA"}, keyHelp = "WirelessA" },
     [kLayer.WirelessB]     = { show = {"W02-WirelessB"}, keyHelp = "WirelessB" },
     [kLayer.Routing]       = { show = {"R10-Routing"}, keyHelp = "Routing" },
     [kLayer.Dialer]        = { show = {"V05-Dialer"} },
     [kLayer.StreamMusic]   = { show = {"S10-StreamMusic"}, keyHelp = "StreamMusic" },
-    [kLayer.RoomCombining] = { show = {"H04-RoomCombining"}, hideBase = true },
-    [kLayer.Passcode]      = { show = {"H01-PasscodeEntry"}, hideBase = true },
-    [kLayer.LaptopA]       = { keySource = "LaptopA" },
-    [kLayer.LaptopB]       = { keySource = "LaptopB" },
-    [kLayer.PCA]           = { keySource = "PCA" },
-    [kLayer.PCB]           = { keySource = "PCB" },
 }
 
 kRoom = { RoomA = "RoomA", RoomB = "RoomB" }
@@ -220,8 +220,11 @@ roomSide = nil       -- kRoom.RoomA / kRoom.RoomB from roomControls.roomName
 kLayerName = {}
 for name, idx in pairs(kLayer) do kLayerName[idx] = name end
 
-btnNav = {} -- keyed by kLayer index; only user-navigable pages (navLayers)
-for _, idx in ipairs(navLayers) do btnNav[idx] = Controls[string.format("btnNav%02d", idx)] end
+btnNav, txtNav = {}, {} -- keyed by kLayer index; only user-navigable pages (navLayers)
+for _, idx in ipairs(navLayers) do
+  btnNav[idx] = Controls[("btnNav%02d"):format(idx)]
+  txtNav[idx] = Controls[("txtNav%02d"):format(idx)]
+end
 
 layerConf = {}
 for _, def in pairs(configSource) do
@@ -233,6 +236,10 @@ end
 stateDebug = true
 layerDefault = tonumber(Uci.Variables.layerDefault and Uci.Variables.layerDefault.Value) or 7
 legendStart = { divided = "Start Room", combined = "Start Rooms Combined" }
+legendNavSource = {
+    divided  = { [7] = "Teams PC", [8] = "Teams PC", [9] = "Laptop", [10] = "Laptop", [11] = "Wireless", [12] = "Wireless" },
+    combined = { [7] = "Teams PC A", [8] = "Teams PC B", [9] = "Laptop A", [10] = "Laptop B", [11] = "Wireless A", [12] = "Wireless B" },
+}
 
 state = {
     activeLayer = kLayer.Start,
@@ -374,16 +381,19 @@ function showLayer(layerIndex, roomState)
 end
 
 function updateRoomUI(roomState)
-    local isDivided = (roomState == "divided")
-    Controls.btnStartSystem.Legend = isDivided and legendStart.divided or legendStart.combined
-    for _, i in ipairs(roomSide and sideHiddenNav[roomSide] or {}) do
-        if btnNav[i] then btnNav[i].IsInvisible = isDivided end
-        local txt = Controls[string.format("txtNav%02d", i)]
-        if txt then txt.IsInvisible = isDivided end
+    local mode = roomState == "divided" and "divided" or "combined"
+    local isDivided = mode == "divided"
+    Controls.btnStartSystem.Legend = legendStart[mode]
+    for i, legend in pairs(legendNavSource[mode]) do
+      if txtNav[i] then txtNav[i].String = legend end
     end
-    debugPrint("Room state: "..roomState.." (side="..tostring(roomSide)..")")
-end
-
+    for _, i in ipairs(sideHiddenNav[roomSide] or {}) do
+      if btnNav[i] then btnNav[i].IsInvisible = isDivided end
+      if txtNav[i] then txtNav[i].IsInvisible = isDivided end
+    end
+    debugPrint(("Room state: %s (side=%s)"):format(roomState, tostring(roomSide)))
+  end
+  
 -------------------[ Visibility ]-------------------
 
 function want(desired, names, visible)

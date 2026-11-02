@@ -98,7 +98,16 @@ component = {
 stateDebug = true
 strRoomLabel = "Two Room Divisible Space"
 syncInProgress = false
-legendCombineBlocked = "Room is in use.\nTurn the room Off and open the wall to Combine"
+config.roomLabels = {RoomA = "Room A", RoomB = "Room B"}
+
+roomModeLabels = {"Rooms Separated", "Combined - Room A PC", "Combined - Room B PC"} -- match design-time legends
+legendModeBlocked = {
+  inUse    = "%s %s in use - turn it Off and open the wall to Combine",
+  cooling  = "%s shutting down - available when complete",
+  active   = "Active - turn system Off to change",
+  switch   = "Turn system Off to switch PCs",
+  separate = "Automatic when the system turns Off"
+}
 
 -------------------[ Functions ]-------------------
 
@@ -216,24 +225,38 @@ function updateWallState()
   else debugMsg("ERROR: Wall control not found") end
 end
 
+function getRoomModeLegend(idx, onRooms, coolingRooms)
+  local roomState = getRoomState()
+  if getRoomStateFromIndex(idx) == roomState and roomState == "Divided" then return "" end
+  local reason
+  if roomState == "Divided" then
+    reason = #onRooms > 0
+      and legendModeBlocked.inUse:format(table.concat(onRooms, " & "), #onRooms > 1 and "are" or "is")
+      or legendModeBlocked.cooling:format(table.concat(coolingRooms, " & "))
+  elseif getRoomStateFromIndex(idx) == roomState then reason = legendModeBlocked.active
+  elseif idx == 1 then reason = legendModeBlocked.separate
+  else reason = legendModeBlocked.switch end
+  return roomModeLabels[idx] .. "\n" .. reason
+end
+
 function updateBtnRoomModeDisabled()
-  local states = {}
-  local anyActive = false
+  if not Controls.btnRoomMode then return end
+  local onRooms, coolingRooms, states = {}, {}, {}
   for _, room in ipairs(config.rooms) do
-    local isOn = isRoomPoweredOn(room)
-    local isCooling = isRoomCooling(room)
-    local stateStr = isOn and "ON" or (isCooling and "COOLING" or "OFF")
-    table.insert(states, room .. ":" .. stateStr)
-    anyActive = anyActive or isOn or isCooling
+    local label = config.roomLabels[room] or room
+    local isOn, isCooling = isRoomPoweredOn(room), isRoomCooling(room)
+    if isOn then table.insert(onRooms, label) elseif isCooling then table.insert(coolingRooms, label) end
+    table.insert(states, room .. ":" .. (isOn and "ON" or (isCooling and "COOLING" or "OFF")))
   end
-  for idx = 2, 3 do
-    if Controls.btnRoomMode and Controls.btnRoomMode[idx] then
-      local btn = Controls.btnRoomMode[idx]
+  local anyActive = #onRooms + #coolingRooms > 0
+  for idx = 1, 3 do
+    local btn = Controls.btnRoomMode[idx]
+    if btn then
       btn.IsDisabled = anyActive
-      btn.Legend = anyActive and legendCombineBlocked or ""
+      btn.Legend = anyActive and getRoomModeLegend(idx, onRooms, coolingRooms) or ""
     end
   end
-  debugMsg("btnRoomMode[2,3] " .. (anyActive and "DISABLED" or "ENABLED") .. " [" .. table.concat(states, ", ") .. "]")
+  debugMsg("btnRoomMode " .. (anyActive and "LOCKED" or "ENABLED") .. " [" .. table.concat(states, ", ") .. "]")
 end
 
 -------------------[ Routing ]-------------------
@@ -359,13 +382,13 @@ function applyCamRouterRouting()
   local priorityIdx = getPriorityRoomIndex()
   local success, errors = 0, {}
   local routes = {
-    {control = "select.1", divided = 1, combined = {1, 2}},
-    {control = "select.2", divided = 2, combined = {1, 2}}
+    {control = "select.1", divided = 1, combined = {1, 3}},
+    {control = "select.2", divided = 3, combined = {1, 3}}
   }
   for _, route in ipairs(routes) do
     local ctrl = component.camRouter[route.control]
     if ctrl then
-      local value = isDivided and route.divided or route.combined[priorityIdx or 2]
+      local value = isDivided and route.divided or route.combined[priorityIdx or 3]
       ctrl.Value = value
       success = success + 1
       debugMsg("Cam Router " .. route.control .. " -> " .. value .. " (Source: Room Combiner)")

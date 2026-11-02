@@ -276,15 +276,6 @@ function setcompDivSpaceControls()
     end
 end
 
--------------------[ Public API ]-------------------
-
-DXPMatrixController = {
-    setRoute = setRoute,
-    syncRmBtoRmA = syncRmBtoRmA,
-}
-
-MatrixController = DXPMatrixController
-
 -------------------[ Event Handlers ]-------------------
 
 Controls.compExtronDXP.EventHandler = setcompExtronDXP
