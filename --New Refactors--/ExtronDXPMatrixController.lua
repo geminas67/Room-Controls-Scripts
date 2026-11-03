@@ -18,10 +18,12 @@ numOutputs = 4
 outputConfigs = {
     { output = 1, controlName = "output.1", buttons = Controls.btnOut01, label = "Output 1" },
     { output = 2, controlName = "output.2", buttons = Controls.btnOut02, label = "Output 2" },
+    { output = 3, controlName = "output.3", buttons = Controls.btnOut03, label = "Output 3" },
+    { output = 4, controlName = "output.4", buttons = Controls.btnOut04, label = "Output 4" },
 }
 
 divCompName = "compDivisibleSpaceControls"
-divRmStateBtn = "btnRoomState 1"
+divRmStateBtn = "btnRoomMode 1"
 
 -------------------[ Constant Tables ]-------------------
 
@@ -44,23 +46,11 @@ function debugMsg(str)
     if stateDebug then print("[" .. scriptName .. "] " .. str) end
 end
 
-function getButtonArray(ctl)
-    if not ctl then return nil end
-    if type(ctl) == "table" then return ctl end
-    return { ctl }
-end
-
 function getOutputConfig(outputNum)
     for _, cfg in ipairs(outputConfigs) do
         if cfg.output == outputNum then return cfg end
     end
     return nil
-end
-
-function forEachOutput(fn)
-    for _, cfg in ipairs(outputConfigs) do
-        fn(cfg)
-    end
 end
 
 function getOutputControl(outputNum)
@@ -158,9 +148,7 @@ end
 function updateOutputButtons(outputNum, inputNum)
     local cfg = getOutputConfig(outputNum)
     if not cfg then return end
-    local btnArray = getButtonArray(cfg.buttons)
-    if not btnArray then return end
-    for i, btn in ipairs(btnArray) do
+    for i, btn in ipairs(cfg.buttons) do
         btn.Boolean = (inputNum > 0 and i == inputNum)
     end
 end
@@ -259,9 +247,9 @@ function setcompDivSpaceControls()
     compDivSpaceControls = comp
     debugMsg("DivisibleSpaceControls connected")
 
-    local btnRoomState = comp[divRmStateBtn]
-    if btnRoomState then
-        btnRoomState.EventHandler = function(ctl)
+    local btnRoomMode = comp[divRmStateBtn]
+    if btnRoomMode then
+        btnRoomMode.EventHandler = function(ctl)
             roomState = not ctl.Boolean
             debugMsg("Room state -> " .. (roomState and "Combined" or "Separated"))
             if not ctl.Boolean and compExtronMatrix then
@@ -269,7 +257,7 @@ function setcompDivSpaceControls()
                 debugMsg("Synced Output 2 to Output 1 after combine")
             end
         end
-        roomState = not btnRoomState.Boolean
+        roomState = not btnRoomMode.Boolean
         debugMsg("Initial room state: " .. (roomState and "Combined" or "Separated"))
     else
         debugMsg("Warning: " .. divRmStateBtn .. " not found")
@@ -280,16 +268,13 @@ end
 
 Controls.compExtronDXP.EventHandler = setcompExtronDXP
 
-forEachOutput(function(cfg)
-    local btnArray = getButtonArray(cfg.buttons)
-    if not btnArray then return end
-
-    for i, btn in ipairs(btnArray) do
+for _, cfg in ipairs(outputConfigs) do
+    for i, btn in ipairs(cfg.buttons) do
         btn.EventHandler = function()
             setRoute(i, cfg.output, cfg.label, false)
         end
     end
-end)
+end
 
 -------------------[ Always Run ]-------------------
 
