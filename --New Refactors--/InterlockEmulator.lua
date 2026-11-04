@@ -19,6 +19,13 @@ btnIndexToInputSignal = {
   [7] = nil
 }
 
+for i = 1, #Controls.btnSignal do 
+  local controlName = btnIndexToInputSignal[i]
+  if controlName then   
+    Controls.btnSignal[i].Legend = controlName
+  end 
+end
+
 function interlockInput(btnIndex)
   local selectedInput = btnIndexToInputSignal[btnIndex]
 

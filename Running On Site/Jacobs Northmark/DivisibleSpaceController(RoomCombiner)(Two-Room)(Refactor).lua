@@ -24,7 +24,8 @@ config = {
       "input.2.output.4.mute", "input.3.output.3.mute",
       "input.4.output.2.mute", "input.4.output.6.mute",
       "input.5.output.1.mute", "input.5.output.5.mute"
-    }
+    },
+    nv32UCIs = { "uciControllerRmB", "uciControllerRmA"}
   },
 
   features = { disableACPRRouting = false },
@@ -36,7 +37,8 @@ config = {
     uciStatus = "^statusMTR",
     uciController = "^uciControllerRmA$", -- must be exact match
     acprComponents = "^compACPR",
-    camRouter = "^compCamRouter"
+    camRouter = "^compCamRouter",
+    nv32Controls = "^compNV32"
   },
   -- UCI buttons set Priority room for routing
   uciButtons = {
@@ -86,11 +88,12 @@ component = {
   matrixMixer = nil,
   roomControls = {},
   mxaControls = {},
+  nv32Controls = nil,
   uciStatus = nil,
   uciController = nil,
   acprComponents = {},
   camRouter = nil,
-  gainComponents = {}
+  gainComponents = {},
 }
 
 -------------------[ Constants ]-------------------
@@ -405,6 +408,17 @@ function applyPriorityDependentRouting()
   applyCamRouterRouting()
 end
 
+function applyNV32UCIController()
+  if not component.nv32Controls then debugMsg("WARNING: NV32 controls not found"); return end
+  local uciName = isRoomsDivided() and  config.component.nv32UCIs[1] or
+  (isRoomPoweredOn("RoomB") and config.component.nv32UCIs[2] or config.component.nv32UCIs[1])
+  local nv32UCI = component.nv32Controls["compUCIController"]
+  if nv32UCI then
+    nv32UCI.String = uciName
+    debugMsg("NV32 UCI controller: " .. uciName .. " (Source: Room Combiner)")
+  else debugMsg("ERROR: NV32 UCI controller not found") end
+end
+
 function applyRoomMode()
   debugMsg("=== Applying Room State Configuration ===")
   local roomState = getRoomState()
@@ -425,6 +439,7 @@ function applyRoomMode()
     applyUCIStatusRouting()
     applyACPRComponentRouting()
     applyCamRouterRouting()
+    applyNV32UCIController()
     if roomState ~= "Divided" then
       if checkAnyRoomState(isRoomPoweredOn) then
         debugMsg("Syncing power (ON) to all rooms (Source: Room Combiner)")
@@ -474,7 +489,8 @@ function discoverComponents()
     {pattern = config.patterns.uciStatus, key = "uciStatus", single = true},
     {pattern = config.patterns.uciController, key = "uciController", single = true, exact = true},
     {pattern = config.patterns.acprComponents, key = "acprComponents", indexed = true, hasCombined = true},
-    {pattern = config.patterns.camRouter, key = "camRouter", single = true}
+    {pattern = config.patterns.camRouter, key = "camRouter", single = true},
+    {pattern = config.patterns.nv32Controls, key = "nv32Controls", single = true},
   }
   local function matchesPattern(name, map)
     return map.exact and name == map.pattern:gsub("^%^", ""):gsub("%$$", "") or name:match(map.pattern)
@@ -519,7 +535,7 @@ end
 
 function validateComponents()
   local warnings = {}
-  for _, comp in ipairs({{key = "roomCombiner", desc = "Room combiner"}, {key = "matrixMixer", desc = "Matrix mixer"}, {key = "uciStatus", desc = "UCI status"}, {key = "camRouter", desc = "Cam router"}}) do
+  for _, comp in ipairs({{key = "roomCombiner", desc = "Room combiner"}, {key = "matrixMixer", desc = "Matrix mixer"}, {key = "uciStatus", desc = "UCI status"}, {key = "camRouter", desc = "Cam router"}, {key = "nv32UCIController", desc = "NV32 UCI selection"}}) do
     if not component[comp.key] then table.insert(warnings, comp.desc) end
   end
   for i, room in ipairs(config.rooms) do
@@ -600,6 +616,7 @@ function onRoomPowerChange(roomName)
     debugMsg("Syncing power (" .. (newPowerState and "ON" or "OFF") .. ") to: " .. table.concat(roomsToSync, ", ") .. " (Source: Room Controls)")
     syncPowerToRooms(roomsToSync, newPowerState, "Room Controls")
     applyUCIStatusRouting()
+    applyNV32UCIController()
   end
 end
 

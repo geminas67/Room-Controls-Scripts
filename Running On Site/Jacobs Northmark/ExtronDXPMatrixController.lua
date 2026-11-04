@@ -4,8 +4,8 @@
     Version: 2.0 | Date: 2026-09-20
     Firmware Req: 10.0.0
 
-    Two outputs × four inputs: Output 1 = Room A, Output 2 = Room B.
-    Room-combined mode syncs Output 2 to Output 1. Uses Extron matrix output.N String controls.
+    Four matrix outputs × four inputs. Room A: output.1 and output.2; Room B: output.3 and output.4.
+    Combined mode mirrors Room B outputs to Room A (3←1, 4←2). Uses Extron matrix output.N String controls.
 ]]--
 
 -------------------[ Configuration ]-------------------
@@ -15,15 +15,18 @@ pluginDXP = "%PLUGIN%_qsysc.extron.matrix.0.0.0.0-master_%FP%_bf09cd55c73845eb6f
 numInputs = 4
 numOutputs = 4
 
+outputsRoomA = { 1, 2 }
+outputsRoomB = { 3, 4 }
+
 outputConfigs = {
-    { output = 1, controlName = "output.1", buttons = Controls.btnOut01, label = "Output 1" },
-    { output = 2, controlName = "output.2", buttons = Controls.btnOut02, label = "Output 2" },
-    { output = 3, controlName = "output.3", buttons = Controls.btnOut03, label = "Output 3" },
-    { output = 4, controlName = "output.4", buttons = Controls.btnOut04, label = "Output 4" },
+    { output = 1, controlName = "output.1", buttons = Controls.btnOut01, label = "Room A Out 1" },
+    { output = 2, controlName = "output.2", buttons = Controls.btnOut02, label = "Room A Out 2" },
+    { output = 3, controlName = "output.3", buttons = Controls.btnOut03, label = "Room B Out 1" },
+    { output = 4, controlName = "output.4", buttons = Controls.btnOut04, label = "Room B Out 2" },
 }
 
 divCompName = "compDivisibleSpaceControls"
-divRmStateBtn = "btnRoomMode 1"
+btnRoomMode = "btnRoomMode 1"
 
 -------------------[ Constant Tables ]-------------------
 
@@ -36,7 +39,7 @@ compDivSpaceControls = nil
 stateDebug = true
 strClear = "[Clear]"
 scriptName = "Extron DXP84"
-roomState = false  -- true = combined, false = separated
+stateCombined = false  -- true = combined, false = separated
 
 -------------------[ Functions ]-------------------
 
@@ -178,12 +181,29 @@ function setRoute(input, outputNum, source, skipFeedback)
 end
 
 function syncRmBtoRmA(skipFeedback)
-    if not roomState then return false end
+    if not stateCombined then return false end
     if not compExtronMatrix then return false end
 
-    local inp = tonumber(compExtronMatrix["output.1"].String) or 0
-    if inp < 1 or inp > numInputs then return false end
-    return setRoute(inp, 2, "Room Combiner", skipFeedback == true)
+    local skip = skipFeedback == true
+    local ok = true
+    for i = 1, #outputsRoomA do
+        local srcOut = outputsRoomA[i]
+        local dstOut = outputsRoomB[i]
+        local inp = tonumber(compExtronMatrix["output." .. srcOut].String) or 0
+        if inp < 1 or inp > numInputs then
+            ok = false
+        elseif not setRoute(inp, dstOut, "Room Combiner", skip) then
+            ok = false
+        end
+    end
+    return ok
+end
+
+function isRoomAOutput(outputNum)
+    for _, out in ipairs(outputsRoomA) do
+        if out == outputNum then return true end
+    end
+    return false
 end
 
 -------------------[ Extron Matrix ]-------------------
@@ -204,7 +224,7 @@ function onOutputStringChanged(outputNum)
     updateOutputButtons(outputNum, inp)
     debugMsg("Output " .. outputNum .. " feedback -> Input " .. inp)
 
-    if outputNum == 1 and roomState then
+    if stateCombined and isRoomAOutput(outputNum) then
         syncRmBtoRmA(true)
     end
 end
@@ -229,7 +249,7 @@ end
 
 function cleanupDivSpaceHandlers()
     if not compDivSpaceControls then return end
-    local btn = compDivSpaceControls[divRmStateBtn]
+    local btn = compDivSpaceControls[btnRoomMode]
     if btn then btn.EventHandler = nil end
 end
 
@@ -240,27 +260,27 @@ function setcompDivSpaceControls()
     if not ok or not comp then
         debugMsg("DivisibleSpaceControls not found (feature disabled)")
         compDivSpaceControls = nil
-        roomState = false
+        stateCombined = false
         return
     end
 
     compDivSpaceControls = comp
     debugMsg("DivisibleSpaceControls connected")
 
-    local btnRoomMode = comp[divRmStateBtn]
-    if btnRoomMode then
-        btnRoomMode.EventHandler = function(ctl)
-            roomState = not ctl.Boolean
-            debugMsg("Room state -> " .. (roomState and "Combined" or "Separated"))
+    local btnMode = comp[btnRoomMode]
+    if btnMode then
+        btnMode.EventHandler = function(ctl)
+            stateCombined = not ctl.Boolean
+            debugMsg("Room state -> " .. (stateCombined and "Combined" or "Separated"))
             if not ctl.Boolean and compExtronMatrix then
                 syncRmBtoRmA(false)
-                debugMsg("Synced Output 2 to Output 1 after combine")
+                debugMsg("Synced Room B outputs (3–4) to Room A (1–2) after combine")
             end
         end
-        roomState = not btnRoomMode.Boolean
-        debugMsg("Initial room state: " .. (roomState and "Combined" or "Separated"))
+        stateCombined = not btnMode.Boolean
+        debugMsg("Initial room state: " .. (stateCombined and "Combined" or "Separated"))
     else
-        debugMsg("Warning: " .. divRmStateBtn .. " not found")
+        debugMsg("Warning: " .. btnRoomMode .. " not found")
     end
 end
 
@@ -286,11 +306,15 @@ function funcInit()
     setcompDivSpaceControls()
 
     if compExtronMatrix then
-        setRoute(1, 1, "Init", false)
-        if roomState then
+        for _, out in ipairs(outputsRoomA) do
+            setRoute(1, out, "Init", false)
+        end
+        if stateCombined then
             syncRmBtoRmA(false)
         else
-            setRoute(1, 2, "Init", false)
+            for _, out in ipairs(outputsRoomB) do
+                setRoute(1, out, "Init", false)
+            end
         end
     end
 
