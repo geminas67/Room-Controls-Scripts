@@ -34,7 +34,7 @@ kLayer = {
     Passcode        = 13,
 }
 -- Pages the user reaches with btnNavXX (XX = kLayer index). All other kLayer entries are system states.
-navLayers = {
+layerNav = {
     kLayer.Utilities, kLayer.PC, kLayer.Laptop, kLayer.Wireless,
     kLayer.Routing, kLayer.Dialer, kLayer.StreamMusic,
 }
@@ -136,7 +136,7 @@ layerConfig = {
 }
 
 labelConfig = {
-    {suffix = "Nav", indices = navLayers},
+    {suffix = "Nav", indices = layerNav},
     {single = {"NavShutdown","RoomNameNav","RoomNameStart","RoutingRooms","RoutingSources"}},
     {suffix = "Routing", count = 5},
     {suffix = "GainPGM"},
@@ -153,8 +153,8 @@ compPasscode = nil   -- passcode<Room> block; nil = passcode disabled
 kLayerName = {}
 for name, idx in pairs(kLayer) do kLayerName[idx] = name end
 
-btnNav = {} -- keyed by kLayer index; only user-navigable pages (navLayers)
-for _, idx in ipairs(navLayers) do btnNav[idx] = Controls[string.format("btnNav%02d", idx)] end
+btnNav = {} -- keyed by kLayer index; only user-navigable pages (layerNav)
+for _, idx in ipairs(layerNav) do btnNav[idx] = Controls[string.format("btnNav%02d", idx)] end
 
 btnRouting = {}
 for i = 1, #routingLayers do btnRouting[i] = Controls[string.format("btnRouting%02d", i)] end
@@ -216,7 +216,7 @@ function validateControls()
         "ledACPRBypassActive","ledAlarm","ledIncomingCall",
         "btnHelpOpen","btnHelpClose","txtHelpTitle","txtHelpHeading","txtHelpBody","txtHDMIDisc",
     }
-    for _, idx in ipairs(navLayers) do table.insert(required, string.format("btnNav%02d", idx)) end
+    for _, idx in ipairs(layerNav) do table.insert(required, string.format("btnNav%02d", idx)) end
     for key, def in pairs(configSource) do
         if def.keyHDMI then table.insert(required, def.keyHDMI) end
         if def.keyUSB then table.insert(required, def.keyUSB) end
@@ -283,12 +283,12 @@ function want(desired, names, visible)
     end
 end
 
-function applyDesired(desired, force)
+function applyDesired(desired)
     for name, wantVis in pairs(desired) do
         local visOk, current = pcall(Uci.GetLayerVisibility, pageUCI, name)
         if not visOk then
             print("Layer '"..name.."' not on page: "..tostring(current).." (see validateLayers at init)")
-        elseif force or current ~= wantVis then
+        elseif current ~= wantVis then
             local ok, err = pcall(Uci.SetLayerVisibility, pageUCI, name, wantVis, wantVis and "fade" or "none")
             if ok then debugPrint("Layer '"..name.."' set to "..tostring(wantVis))
             else print("Layer '"..name.."' error: "..tostring(err)) end
@@ -384,8 +384,8 @@ function buildDesired()
     return desired
 end
 
-function refreshLayers(force)
-    applyDesired(buildDesired(), force)
+function refreshLayers()
+    applyDesired(buildDesired())
 end
 
 function setHelpOpen(isOpen)
@@ -652,7 +652,6 @@ function funcInit()
     if not initRoomControls() then print("ERROR: Room controls unavailable — power actions disabled") end
     initPasscode()
     initSyncFromRoomControls()
-    refreshLayers(true) -- force full push; GetLayerVisibility may be stale after a Core reboot
     interlockNav()
     interlockRouting()
     print("✓ UCIController initialized for "..pageUCI)
