@@ -56,12 +56,17 @@ end
 -------------------[ Visibility ]-------------------
 
 function setLayer(name, visible)
-  local ok, current = pcall(Uci.GetLayerVisibility, uciName, pageMain, name)
-  if not ok then print("Layer '"..name.."' not on page: "..tostring(current)) return end
+  local ok, current = pcall( Uci.GetLayerVisibility, uciName, pageMain, name )
+  if not ok then print("Cannot read layer '"..name.."': "..tostring(current)) return end
   if current == visible then return end
-  local okSet, err = pcall(Uci.SetLayerVisibility, uciName, pageMain, name, visible, visible and "fade" or "none")
-  if okSet then debugPrint("Layer '"..name.."' → "..tostring(visible))
-  else print("Layer '"..name.."' error: "..tostring(err)) end
+  local okSet, err = pcall( Uci.SetLayerVisibility, uciName, pageMain, name, visible, visible and "fade" or "none" )
+  if not okSet then print("Cannot set layer '"..name.."': "..tostring(err)) return end
+  debugPrint("Layer '"..name.."' → "..tostring(visible))
+end
+
+function refreshLayers()
+  for _, name in ipairs(layerBase) do setLayer(name, true) end
+  for i, name in ipairs(layerNav) do setLayer(name, i == state.activeLayer) end
 end
 
 ----[ Navigation ]----
@@ -73,12 +78,12 @@ function interlockNav()
 end
 
 function goToLayer(layerIndex, source)
+  if layerIndex ~= kLayer.None and not layerNav[layerIndex] then print("Invalid navigation index: "..tostring(layerIndex)) return end
   local prev = state.activeLayer
   state.activeLayer = layerIndex
-  for _, name in ipairs(layerBase) do setLayer(name, true) end
-  for i, name in ipairs(layerNav) do setLayer(name, i == layerIndex) end
   interlockNav()
-  debugPrint("Layer "..(layerNav[prev] or "None").." → "..(layerNav[layerIndex] or "None").." (Source: "..(source or "Navigation")..")")
+  refreshLayers()
+  debugPrint( "Layer "..(layerNav[prev] or "None").." → "..(layerNav[layerIndex] or "None").." (Source: "..(source or "Navigation")..")" )
 end
 
 function setPage(pageName, source)
