@@ -139,7 +139,7 @@ end
 
 -------------------[ LEDs ]-------------------
 
-function setMXALEDs(ledOn)
+function setLEDBrightness(ledOn)
   local value = ledOn and ledBrightness or ledOff
   for _, device in pairs(compMicMXA) do
     if device and device["BrightnessLevel"] then
@@ -148,7 +148,7 @@ function setMXALEDs(ledOn)
   end
 end
 
-function setMXALEDsColor(color)
+function setLEDUnmuteColor(color)
   for _, device in pairs(compMicMXA) do
     if device and device["LedUnmuteColor"] then
       device["LedUnmuteColor"].String = color
@@ -157,53 +157,53 @@ function setMXALEDsColor(color)
 end
 
 function isCallOffHook()
-  return compCallSync and compCallSync["off.hook"] and compCallSync["off.hook"].Boolean
+  return compCallSync and compCallSync["off.hook"] and compCallSync["off.hook"].Boolean or false
 end
 
-function getCallMuteState()
+function isCallMuted()
   return compCallSync and compCallSync["mute"] and compCallSync["mute"].Boolean or false
 end
 
-function setLEDColor(privacyState)
+function setLEDPrivacyColor(privacyState)
   local color = privacyState and ledRed or ledGreen
-  setMXALEDsColor(color)
+  setLEDUnmuteColor(color)
 end
 
 function setFireAlarm(active)
   fireAlarm = active
   if active then
     timerLEDToggle:Start(ledToggleInterval)
-    setLEDColor(true)
-    setMXALEDs(false)
+    setLEDPrivacyColor(true)
+    setLEDBrightness(false)
     return
   end
 
   timerLEDToggle:Stop()
   if not compCallSync or not compCallSync["off.hook"] then return end
   local offHook = compCallSync["off.hook"].Boolean
-  setLEDColor(not offHook)
-  setMXALEDs(offHook)
+  setLEDPrivacyColor(not offHook)
+  setLEDBrightness(offHook)
 end
 
 function reconcileHookMuteState()
   if isCallOffHook() then
-    setLEDColor(getCallMuteState())
+    setLEDPrivacyColor(isCallMuted())
   end
 end
 
 function setHookState(offHook)
   if offHook then
-    setMXALEDs(true)
-    setLEDColor(false)
+    setLEDBrightness(true)
+    setLEDPrivacyColor(false)
     Timer.CallAfter(reconcileHookMuteState, hookSyncDelay)
   else
-    setMXALEDs(false)
-    setLEDColor(true)
+    setLEDBrightness(false)
+    setLEDPrivacyColor(true)
   end
 end
 
 function setMuteState(muteState)
-  setLEDColor(muteState)
+  setLEDPrivacyColor(muteState)
 end
 
 -------------------[ Components ]-------------------
@@ -233,8 +233,8 @@ function setcompRoomControls()
   if compRoomControls.ledSystemPower then
     compRoomControls.ledSystemPower.EventHandler = function(ctl)
       if not ctl.Boolean then
-        setLEDColor(true)
-        setMXALEDs(false)
+        setLEDPrivacyColor(true)
+        setLEDBrightness(false)
         debugMsg("System power OFF")
       else
         debugMsg("System power ON")
@@ -266,7 +266,7 @@ end
 
 timerLEDToggle.EventHandler = function()
   ledState = not ledState
-  setMXALEDs(ledState)
+  setLEDBrightness(ledState)
 end
 
 if Controls.compRoomControls then
@@ -290,8 +290,8 @@ function funcInit()
   setcompCallSync()
   setcompRoomControls()
   setcompAllMXA()
-  setLEDColor(true)
-  setMXALEDs(false)
+  setLEDPrivacyColor(true)
+  setLEDBrightness(false)
 end
 
 funcInit()
