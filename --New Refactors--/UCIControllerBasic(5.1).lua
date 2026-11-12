@@ -17,7 +17,7 @@
 
 ----[ Configuration ]----
 -- NOTE: Remove uciName instances in setLayer() if used as UCI Script
-uciName   = "Training" -- used for debugPrint()
+uciName   = "Training"
 pageMain  = "Main"
 pageStart = "Start"
 
@@ -32,7 +32,6 @@ layerBase   = {"Base"}
 layerNav    = {"Cameras", "Microphones", "Projection"}
 
 compPinpad = Component.New("pinpadTraining")
-compExit   = Component.New("btnExit")
 compStatus = Component.New("statusTSC-101-G3")
 
 ----[ Constant Tables ]----
@@ -44,6 +43,8 @@ btnNav = Controls.btnNav
 stateDebug    = true
 layerDefault  = kLayer.None
 state = { activeLayer = layerDefault }
+
+timerInactivity = Timer.New()
 
 ----[ Functions ]----
 
@@ -86,34 +87,57 @@ function goToLayer(layerIndex, source)
   debugPrint( "Layer "..(layerNav[prev] or "None").." → "..(layerNav[layerIndex] or "None").." (Source: "..(source or "Navigation")..")" )
 end
 
-function setPage(pageName, source)
+function setPage(pageName, source, navIndex)
   compStatus["current.page"].String = pageName
-  goToLayer(layerDefault, source or "Page")
+  goToLayer(navIndex or layerDefault, source or "Page")
   debugPrint("Page → ["..pageName.."] (Source: "..(source or "Page")..")")
+  Timer.CallAfter(function() compPinpad['Logout'].Trigger() end, 1)
+end
+
+-------------------[ Room Controls ]-------------------
+
+function resetInactivityTimer()
+  timerInactivity:Stop()
+  if not Controls['ledTouchInactivity'].Boolean then
+    timerInactivity:Start(timeTouchInactivity)
+  end
+end
+
+function onTouchInactivityTimeout()
+  timerInactivity:Stop()
+  setPage(pageStart, 'Inactivity Timeout', kLayer.None)
 end
 
 ----[ Event Handlers ]----
 
-for i = 1, #btnNav do
-  btnNav[i].EventHandler = function()
-    goToLayer(i, "User Button")
+for i, btn in ipairs(btnNav) do
+  btn.EventHandler = function()
+      goToLayer(i, "btnNav")
   end
+end
+
+Controls['ledTouchInactivity'].EventHandler = function()
+  resetInactivityTimer()
+end
+
+timerInactivity.EventHandler = function()
+  onTouchInactivityTimeout()
 end
 
 compPinpad["pin.match.0"].EventHandler = function(ctl)
   if not ctl.Boolean then return end
-  setPage(pageMain, "Pin Matched")
+  setPage(pageMain, "Pin Matched", kLayer.Projection)
 end
 
-compExit["trigger.1"].EventHandler = function()
-  setPage(pageStart, "Exit")
+Controls["btnExit"].EventHandler = function()
+  setPage(pageStart, "Exit button pressed", kLayer.None)
 end
 
 ----[ Always Run ]----
 
 function funcInit()
   debugPrint("=== Initialization Started ===")
-  setPage(pageStart, "Init")
+  setPage(pageStart, "Init", kLayer.None)
   debugPrint("=== Initialization Complete ===")
 end
 

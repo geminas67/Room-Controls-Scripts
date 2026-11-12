@@ -30,7 +30,7 @@ stateDebug = true
 strClear = "[Clear]"
 roomName = "[Shure MXA Controller]"
 
-ledBrightness = 5
+ledOn = 5
 ledOff = 0
 ledRed = "Red"
 ledGreen = "Green"
@@ -139,8 +139,8 @@ end
 
 -------------------[ LEDs ]-------------------
 
-function setMXALEDs(ledOn)
-  local value = ledOn and ledBrightness or ledOff
+function setMXALEDs(ledBrightness)
+  local value = ledBrightness and ledBrightnes or ledOff
   for _, device in pairs(compMicMXA) do
     if device and device["BrightnessLevel"] then
       device["BrightnessLevel"].Value = value
