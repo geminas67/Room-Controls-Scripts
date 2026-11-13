@@ -32,7 +32,6 @@ layerBase   = {"Base"}
 layerNav    = {"Cameras", "Microphones", "Projection"}
 
 compPinpad = Component.New("pinpadTraining")
-compExit   = Component.New("btnExit")
 compStatus = Component.New("statusTSC-101-G3")
 
 ----[ Constant Tables ]----
@@ -44,6 +43,9 @@ btnNav = Controls.btnNav
 stateDebug    = true
 layerDefault  = kLayer.None
 state = { activeLayer = layerDefault }
+
+timerInactivity = Timer.New()
+timeTouchInactivity = 120 -- seconds
 
 ----[ Functions ]----
 
@@ -67,42 +69,71 @@ end
 ----[ Navigation ]----
 
 function interlockNav()
-  for i = 1, #btnNav do
-    btnNav[i].Boolean = (i == state.activeLayer)
+  for idx,btn in ipairs(btnNav) do
+    btn.Boolean = (idx == state.activeLayer)
   end
+end
+
+function refreshLayers()
+  for _, name in ipairs(layerBase) do setLayer(name, true) end
+  for i, name in ipairs(layerNav) do setLayer(name, i == state.activeLayer) end
 end
 
 function goToLayer(layerIndex, source)
   local prev = state.activeLayer
   state.activeLayer = layerIndex
-  for _, name in ipairs(layerBase) do setLayer(name, true) end
-  for i, name in ipairs(layerNav) do setLayer(name, i == layerIndex) end
   interlockNav()
+  refreshLayers()
   debugPrint("Layer "..(layerNav[prev] or "None").." → "..(layerNav[layerIndex] or "None").." (Source: "..(source or "Navigation")..")")
 end
 
-function setPage(pageName, source)
+function setPage(pageName, source, navIndex)
   compStatus["current.page"].String = pageName
-  goToLayer(layerDefault, source or "Page")
+  goToLayer(navIndex or layerDefault, source or "Page")
   debugPrint("Page → ["..pageName.."] (Source: "..(source or "Page")..")")
+  Timer.CallAfter( function()
+    compPinpad['logout']:Trigger()
+    debugPrint("Logout triggered")
+  end, 1)
+end
+
+-------------------[ Room Controls ]-------------------
+
+function resetTouchInactivityTimer()
+  timerInactivity.Stop()
+  if not Controls['ledTouchActivity'].Boolean then
+    timerInactivity.Start(timeTouchInactivity)
+  end
+end
+
+function onTouchInactivityTimeout()
+  timerInactivity.Stop()
+  setPage(pageStart, "Inactivity Timeout", layerDefault)
+  debugPrint("Inactivity Timeout")
 end
 
 ----[ Event Handlers ]----
 
-for i = 1, #btnNav do
-  btnNav[i].EventHandler = function()
-    goToLayer(i, "User Button")
+for idx,btn in ipairs(btnNav) do
+  btn.EventHandler = function()
+    goToLayer(idx, "User Button")
   end
 end
 
 compPinpad["pin.match.0"].EventHandler = function(ctl)
   if not ctl.Boolean then return end
-  setPage(pageMain, "Pin Matched")
+  setPage(pageMain, "Pin Matched", kLayer.Projection)
 end
 
-compExit["trigger.1"].EventHandler = function()
-  setPage(pageStart, "Exit")
+Controls['btnExit'].EventHandler = function()
+  setPage(pageStart, "Exit", layerDefault)
 end
+
+Controls['ledTouchActivity'].EventHandler = function()
+  resetTouchInactivityTimer()
+end
+
+timerInactivity.EventHandler = onTouchInactivityTimeout
 
 ----[ Always Run ]----
 
