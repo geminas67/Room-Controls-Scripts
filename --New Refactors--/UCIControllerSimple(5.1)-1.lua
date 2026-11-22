@@ -36,12 +36,11 @@ layerConfig = {
 }
 
 compPinpad = Component.New("pinpadTraining")
-compExit   = Component.New("btnExit")
 compStatus = Component.New("statusTSC-101-G3")
 
 ----[ Constant Tables ]----
 
-btnNav = Controls.btnNav
+btnNav = Controls['btnNav']
 
 ----[ Constants ]----
 
@@ -112,27 +111,27 @@ function goToLayer(layerIndex, source)
   debugPrint("Layer "..(kLayerName[prev] or prev).." → "..(kLayerName[layerIndex] or layerIndex).." (Source: "..source..")")
 end
 
-function setPage(pageName, source)
+function setPage(pageName, source, navIndex)
   compStatus["current.page"].String = pageName
-  goToLayer(layerDefault, source)
+  goToLayer(navIndex or layerDefault, source or "Page")
   debugPrint("Page → ["..pageName.."] (Source: "..(source or "Page")..")")
 end
 
 ----[ Event Handlers ]----
 
-for i = 1, #btnNav do
-  btnNav[i].EventHandler = function()
-    goToLayer(i, "User Button")
+for idx,btn in ipairs(btnNav) do
+  btn.EventHandler = function()
+    goToLayer(idx, "btnNav press")
   end
 end
 
 compPinpad["pin.match.0"].EventHandler = function(ctl)
   if not ctl.Boolean then return end
-  setPage(pageMain, "Pin Matched")
+  setPage(pageMain, "Pin Matched", kLayer.Projection)
 end
 
-compExit["trigger.1"].EventHandler = function()
-  setPage(pageStart, "Exit")
+Controls['btnExit'].EventHandler = function()
+  setPage(pageStart, "btnExit press", layerDefault)
 end
 
 ----[ Always Run ]----
