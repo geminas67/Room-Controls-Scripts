@@ -44,6 +44,7 @@ layerNav = {
     kLayer.Routing, kLayer.Dialer, kLayer.StreamMusic, kLayer.RoomCombining,
 }
 
+-- Applies only to configSource entries with conf: defer conference (and HID/USB-disc path) until USB is up.
 configSkip = { skip = { [kLayer.LaptopA] = true, [kLayer.LaptopB] = true, [kLayer.WirelessA] = true, [kLayer.WirelessB] = true } }
 configACPR = { disableACPRShow = false }
 
@@ -431,6 +432,12 @@ function usbConnected(keySource)
     return def.keyUSB and Controls[def.keyUSB].Boolean
 end
 
+function showConferenceLayer(def, usb)
+    if not def.conf then return false end
+    if configSkip.skip[def.layer] then return usb end
+    return true
+end
+
 -- Help is evaluated by the page that owns it: closed → I02-HelpBtn, open → I02-Help with that key's copy.
 function applyHelp(desired, keyHelp, isSource)
     local copy = helpCopy[keyHelp]
@@ -457,28 +464,30 @@ function applySourceOverlay(desired, keySource, roomState)
         return
     end
 
-    if def.keyUSB and not usbConnected(keySource) then
-        want(desired, "I04-USBDisc", true)
-        Controls.txtUSBDisc.String = discTextUSB[keySource] or ""
-        return
-    end
-
     local usb = usbConnected(keySource)
     local isCombined = (roomState ~= "divided")
     local mode = isCombined and "combined" or "divided"
     want(desired, def.base, true)
-    if isCombined then want(desired, def.camera, true) end
 
-    if not configSkip.skip[def.layer] or usb then
-        want(desired, def.conf, true)
+    if def.conf then
+        if isCombined then want(desired, def.camera, true) end
+
+        if showConferenceLayer(def, usb) then
+            want(desired, def.conf, true)
+        end
+
+        if def.keyUSB and not usb then
+            want(desired, "I04-USBDisc", true)
+            Controls.txtUSBDisc.String = discTextUSB[keySource] or ""
+        end
+
+        if usb then
+            if def.hidPrivDiv then want(desired, isCombined and def.hidPrivComb or def.hidPrivDiv, true) end
+            if not configACPR.disableACPRShow then want(desired, layerACPRBtn[mode], true) end
+        end
     end
 
-    if usb then
-        if def.hidPrivDiv then want(desired, isCombined and def.hidPrivComb or def.hidPrivDiv, true) end
-        if not configACPR.disableACPRShow then want(desired, layerACPRBtn[mode], true) end
-    end
-
-    if not configACPR.disableACPRShow then
+    if def.conf and not configACPR.disableACPRShow then
         local bypass = isCombined and Controls.ledACPRBypassCombine or Controls.ledACPRBypassDivide
         if not bypass.Boolean then want(desired, layerACPR[mode], true) end
     end

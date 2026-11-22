@@ -36,7 +36,7 @@ compStatus = Component.New("statusTSC-101-G3")
 
 ----[ Constant Tables ]----
 
-btnNav = Controls.btnNav
+btnNav = Controls['btnNav']
 
 ----[ Constants ]----
 
@@ -101,7 +101,7 @@ end
 
 function resetTouchInactivityTimer()
   timerInactivity.Stop()
-  if not Controls['ledTouchActivity'].Boolean then
+  if not Controls['ledTouchInactivity'].Boolean then
     timerInactivity.Start(timeTouchInactivity)
   end
 end
@@ -116,7 +116,7 @@ end
 
 for idx,btn in ipairs(btnNav) do
   btn.EventHandler = function()
-    goToLayer(idx, "User Button")
+    goToLayer(idx, "btnNav press")
   end
 end
 
@@ -126,10 +126,10 @@ compPinpad["pin.match.0"].EventHandler = function(ctl)
 end
 
 Controls['btnExit'].EventHandler = function()
-  setPage(pageStart, "Exit", layerDefault)
+  setPage(pageStart, "btnExit press", layerDefault)
 end
 
-Controls['ledTouchActivity'].EventHandler = function()
+Controls['ledTouchInactivity'].EventHandler = function()
   resetTouchInactivityTimer()
 end
 

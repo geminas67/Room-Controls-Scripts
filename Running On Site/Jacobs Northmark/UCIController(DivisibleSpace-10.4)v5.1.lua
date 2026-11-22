@@ -1,12 +1,12 @@
 --[[
   UCI Controller (DivisibleSpace) - Q-SYS Control Script
   Author: Nikolas Smith, Q-SYS
-  Version: 5.1 | Date: 2026-10-24
+  Version: 5.2 | Date: 2026-11-16
   Firmware Req: 10.4 (GetLayerVisibility per layer in applyDesired)
 
   Divisible-space UCI. buildDesired → applyDesired; event-driven power progress from room controls.
 
-  Popup copy in Lua: helpCopy (title/heading/body per help key), discTextHDMI, discTextUSB, legendStart.
+  Popup copy in Lua: helpCopy (title/heading/body per help key), sourceLabel + discText (HDMI/USB), legendStart.
   Help: one btnHelpOpen (I02-HelpBtn) + one btnHelpClose (I02-Help); copy chosen by the active page's help key
   (layerConfig keySource or keyHelp). I02-Help (txtHelpTitle, txtHelpHeading, txtHelpBody),
   I03-HDMIDisc (txtHDMIDisc), I04-USBDisc (txtUSBDisc).
@@ -44,7 +44,6 @@ layerNav = {
     kLayer.Routing, kLayer.Dialer, kLayer.StreamMusic, kLayer.RoomCombining,
 }
 
-configSkip = { skip = { [kLayer.LaptopA] = true, [kLayer.LaptopB] = true, [kLayer.WirelessA] = true, [kLayer.WirelessB] = true } }
 configACPR = { disableACPRShow = false }
 
 layerACPR       = { combined = "J06-ACPRActiveCombine", divided = "J07-ACPRActiveDivide" }
@@ -66,25 +65,25 @@ layersToHide = {
     "P01-PCA", "P02-PCB",
     "W01-WirelessA","W02-WirelessB","R10-Routing","S10-StreamMusic","V05-Dialer",
 }
-
+confHelpBody = "Auto Camera Preset Recall (ACPR) is enabled by default when a call is active, keeping the cameras positioned automatically.\n\nDisable it using the ACPR toggle to manually pan, tilt, zoom, or save new presets.\n\n\nUse the Directional Pad and the Zoom ( + ) and Zoom ( - ) buttons to adjust the camera image.\n\nPress a Preset button to have the camera move to a preset location (Recall).\n\nPress and Hold a Preset button to (Save) a new location to the selected preset button"
 -- Keyed by layerConfig keySource / keyHelp. Pages without a key show no help button.
 helpCopy = {
     LaptopA     = { 
         title = "Help Laptop Conferencing", 
         heading = "Please make sure the following devices are selected in the Laptop A's conference settings:\n\nCamera: Laptop A USB\nSpeaker: Laptop A USB\nMicrophone: Laptop A USB",
-        body = "Auto Camera Preset Recall (ACPR) is enabled by default when a call is active, keeping the cameras positioned automatically.\n\nDisable it using the ACPR toggle to manually pan, tilt, zoom, or save new presets.\n\n\nUse the Directional Pad and the Zoom ( + ) and Zoom ( - ) buttons to adjust the camera image.\n\nPress a Preset button to have the camera move to a preset location (Recall).\n\nPress and Hold a Preset button to (Save) a new location to the selected preset button" },
+        body = confHelpBody },
     LaptopB     = { 
         title = "Help Laptop Conferencing", 
         heading = "Please make sure the following devices are selected in the Laptop B's conference settings:\n\nCamera: Laptop B USB\nSpeaker: Laptop B USB\nMicrophone: Laptop B USB",
-        body = "Auto Camera Preset Recall (ACPR) is enabled by default when a call is active, keeping the cameras positioned automatically.\n\nDisable it using the ACPR toggle to manually pan, tilt, zoom, or save new presets.\n\n\nUse the Directional Pad and the Zoom ( + ) and Zoom ( - ) buttons to adjust the camera image.\n\nPress a Preset button to have the camera move to a preset location (Recall).\n\nPress and Hold a Preset button to (Save) a new location to the selected preset button" },
+        body = confHelpBody },
     PCA         = { 
         title = "Help PC Conferencing", 
         heading = "Please make sure the following devices are selected in the PC's conference settings:\n\nCamera: PC A USB\nSpeaker: PC A USB\nMicrophone: PC A USB",
-        body = "Auto Camera Preset Recall (ACPR) is enabled by default when a call is active, keeping the cameras positioned automatically.\n\nDisable it using the ACPR toggle to manually pan, tilt, zoom, or save new presets.\n\n\nUse the Directional Pad and the Zoom ( + ) and Zoom ( - ) buttons to adjust the camera image.\n\nPress a Preset button to have the camera move to a preset location (Recall).\n\nPress and Hold a Preset button to (Save) a new location to the selected preset button" },
+        body = confHelpBody },
     PCB         = { 
         title = "Help PC Conferencing", 
         heading = "Please make sure the following devices are selected in the PC B's conference settings:\n\nCamera: PC B USB\nSpeaker: PC B USB\nMicrophone: PC B USB",
-        body = "Auto Camera Preset Recall (ACPR) is enabled by default when a call is active, keeping the cameras positioned automatically.\n\nDisable it using the ACPR toggle to manually pan, tilt, zoom, or save new presets.\n\n\nUse the Directional Pad and the Zoom ( + ) and Zoom ( - ) buttons to adjust the camera image.\n\nPress a Preset button to have the camera move to a preset location (Recall).\n\nPress and Hold a Preset button to (Save) a new location to the selected preset button" },
+        body = confHelpBody },
     WirelessA    = { 
         title = "Help Wireless", 
         heading = "Wireless A",     
@@ -103,33 +102,25 @@ helpCopy = {
         body = "" },
 }
 
-discTextHDMI = {
-    LaptopA = "Please connect the HDMI cable to Laptop A to present to the display",
-    LaptopB = "Please connect the HDMI cable to Laptop B to present to the display",
-    PCA     = "Please connect the HDMI cable to PC A to present to the display",
-    PCB     = "Please connect the HDMI cable to PC B to present to the display",
-    WirelessA = "Please connect the HDMI cable to the Wireless A device to present to the display",
-    WirelessB = "Please connect the HDMI cable to the Wireless B device to present to the display",
+-- Disconnect popup copy: sourceLabel[key] is inserted into discText.hdmi / discText.usb
+sourceLabel = {
+    LaptopA = "Laptop A", LaptopB = "Laptop B", PCA = "PC A", PCB = "PC B",
+    WirelessA = "the Wireless A device", WirelessB = "the Wireless B device",
 }
-
-discTextUSB = {
-    LaptopA   = "Please connect the USB cable to Laptop A to use the room camera, microphone, and speaker",
-    LaptopB   = "Please connect the USB cable to Laptop B to use the room camera, microphone, and speaker",
-    PCA       = "Please connect the USB cable to PC A to use the room camera, microphone, and speaker",
-    PCB       = "Please connect the USB cable to PC B to use the room camera, microphone, and speaker",
-    WirelessA = "Please connect the USB cable to the Wireless A device to use the room camera, microphone, and speaker",
-    WirelessB = "Please connect the USB cable to the Wireless B device to use the room camera, microphone, and speaker",
+discText = {
+    hdmi = "Please connect the HDMI cable to %s to present to the display",
+    usb  = "Please connect the USB cable to %s to use the room camera, microphone, and speaker",
 }
-
 -- keyHDMI and keyUSB drive validateControls() so control names don't drift
+-- confNeedsUSB = true: conference layer (and its camera/ACPR) waits for USB; PCs show conference on HDMI alone
 configSource = {
     LaptopA = {
-        layer = kLayer.LaptopA, keyHDMI = "ledHDMILaptopA", keyUSB = "ledUSBLaptopA",
-        base = "L01-LaptopA", conf = "J21-ConferenceLaptopA", camera = "J11-CamSelectLaptopA",
+        layer = kLayer.LaptopA, keyHDMI = "ledHDMILaptopA", base = "L01-LaptopA",
+        -- keyUSB = "ledUSBLaptopA", conf = "J21-ConferenceLaptopA", camera = "J11-CamSelectLaptopA", confNeedsUSB = true,
     },
     LaptopB = {
-        layer = kLayer.LaptopB, keyHDMI = "ledHDMILaptopB", keyUSB = "ledUSBLaptopB",
-        base = "L02-LaptopB", conf = "J22-ConferenceLaptopB", camera = "J12-CamSelectLaptopB",
+        layer = kLayer.LaptopB, keyHDMI = "ledHDMILaptopB", base = "L02-LaptopB",
+        -- keyUSB = "ledUSBLaptopB", conf = "J22-ConferenceLaptopB", camera = "J12-CamSelectLaptopB", confNeedsUSB = true,
     },
     PCA = {
         layer = kLayer.PCA, keyHDMI = "ledHDMIPCA", keyUSB = "ledUSBPCA",
@@ -143,11 +134,11 @@ configSource = {
     },
     -- WirelessA = {
     --     layer = kLayer.WirelessA, keyHDMI = "ledHDMIWirelessA", keyUSB = "ledUSBWirelessA",
-    --     base = "W01-WirelessA", conf = "J25-ConferenceWirelessA", camera = "J15-CamSelectWirelessA",
+    --     base = "W01-WirelessA", conf = "J25-ConferenceWirelessA", camera = "J15-CamSelectWirelessA", confNeedsUSB = true,
     -- },
     -- WirelessB = {
     --     layer = kLayer.WirelessB, keyHDMI = "ledHDMIWirelessB", keyUSB = "ledUSBWirelessB",
-    --     base = "W02-WirelessB", conf = "J26-ConferenceWirelessB", camera = "J16-CamSelectWirelessB",
+    --     base = "W02-WirelessB", conf = "J26-ConferenceWirelessB", camera = "J16-CamSelectWirelessB", confNeedsUSB = true,
     -- },
 }
 
@@ -236,10 +227,8 @@ end
 stateDebug = true
 layerDefault = tonumber(Uci.Variables.layerDefault and Uci.Variables.layerDefault.Value) or 7
 legendStart = { divided = "Start Room", combined = "Start Rooms Combined" }
-legendNavSource = {
-    divided  = { [7] = "Teams PC", [8] = "Teams PC", [9] = "Laptop", [10] = "Laptop", [11] = "Wireless", [12] = "Wireless" },
-    combined = { [7] = "Teams PC A", [8] = "Teams PC B", [9] = "Laptop A", [10] = "Laptop B", [11] = "Wireless A", [12] = "Wireless B" },
-}
+-- Combined legends; divided drops the trailing " A"/" B"
+legendNavSource = { [7] = "Teams PC A", [8] = "Teams PC B", [9] = "Laptop A", [10] = "Laptop B", [11] = "Wireless A", [12] = "Wireless B" }
 
 state = {
     activeLayer = kLayer.Start,
@@ -384,8 +373,8 @@ function updateRoomUI(roomState)
     local mode = roomState == "divided" and "divided" or "combined"
     local isDivided = mode == "divided"
     Controls.btnStartSystem.Legend = legendStart[mode]
-    for i, legend in pairs(legendNavSource[mode]) do
-      if txtNav[i] then txtNav[i].String = legend end
+    for i, legend in pairs(legendNavSource) do
+      if txtNav[i] then txtNav[i].String = isDivided and legend:gsub(" [AB]$", "") or legend end
     end
     for _, i in ipairs(sideHiddenNav[roomSide] or {}) do
       if btnNav[i] then btnNav[i].IsInvisible = isDivided end
@@ -453,34 +442,29 @@ function applySourceOverlay(desired, keySource, roomState)
     local def = configSource[keySource]
     if not hdmiConnected(keySource) then
         want(desired, "I03-HDMIDisc", true)
-        Controls.txtHDMIDisc.String = discTextHDMI[keySource] or ""
+        Controls.txtHDMIDisc.String = discText.hdmi:format(sourceLabel[keySource] or keySource)
         return
     end
-
-    if def.keyUSB and not usbConnected(keySource) then
-        want(desired, "I04-USBDisc", true)
-        Controls.txtUSBDisc.String = discTextUSB[keySource] or ""
-        return
-    end
-
-    local usb = usbConnected(keySource)
+    local usb        = usbConnected(keySource)
     local isCombined = (roomState ~= "divided")
-    local mode = isCombined and "combined" or "divided"
+    local mode       = isCombined and "combined" or "divided"
+    local acprOn     = not configACPR.disableACPRShow
     want(desired, def.base, true)
-    if isCombined then want(desired, def.camera, true) end
 
-    if not configSkip.skip[def.layer] or usb then
+    if def.keyUSB and not usb then
+        want(desired, "I04-USBDisc", true)
+        Controls.txtUSBDisc.String = discText.usb:format(sourceLabel[keySource] or keySource)
+    end
+
+    if def.conf and (usb or not def.confNeedsUSB) then -- single conference gate
         want(desired, def.conf, true)
-    end
-
-    if usb then
-        if def.hidPrivDiv then want(desired, isCombined and def.hidPrivComb or def.hidPrivDiv, true) end
-        if not configACPR.disableACPRShow then want(desired, layerACPRBtn[mode], true) end
-    end
-
-    if not configACPR.disableACPRShow then
+        if isCombined then want(desired, def.camera, true) end
+        if usb then
+            if def.hidPrivDiv then want(desired, isCombined and def.hidPrivComb or def.hidPrivDiv, true) end
+            if acprOn then want(desired, layerACPRBtn[mode], true) end
+        end
         local bypass = isCombined and Controls.ledACPRBypassCombine or Controls.ledACPRBypassDivide
-        if not bypass.Boolean then want(desired, layerACPR[mode], true) end
+        if acprOn and not bypass.Boolean then want(desired, layerACPR[mode], true) end
     end
 
     applyHelp(desired, keySource, true) -- last: open help hides conf/USB

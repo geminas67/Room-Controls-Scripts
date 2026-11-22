@@ -1,14 +1,15 @@
 --[[
   UCI Controller (Lean) - Q-SYS Control Script
   Author: Nikolas Smith, Q-SYS
-  Version: 5.1 | Date: 2026-10-24
+  Version: 5.2 | Date: 2026-11-16
   Firmware Req: 10.4 (GetLayerVisibility per layer in applyDesired)
 
   Single-room UCI. buildDesired → applyDesired; event-driven power progress from room controls.
 
-  Popup copy in Lua: helpCopy (title/heading/body per help key), discTextHDMI.
+  Popup copy in Lua: helpCopy (title/heading/body per help key), sourceLabel + discText (HDMI/USB).
   Help: one btnHelpOpen (I02-HelpBtn) + one btnHelpClose (I02-Help); copy chosen by the active page's help key
-  (layerConfig keySource or keyHelp). I02-Help (txtHelpTitle, txtHelpHeading, txtHelpBody), L00-HDMIDisc (txtHDMIDisc).
+  (layerConfig keySource or keyHelp). I02-Help (txtHelpTitle, txtHelpHeading, txtHelpBody),
+  I03-HDMIDisc (txtHDMIDisc), I04-USBDisc (txtUSBDisc).
 ]]--
 
 -------------------[ Configuration ]-------------------
@@ -39,8 +40,6 @@ layerNav = {
     kLayer.Routing, kLayer.Dialer, kLayer.StreamMusic,
 }
 
--- Wireless: conference layers follow nav; J01/J02 overlay when USB disconnected on PC/Laptop
-configSkip = { skip = { [kLayer.Wireless] = true } }
 configACPR = { disableACPRShow = false }
 
 layersBase = {"X01-ProgramVolume", "Y01-Navbar", "Z01-Base"}
@@ -56,16 +55,17 @@ layersToHide = {
 }
 routingLayers = {"R01-Routing01","R02-Routing02","R03-Routing03","R04-Routing04","R05-Routing05"}
 
+confHelpBody = "Auto Camera Preset Recall (ACPR) is enabled by default when a call is active, keeping the cameras positioned automatically.\n\nDisable it using the ACPR toggle to manually pan, tilt, zoom, or save new presets.\n\n\nUse the Directional Pad and the Zoom ( + ) and Zoom ( - ) buttons to adjust the camera image.\n\nPress a Preset button to have the camera move to a preset location (Recall).\n\nPress and Hold a Preset button to (Save) a new location to the selected preset button"
 -- Keyed by layerConfig keySource / keyHelp. Pages without a key show no help button.
 helpCopy = {
     PC          = {
         title = "Help PC Conferencing",
-        heading = "Auto Camera Preset Recall (ACPR) is enabled by default when a call is active, keeping the cameras positioned automatically.\nDisable it using the ACPR toggle to manually pan, tilt, zoom, or save new presets.\n\nPlease make sure the following devices are selected in the PC's conference settings:\n\nCamera: PC USB\nSpeaker: PC USB\nMicrophone: PC USB",
-        body = "Use the Directional Pad and the Zoom ( + ) and Zoom ( - ) buttons to adjust the camera image.\n\nPress a Preset button to have the camera move to a preset location (Recall).\n\nPress and Hold a Preset button to (Save) a new location to the selected preset button" },
+        heading = "Please make sure the following devices are selected in the PC's conference settings:\n\nCamera: PC USB\nSpeaker: PC USB\nMicrophone: PC USB",
+        body = confHelpBody },
     Laptop      = {
         title = "Help Laptop Conferencing",
-        heading = "Auto Camera Preset Recall (ACPR) is enabled by default when a call is active, keeping the cameras positioned automatically.\nDisable it using the ACPR toggle to manually pan, tilt, zoom, or save new presets.\n\nPlease make sure the following devices are selected in the Laptop's conference settings:\n\nCamera: Laptop USB\nSpeaker: Laptop USB\nMicrophone: Laptop USB",
-        body = "Use the Directional Pad and the Zoom ( + ) and Zoom ( - ) buttons to adjust the camera image.\n\nPress a Preset button to have the camera move to a preset location (Recall).\n\nPress and Hold a Preset button to (Save) a new location to the selected preset button" },
+        heading = "Please make sure the following devices are selected in the Laptop's conference settings:\n\nCamera: Laptop USB\nSpeaker: Laptop USB\nMicrophone: Laptop USB",
+        body = confHelpBody },
     Wireless    = {
         title = "Help Wireless",
         heading = "Wireless",
@@ -80,29 +80,26 @@ helpCopy = {
         body = "" },
 }
 
-discTextHDMI = {
-    PC       = "Please connect the HDMI cable to the PC to present to the display",
-    Laptop   = "Please connect the HDMI cable to the Laptop to present to the display",
-    Wireless = "Please connect the HDMI cable to the Wireless device to present to the display",
+-- Disconnect popup copy: sourceLabel[key] is inserted into discText.hdmi / discText.usb
+sourceLabel = { PC = "PC", Laptop = "Laptop", Wireless = "Wireless device" }
+discText = {
+    hdmi = "Please connect the HDMI cable to the %s to present to the display",
+    usb  = "Please connect the USB cable to the %s to use the room camera, microphone, and speaker",
 }
-discTextUSB = {
-    PC       = "Please connect the USB cable to the PC to use the room camera, microphone, and speaker",
-    Laptop   = "Please connect the USB cable to the Laptop to use the room camera, microphone, and speaker",
-    Wireless = "Please connect the USB cable to the Wireless device to use the room camera, microphone, and speaker",
-}
-
+-- keyHDMI and keyUSB drive validateControls() so control names don't drift
+-- conf present = conference + ACPR apply; add confNeedsUSB = true to hold them until USB is connected
 configSource = {
     PC = {
         layer = kLayer.PC, keyHDMI = "ledHDMI01", keyUSB = "ledUSB01",
-        base = "P05-PC", conf = "J11-Conference01", acpr = true,
+        base = "P05-PC", conf = "J11-Conference01",
     },
     Laptop = {
         layer = kLayer.Laptop, keyHDMI = "ledHDMI02", keyUSB = "ledUSB02",
-        base = "L05-Laptop", conf = "J12-Conference02", acpr = true,
+        base = "L05-Laptop", conf = "J12-Conference02",
     },
     Wireless = {
         layer = kLayer.Wireless, keyHDMI = "ledHDMI03",
-        base = "W05-Wireless", acpr = false,
+        base = "W05-Wireless",
     },
 }
 
@@ -214,7 +211,7 @@ function validateControls()
         "ledOffHook",
         "ledPresetSaved",
         "ledACPRBypassActive","ledAlarm","ledIncomingCall",
-        "btnHelpOpen","btnHelpClose","txtHelpTitle","txtHelpHeading","txtHelpBody","txtHDMIDisc",
+        "btnHelpOpen","btnHelpClose","txtHelpTitle","txtHelpHeading","txtHelpBody","txtHDMIDisc","txtUSBDisc",
     }
     for _, idx in ipairs(layerNav) do table.insert(required, string.format("btnNav%02d", idx)) end
     for key, def in pairs(configSource) do
@@ -332,25 +329,24 @@ function applySourceOverlay(desired, keySource)
     local def = configSource[keySource]
     if not hdmiConnected(keySource) then
         want(desired, "I03-HDMIDisc", true)
-        Controls.txtHDMIDisc.String = discTextHDMI[keySource] or ""
+        Controls.txtHDMIDisc.String = discText.hdmi:format(sourceLabel[keySource] or keySource)
         return
     end
-
+    local usb = usbConnected(keySource)
     want(desired, def.base, true)
 
-    if not configSkip.skip[def.layer] then
-        want(desired, def.conf, true)
-    end
-
-    if def.keyUSB and not usbConnected(keySource) then
+    if def.keyUSB and not usb then
         want(desired, "I04-USBDisc", true)
-        Controls.txtUSBDisc.String = discTextUSB[keySource] or ""
+        Controls.txtUSBDisc.String = discText.usb:format(sourceLabel[keySource] or keySource)
     end
 
-    -- ACPR active: on a call and not bypassed
-    if def.acpr and not configACPR.disableACPRShow
-        and not Controls.ledACPRBypassActive.Boolean and Controls.ledOffHook.Boolean then
-        want(desired, "J03-ACPRActive", true)
+    if def.conf and (usb or not def.confNeedsUSB) then -- single conference gate
+        want(desired, def.conf, true)
+        -- ACPR active: on a call and not bypassed
+        if not configACPR.disableACPRShow and Controls.ledOffHook.Boolean
+            and not Controls.ledACPRBypassActive.Boolean then
+            want(desired, "J03-ACPRActive", true)
+        end
     end
 
     applyHelp(desired, keySource, true) -- last: open help hides conf + disconnect overlays
@@ -534,10 +530,10 @@ function initPasscode()
         debugPrint("Passcode not found: "..tostring(name).." (disabled)")
         return
     end
-    local ctl = compPasscode["PasscodeCorrect"]
-    if not ctl then return end
-    ctl.EventHandler = function(c)
-        if c.Boolean then setSystemPower(true, "Passcode Correct") end
+    local pass = compPasscode["PasscodeCorrect"]
+    if not pass then return end
+    pass.EventHandler = function(ctl)
+        if ctl.Boolean then setSystemPower(true, "Passcode Correct") end
     end
 end
 
