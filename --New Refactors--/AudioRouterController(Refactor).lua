@@ -31,8 +31,7 @@ compInvalid = {}
 compAudioRouter = nil
 compRoomControls = nil
 
--- Single control is userdata; a control array is a Lua table
-btnSource = type(Controls.btnSource) == "table" and Controls.btnSource or { Controls.btnSource }
+btnSource = Controls['btnSource']
 
 -------------------[ Constants ]-------------------
 
