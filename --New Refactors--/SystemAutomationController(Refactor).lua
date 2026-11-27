@@ -442,7 +442,7 @@ function powerOff(sourceTag)
     for idx, gain in pairs(component.gains) do
         if gain then
             local gainType = getGainType(idx)
-            if gainType ~= "micVolume" and gainType ~= "Mic" then setMute(true, idx) end
+            if gainType ~= "Mic" then setMute(true, idx) end
         end
     end
     setVideoPrivacy(true)
@@ -661,7 +661,7 @@ function registerEvents()
 end
 
 -------------------[ Init ]-------------------
-function init()
+function funcInit()
     debugPrint("=== Initialization Started ===")
     roomName = "[" .. (control.roomName.String or "Unknown") .. "]"
     debugPrint("Configuration: ROOM_NAME=" .. roomName .. ", debugging=" .. tostring(config.debugging ~= false))
@@ -746,7 +746,7 @@ ok, err = pcall(function()
     normalizeControlArrays()
     registerEvents()
     setupConfigSelection()
-    init()
+    funcInit()
 end)
 
 if ok then
@@ -759,13 +759,3 @@ else
     end
 end
 
--------------------[ Public API ]-------------------
-mySystemController = {
-    setVolume = setVolume,
-    setMute = setMute,
-    getGainCount = getGainCount,
-    publishNotification = publishNotification,
-    setFireAlarm = setFireAlarm,
-    powerOn = powerOn,
-    powerOff = powerOff,
-}

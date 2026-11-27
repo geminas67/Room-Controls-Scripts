@@ -67,7 +67,7 @@ end
 
 function getComponentNames()
     -- table to hold component names
-    local NamesTable = {
+    local tblNames = {
         -- multi-dimensional table to store different component names
         CallSyncNames = {},     -- call sync blocks
         VideoBridgeNames = {},  -- video bridge blocks
@@ -80,33 +80,33 @@ function getComponentNames()
     for i, comp in pairs(Component.GetComponents()) do
         --print(i, comp.Name, comp.Type)
         if comp.Type == componentTypes.callSync then
-            table.insert(NamesTable.CallSyncNames, comp.Name)
+            table.insert(tblNames.CallSyncNames, comp.Name)
         elseif comp.Type == componentTypes.videoBridge then
-            table.insert(NamesTable.VideoBridgeNames, comp.Name)
+            table.insert(tblNames.VideoBridgeNames, comp.Name)
         elseif comp.Type == componentTypes.display then
-            table.insert(NamesTable.DisplayNames, comp.Name)
+            table.insert(tblNames.DisplayNames, comp.Name)
         elseif comp.Type == componentTypes.gain then
-            table.insert(NamesTable.GainNames, comp.Name)
+            table.insert(tblNames.GainNames, comp.Name)
         elseif comp.Type == componentTypes.systemMute then
-            table.insert(NamesTable.MuteNames, comp.Name)
+            table.insert(tblNames.MuteNames, comp.Name)
         end
     end
 
-    for i, tbl in pairs(NamesTable) do -- iterate through our tables of tables, format them for our combo boxes
+    for i, tbl in pairs(tblNames) do -- iterate through our tables of tables, format them for our combo boxes
         table.sort(tbl) -- sort alphabetically
         table.insert(tbl, strClear) -- add "[clear]" to the end
     end
 
     -- set script choices
-    Controls.compCallSync.Choices = NamesTable.CallSyncNames
-    Controls.compVideoBridge.Choices = NamesTable.VideoBridgeNames
+    Controls.compCallSync.Choices = tblNames.CallSyncNames
+    Controls.compVideoBridge.Choices = tblNames.VideoBridgeNames
 
     for i, ctl in ipairs(Controls.devDisplays) do
-        ctl.Choices = NamesTable.DisplayNames
+        ctl.Choices = tblNames.DisplayNames
     end
 
-    Controls.compProgramVolume.Choices = NamesTable.GainNames
-    Controls.compSystemMute.Choices = NamesTable.MuteNames
+    Controls.compProgramVolume.Choices = tblNames.GainNames
+    Controls.compSystemMute.Choices = tblNames.MuteNames
 end
 
 -------------------[ Status ]-------------------
