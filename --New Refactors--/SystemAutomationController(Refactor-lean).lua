@@ -1,20 +1,32 @@
 --[[
   System Automation Controller (Lean) - Q-SYS Control Script
   Author: Nikolas Smith, Q-SYS
-  Version: 2.1 | Date: 2026-11-27
+  Version: 2.2 | Date: 2026-11-27
   Firmware Req: 10.4
   Power, audio, video privacy (off.hook), displays, motion, multi-gain, ACPR
+  2.2: each decision stated once (presets, config, one-or-all loops, handler wiring)
 ]]--
 
 -------------------[ Configuration ]-------------------
 
 componentTypes = {
-  callSync   = "call_sync",
+  callSync    = "call_sync",
   videoBridge = "usb_uvc",
-  displays   = "%PLUGIN%_bd0a5e74-c1bf-48ee-8574-e42e1e7b2bb9_%FP%_31e2e2d7be2243768d2bd9c853a6295c",
-  gains      = "gain",
-  systemMute = "system_mute",
-  camACPR    = "%PLUGIN%_6ddbd63b-ebb6-43ed-9c5a-9a7d6dac6f37_%FP%_22bcd2049cd1e9c1f02a4e76655c2db4",
+  displays    = "%PLUGIN%_bd0a5e74-c1bf-48ee-8574-e42e1e7b2bb9_%FP%_31e2e2d7be2243768d2bd9c853a6295c",
+  gains       = "gain",
+  systemMute  = "system_mute",
+  camACPR     = "%PLUGIN%_6ddbd63b-ebb6-43ed-9c5a-9a7d6dac6f37_%FP%_22bcd2049cd1e9c1f02a4e76655c2db4",
+}
+
+-- room presets: every preset starts from presetBase, then applies its overrides
+presetNames = { "Conference Room", "Huddle Room", "Default", "Custom Room", "User Defined" }
+presetBase = {
+  debugging = true, warmupTime = 10, cooldownTime = 5, motionTimeout = 300, gracePeriod = 30,
+  defaultProgramVolume = 0.7, defaultMicVolume = 0.5, defaultGainVolume = 0.7,
+}
+presetOverrides = {
+  ["Conference Room"] = { warmupTime = 15, cooldownTime = 10, motionTimeout = 600, gracePeriod = 60 },
+  ["Huddle Room"]     = { debugging = false, warmupTime = 5, cooldownTime = 3, defaultProgramVolume = 0.6 },
 }
 
 gainTypeAssignment = {
@@ -25,22 +37,19 @@ gainTypeAssignment = {
 }
 
 btnMuteShell = "button-square-red-big-icon"
-gainTypeIcon = {
-  Mic = "iconmicoutline",
-  Program = "iconvolumemuteoutline",
-  Gain = "iconvolumemuteoutline",
-}
+gainTypeIcon = { Mic = "iconmicoutline", Program = "iconvolumemuteoutline", Gain = "iconvolumemuteoutline" }
 
 MotionChoices = { "Motion On/Off", "Motion Off", "Motion Disabled" }
 
+-- User Defined value controls -> config keys
 configValueMaps = {
-  { control = "warmupTime", config = "warmupTime" },
-  { control = "cooldownTime", config = "cooldownTime" },
-  { control = "motionTimeout", config = "motionTimeout" },
-  { control = "motionGracePeriod", config = "gracePeriod" },
+  { control = "warmupTime",           config = "warmupTime" },
+  { control = "cooldownTime",         config = "cooldownTime" },
+  { control = "motionTimeout",        config = "motionTimeout" },
+  { control = "motionGracePeriod",    config = "gracePeriod" },
   { control = "defaultProgramVolume", config = "defaultProgramVolume" },
-  { control = "defaultMicVolume", config = "defaultMicVolume" },
-  { control = "defaultGainVolume", config = "defaultGainVolume" },
+  { control = "defaultMicVolume",     config = "defaultMicVolume" },
+  { control = "defaultGainVolume",    config = "defaultGainVolume" },
 }
 
 -------------------[ Constant Tables ]-------------------
@@ -58,7 +67,7 @@ compCamACPR = nil
 stateDebug = true
 strClear = "[Clear]"
 roomName = "[Unknown]"
-config = {}
+config = {}         -- active preset; the single source of truth for timings and volumes
 defaultConfigs = {}
 
 timerMotion   = Timer.New()
@@ -73,18 +82,34 @@ function debugMsg(str)
   if stateDebug then print(roomName .. " " .. str) end
 end
 
-function asControlList(ctrl)
+-- Text Controller pins are a single control at count 1 and an array above 1
+function asArray(ctrl)
   if not ctrl then return {} end
   if ctrl[1] ~= nil then return ctrl end
   return { ctrl }
 end
 
--- Required Text Controller pins; optional pins (notification, ACPR, presets) guarded at use sites.
+-- run fn(ctl, i) for every control under one pin name
+function forEach(name, fn)
+  for i, ctl in ipairs(asArray(Controls[name])) do fn(ctl, i) end
+end
+
+-- run fn(i, comp) on one bound component (idx) or all of them (idx = nil)
+function eachComp(list, idx, fn)
+  for i, comp in pairs(list) do
+    if comp ~= nil and (idx == nil or idx == i) then fn(i, comp) end
+  end
+end
+
+-- Required Text Controller pins; optional pins (notification, ACPR, presets, config values) guarded at use sites
 function validateControls()
   local missing = {}
   for _, name in ipairs({
-    "roomName", "txtStatus", "compCallSync", "btnSystemOnOff", "btnSystemOn", "btnSystemOff",
-    "ledSystemPower", "ledSystemWarming", "ledSystemCooling", "btnAudioPrivacy",
+    "roomName", "txtStatus", "compACPR", "compCallSync", "compDisplays", "compGains", "compSystemMute",  "compVideoBridge",
+    "btnSystemOnOff", "btnSystemOn", "btnSystemOff", "btnAudioPrivacy", "btnVideoPrivacy", "btnVolumeMute", "btnVolumeDn", "btnVolumeUp",
+    "ledSystemPower", "ledSystemWarming", "ledSystemCooling",
+    "ledMotionIn", "ledMotionTimeoutActive", "ledMotionGraceActive", "selDefaultConfigs", "txtMotionMode",
+    "typeGain", "knbVolumeFader", 
   }) do
     if not Controls[name] then table.insert(missing, name) end
   end
@@ -93,61 +118,38 @@ function validateControls()
   return false
 end
 
-function getDefaultConfig(roomType)
-  local base = { defaultProgramVolume = 0.7, defaultMicVolume = 0.5, defaultGainVolume = 0.7 }
-  if roomType == "User Defined" then
-    return {
-      debugging = true,
-      warmupTime = (Controls['warmupTime'] and Controls['warmupTime'].Value) or 10,
-      cooldownTime = (Controls['cooldownTime'] and Controls['cooldownTime'].Value) or 5,
-      motionTimeout = (Controls['motionTimeout'] and Controls['motionTimeout'].Value) or 300,
-      gracePeriod = (Controls['motionGracePeriod'] and Controls['motionGracePeriod'].Value) or 30,
-      defaultProgramVolume = (Controls['defaultProgramVolume'] and Controls['defaultProgramVolume'].Value) or base.defaultProgramVolume,
-      defaultMicVolume = (Controls['defaultMicVolume'] and Controls['defaultMicVolume'].Value) or base.defaultMicVolume,
-      defaultGainVolume = (Controls['defaultGainVolume'] and Controls['defaultGainVolume'].Value) or base.defaultGainVolume,
-    }
+-------------------[ Presets ]-------------------
+
+function buildPreset(roomType)
+  local preset = {}
+  for key, val in pairs(presetBase) do preset[key] = val end
+  for key, val in pairs(presetOverrides[roomType] or {}) do preset[key] = val end
+  if roomType == "User Defined" then -- seed from the value controls the operator set
+    for _, map in ipairs(configValueMaps) do
+      if Controls[map.control] then preset[map.config] = Controls[map.control].Value end
+    end
   end
-  local presets = {
-    ["Conference Room"] = { debugging = true, warmupTime = 15, cooldownTime = 10, motionTimeout = 600, gracePeriod = 60,
-      defaultProgramVolume = base.defaultProgramVolume, defaultMicVolume = base.defaultMicVolume, defaultGainVolume = base.defaultGainVolume },
-    ["Huddle Room"] = { debugging = false, warmupTime = 5, cooldownTime = 3, motionTimeout = 300, gracePeriod = 30,
-      defaultProgramVolume = 0.6, defaultMicVolume = base.defaultMicVolume, defaultGainVolume = base.defaultGainVolume },
-    ["Default"] = { debugging = true, warmupTime = 10, cooldownTime = 5, motionTimeout = 300, gracePeriod = 30,
-      defaultProgramVolume = base.defaultProgramVolume, defaultMicVolume = base.defaultMicVolume, defaultGainVolume = base.defaultGainVolume },
-    ["Custom Room"] = { debugging = true, warmupTime = 10, cooldownTime = 5, motionTimeout = 300, gracePeriod = 30,
-      defaultProgramVolume = base.defaultProgramVolume, defaultMicVolume = base.defaultMicVolume, defaultGainVolume = base.defaultGainVolume },
-  }
-  return presets[roomType] or presets["Default"]
+  return preset
 end
 
 function applyActiveConfig(roomType)
-  config = defaultConfigs[roomType] or defaultConfigs["Default"] or getDefaultConfig("Default")
+  config = defaultConfigs[roomType] or defaultConfigs["Default"]
   stateDebug = config.debugging ~= false
 end
 
+-- show the active preset on the value controls; only User Defined is editable
 function updateConfigValueControls(roomType)
-  local conf = defaultConfigs[roomType]
-  if not conf then return end
-  local isUser = roomType == "User Defined"
   for _, map in ipairs(configValueMaps) do
-    local ctl = Controls[map.control]
-    if ctl and ctl.Value ~= nil then
-      ctl.Value = conf[map.config]
-      ctl.IsDisabled = not isUser
+    if Controls[map.control] then
+      Controls[map.control].Value = defaultConfigs[roomType][map.config]
+      Controls[map.control].IsDisabled = roomType ~= "User Defined"
     end
   end
 end
 
 function initConfigPresets()
-  defaultConfigs = {
-    ["Conference Room"] = getDefaultConfig("Conference Room"),
-    ["Huddle Room"] = getDefaultConfig("Huddle Room"),
-    ["Default"] = getDefaultConfig("Default"),
-    ["Custom Room"] = getDefaultConfig("Custom Room"),
-    ["User Defined"] = getDefaultConfig("User Defined"),
-  }
-  local roomType = (Controls['selDefaultConfigs'] and Controls['selDefaultConfigs'].String) or "Default"
-  applyActiveConfig(roomType)
+  for _, name in ipairs(presetNames) do defaultConfigs[name] = buildPreset(name) end
+  applyActiveConfig(Controls['selDefaultConfigs'] and Controls['selDefaultConfigs'].String or "Default")
 end
 
 -------------------[ Status ]-------------------
@@ -164,15 +166,11 @@ function getStatus()
   Controls['txtStatus'].Value = 0
 end
 
+-- bind the component named in a selector; returns nil when cleared or invalid
 function setComp(ctl, componentType)
-  if not ctl then
-    compInvalid[componentType] = true
-    getStatus()
-    return nil
-  end
   local name = ctl.String
-  if not name or name == "" or name == strClear then
-    if name == strClear then ctl.String = "" end
+  if name == "" or name == strClear then
+    ctl.String = ""
     ctl.Color = "white"
     compInvalid[componentType] = false
     getStatus()
@@ -180,8 +178,7 @@ function setComp(ctl, componentType)
     return nil
   end
   local comp = Component.New(name)
-  local list = comp and Component.GetControls(comp)
-  if not list or #list < 1 then
+  if #Component.GetControls(comp) < 1 then
     ctl.String = "[Invalid Component Selected]"
     ctl.Color = "pink"
     compInvalid[componentType] = true
@@ -200,50 +197,42 @@ end
 
 function publishNotification()
   if not Controls['txtNotificationID'] or Controls['txtNotificationID'].String == "" then return end
-  local videoPrivacy = false
-  local vbBtns = asControlList(Controls['btnVideoPrivacy'])
-  if vbBtns[1] then videoPrivacy = vbBtns[1].Boolean end
+  local vbBtns = asArray(Controls['btnVideoPrivacy'])
   local systemState = {
-    RoomName = roomName,
-    PowerState = Controls['ledSystemPower'].Boolean,
+    RoomName      = roomName,
+    PowerState    = Controls['ledSystemPower'].Boolean,
     SystemWarming = Controls['ledSystemWarming'].Boolean,
     SystemCooling = Controls['ledSystemCooling'].Boolean,
-    AudioPrivacy = Controls['btnAudioPrivacy'].Boolean,
-    VideoPrivacy = videoPrivacy,
-    ACPRState = (compCamACPR and compCamACPR["TrackingBypass"] and compCamACPR["TrackingBypass"].Boolean) or false,
-    Timestamp = os.time(),
-    GainControls = {},
+    AudioPrivacy  = Controls['btnAudioPrivacy'].Boolean,
+    VideoPrivacy  = vbBtns[1] ~= nil and vbBtns[1].Boolean or false,
+    ACPRState     = compCamACPR ~= nil and compCamACPR["TrackingBypass"].Boolean or false,
+    Timestamp     = os.time(),
+    GainControls  = {},
   }
-  for idx, gain in pairs(compGains) do
-    if gain ~= nil then
-      systemState.GainControls[idx] = {
-        Level = gain["gain"].Position,
-        Muted = gain["mute"].Boolean,
-      }
-    end
-  end
+  eachComp(compGains, nil, function(i, gain)
+    systemState.GainControls[i] = { Level = gain["gain"].Position, Muted = gain["mute"].Boolean }
+  end)
   Notifications.Publish(Controls['txtNotificationID'].String, systemState)
 end
 
 -------------------[ Discovery ]-------------------
 
+-- fill every component selector with matching names from the design
 function getComponentNames()
-  local names = { callSync = {}, videoBridge = {}, camACPR = {}, displays = {}, gains = {}, systemMute = {} }
+  local names = {}
+  for key in pairs(componentTypes) do names[key] = {} end
   for _, comp in pairs(Component.GetComponents()) do
-    if comp.Type == componentTypes.callSync then table.insert(names.callSync, comp.Name)
-    elseif comp.Type == componentTypes.videoBridge then table.insert(names.videoBridge, comp.Name)
-    elseif comp.Type == componentTypes.displays then table.insert(names.displays, comp.Name)
-    elseif comp.Type == componentTypes.gains then table.insert(names.gains, comp.Name)
-    elseif comp.Type == componentTypes.systemMute then table.insert(names.systemMute, comp.Name)
-    elseif comp.Type == componentTypes.camACPR then table.insert(names.camACPR, comp.Name) end
+    for key, compType in pairs(componentTypes) do
+      if comp.Type == compType then table.insert(names[key], comp.Name) end
+    end
   end
   for _, list in pairs(names) do table.sort(list); table.insert(list, strClear) end
-  if Controls['compCallSync'] then Controls['compCallSync'].Choices = names.callSync end
+  Controls['compCallSync'].Choices = names.callSync
   if Controls['compSystemMute'] then Controls['compSystemMute'].Choices = names.systemMute end
   if Controls['compACPR'] then Controls['compACPR'].Choices = names.camACPR end
-  for _, ctl in ipairs(asControlList(Controls['compVideoBridge'])) do ctl.Choices = names.videoBridge end
-  for _, ctl in ipairs(asControlList(Controls['compGains'])) do ctl.Choices = names.gains end
-  for _, ctl in ipairs(asControlList(Controls['devDisplays'])) do ctl.Choices = names.displays end
+  forEach('compVideoBridge', function(ctl) ctl.Choices = names.videoBridge end)
+  forEach('compGains', function(ctl) ctl.Choices = names.gains end)
+  forEach('devDisplays', function(ctl) ctl.Choices = names.displays end)
   debugMsg("Discovery: " .. (#names.callSync - 1) .. " callSync, " .. (#names.videoBridge - 1) .. " videoBridge, "
     .. (#names.gains - 1) .. " gains, " .. (#names.displays - 1) .. " displays")
 end
@@ -251,44 +240,37 @@ end
 -------------------[ Gain types & visuals ]-------------------
 
 function getGainType(idx)
-  local types = asControlList(Controls['typeGain'])
+  local types = asArray(Controls['typeGain'])
   if types[idx] then return types[idx].String end
   return idx == 1 and "Program" or "Mic"
 end
 
 function getDefaultVolumeForType(gainType)
-  local defaults = {
-    Program = config.defaultProgramVolume,
-    Mic = config.defaultMicVolume,
-    Gain = config.defaultGainVolume,
-  }
-  return defaults[gainType] or defaults.Mic
+  if gainType == "Program" then return config.defaultProgramVolume end
+  if gainType == "Gain" then return config.defaultGainVolume end
+  return config.defaultMicVolume
 end
 
+-- gain 1 is always Program; the rest follow the room preset map
 function setGainTypeAssignments(roomType)
   roomType = roomType or (Controls['selDefaultConfigs'] and Controls['selDefaultConfigs'].String) or "Default"
   local assign = gainTypeAssignment[roomType] or gainTypeAssignment["Default"]
-  for idx, gainType in ipairs(assign) do
-    local types = asControlList(Controls['typeGain'])
-    if types[idx] then
-      types[idx].String = idx == 1 and "Program" or gainType
-      types[idx].IsDisabled = idx == 1
+  forEach('typeGain', function(ctl, i)
+    if assign[i] then
+      ctl.String = i == 1 and "Program" or assign[i]
+      ctl.IsDisabled = i == 1
     end
-  end
+  end)
 end
 
+-- CSS meter + type icon on the script fader/mute pair
 function updateVolumeVisuals(idx)
-  local faders = asControlList(Controls['knbVolumeFader'])
-  local mutes = asControlList(Controls['btnVolumeMute'])
-  local fader = faders[idx]
-  local mute = mutes[idx]
+  local fader = asArray(Controls['knbVolumeFader'])[idx]
+  local mute = asArray(Controls['btnVolumeMute'])[idx]
   if not fader or not mute then return end
-  local gainType = getGainType(idx)
-  local isMuted = mute.Boolean
-  local meterClass = isMuted and "meter-muted" or "meter"
+  local meterClass = mute.Boolean and "meter-muted" or "meter"
+  local muteClass = btnMuteShell .. " " .. (gainTypeIcon[getGainType(idx)] or gainTypeIcon.Program)
   if fader.CssClass ~= meterClass then fader.CssClass = meterClass end
-  local icon = gainTypeIcon[gainType] or gainTypeIcon.Program
-  local muteClass = btnMuteShell .. " " .. icon
   if mute.CssClass ~= muteClass then mute.CssClass = muteClass end
 end
 
@@ -299,103 +281,77 @@ function getGainCount()
 end
 
 -------------------[ Volume ]-------------------
+-- gainIndex = nil means all gains
 
 function applyVolumeDefaults()
   debugMsg("Applying volume defaults from typeGain")
-  for idx, gain in pairs(compGains) do
-    if gain ~= nil then
-      local gainType = getGainType(idx)
-      local level = getDefaultVolumeForType(gainType)
-      gain["gain"].Position = level
-      updateVolumeVisuals(idx)
-      debugMsg("Default " .. gainType .. " (" .. level .. ") -> gain " .. idx)
-    end
-  end
+  eachComp(compGains, nil, function(i, gain)
+    local gainType = getGainType(i)
+    gain["gain"].Position = getDefaultVolumeForType(gainType)
+    updateVolumeVisuals(i)
+    debugMsg("Default " .. gainType .. " (" .. gain["gain"].Position .. ") -> gain " .. i)
+  end)
 end
 
 function setVolume(level, gainIndex)
-  if gainIndex then
-    if compGains[gainIndex] ~= nil then
-      compGains[gainIndex]["gain"].Position = level
-      updateVolumeVisuals(gainIndex)
-    end
-  else
-    for idx, gain in pairs(compGains) do
-      if gain ~= nil then
-        gain["gain"].Position = level
-        updateVolumeVisuals(idx)
-      end
-    end
-  end
+  eachComp(compGains, gainIndex, function(i, gain)
+    gain["gain"].Position = level
+    updateVolumeVisuals(i)
+  end)
   publishNotification()
 end
 
 function setMute(muteState, gainIndex)
-  if gainIndex then
-    if compGains[gainIndex] ~= nil then
-      compGains[gainIndex]["mute"].Boolean = muteState
-      updateVolumeVisuals(gainIndex)
-    end
-  else
-    for idx, gain in pairs(compGains) do
-      if gain ~= nil then
-        gain["mute"].Boolean = muteState
-        updateVolumeVisuals(idx)
-      end
-    end
-  end
+  eachComp(compGains, gainIndex, function(i, gain)
+    gain["mute"].Boolean = muteState
+    updateVolumeVisuals(i)
+  end)
   publishNotification()
 end
 
+-- ramp while held; any ramp unmutes
 function setVolumeUpDown(direction, pressed, gainIndex)
   local action = direction == "up" and "stepper.increase" or "stepper.decrease"
-  local step = function(idx, gain)
+  eachComp(compGains, gainIndex, function(i, gain)
     gain[action].Boolean = pressed
     if pressed then gain["mute"].Boolean = false end
-    updateVolumeVisuals(idx)
-  end
-  if gainIndex then
-    if compGains[gainIndex] ~= nil then step(gainIndex, compGains[gainIndex]) end
-  else
-    for idx, gain in pairs(compGains) do
-      if gain ~= nil then step(idx, gain) end
-    end
-  end
+    updateVolumeVisuals(i)
+  end)
   publishNotification()
 end
 
+-- gain block -> script fader
 function getVolumeLvl(idx)
-  if compGains[idx] == nil then return end
-  local faders = asControlList(Controls['knbVolumeFader'])
-  if not faders[idx] then return end
-  faders[idx].Position = compGains[idx]["gain"].Position
+  local fader = asArray(Controls['knbVolumeFader'])[idx]
+  if compGains[idx] == nil or not fader then return end
+  fader.Position = compGains[idx]["gain"].Position
   updateVolumeVisuals(idx)
   publishNotification()
 end
 
+-- gain block -> script mute button
 function getVolumeMute(idx)
-  if compGains[idx] == nil then return end
+  local mute = asArray(Controls['btnVolumeMute'])[idx]
+  if compGains[idx] == nil or not mute then return end
   local muteState = compGains[idx]["mute"].Boolean
-  local mutes = asControlList(Controls['btnVolumeMute'])
-  if not mutes[idx] then return end
   -- feedback loop: gain mute EventHandler -> this function -> script mute button
-  if mutes[idx].Boolean ~= muteState then mutes[idx].Boolean = muteState end
+  if mute.Boolean ~= muteState then mute.Boolean = muteState end
   updateVolumeVisuals(idx)
   publishNotification()
 end
 
 -------------------[ Call sync & privacy ]-------------------
 
+-- call sync mute -> script audio privacy button
 function getCallSyncMute()
   if compCallSync == nil then return end
   local muteState = compCallSync["mute"].Boolean
   debugMsg("Call Sync mute: " .. tostring(muteState))
   -- feedback loop: call sync mute EventHandler -> script audio privacy button
-  if Controls['btnAudioPrivacy'].Boolean ~= muteState then
-    Controls['btnAudioPrivacy'].Boolean = muteState
-  end
+  if Controls['btnAudioPrivacy'].Boolean ~= muteState then Controls['btnAudioPrivacy'].Boolean = muteState end
 end
 
+-- script/power logic -> call sync mute; button always shows intent
 function setCallSyncMute(state)
   if compCallSync ~= nil then
     debugMsg("Setting Call Sync mute: " .. tostring(state))
@@ -405,43 +361,39 @@ function setCallSyncMute(state)
   publishNotification()
 end
 
+-- idx = nil means all bridges
 function setVideoPrivacy(state, idx)
-  if idx then
-    if compVideoBridge[idx] ~= nil then
-      compVideoBridge[idx]["toggle.privacy"].Boolean = state
-    end
-  else
-    for _, bridge in pairs(compVideoBridge) do
-      if bridge ~= nil then bridge["toggle.privacy"].Boolean = state end
-    end
-  end
+  eachComp(compVideoBridge, idx, function(_, bridge) bridge["toggle.privacy"].Boolean = state end)
   publishNotification()
 end
 
+-- bridge privacy -> script video privacy button (one shared button covers all bridges)
 function getVideoBridgePrivacyState(idx)
-  idx = idx or 1
   if compVideoBridge[idx] == nil then return end
   local privacyState = compVideoBridge[idx]["toggle.privacy"].Boolean
   debugMsg("Video bridge [" .. idx .. "] privacy: " .. tostring(privacyState))
-  local btns = asControlList(Controls['btnVideoPrivacy'])
+  local btns = asArray(Controls['btnVideoPrivacy'])
   local btn = btns[idx] or (#btns == 1 and btns[1])
-  if not btn then return end
   -- feedback loop: bridge privacy EventHandler -> script video privacy button
-  if btn.Boolean ~= privacyState then btn.Boolean = privacyState end
+  if btn and btn.Boolean ~= privacyState then btn.Boolean = privacyState end
 end
 
+function setACPRLegend()
+  local bypass = compCamACPR["TrackingBypass"]
+  bypass.Legend = bypass.IsDisabled and "Disabled" or (bypass.Boolean and "Off" or "Auto")
+end
+
+-- off.hook drives video privacy and camera tracking (cameras only move during calls)
 function getCallSyncHookState()
   if compCallSync == nil then return end
   local offHook = compCallSync["off.hook"].Boolean
   getCallSyncMute()
-  for idx in pairs(compVideoBridge) do setVideoPrivacy(not offHook, idx) end
-  for idx in pairs(compVideoBridge) do getVideoBridgePrivacyState(idx) end
+  setVideoPrivacy(not offHook)
+  for i in pairs(compVideoBridge) do getVideoBridgePrivacyState(i) end
   if compCamACPR ~= nil then
     compCamACPR["TrackingBypass"].IsDisabled = not offHook
     compCamACPR["TrackingBypass"].Boolean = not offHook
-    local bypass = compCamACPR["TrackingBypass"].Boolean
-    compCamACPR["TrackingBypass"].Legend = compCamACPR["TrackingBypass"].IsDisabled and "Disabled"
-      or (bypass and "Off" or "Auto")
+    setACPRLegend()
   end
   publishNotification()
 end
@@ -462,9 +414,7 @@ function setcompCallSync()
 end
 
 function setcompVideoBridge(idx)
-  local selectors = asControlList(Controls['compVideoBridge'])
-  if not selectors[idx] then return end
-  compVideoBridge[idx] = setComp(selectors[idx], "Video Bridge [" .. idx .. "]")
+  compVideoBridge[idx] = setComp(asArray(Controls['compVideoBridge'])[idx], "Video Bridge [" .. idx .. "]")
   if compVideoBridge[idx] ~= nil then
     compVideoBridge[idx]["toggle.privacy"].EventHandler = function() getVideoBridgePrivacyState(idx) end
     getVideoBridgePrivacyState(idx)
@@ -472,9 +422,7 @@ function setcompVideoBridge(idx)
 end
 
 function setcompGain(idx)
-  local selectors = asControlList(Controls['compGains'])
-  if not selectors[idx] then return end
-  compGains[idx] = setComp(selectors[idx], "Gain [" .. idx .. "]")
+  compGains[idx] = setComp(asArray(Controls['compGains'])[idx], "Gain [" .. idx .. "]")
   if compGains[idx] ~= nil then
     compGains[idx]["gain"].EventHandler = function() getVolumeLvl(idx) end
     compGains[idx]["mute"].EventHandler = function() getVolumeMute(idx) end
@@ -484,7 +432,7 @@ function setcompGain(idx)
 end
 
 function setcompSystemMute()
-  compSystemMute = setComp(Controls['compSystemMute'], "System Mute")
+  if Controls['compSystemMute'] then compSystemMute = setComp(Controls['compSystemMute'], "System Mute") end
 end
 
 function setcompCamACPR()
@@ -492,19 +440,15 @@ function setcompCamACPR()
   compCamACPR = setComp(Controls['compACPR'], "Camera ACPR")
   if compCamACPR ~= nil then
     compCamACPR["TrackingBypass"].EventHandler = function()
-      local bypassState = compCamACPR["TrackingBypass"].Boolean
-      debugMsg("ACPR Tracking Bypass: " .. tostring(bypassState))
-      compCamACPR["TrackingBypass"].Legend = compCamACPR["TrackingBypass"].IsDisabled and "Disabled"
-        or (bypassState and "Off" or "Auto")
+      debugMsg("ACPR Tracking Bypass: " .. tostring(compCamACPR["TrackingBypass"].Boolean))
+      setACPRLegend()
     end
     getCallSyncHookState()
   end
 end
 
 function setcompDisplay(idx)
-  local selectors = asControlList(Controls['devDisplays'])
-  if not selectors[idx] then return end
-  compDisplays[idx] = setComp(selectors[idx], "Display [" .. idx .. "]")
+  compDisplays[idx] = setComp(asArray(Controls['devDisplays'])[idx], "Display [" .. idx .. "]")
 end
 
 function setCompSystemMute(state)
@@ -515,9 +459,7 @@ end
 
 function powerDisplays(on)
   local trig = on and "PowerOn" or "PowerOff"
-  for _, display in pairs(compDisplays) do
-    if display ~= nil then display[trig]:Trigger() end
-  end
+  eachComp(compDisplays, nil, function(_, display) display[trig]:Trigger() end)
 end
 
 -------------------[ System power ]-------------------
@@ -535,13 +477,13 @@ function setSystemPowerFB(powerState)
   Controls['btnSystemOff'].Boolean = not powerState
 end
 
+-- video privacy is left alone here; off.hook owns it
 function powerOn()
   debugMsg("[Power] On (User)")
   if Controls['btnSystemOnTrig'] then Controls['btnSystemOnTrig']:Trigger() end
   setEnableDisablePowerControls(false)
   Controls['ledSystemWarming'].Boolean = true
-  local warmup = Controls['warmupTime'] and Controls['warmupTime'].Value or config.warmupTime or 10
-  timerWarmup:Start(warmup)
+  timerWarmup:Start(config.warmupTime)
   setSystemPowerFB(true)
   applyVolumeDefaults()
   setMute(false)
@@ -550,19 +492,16 @@ function powerOn()
   publishNotification()
 end
 
+-- mics keep their mute state through power off
 function powerOff(sourceTag)
-  sourceTag = sourceTag or "User"
-  debugMsg("[Power] Off (" .. sourceTag .. ")")
+  debugMsg("[Power] Off (" .. (sourceTag or "User") .. ")")
   if Controls['btnSystemOffTrig'] then Controls['btnSystemOffTrig']:Trigger() end
   setEnableDisablePowerControls(false)
   Controls['ledSystemCooling'].Boolean = true
-  local cooldown = Controls['cooldownTime'] and Controls['cooldownTime'].Value or config.cooldownTime or 5
-  timerCooldown:Start(cooldown)
+  timerCooldown:Start(config.cooldownTime)
   setSystemPowerFB(false)
   setCallSyncMute(true)
-  for idx, gain in pairs(compGains) do
-    if gain ~= nil and getGainType(idx) ~= "Mic" then setMute(true, idx) end
-  end
+  eachComp(compGains, nil, function(i) if getGainType(i) ~= "Mic" then setMute(true, i) end end)
   powerDisplays(false)
   endCalls()
   publishNotification()
@@ -570,41 +509,31 @@ end
 
 -------------------[ Motion ]-------------------
 
+-- motion present: cancel the off timer and maybe power on; motion gone: start the off timer
 function getMotion()
-  if not Controls['ledMotionIn'] then return end
+  local mode = Controls['txtMotionMode'].String
   debugMsg("[Motion] check")
   if Controls['ledMotionIn'].Boolean then
-    if Controls['ledMotionTimeoutActive'] then Controls['ledMotionTimeoutActive'].Boolean = false end
+    Controls['ledMotionTimeoutActive'].Boolean = false
     timerMotion:Stop()
-    local mode = Controls['txtMotionMode'] and Controls['txtMotionMode'].String or ""
-    if not Controls['ledSystemPower'].Boolean
-        and not Controls['ledMotionGraceActive'].Boolean
-        and mode == "Motion On/Off" then
+    if mode == "Motion On/Off" and not Controls['ledSystemPower'].Boolean and not Controls['ledMotionGraceActive'].Boolean then
       debugMsg("[Motion] Power on from motion")
       powerOn()
     end
-    return
-  end
-  local mode = Controls['txtMotionMode'] and Controls['txtMotionMode'].String or ""
-  if mode == "Motion On/Off" or mode == "Motion Off" then
+  elseif mode == "Motion On/Off" or mode == "Motion Off" then
     debugMsg("[Motion] Starting off timer")
-    if Controls['ledMotionTimeoutActive'] then Controls['ledMotionTimeoutActive'].Boolean = true end
-    local timeout = Controls['motionTimeout'] and Controls['motionTimeout'].Value or config.motionTimeout or 300
-    timerMotion:Start(timeout)
+    Controls['ledMotionTimeoutActive'].Boolean = true
+    timerMotion:Start(config.motionTimeout)
   end
 end
 
 -------------------[ Fire alarm ]-------------------
 
+-- alarm: mute and blank; clear: restore only if the system is on
 function setFireAlarm(alarmState)
-  if alarmState then
-    setCompSystemMute(true)
-    powerDisplays(false)
-    return
-  end
-  if Controls['ledSystemPower'].Boolean then
-    setCompSystemMute(false)
-    powerDisplays(true)
+  if alarmState or Controls['ledSystemPower'].Boolean then
+    setCompSystemMute(alarmState)
+    powerDisplays(not alarmState)
   end
 end
 
@@ -613,7 +542,7 @@ end
 timerMotion.EventHandler = function()
   -- trigger system off after motion timeout
   debugMsg("[Motion] Timeout")
-  if Controls['ledMotionTimeoutActive'] then Controls['ledMotionTimeoutActive'].Boolean = false end
+  Controls['ledMotionTimeoutActive'].Boolean = false
   timerMotion:Stop()
   powerOff("Motion timeout")
 end
@@ -621,7 +550,7 @@ end
 timerGrace.EventHandler = function()
   -- allow system to power on from motion after grace period ends
   debugMsg("Grace period ended")
-  if Controls['ledMotionGraceActive'] then Controls['ledMotionGraceActive'].Boolean = false end
+  Controls['ledMotionGraceActive'].Boolean = false
   timerGrace:Stop()
 end
 
@@ -643,99 +572,58 @@ timerCooldown.EventHandler = function()
   publishNotification()
 end
 
-Controls['btnSystemOnOff'].EventHandler = function(ctl)
-  if ctl.Boolean then powerOn() else powerOff() end
-end
-
-Controls['btnSystemOn'].EventHandler = function()
-  powerOn()
-end
+-- power toggle / on / off buttons
+Controls['btnSystemOnOff'].EventHandler = function(ctl) if ctl.Boolean then powerOn() else powerOff() end end
+Controls['btnSystemOn'].EventHandler = function() powerOn() end
 
 Controls['btnSystemOff'].EventHandler = function()
+  -- manual off starts a grace period so motion can't immediately turn the room back on
   powerOff()
-  if Controls['ledMotionGraceActive'] then Controls['ledMotionGraceActive'].Boolean = true end
-  local grace = Controls['motionGracePeriod'] and Controls['motionGracePeriod'].Value or config.gracePeriod or 30
-  timerGrace:Start(grace)
+  Controls['ledMotionGraceActive'].Boolean = true
+  timerGrace:Start(config.gracePeriod)
 end
 
-Controls['btnAudioPrivacy'].EventHandler = function(ctl)
-  setCallSyncMute(ctl.Boolean)
-end
+-- audio privacy button -> call sync mute
+Controls['btnAudioPrivacy'].EventHandler = function(ctl) setCallSyncMute(ctl.Boolean) end
 
-Controls['roomName'].EventHandler = function()
-  roomName = "[" .. (Controls['roomName'].String or "Unknown") .. "]"
+-- room name used in debug prints and notifications
+Controls['roomName'].EventHandler = function(ctl)
+  roomName = "[" .. ctl.String .. "]"
   debugMsg("Room name: " .. roomName)
   publishNotification()
 end
 
-if Controls['ledMotionIn'] then
-  Controls['ledMotionIn'].EventHandler = getMotion
-end
+-- occupancy sensor input (idle if nothing drives it)
+Controls['ledMotionIn'].EventHandler = getMotion
 
+-- component selectors
 Controls['compCallSync'].EventHandler = setcompCallSync
-Controls['compSystemMute'].EventHandler = setcompSystemMute
+if Controls['compSystemMute'] then Controls['compSystemMute'].EventHandler = setcompSystemMute end
 if Controls['compACPR'] then Controls['compACPR'].EventHandler = setcompCamACPR end
+forEach('compVideoBridge', function(ctl, i) ctl.EventHandler = function() setcompVideoBridge(i) end end)
+forEach('compGains',       function(ctl, i) ctl.EventHandler = function() setcompGain(i) end end)
+forEach('devDisplays',     function(ctl, i) ctl.EventHandler = function() setcompDisplay(i) end end)
 
-for i, ctl in ipairs(asControlList(Controls['btnVideoPrivacy'])) do
-  -- manual video privacy override (off.hook also drives privacy in getCallSyncHookState)
+-- manual video privacy override (off.hook also drives privacy in getCallSyncHookState)
+forEach('btnVideoPrivacy', function(ctl, i) ctl.EventHandler = function(c) setVideoPrivacy(c.Boolean, i) end end)
+
+-- per-gain fader, mute, and ramp buttons
+forEach('knbVolumeFader', function(ctl, i) ctl.EventHandler = function(c) setVolume(c.Position, i) end end)
+forEach('btnVolumeMute',  function(ctl, i) ctl.EventHandler = function(c) setMute(c.Boolean, i) end end)
+forEach('btnVolumeUp',    function(ctl, i) ctl.EventHandler = function(c) setVolumeUpDown("up", c.Boolean, i) end end)
+forEach('btnVolumeDn',    function(ctl, i) ctl.EventHandler = function(c) setVolumeUpDown("down", c.Boolean, i) end end)
+
+-- gain type change -> jump to that type's default level (gain 1 is fixed as Program)
+forEach('typeGain', function(ctl, i)
+  if i == 1 then return end
   ctl.EventHandler = function(c)
-    setVideoPrivacy(c.Boolean, i)
-  end
-end
-
-for i, ctl in ipairs(asControlList(Controls['knbVolumeFader'])) do
-  ctl.EventHandler = function(c)
-    setVolume(c.Position, i)
-  end
-end
-
-for i, ctl in ipairs(asControlList(Controls['btnVolumeMute'])) do
-  ctl.EventHandler = function(c)
-    setMute(c.Boolean, i)
-  end
-end
-
-for i, ctl in ipairs(asControlList(Controls['btnVolumeUp'])) do
-  ctl.EventHandler = function(c)
-    setVolumeUpDown("up", c.Boolean, i)
-  end
-end
-
-for i, ctl in ipairs(asControlList(Controls['btnVolumeDn'])) do
-  ctl.EventHandler = function(c)
-    setVolumeUpDown("down", c.Boolean, i)
-  end
-end
-
-for i, ctl in ipairs(asControlList(Controls['compVideoBridge'])) do
-  ctl.EventHandler = function()
-    setcompVideoBridge(i)
-  end
-end
-
-for i, ctl in ipairs(asControlList(Controls['compGains'])) do
-  ctl.EventHandler = function()
-    setcompGain(i)
-  end
-end
-
-for i, ctl in ipairs(asControlList(Controls['devDisplays'])) do
-  ctl.EventHandler = function()
-    setcompDisplay(i)
-  end
-end
-
-for i, ctl in ipairs(asControlList(Controls['typeGain'])) do
-  if i > 1 then
-    ctl.EventHandler = function(gainCtl)
-      if compGains[i] ~= nil then
-        setVolume(getDefaultVolumeForType(gainCtl.String), i)
-        debugMsg("Type selector -> gain " .. i .. " (" .. gainCtl.String .. ")")
-      end
-      publishNotification()
+    if compGains[i] ~= nil then
+      setVolume(getDefaultVolumeForType(c.String), i)
+      debugMsg("Type selector -> gain " .. i .. " (" .. c.String .. ")")
     end
+    publishNotification()
   end
-end
+end)
 
 if Controls['selDefaultConfigs'] then
   -- room preset: timings, motion, and gain-type maps
@@ -747,12 +635,12 @@ if Controls['selDefaultConfigs'] then
   end
 end
 
+-- User Defined value edits -> active config
 for _, map in ipairs(configValueMaps) do
   if Controls[map.control] then
-    Controls[map.control].EventHandler = function(value)
+    Controls[map.control].EventHandler = function(ctl)
       if Controls['selDefaultConfigs'] and Controls['selDefaultConfigs'].String == "User Defined" then
-        defaultConfigs["User Defined"][map.config] = value.Value
-        config[map.config] = value.Value
+        defaultConfigs["User Defined"][map.config] = ctl.Value
       end
     end
   end
@@ -770,17 +658,17 @@ function funcInit()
   end
 
   initConfigPresets()
-  roomName = "[" .. (Controls['roomName'].String or "Unknown") .. "]"
+  roomName = "[" .. Controls['roomName'].String .. "]"
   debugMsg("Init started; debug=" .. tostring(stateDebug))
 
   setEnableDisablePowerControls(true)
   getComponentNames()
 
-  if Controls['txtMotionMode'] then Controls['txtMotionMode'].Choices = MotionChoices end
-  for _, ctl in ipairs(asControlList(Controls['typeGain'])) do ctl.Choices = { "Mic", "Gain" } end
+  Controls['txtMotionMode'].Choices = MotionChoices
+  forEach('typeGain', function(ctl) ctl.Choices = { "Mic", "Gain" } end)
 
   if Controls['selDefaultConfigs'] then
-    Controls['selDefaultConfigs'].Choices = { "Conference Room", "Huddle Room", "Default", "Custom Room", "User Defined" }
+    Controls['selDefaultConfigs'].Choices = presetNames
     if Controls['selDefaultConfigs'].String == "" then Controls['selDefaultConfigs'].String = "Default" end
     updateConfigValueControls(Controls['selDefaultConfigs'].String)
   end
@@ -789,9 +677,9 @@ function funcInit()
   setcompCallSync()
   setcompSystemMute()
   setcompCamACPR()
-  for i in ipairs(asControlList(Controls['compVideoBridge'])) do setcompVideoBridge(i) end
-  for i in ipairs(asControlList(Controls['compGains'])) do setcompGain(i) end
-  for i in ipairs(asControlList(Controls['devDisplays'])) do setcompDisplay(i) end
+  forEach('compVideoBridge', function(_, i) setcompVideoBridge(i) end)
+  forEach('compGains',       function(_, i) setcompGain(i) end)
+  forEach('devDisplays',     function(_, i) setcompDisplay(i) end)
 
   getStatus()
   debugMsg("Ready - " .. getGainCount() .. " gains")
